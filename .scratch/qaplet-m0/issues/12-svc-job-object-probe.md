@@ -8,6 +8,8 @@
 
 **Execution prerequisites:** 本地可丢弃Windows VM先探索，CI托管Windows临时VM持续回归；使用受控fixture并先测既有Job归属/限制，与SCM独立执行。
 
+**Execution override（2026-11-01）：** 用户明确要求“直接使用本机”，本轮改用当前 Windows 开发宿主和受控 fixture；先测实际权限及既有 Job 归属，只终止本探针创建的进程并记录清理结果。保留实际宿主身份，见[父规格执行更新](../spec.md)。
+
 ## Goal
 
 维护者知道所锁工具链下应用私有Job桥接能否提供最小进程归属和终止能力，并明确其限制。
