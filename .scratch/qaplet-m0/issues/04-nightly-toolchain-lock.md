@@ -58,3 +58,5 @@
 ## Comments
 
 2026-11-01: ticket 04 implementer claimed this work on `codex/m0-04-nightly`, based on integration `efeed76`. CLI, real external commands, and structured evidence are the confirmed seams. Implementation uses vertical red-green slices; source HEAD and bundled libc provenance remain separate facts.
+
+2026-11-01 progress: explicit acquisition, exact-lock cache restore, deliberate bump, immutable offline verification/path, acquisition receipts and 11 WSL CLI contracts implemented. Required WSL aggregate check passed (36 cases, one Windows-only skip). Local direct/proxy/Python TLS and the first hosted acquisition attempt failed to reach the official rolling archive; no production lock or compiler identity has been fabricated. The scoped acquisition workflow is an input transport fallback using the same CLI. [Validation and next acceptance step](../nightly-toolchain-validation.md).

@@ -26,6 +26,7 @@ class NightlyToolchainContract(unittest.TestCase):
         self.output = self.work / "report.json"
 
     def run_cli(self, operation, *args, env=None):
+        self.output.unlink(missing_ok=True)
         completed = subprocess.run([sys.executable, str(CLI), operation,
             "--lock", str(self.lock), "--cache-dir", str(self.cache),
             "--report", str(self.output), *map(str, args)],
@@ -57,12 +58,17 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertFalse(self.cache.exists())
 
     def test_malformed_lock_cannot_select_a_path_outside_the_cache(self):
-        self.lock.write_text(json.dumps({"archive": {"sha256": "../../foreign", "size_bytes": 1}}), encoding="utf-8")
-        completed, report = self.run_cli("verify")
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-        self.assertIn("lock", report["reason"].lower())
-        self.assertEqual(report["commands"], [])
-        self.assertFalse(self.cache.exists())
+        malformed = [{"archive": {"sha256": "../../foreign", "size_bytes": 1}},
+                     {"schema_version": 1, "kind": "cosmocc-nightly", "source": {"kind": "local-import", "url": 17}}]
+        for value in malformed:
+            with self.subTest(lock=value):
+                self.lock.write_text(json.dumps(value), encoding="utf-8")
+                completed, report = self.run_cli("verify")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIsNotNone(report, completed.stderr)
+                self.assertIn("lock", report["reason"].lower())
+                self.assertEqual(report["commands"], [])
+                self.assertFalse(self.cache.exists())
 
     def test_insufficient_disk_space_blocks_acquisition_before_tools_run(self):
         completed, report = self.run_cli("fetch", "--archive", self.archive(),
@@ -101,6 +107,15 @@ class NightlyToolchainContract(unittest.TestCase):
         completed, report = self.run_cli("path", "--allow-local-import")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertTrue(Path(completed.stdout.strip()).joinpath("bin/cosmocc").is_file())
+
+    @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
+    def test_ordinary_consumers_refuse_local_candidates_before_running_tools(self):
+        completed, _ = self.run_cli("fetch", "--archive", self.archive())
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        completed, report = self.run_cli("path")
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(report["commands"], [])
+        self.assertEqual(completed.stdout, "")
 
     @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
     def test_explicit_fetch_restores_the_locked_cache_without_changing_the_lock(self):

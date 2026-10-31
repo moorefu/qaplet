@@ -2,7 +2,7 @@
 
 Date: 2026-11-01 (Asia/Shanghai). Branch: `codex/m0-04-nightly`.
 
-Implementation is in progress. Ten CLI contracts passed in the existing
+Implementation is in progress. Eleven CLI contracts passed in the existing
 Ubuntu-22.04 WSL2 environment. Actual official acquisition has not succeeded yet;
 no production lock, archive digest, compiler version or libc commit is invented.
 The acquisition workflow is being used solely to get original upstream bytes
@@ -17,13 +17,20 @@ after local transport failures, using the same CLI as local acquisition.
   free during acquisition preflight. The ext4 virtual filesystem reports about
   1 TB available; that value is not treated as physical backing space.
 - `python3 -m unittest discover -s tests/contracts -p test_nightly_toolchain.py -v`:
-  10 passed in WSL. Tests run the real CLI, real shell fixture version commands,
+  11 passed in WSL. Tests run the real CLI, real shell fixture version commands,
   ZIP/filesystem/digest operations and observable reports. Synthetic archives
   are marked local-import and never count as an official Nightly input.
 - Red-green observations covered missing-lock evidence, explicit import/offline
   path, malformed lock paths, insufficient space, incomplete receipt rejection,
   exact locked-cache restoration, writable-cache refusal, and bump lineage.
   Additional corruption/rollback/network regressions passed.
+- Required `make check OUT=out/nightly/check-wsl`: passed, 36 contracts with one
+  Windows-only skip; static CI check and real Linux system-C bootstrap passed.
+  This verifies implementation regression, not actual Nightly/product support.
+- The same check passed in the ordinary Windows user context with installed
+  `C:/msys64/usr/bin/make.exe`, `PYTHON=python CC=gcc`, and
+  `OUT=out/nightly/check-windows`: 36 contracts, 11 platform-specific skips;
+  static CI check and real Windows system-C bootstrap passed.
 
 The regression suite covers missing cache; rolling/archive digest drift;
 truncated ZIPs; traversal and symlink archive members; non-executable tools;
@@ -46,6 +53,10 @@ not internal implementation functions.
 4. An independent source HEAD query from WSL `/tmp` failed with an HTTP/2 framing
    error. The Windows worktree `.git` indirection is also not WSL git compatible;
    that is unrelated to archive or libc identity. `source_head` stays null.
+5. The same CLI ran on GitHub Actions Linux x64, run `41227913122`, job
+   `124615836863`, and also failed at official cosmo.zip connection timeout
+   (curl 28). Its evidence-only artifact `13052232589` was retained and retrieved
+   by the integration agent. This is an acquisition failure, not a compiler test.
 
 Local generated evidence (ignored, not committed):
 
