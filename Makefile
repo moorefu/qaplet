@@ -8,8 +8,10 @@ WSL ?=
 ENV_BUILD_DIR ?=
 ENV_DOWNLOAD_URL ?=
 ENV_BACKING_DIR ?=
+QUICKJS_CACHE ?=
+TOOLCHAIN_CACHE ?=
 
-.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci
+.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify
 doctor:
 	"$(PYTHON)" scripts/foundation.py doctor --cc "$(CC)" $(if $(WSL),--wsl "$(WSL)",) --report "$(OUT)/doctor.json"
 
@@ -29,3 +31,9 @@ check-ci:
 	"$(PYTHON)" scripts/foundation.py check-ci --report "$(OUT)/check-ci.json"
 
 check: check-ci test test-bootstrap
+
+quickjs-fetch quickjs-bump quickjs-verify:
+	"$(PYTHON)" scripts/quickjs_source.py $(patsubst quickjs-%,%,$@) $(if $(QUICKJS_CACHE),--cache "$(QUICKJS_CACHE)",) --report "$(OUT)/quickjs-source.json"
+
+toolchain-fetch toolchain-bump toolchain-verify:
+	"$(PYTHON)" scripts/nightly_toolchain.py $(patsubst toolchain-%,%,$@) $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) --report "$(OUT)/nightly-toolchain.json"
