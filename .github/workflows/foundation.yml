@@ -1,0 +1,66 @@
+{
+  "name": "Foundation bootstrap (not the M0 product gate)",
+  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
+  "permissions": {"contents": "read"},
+  "jobs": {
+    "bootstrap": {
+      "name": "Bootstrap / ${{ matrix.os }}",
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {"include": [
+          {"os": "ubuntu-24.04", "cc": "cc"},
+          {"os": "ubuntu-24.04-arm", "cc": "cc"},
+          {"os": "windows-2022", "cc": "C:\\msys64\\mingw64\\bin\\gcc.exe"},
+          {"os": "macos-14", "cc": "cc"}
+        ]}
+      },
+      "env": {"CC": "${{ matrix.cc }}"},
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"name": "Inventory actual host (M0 prerequisites may be blocked)", "run": "python scripts/foundation.py doctor", "continue-on-error": true},
+        {"name": "Compile and execute bootstrap C", "run": "python scripts/foundation.py test-foundation --profile bootstrap"},
+        {"name": "Contract regression tests", "run": "python -m unittest discover -s tests/contracts -v"},
+        {"name": "Static workflow check", "run": "python scripts/foundation.py check-ci"},
+        {"name": "Preserve reports and raw logs even on failure", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "bootstrap-${{ matrix.os }}", "path": "out/", "if-no-files-found": "error"}}
+      ]
+    },
+    "m0-build-distribute": {
+      "name": "RESERVED / locked build and same-artifact distribution (task 05)",
+      "if": "${{ false }}", "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/upload-artifact@v7", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/", "if-no-files-found": "error"}}
+      ]
+    },
+    "m0-native-pages": {
+      "name": "RESERVED / measure native ARM64 architecture, kernel and page size (task 06)",
+      "if": "${{ false }}", "needs": "m0-build-distribute", "runs-on": "ubuntu-24.04-arm",
+      "steps": [
+        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/"}}
+      ]
+    },
+    "m0-qemu-page-gaps": {
+      "name": "RESERVED / full-system TCG guest for missing 4K or 64K coverage (tasks 06/07)",
+      "if": "${{ false }}", "needs": "m0-native-pages", "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/"}}
+      ]
+    },
+    "svc-scm": {
+      "name": "RESERVED / application private SCM ABI (task 11)",
+      "if": "${{ false }}", "runs-on": "windows-2022",
+      "steps": [
+        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-svc-artifacts", "path": "out/m0-svc-artifacts/"}}
+      ]
+    },
+    "svc-job": {
+      "name": "RESERVED / application private Job Object (task 12)",
+      "if": "${{ false }}", "runs-on": "windows-2022",
+      "steps": [
+        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-svc-artifacts", "path": "out/m0-svc-artifacts/"}}
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+*.py text eol=lf
+*.c text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+Makefile text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+# Preserve existing Markdown hard breaks and final spacing.
+*.md whitespace=-blank-at-eol,-blank-at-eof
