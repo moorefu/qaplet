@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent  
 **Baseline:** 总体计划 v1.4（App-first / 本地优先与原生页覆盖），2026-10-31；SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。  
-**Execution state:** BOOT-01 已实现工程入口；ENV-01 复用 Ubuntu-22.04，完成工具、磁盘、目录、下载/解包/摘要及系统 C 环境验收（见[记录](wsl2-environment-validation.md)）。尚未下载产品依赖或执行产品探针；本文不声明任何产品宿主或 Runtime 能力已验证，其余 M0 任务保持待验。
+**Execution state:** BOOT-01 / ENV-01 已完成工程入口与现有 Ubuntu-22.04 环境验收（见[记录](wsl2-environment-validation.md)）。BOOT-02 已锁定并在 Windows / WSL 验证实际 QuickJS 提交，见[源码记录](quickjs-source-validation.md)。官方 Nightly 的原始 GitHub 制品已下载并比对上游摘要，BOOT-03 正在进行安全缓存与编译器测量。尚未执行产品 APE 探针，不声明任何产品宿主或 Runtime 能力已验证。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
 
 **Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。

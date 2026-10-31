@@ -81,3 +81,9 @@
 2026-10-31：保留已有的编译器路径检查、真实 matrix 编译回归及显式 WSL 缺失用例；补齐 `make check` 入口、CI 静态检查前置及其顺序拒绝回归。AGENTS 增加按 Windows/WSL 诊断、编译器选择和 CI 变更触发的[开发说明](../../docs/development.md)导航，统一记录执行上下文、原始证据及 CI 查询停止条件。
 
 新增顺序回归先失败后通过；两端 `make check` 均退出 0，Windows 18 项测试通过，WSL 17 项通过、1 项 Windows 专用用例 skip，并均执行真实 C bootstrap。日志在 `out/retro/validation/`，报告分别在 `out/retro/windows/` 和 `out/retro/wsl/`。这是本地复盘改动的验证，未对这些新增改动执行新的远程 CI。
+
+### M0 输入锁实施期间的 runner 更新
+
+2026-11-01：integration 提交 `f37b0316e50f1e6b77468a64fd57b82f6f8a0030` 的 [bootstrap run 41227912983](https://github.com/moorefu/qaplet/actions/runs/41227912983) 最终为 `cancelled`。Windows、Linux x64、Linux ARM64 三个 job 为 `success`；macos-14 job `124615836616` 为 `cancelled`，没有步骤记录，不能当作本次 macOS 执行证据，也没有据此认定具体取消原因。
+
+另行核对 [GitHub 官方退役公告](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/)：macOS 14 runner 将于 2026-11-02 退役，并在此前减少容量。bootstrap 行改用当前的 `macos-15` ARM64 标签，后续产品矩阵仍须分别采集 macOS x64 与 ARM64 的实际运行身份；本次仅更新宿主调度标签，远程结果待对应新提交验证。

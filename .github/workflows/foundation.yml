@@ -13,7 +13,7 @@
           {"os": "ubuntu-24.04", "cc": "cc"},
           {"os": "ubuntu-24.04-arm", "cc": "cc"},
           {"os": "windows-2022", "cc": "gcc"},
-          {"os": "macos-14", "cc": "cc"}
+          {"os": "macos-15", "cc": "cc"}
         ]}
       },
       "env": {"CC": "${{ matrix.cc }}"},
