@@ -1,0 +1,36 @@
+{
+  "name": "Acquire official cosmocc Nightly",
+  "on": {
+    "push": {
+      "branches": ["codex/qaplet-m0-integration"],
+      "paths": [".github/workflows/acquire-nightly.yml", "scripts/nightly_toolchain.py"]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {"contents": "read"},
+  "jobs": {
+    "download": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 20,
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {
+          "name": "Fetch original Nightly bytes and measured acquisition receipt",
+          "run": "python scripts/nightly_toolchain.py download --download-to out/nightly-download/cosmocc.zip --report out/nightly-download/acquisition.json --download-timeout 900"
+        },
+        {
+          "name": "Preserve original archive and acquisition evidence",
+          "uses": "actions/upload-artifact@v7",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "cosmocc-nightly-download-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path": "out/nightly-download/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}
