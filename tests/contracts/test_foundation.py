@@ -181,6 +181,19 @@ class FoundationContract(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("compiler", report["reason"])
 
+    def test_ci_rejects_static_checks_after_compilation(self):
+        project = self.copy_project()
+        path = project / ".github/workflows/foundation.yml"
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+        steps = workflow["jobs"]["bootstrap"]["steps"]
+        check = next(step for step in steps if step.get("run") == "python scripts/foundation.py check-ci")
+        steps.remove(check)
+        steps.append(check)
+        path.write_text(json.dumps(workflow), encoding="utf-8")
+        result, report = self.run_cli("check-ci")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("precede", report["reason"])
+
     def test_changed_output_is_a_failure(self):
         project = self.copy_project()
         source = project / "tests/native/foundation_smoke.c"

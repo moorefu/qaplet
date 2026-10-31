@@ -104,6 +104,12 @@ def check_workflow(path):
     }
     if {step["run"] for step in steps if "run" in step} != allowed_runs:
         raise ValueError("CI must invoke the shared local entry points")
+    run_order = [step["run"] for step in steps if "run" in step]
+    check_index = run_order.index("python scripts/foundation.py check-ci")
+    for run in ("python scripts/foundation.py test-foundation --profile bootstrap",
+                "python -m unittest discover -s tests/contracts -v"):
+        if check_index > run_order.index(run):
+            raise ValueError("Static workflow check must precede bootstrap compilation and contract tests")
     for step in steps:
         if step.get("continue-on-error") and step.get("run") != "python scripts/foundation.py doctor":
             raise ValueError("Only blocked doctor inventory may continue on error")

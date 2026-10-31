@@ -5,6 +5,7 @@
 本地开发需要 Python 3.10+、GNU Make，以及可执行的 GCC 或 Clang 系统 C 编译器。无需安装 Python 包；这些仅是开发依赖。
 
 ```sh
+make check              # 提交前：静态 CI 检查、合同测试和真实 C bootstrap
 make doctor             # 环境报告；前置未齐时非零退出
 make test-bootstrap     # 编译并执行真实 C 程序，成功仅代表 bootstrap
 make test-foundation    # 完整 M0 检查入口；当前因产品输入/探针未实现而退出非零

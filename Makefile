@@ -6,7 +6,7 @@ endif
 OUT ?= out
 WSL ?=
 
-.PHONY: doctor test-foundation test-bootstrap test check-ci
+.PHONY: check doctor test-foundation test-bootstrap test check-ci
 doctor:
 	"$(PYTHON)" scripts/foundation.py doctor --cc "$(CC)" $(if $(WSL),--wsl "$(WSL)",) --report "$(OUT)/doctor.json"
 
@@ -21,3 +21,5 @@ test:
 
 check-ci:
 	"$(PYTHON)" scripts/foundation.py check-ci --report "$(OUT)/check-ci.json"
+
+check: check-ci test test-bootstrap

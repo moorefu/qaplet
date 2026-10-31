@@ -71,3 +71,13 @@
 最终 Windows 普通用户上下文 17/17 测试通过；WSL 16 项通过、1 项 Windows 专用用例 skip；CI 静态检查和 Python 编译检查通过。日志及退出码在 `out/ci-fix/validation/`。修改后的远程 job 尚未运行，此处不声称远程已修复通过，也不把三个成功的系统 C bootstrap 计为产品 APE/QuickJS 或完整 M0 成绩。
 
 本次修复另行按 `ad50935` 基准执行两路 code-review：Standards 0 项发现，Spec 0 项发现；待远程复跑的验证限制已明确保留。
+
+### 远程修复核验完成
+
+2026-10-31 已按提交 SHA 核对：`9e9075e44ccc1a6450389fead192756fa17aeca6` 对应 [run 41204947224](https://github.com/moorefu/qaplet/actions/runs/41204947224)，status 为 completed，conclusion 为 success。这关闭上述“待远程复跑”项，确认范围仍为 bootstrap。
+
+### 复盘固化
+
+2026-10-31：保留已有的编译器路径检查、真实 matrix 编译回归及显式 WSL 缺失用例；补齐 `make check` 入口、CI 静态检查前置及其顺序拒绝回归。AGENTS 增加按 Windows/WSL 诊断、编译器选择和 CI 变更触发的[开发说明](../../docs/development.md)导航，统一记录执行上下文、原始证据及 CI 查询停止条件。
+
+新增顺序回归先失败后通过；两端 `make check` 均退出 0，Windows 18 项测试通过，WSL 17 项通过、1 项 Windows 专用用例 skip，并均执行真实 C bootstrap。日志在 `out/retro/validation/`，报告分别在 `out/retro/windows/` 和 `out/retro/wsl/`。这是本地复盘改动的验证，未对这些新增改动执行新的远程 CI。

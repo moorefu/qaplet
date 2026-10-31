@@ -20,10 +20,10 @@
       "steps": [
         {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
         {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"name": "Static workflow check", "run": "python scripts/foundation.py check-ci"},
         {"name": "Inventory actual host (M0 prerequisites may be blocked)", "run": "python scripts/foundation.py doctor", "continue-on-error": true},
         {"name": "Compile and execute bootstrap C", "run": "python scripts/foundation.py test-foundation --profile bootstrap"},
         {"name": "Contract regression tests", "run": "python -m unittest discover -s tests/contracts -v"},
-        {"name": "Static workflow check", "run": "python scripts/foundation.py check-ci"},
         {"name": "Preserve reports and raw logs even on failure", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "bootstrap-${{ matrix.os }}", "path": "out/", "if-no-files-found": "error"}}
       ]
     },
