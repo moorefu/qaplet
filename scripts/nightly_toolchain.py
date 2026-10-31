@@ -18,7 +18,7 @@ import re
 from urllib.request import getproxies
 
 from evidence import read_json
-from foundation import ROOT, command, host_facts, now, sha256
+from foundation import ROOT, case_record, command, host_facts, now, sha256
 
 
 NIGHTLY_URL = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
@@ -45,11 +45,13 @@ def safe_name(name):
 
 def validate_lock(lock):
     try:
-        if lock["schema_version"] != 1 or lock["kind"] != "cosmocc-nightly":
+        if type(lock["schema_version"]) is not int or lock["schema_version"] != 1 or lock["kind"] != "cosmocc-nightly":
             raise ValueError("unsupported schema/kind")
         source = lock["source"]
         if source["kind"] not in {"official-nightly", "local-import"}:
             raise ValueError("unknown source kind")
+        if not isinstance(source["url"], str) or not isinstance(source["retrieved_at"], str):
+            raise ValueError("source URL/retrieval timestamp must be strings")
         if source["kind"] == "official-nightly" and source["url"] != NIGHTLY_URL:
             raise ValueError("official Nightly URL differs")
         if source["kind"] == "local-import" and not source["url"].startswith("file:"):
@@ -61,10 +63,9 @@ def validate_lock(lock):
             digest = identity["sha256"]
             if not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest) or len(set(digest)) == 1:
                 raise ValueError("missing, malformed or placeholder SHA-256")
-            if type(identity["size_bytes"]) is not int or identity["size_bytes"] <= 0:
-                # Empty non-compiler files are valid ZIP members.
-                if identity not in lock["files"] or identity["size_bytes"] != 0:
-                    raise ValueError("invalid measured length")
+            size = identity["size_bytes"]
+            if type(size) is not int or size < 0 or (size == 0 and identity not in lock["files"]):
+                raise ValueError("invalid measured length")
         if [tool["path"] for tool in lock["tools"]] != list(TOOLS):
             raise ValueError("required compiler identities differ")
         for tool in lock["tools"]:
@@ -189,7 +190,8 @@ def import_receipt(args, identity):
             raise ValueError("archive length/SHA-256 differs from acquisition receipt")
         if receipt["source"]["kind"] != "official-nightly" or receipt["source"]["url"] != NIGHTLY_URL:
             raise ValueError("receipt source is not the official Nightly channel")
-        if not any(item["exit_code"] == 0 and not item["timed_out"] and item["argv"][-1] == NIGHTLY_URL
+        if not any(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False
+                   and isinstance(item["argv"], list) and item["argv"] and item["argv"][-1] == NIGHTLY_URL
                    for item in receipt["commands"]):
             raise ValueError("receipt has no successful official HTTPS command")
         return {**receipt["source"], "acquisition_report_sha256": sha256(args.acquisition_report)}
@@ -208,7 +210,9 @@ def acquire(args, report, directory):
         raise Unavailable("No existing lock to bump; use explicit fetch")
     if args.operation == "bump":
         validate_lock(read_json(args.lock))
-    if not args.archive and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None:
+        report["previous_lock_sha256"] = sha256(args.lock)
+    official_input = not args.archive or args.acquisition_report or (locked and locked["source"]["kind"] == "official-nightly")
+    if official_input and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None:
         raise Unavailable("WSL download requires explicit --backing-dir for the VHD physical volume (for this machine /mnt/c)")
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     check_space(args, report, args.min_free_bytes)
@@ -275,13 +279,13 @@ def resolve(args, report, directory):
         raise Unavailable("Nightly lock is missing; run explicit fetch")
     lock = read_json(args.lock)
     validate_lock(lock)
+    if lock["source"]["kind"] != "official-nightly" and not args.allow_local_import:
+        raise ValueError("Local-import lock is not official Nightly; fixture use requires --allow-local-import")
     cache = args.cache_dir / lock["archive"]["sha256"]
     check_cache(lock, cache)
     measured = measure_tools(cache / "tree", directory, report, args.timeout)
     if measured != lock["tools"]:
         raise ValueError("Compiler identity/version differs from locked measurements")
-    if lock["source"]["kind"] != "official-nightly" and not args.allow_local_import:
-        raise ValueError("Local-import lock is not official Nightly; fixture use requires --allow-local-import")
     return lock, cache / "tree"
 
 
@@ -308,10 +312,19 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
     report = {"report_kind": "nightly-toolchain", "schema_version": 1,
+              "report_id": directory.name, "m0_core_status": "not_run",
               "started_at": now(), "finished_at": None, "host": host_facts(),
               "status": "not_run", "reason": "", "operation": args.operation,
-              "source": {"script_sha256": sha256(Path(__file__))}, "commands": [], "toolchain": None,
+              "implementation": {"script_sha256": sha256(Path(__file__))},
+              "source": None, "ci": None, "qemu": None, "commands": [], "toolchain": None,
               "lock_path": str(args.lock.resolve()), "cache_root": str(args.cache_dir.resolve())}
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        report["ci"] = {key: os.environ.get(value) for key, value in {
+            "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT",
+            "workflow": "GITHUB_WORKFLOW", "commit": "GITHUB_SHA",
+            "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS",
+            "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion",
+        }.items()}
     try:
         if args.operation == "download":
             if not args.download_to or args.download_to.exists():
@@ -340,6 +353,15 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
+    report["cases"] = [case_record("nightly." + args.operation, report["status"], report["reason"],
+        started_at=report["started_at"], finished_at=report["finished_at"],
+        commands=report["commands"], toolchain=report["toolchain"],
+        expected={"official_url": NIGHTLY_URL, "operation": args.operation},
+        actual={key: report[key] for key in ("downloaded_archive", "resolved_path") if key in report},
+        artifact=({**report["downloaded_archive"], "path": report.get("download_path"), "kind": "cosmocc-original-zip"}
+                  if "downloaded_archive" in report else None),
+        exit_code=(report["commands"][-1]["exit_code"] if report["commands"] else None),
+        timeout_seconds=args.timeout)]
     write_json(args.report, report)
     if report["status"] == "pass" and args.operation == "path":
         print(report["resolved_path"])

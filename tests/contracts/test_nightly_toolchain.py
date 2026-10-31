@@ -2,6 +2,7 @@
 """Nightly input CLI contracts; fixtures never count as official toolchains."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -24,21 +25,22 @@ class NightlyToolchainContract(unittest.TestCase):
         self.cache = self.work / "cache"
         self.output = self.work / "report.json"
 
-    def run_cli(self, operation, *args):
+    def run_cli(self, operation, *args, env=None):
+        self.output.unlink(missing_ok=True)
         completed = subprocess.run([sys.executable, str(CLI), operation,
             "--lock", str(self.lock), "--cache-dir", str(self.cache),
             "--report", str(self.output), *map(str, args)],
-            cwd=ROOT, capture_output=True, text=True, timeout=45)
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=45)
         report = json.loads(self.output.read_text(encoding="utf-8")) if self.output.exists() else None
         return completed, report
 
-    def archive(self, name="fixture.zip", extra=None):
+    def archive(self, name="fixture.zip", extra=None, executable=True):
         archive = self.work / name
         with zipfile.ZipFile(archive, "w") as bundle:
             for tool in ("cosmocc", "x86_64-linux-cosmo-gcc", "aarch64-linux-cosmo-gcc"):
                 entry = zipfile.ZipInfo("bin/" + tool)
                 entry.create_system = 3
-                entry.external_attr = 0o100755 << 16
+                entry.external_attr = (0o100755 if executable else 0o100644) << 16
                 bundle.writestr(entry, "#!/bin/sh\nprintf 'fixture compiler 1.0\\n'\n")
             bundle.writestr("include/fixture.h", "/* synthetic CLI fixture, not Cosmopolitan */\n")
             if extra:
@@ -50,15 +52,23 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertEqual(completed.returncode, 2, completed.stderr)
         self.assertEqual(report["status"], "blocked")
         self.assertIn("lock", report["reason"].lower())
+        self.assertEqual(report["cases"][0]["case_id"], "nightly.verify")
+        self.assertEqual(report["cases"][0]["status"], "blocked")
+        self.assertEqual(report["m0_core_status"], "not_run")
         self.assertFalse(self.cache.exists())
 
     def test_malformed_lock_cannot_select_a_path_outside_the_cache(self):
-        self.lock.write_text(json.dumps({"archive": {"sha256": "../../foreign", "size_bytes": 1}}), encoding="utf-8")
-        completed, report = self.run_cli("verify")
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-        self.assertIn("lock", report["reason"].lower())
-        self.assertEqual(report["commands"], [])
-        self.assertFalse(self.cache.exists())
+        malformed = [{"archive": {"sha256": "../../foreign", "size_bytes": 1}},
+                     {"schema_version": 1, "kind": "cosmocc-nightly", "source": {"kind": "local-import", "url": 17}}]
+        for value in malformed:
+            with self.subTest(lock=value):
+                self.lock.write_text(json.dumps(value), encoding="utf-8")
+                completed, report = self.run_cli("verify")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIsNotNone(report, completed.stderr)
+                self.assertIn("lock", report["reason"].lower())
+                self.assertEqual(report["commands"], [])
+                self.assertFalse(self.cache.exists())
 
     def test_insufficient_disk_space_blocks_acquisition_before_tools_run(self):
         completed, report = self.run_cli("fetch", "--archive", self.archive(),
@@ -71,7 +81,8 @@ class NightlyToolchainContract(unittest.TestCase):
     def test_import_cannot_claim_official_origin_from_an_incomplete_receipt(self):
         receipt = self.work / "receipt.json"
         receipt.write_text('{"status":"pass","source":{"kind":"official-nightly"}}', encoding="utf-8")
-        completed, report = self.run_cli("fetch", "--archive", self.archive(), "--acquisition-report", receipt)
+        completed, report = self.run_cli("fetch", "--archive", self.archive(), "--acquisition-report", receipt,
+                                         "--backing-dir", self.work)
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertIn("receipt", report["reason"].lower())
         self.assertFalse(self.lock.exists())
@@ -98,12 +109,28 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertTrue(Path(completed.stdout.strip()).joinpath("bin/cosmocc").is_file())
 
     @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
+    def test_ordinary_consumers_refuse_local_candidates_before_running_tools(self):
+        completed, _ = self.run_cli("fetch", "--archive", self.archive())
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        completed, report = self.run_cli("path")
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(report["commands"], [])
+        self.assertEqual(completed.stdout, "")
+
+    @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
     def test_explicit_fetch_restores_the_locked_cache_without_changing_the_lock(self):
         archive = self.archive()
         completed, _ = self.run_cli("fetch", "--archive", archive)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         original = self.lock.read_bytes()
         self.cache.rename(self.work / "old-cache")
+        completed, report = self.run_cli("verify", "--allow-local-import")
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(report["commands"], [])
+        completed, report = self.run_cli("fetch", "--archive", self.archive("drift.zip", ("drift", "new bytes")))
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(self.lock.read_bytes(), original)
+        self.assertEqual(report["commands"], [])
         completed, report = self.run_cli("fetch", "--archive", archive, "--allow-local-import")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(self.lock.read_bytes(), original)
@@ -126,6 +153,59 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertEqual(report["commands"], [])
         self.assertEqual(completed.stdout, "")
+
+    @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
+    def test_bump_preserves_previous_cache_and_reports_previous_lock_identity(self):
+        completed, report = self.run_cli("fetch", "--archive", self.archive())
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        previous_tree = Path(report["resolved_path"])
+        previous_lock = self.lock.read_bytes()
+        old_lock = self.work / "previous.lock.json"
+        old_lock.write_bytes(previous_lock)
+        completed, report = self.run_cli("bump", "--archive", self.archive("next.zip", ("include/new.h", "new")))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(report["previous_lock_sha256"], hashlib.sha256(previous_lock).hexdigest())
+        self.assertNotEqual(Path(report["resolved_path"]), previous_tree)
+        completed, report = self.run_cli("verify", "--lock", old_lock, "--allow-local-import")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
+    def test_failed_candidates_leave_existing_lock_and_cache_intact(self):
+        good = self.archive()
+        completed, report = self.run_cli("fetch", "--archive", good)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        original = self.lock.read_bytes()
+        truncated = self.work / "truncated.zip"
+        truncated.write_bytes(good.read_bytes()[:20])
+        link = zipfile.ZipInfo("bad-link")
+        link.create_system = 3
+        link.external_attr = 0o120777 << 16
+        candidates = [truncated, self.archive("escape.zip", ("../escaped", "outside")),
+                      self.archive("symlink.zip", (link, "../../outside")),
+                      self.archive("nonexecutable.zip", executable=False)]
+        for candidate in candidates:
+            with self.subTest(candidate=candidate.name):
+                completed, report = self.run_cli("bump", "--archive", candidate)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertEqual(self.lock.read_bytes(), original)
+                self.assertFalse((self.cache / "escaped").exists())
+                completed, report = self.run_cli("verify", "--allow-local-import")
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    @unittest.skipIf(os.name == "nt", "Network boundary fixture is a POSIX executable")
+    def test_network_failure_is_blocked_and_retains_raw_failure_logs(self):
+        boundary = self.work / "bin"
+        boundary.mkdir()
+        curl = boundary / "curl"
+        curl.write_text("#!/bin/sh\necho deliberate-network-outage >&2\nexit 7\n", encoding="utf-8")
+        curl.chmod(0o755)
+        env = {**os.environ, "PATH": str(boundary)}
+        completed, report = self.run_cli("fetch", "--backing-dir", self.work, env=env)
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(report["commands"][0]["exit_code"], 7)
+        self.assertIn("deliberate-network-outage", Path(report["commands"][0]["stderr_log"]).read_text())
+        self.assertFalse(self.lock.exists())
+        self.assertEqual(list(self.cache.iterdir()), [])
 
 
 if __name__ == "__main__":
