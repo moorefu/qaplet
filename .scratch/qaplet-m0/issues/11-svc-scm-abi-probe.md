@@ -8,6 +8,8 @@
 
 **Execution prerequisites:** 本地可丢弃Windows VM优先用于探索/调试；CI托管Windows临时VM持续回归。分别确认权限、系统身份和清理条件；不在普通开发宿主静默安装服务，不在CI内再嵌套VM。
 
+**Execution override（2026-11-01）：** 用户明确要求“直接使用本机”，本轮允许在当前 Windows 开发宿主测试唯一命名的临时服务；先测权限，限定操作对象、时限和清理范围。权限不足须保留 blocked 和原始错误，不冒称隔离 VM 验证。见[父规格执行更新](../spec.md)。
+
 ## Goal
 
 维护者知道锁定Nightly能否通过应用私有薄桥接接入真实Windows SCM，并有可复现结果。
