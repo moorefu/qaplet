@@ -2,14 +2,14 @@
 
 **Status:** ready-for-agent  
 **Baseline:** 总体计划 v1.4（App-first / 本地优先与原生页覆盖），2026-10-31；SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。  
-**Execution state:** BOOT-01 已实现工程入口并在 Windows/WSL 执行系统 C bootstrap 和合同测试；尚未下载产品依赖或执行产品探针。本文不声明任何产品宿主或 Runtime 能力已验证；其余 M0 任务保持待验。
+**Execution state:** BOOT-01 已实现工程入口；ENV-01 复用 Ubuntu-22.04，完成工具、磁盘、目录、下载/解包/摘要及系统 C 环境验收（见[记录](wsl2-environment-validation.md)）。尚未下载产品依赖或执行产品探针；本文不声明任何产品宿主或 Runtime 能力已验证，其余 M0 任务保持待验。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
 
 ## Problem Statement
 
 Qaplet 尚没有可执行工程、锁定构建输入或新项目的跨平台运行证据。后续 Runtime、Node API、SDK 和应用交付均依赖 APE/工具链与底层系统行为的可行性。需要以有限的原生探针建立可追溯的地基，并让服务应用的专有 ABI 风险独立于 Core。
 
-当前环境核查已确认 Windows x64 与系统 C/构建工具可用，Git main 尚无提交；WSL2 缺少 kernel 和发行版，不能作为现有 Linux 环境。GitHub远程仓库/CI尚未接入；Linux ARM64优先原生runner并用QEMU补缺，SCM/Job本地隔离VM探索、托管Windows VM持续回归；页大小尚未实测。此清单是规划时事实，不是产品运行成绩。
+规划时曾因旧入口和受限进程观测判断 WSL 缺 kernel/发行版。实施时在普通用户上下文确认现有 Ubuntu-22.04 为 WSL2 Linux x64/4096 字节页，ENV-01 完整验收已通过。BOOT-01 已有提交及首次远程 bootstrap 结果；详见[环境记录](environment-check.md)与[CI 记录](foundation-validation.md)。Linux ARM64仍优先原生runner并用QEMU补缺，SCM/Job本地隔离VM探索、托管Windows VM持续回归；环境/bootstrap 结果不是产品运行成绩。
 
 ## Solution
 
@@ -89,7 +89,7 @@ Core基线保持Linux x64、Windows x64、macOS x64、macOS ARM64、Linux ARM64 
 
 **服务应用：** SCM/Job的真实探索优先本地可丢弃Windows VM，普通Windows宿主不静默安装测试服务。CI直接使用托管Windows临时VM验证基础API，无需嵌套Windows VM。权限、既有Job约束、超时、清理及OS状态都要实测；重启/自启动、交互桌面或特殊策略用对应可控VM。
 
-**当前事实：** 本机WSL2缺内核和发行版，不能获取WSL页大小。官方ubuntu-24.04-arm镜像清单记录了内核版本，未记录页大小；本次没有为探索触发CI，原生runner页大小保持unknown，首个真实集成job会记录它。资源未就绪时相关验收保持待验，六类目标不缩减。
+**实施更新：** 本机 Ubuntu-22.04 的 WSL2 Linux x64 环境已验收，页大小实测 4096；此结果不替代 ARM64 页配置或产品启动验证。ARM64 产品覆盖仍须由对应任务采集真实页大小及制品身份。资源未就绪时相关验收保持待验，六类目标不缩减。
 
 ### 依赖与推进
 
@@ -111,7 +111,7 @@ M0 Core完成必须满足其全部门槛；M0-SVC结果不进入Core阻断集合
 
 ### Completion criteria
 
-- [ ] 基础工程、MIT、真实WSL2构建环境及环境报告就绪。
+- [x] 基础工程、MIT、真实WSL2构建环境及环境报告就绪（01、02）。
 - [ ] 实际QuickJS源码与Nightly输入已锁定，provenance/补丁/许可可核验，无伪造占位值。
 - [ ] Hello和最小eval fat APE可构建，slice/header、构建命令和artifact身份齐备。
 - [ ] 六类Core目标有实际启动/eval证据；Linux ARM64优先使用原生页覆盖，QEMU仅补缺失组合，native/emulated-system明确，摘要一致。
@@ -126,7 +126,7 @@ M0 Core完成必须满足其全部门槛；M0-SVC结果不进入Core阻断集合
 
 ## Further Notes
 
-- 当前仅完成规划与环境只读核查。Git仓库已有main但无提交；许可证文件、构建工具链、CI和探针均由后续任务实现。
+- 规划完成后的实施状态：01、02 已完成基础工程、MIT 和 WSL2 环境验收；产品构建工具链和 probe 仍待后续任务，详细结果以任务记录为准。
 - 参考SHA、历史TLS版本说明和计划中的示例命令不是当前验证事实；实施时获取并记录真实输入。
 - 服务ABI发现失败可交付最小复现和独立修复建议，能力保持failed/unavailable；本地隔离VM/托管runner或所需权限不可用则相关任务尚未执行，不能假装已完成可行性调查。
 - 后续阶段只在[索引](README.md)保留里程碑；总体计划继续作为背景，不在本轮重写。

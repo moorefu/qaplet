@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts" / "foundation.py"
+LINUX_ENVIRONMENT_TOOLS = (sys.platform == "linux" and platform.machine() == "x86_64"
+                           and all(shutil.which(tool) for tool in
+                                   ("make", "cc", "git", "curl", "tar", "gzip", "xz", "unzip", "zip", "sha256sum")))
 
 
 class FoundationContract(unittest.TestCase):
@@ -21,9 +25,9 @@ class FoundationContract(unittest.TestCase):
         self.output = Path(self.work.name) / "report.json"
         self.cli = CLI
 
-    def run_cli(self, *args, env=None):
+    def run_cli(self, *args, env=None, command_prefix=()):
         result = subprocess.run(
-            [sys.executable, str(self.cli), *args, "--report", str(self.output)],
+            [*command_prefix, sys.executable, str(self.cli), *args, "--report", str(self.output)],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=90,
         )
         report = json.loads(self.output.read_text(encoding="utf-8")) if self.output.is_file() else None
@@ -61,6 +65,89 @@ class FoundationContract(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertEqual(report["status"], "blocked")
         self.assertIn("compiler", report["cases"][0]["reason"])
+
+    def test_environment_missing_tools_cannot_pass(self):
+        env = dict(os.environ, PATH=self.work.name)
+        result, report = self.run_cli("test-environment", "--build-dir", self.work.name, env=env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(report["scope"], "environment")
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["m0_core_status"], "not_run")
+        self.assertTrue(any(c["status"] == "blocked" for c in report["cases"]))
+
+    @unittest.skipUnless(sys.platform == "linux" and platform.machine() == "x86_64", "Linux x64 environment acceptance")
+    def test_environment_insufficient_disk_is_blocked_without_downloading(self):
+        result, report = self.run_cli("test-environment", "--build-dir", self.work.name,
+                                      "--min-free-bytes", str(10**30))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        disk = next(c for c in report["cases"] if c["case_id"] == "environment.disk")
+        self.assertEqual(disk["status"], "blocked")
+        self.assertFalse(any("curl" in Path(cmd["argv"][0]).name
+                             for c in report["cases"] for cmd in c["commands"]
+                             if "--output" in cmd["argv"]))
+
+    def test_environment_unwritable_build_directory_keeps_blocked_evidence(self):
+        invalid = Path(self.work.name) / "regular-file"
+        invalid.write_text("not a directory", encoding="utf-8")
+        result, report = self.run_cli("test-environment", "--build-dir", str(invalid))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["cases"][0]["case_id"], "environment.build-directory")
+
+    def test_bootstrap_report_cannot_certify_environment_acceptance(self):
+        result, report = self.run_cli("test-foundation", "--profile", "bootstrap")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report["scope"] = "environment"
+        forged = Path(self.work.name) / "incomplete-environment.json"
+        forged.write_text(json.dumps(report), encoding="utf-8")
+        result, validation = self.run_cli("validate-report", "--input-report", str(forged))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("missing required acceptance cases", validation["reason"])
+
+    @unittest.skipUnless(LINUX_ENVIRONMENT_TOOLS, "Requires Linux x64 environment tools")
+    def test_environment_execution_permission_denied_is_blocked(self):
+        if not shutil.which("unshare") or not shutil.which("mount"):
+            self.skipTest("Requires unprivileged mount namespace tools")
+        # The noexec bind mount exists only in the child's private user/mount namespace.
+        prefix = ["unshare", "--user", "--map-root-user", "--mount", "sh", "-c",
+                  'mount --bind "$1" "$1" && mount -o remount,bind,noexec "$1" && shift && exec "$@"',
+                  "qaplet-noexec", self.work.name]
+        setup = subprocess.run([*prefix, "true"], capture_output=True, text=True, timeout=10)
+        if setup.returncode:
+            self.skipTest("Unprivileged noexec mount namespace unavailable")
+        result, report = self.run_cli("test-environment", "--build-dir", self.work.name,
+                                      "--min-free-bytes", "1", command_prefix=prefix)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        access = next(c for c in report["cases"] if c["case_id"] == "environment.access.build")
+        self.assertEqual(access["status"], "blocked")
+        self.assertIsNone(access["commands"][0]["exit_code"])
+
+    @unittest.skipUnless(LINUX_ENVIRONMENT_TOOLS, "Requires Linux x64 environment tools")
+    def test_environment_failed_https_download_cannot_pass(self):
+        result, report = self.run_cli("test-environment", "--build-dir", self.work.name,
+                                      "--download-url", "https://127.0.0.1:1/env01")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        download = next(c for c in report["cases"] if c["case_id"] == "environment.https-download")
+        self.assertEqual(download["status"], "fail")
+        self.assertNotEqual(download["exit_code"], 0)
+        smoke = next(c for c in report["cases"] if c["case_id"] == "bootstrap.c-smoke")
+        self.assertEqual(smoke["status"], "pass")
+        self.assertEqual(smoke["actual"]["page_size"], report["host"]["page_size"])
+
+    @unittest.skipUnless(LINUX_ENVIRONMENT_TOOLS, "Requires Linux x64 environment tools")
+    def test_environment_failed_extraction_cannot_pass(self):
+        actual_tar = shutil.which("tar")
+        wrapper = Path(self.work.name) / "tar"
+        wrapper.write_text("#!" + sys.executable + "\nimport os,sys\n"
+                           "if '-xzf' in sys.argv: sys.exit(7)\n"
+                           f"os.execv({actual_tar!r}, [{actual_tar!r}, *sys.argv[1:]])\n", encoding="utf-8")
+        wrapper.chmod(0o700)
+        result, report = self.run_cli("test-environment", "--build-dir", self.work.name,
+                                      env=dict(os.environ, PATH=self.work.name + os.pathsep + os.environ["PATH"]))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        extracted = next(c for c in report["cases"] if c["case_id"] == "environment.tar-extract")
+        self.assertEqual(extracted["status"], "fail")
+        self.assertEqual(extracted["exit_code"], 7)
 
     def test_doctor_measures_host_and_does_not_dump_credentials(self):
         env = dict(os.environ, PATH=self.work.name, GITHUB_TOKEN="qaplet-do-not-print-token")

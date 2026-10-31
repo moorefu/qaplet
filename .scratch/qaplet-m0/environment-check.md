@@ -56,3 +56,7 @@ getconf PAGESIZE
 本次没有安装或更新 WSL。`out/doctor-store-wsl.json` 保存普通用户上下文的完整命令、版本与原始日志定位；`out/wsl/bootstrap.json` 保存真实 Linux C 构建/运行证据。它们是未纳入 Git 的本机生成物，可通过 `make doctor`、`make test-bootstrap OUT=out/wsl` 重建。
 
 这纠正了规划时“缺 kernel/发行版”的判断；任务 02 的完整工具/磁盘/下载与解包合同仍需单独验收，本任务不关闭任务 02，也不将 WSL x64 4K 计入 ARM64 目标。未运行产品 APE、QuickJS 或远程 CI。
+
+## ENV-01 实施验收：2026-10-31
+
+复用 Ubuntu-22.04，补齐 unzip/zip；实际工具版本、HTTPS 下载、tar/ZIP 解包与摘要比对、源码及 ext4 构建目录访问、磁盘（含 C 盘 VHD backing 空间）和系统 C 冒烟均通过，新的 login shell 已复核。完整命令、失败历史、指纹与内容身份见[ENV-01 验收记录](wsl2-environment-validation.md)，机器可读摘要见[本地覆盖记录](local-coverage.json)。环境覆盖为 Linux/x86_64/4096/native，不计产品 APE 或 ARM64 验收。

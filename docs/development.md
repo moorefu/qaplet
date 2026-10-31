@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `make check` | 复用下列检查及其报告 | 提交前串联 CI 静态检查、合同回归、真实 C bootstrap |
 | `make doctor` | `out/doctor.json` | 环境盘点；当前因 M0 前置未齐整体 blocked |
+| `make test-environment` | `out/environment.json` | ENV-01 Linux x64 工具、磁盘、目录、HTTPS/解包/摘要、系统 C 验收；须显式指定下载 URL |
 | `make test-bootstrap` | `out/bootstrap.json` | 系统 C 编译/执行通过，不是 APE 或 QuickJS 成绩 |
 | `make test-foundation` | `out/m0.json` | 当前始终非通过，列出输入、制品、六类宿主与必需探针缺口 |
 | `make test` | unittest 输出 | 命令合同回归通过，不是产品矩阵 |
@@ -26,7 +27,7 @@ python scripts/foundation.py validate-report --input-report out/bootstrap.json
 
 ## 身份与原始证据
 
-报告 v1 的公共上下文由根级 `source`、`host`、`ci`、`qemu` 供每个 case 继承；不同 case 的编译器、构建与制品身份在各自记录中保存。
+报告 v2 的公共上下文由根级 `source`、`host`、`ci`、`qemu` 供每个 case 继承；不同 case 的编译器、构建与制品身份在各自记录中保存。v2 新增 `environment` scope 及其通过时的必需验收清单；历史 v1 报告须用对应旧版本验证器验证，当前验证器拒绝混用版本。
 
 | 字段 | 内容 |
 | --- | --- |
@@ -51,6 +52,27 @@ Windows 默认优先使用已安装的 `%ProgramFiles%\WSL\wsl.exe`，再回退 
 2026-10-31 的实际核验发现，受限 agent 进程与普通用户进程对 WSL 的可见结果不同：前者可能返回无发行版/拒绝访问，后者可进入 Ubuntu-22.04。doctor 因而只报告当前执行上下文的观测，保留每个入口的日志；不因 `wsl.exe` 存在就判定环境就绪，也不将受限查询失败外推为系统未安装。具体复核见[环境记录](../.scratch/qaplet-m0/environment-check.md)。
 
 Linux 下可直接在仓库根目录运行相同 make 入口。Windows 工作目录 `D:\Workspace\dairn\qaplet` 在此次 WSL 中映射为 `/mnt/d/Workspace/dairn/qaplet`，不假定其他机器盘符相同。ARM64 4K/64K 与此 WSL x64 4K 分开计数。
+
+## ENV-01 环境验收与目录
+
+复用现有 Ubuntu-22.04；不需要再次安装 WSL。以普通 Linux 用户在上述源码目录运行：
+
+```sh
+make test-environment OUT=out/env01/wsl-final \
+  ENV_BACKING_DIR=/mnt/c \
+  ENV_DOWNLOAD_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/dists/jammy/InRelease
+python3 scripts/foundation.py validate-report \
+  --input-report out/env01/wsl-final/environment.json \
+  --report out/env01/wsl-final/validated.json
+```
+
+此 URL 仅作 HTTPS 下载探针，保存实际长度/摘要，不作为产品依赖锁。省略 URL 会得到 blocked；不自动联网。GitHub TLS 失败和软件源超时等原始记录也保留，不能由另一端点通过推断所有下载站点可达。
+
+默认构建与逐命令证据放在 Linux 用户的 `~/.cache/qaplet/environment/<uuid>/`（此次为 ext4），JSON 报告放在 Windows 可编辑源码树的 `OUT` 下。可用 `ENV_BUILD_DIR` 指定其他构建根目录；构建目录不可创建时在报告旁保留 blocked 证据。tar.gz 与 ZIP 对仓库 C 源码做真实创建、解包和 SHA-256 往返验证；HTTPS 下载另作独立用例。系统 C 输出的架构与 sysconf 页大小须与宿主测量一致。新 login shell 重新检查工具与两个目录；这不要求终止发行版或重启机器。
+
+验收默认要求源码盘、构建文件系统以及显式提供的 VHD 所在盘各至少 2 GiB 可用空间；CLI `--min-free-bytes` 可提高阈值。这是小型环境探针的下限，后续 Nightly/QuickJS/QEMU 任务应按实际归档、解包、缓存和构建峰值另算空间，不能据此保证任意产品构建容量。`ENV_BACKING_DIR` 来自实际 VHD 路径，不能从 ext4 显示的虚拟容量反推；此次 VHD 在 C 盘，所以测 `/mnt/c`。
+
+源码在 DrvFS（`/mnt/d`），构建在 ext4。两处的读写和直接执行分别实测；本次通过不表示 Windows ACL、chmod、符号链接或大小写语义完全一致。环境指纹与覆盖摘要见[ENV-01 验收记录](../.scratch/qaplet-m0/wsl2-environment-validation.md)及[本地覆盖记录](../.scratch/qaplet-m0/local-coverage.json)。WSL x64 4K 仅表示构建环境就绪，产品 APE 与 ARM64 仍未验收。
 
 ## CI skeleton
 

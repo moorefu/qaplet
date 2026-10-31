@@ -68,6 +68,16 @@ def validate_report(report, schema_path):
         raise ValueError("Passing report contains non-passing required cases")
     if report["scope"] == "m0" and report["status"] == "pass":
         raise ValueError("BOOT-01 schema cannot certify the full M0 gate")
+    if report["scope"] == "environment" and report["status"] == "pass":
+        required = {"environment.disk", "environment.uname", "environment.architecture", "environment.kernel",
+                    "environment.pages", "environment.distribution", "environment.cpu", "environment.access.source",
+                    "environment.access.build", "environment.fresh-shell", "environment.sha256", "environment.tar-create",
+                    "environment.tar-extract", "environment.tar-content", "environment.zip-create", "environment.zip-extract",
+                    "environment.zip-content", "environment.https-download", "environment.download-sha256", "bootstrap.c-smoke"}
+        required.update("environment.tool." + tool for tool in
+                        ("make", "cc", "git", "curl", "tar", "gzip", "xz", "unzip", "zip", "sha256sum", "sh", "uname", "getconf"))
+        if required - {case["case_id"] for case in cases}:
+            raise ValueError("Passing environment report is missing required acceptance cases")
 
 
 def check_workflow(path):

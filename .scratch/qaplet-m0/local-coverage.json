@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "scope": "local-environment-coverage",
+  "measured_at": "2026-10-31T15:25:03.793480+00:00",
+  "distribution": "Ubuntu-22.04",
+  "distribution_release": "22.04.5 LTS",
+  "wsl_version": "2.6.3.0",
+  "wsl_mode": 2,
+  "host": {
+    "os": "Linux",
+    "cpu": "x86_64",
+    "execution_arch": "x86_64",
+    "kernel": "6.6.87.2-microsoft-standard-WSL2",
+    "page_size": 4096,
+    "execution_mode": "native",
+    "measurement": "Python platform + OS page-size API; C case records its own execution architecture"
+  },
+  "environment_status": "pass",
+  "product_probe_status": "not_run",
+  "m0_core_status": "not_run",
+  "evidence": {
+    "path": "out/env01/wsl-final/environment.json",
+    "report_id": "d4f2e768-dfed-4595-ae4b-b72fded8606a",
+    "schema_version": 2,
+    "sha256": "8299602cd9a533a1cc68070b76946916fca0042be058af252deaceba7c9abf1c",
+    "source_sha256": "a4be2aa5b1ff14008e1aee52cbd1b0b2a7f2caa3baa4113f3e4e954e9b1a4507",
+    "evidence_directory": "/home/moore/.cache/qaplet/environment/d4f2e768-dfed-4595-ae4b-b72fded8606a",
+    "system_c_artifact": {
+      "path": "/home/moore/.cache/qaplet/environment/d4f2e768-dfed-4595-ae4b-b72fded8606a/foundation-smoke",
+      "sha256": "2f52d13231ec669f99970143e59b33cbff7d4e97f60d4dc6f2ae4f7e3c49ea7f",
+      "size_bytes": 16072,
+      "kind": "system-c-bootstrap"
+    }
+  },
+  "does_not_cover": [
+    "Core APE",
+    "QuickJS",
+    "Linux ARM64 4K",
+    "Linux ARM64 64K",
+    "macOS",
+    "QEMU",
+    "SCM",
+    "Job"
+  ]
+}

@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved
+**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -66,7 +66,7 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 已建立 MIT/第三方许可边界、共享 make/Python 入口、真实系统 C bootstrap、报告 schema 和可本地解析的 CI skeleton。原有规划表格和“当前事实”为规划时快照，最新结果以[环境复核](environment-check.md#boot-01-实施复核2026-10-31)及 [01 的实施记录](issues/01-foundation.md)为准。
 
-01 已完成实现、Windows/WSL 本地验证和两路 code-review，详见[验证与审查记录](foundation-validation.md)。其余 11 项任务仍待各自验收。
+01 已完成实现、Windows/WSL 本地验证和两路 code-review，详见[验证与审查记录](foundation-validation.md)。02 的现有 WSL2 完整环境验收已执行，见[ENV-01 记录](wsl2-environment-validation.md)和[本地覆盖](local-coverage.json)；其余 10 项任务仍待各自验收。
 
 实际发现现有 WSL2 Ubuntu-22.04 可在普通用户上下文运行，Linux x64/4096 字节页已测量；受限进程看不到同样的发行版。origin 已配置为 `moorefu/qaplet`，但本任务没有 push 或执行远程 CI。产品输入锁、APE、ARM64/macOS 产品宿主、QEMU 和 SCM/Job 探针仍未执行，完整 M0 保持未完成。
 
@@ -76,7 +76,7 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。
 
-命令、schema和probe均为待实现。具体锁值、下载摘要、主机结果和产品能力必须来自实施测量，不在规划中填造。
+BOOT-01/ENV-01 命令、schema 和环境验收已实现；产品 probe 和完整 Core 门禁仍待对应任务。具体锁值、下载摘要、主机结果和产品能力必须来自实施测量，不在规划中填造。
 
 ## 后续里程碑（本轮不生成详细spec或任务）
 

@@ -105,17 +105,17 @@ def host_facts():
 
 
 def source_identity():
-    paths = ["Makefile", "scripts/foundation.py", "scripts/evidence.py", "tests/native/foundation_smoke.c",
+    paths = ["Makefile", "scripts/foundation.py", "scripts/environment.py", "scripts/evidence.py", "tests/native/foundation_smoke.c",
              "tests/contracts/bootstrap-cases.json", "compat/foundation-report.schema.json",
              ".github/workflows/foundation.yml"]
     files = [{"path": path, "sha256": sha256(ROOT / path)} for path in paths if (ROOT / path).is_file()]
     return {"git_commit": None, "files": files,
             "sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
-            "note": "Content identity of bootstrap inputs; git revision is unknown until queried."}
+            "note": "Content identity of foundation/environment inputs; git revision is unknown until queried."}
 
 
 def new_report(scope, directory):
-    return {"schema_version": 1, "report_id": directory.name, "scope": scope,
+    return {"schema_version": 2, "report_id": directory.name, "scope": scope,
             "started_at": now(), "finished_at": None, "status": "not_run",
             "m0_core_status": "not_run", "source": source_identity(),
             "host": host_facts(), "ci": None, "qemu": None, "cases": [],
@@ -129,7 +129,7 @@ def collect_context(report, directory):
         revision = revision.strip()
         if len(revision) in {40, 64} and all(c in "0123456789abcdef" for c in revision):
             report["source"]["git_commit"] = revision
-            report["source"]["note"] = "Git revision plus current bootstrap input hashes (working tree may differ)"
+            report["source"]["note"] = "Git revision plus current foundation/environment input hashes (working tree may differ)"
     if os.environ.get("GITHUB_ACTIONS") == "true":
         # Explicit allowlist: never serialize the environment, auth, or remote URLs.
         report["ci"] = {key: os.environ.get(value) for key, value in {
@@ -289,22 +289,39 @@ def write_report(path, report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["doctor", "test-foundation", "check-ci", "validate-report"])
+    parser.add_argument("operation", choices=["doctor", "test-environment", "test-foundation", "check-ci", "validate-report"])
     parser.add_argument("--profile", choices=["bootstrap", "m0"], default="m0")
     parser.add_argument("--cc", default=os.environ.get("CC", "cc"), help="single C compiler executable (no shell/flags)")
     parser.add_argument("--wsl", help="WSL executable override; otherwise prefer the installed MSI entry over the legacy PATH wrapper")
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--input-report", type=Path, help="report for structural validation, without treating it as product execution")
+    parser.add_argument("--build-dir", type=Path, default=Path.home() / ".cache/qaplet/environment",
+                        help="environment evidence/build location; use a Linux filesystem in WSL")
+    parser.add_argument("--min-free-bytes", type=int, default=2 * 1024**3,
+                        help="minimum free bytes on source and build filesystems (default 2 GiB)")
+    parser.add_argument("--download-url", help="explicit HTTPS test download; omitted means environment acceptance is blocked")
+    parser.add_argument("--backing-dir", type=Path, help="optional mounted Windows volume containing the WSL VHD; measure its physical free space too")
     args = parser.parse_args()
     if args.timeout < 1 or args.timeout > 300:
         parser.error("--timeout must be between 1 and 300 seconds")
-    scope = args.profile if args.operation == "test-foundation" else args.operation
+    if args.min_free_bytes < 1:
+        parser.error("--min-free-bytes must be positive")
+    scope = "environment" if args.operation == "test-environment" else args.profile if args.operation == "test-foundation" else args.operation
     path = (args.report or ROOT / "out" / (scope + ".json")).resolve()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        directory = path.parent / "evidence" / str(uuid.uuid4())
-        directory.mkdir(parents=True)
+        evidence_root = args.build_dir.resolve() if args.operation == "test-environment" else path.parent / "evidence"
+        directory = evidence_root / str(uuid.uuid4())
+        build_error = None
+        try:
+            directory.mkdir(parents=True)
+        except OSError as error:
+            if args.operation != "test-environment":
+                raise
+            build_error = str(error)
+            directory = path.parent / "evidence" / str(uuid.uuid4())
+            directory.mkdir(parents=True)
         report = new_report(scope, directory)
         collect_context(report, directory)
         if args.operation == "test-foundation":
@@ -327,6 +344,13 @@ def main():
                 report["reason"] = "Required M0 inputs/artifacts/cases unavailable; BOOT-01 cannot close the full Core gate"
         elif args.operation == "doctor":
             doctor(args, report, directory)
+        elif args.operation == "test-environment":
+            if build_error:
+                report["cases"].append(case_record("environment.build-directory", "blocked", build_error))
+                report["status"], report["reason"] = "blocked", "Cannot create evidence/build directory; see case reason"
+            else:
+                from environment import inspect_environment
+                inspect_environment(args, report, directory)
         else:
             try:
                 if args.operation == "check-ci":

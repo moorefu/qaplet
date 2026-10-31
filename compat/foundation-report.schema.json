@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Qaplet foundation evidence v1",
+  "title": "Qaplet foundation evidence v2",
   "type": "object",
   "required": ["schema_version", "report_id", "scope", "started_at", "finished_at", "status", "m0_core_status", "source", "host", "ci", "qemu", "cases", "reason", "evidence_directory"],
   "properties": {
-    "schema_version": {"enum": [1]},
+    "schema_version": {"enum": [2]},
     "report_id": {"type": "string", "minLength": 1},
-    "scope": {"enum": ["doctor", "bootstrap", "m0", "check-ci", "validate-report"]},
+    "scope": {"enum": ["doctor", "environment", "bootstrap", "m0", "check-ci", "validate-report"]},
     "started_at": {"type": "string", "format": "date-time"},
     "finished_at": {"type": "string", "format": "date-time"},
     "status": {"enum": ["pass", "fail", "blocked", "not_run"]},
