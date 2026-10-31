@@ -5,6 +5,8 @@
 **Execution state:** BOOT-01 已实现工程入口；ENV-01 复用 Ubuntu-22.04，完成工具、磁盘、目录、下载/解包/摘要及系统 C 环境验收（见[记录](wsl2-environment-validation.md)）。尚未下载产品依赖或执行产品探针；本文不声明任何产品宿主或 Runtime 能力已验证，其余 M0 任务保持待验。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
 
+**Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。
+
 ## Problem Statement
 
 Qaplet 尚没有可执行工程、锁定构建输入或新项目的跨平台运行证据。后续 Runtime、Node API、SDK 和应用交付均依赖 APE/工具链与底层系统行为的可行性。需要以有限的原生探针建立可追溯的地基，并让服务应用的专有 ABI 风险独立于 Core。
