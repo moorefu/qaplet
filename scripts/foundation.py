@@ -223,8 +223,8 @@ def case_record(case_id, status, reason, **fields):
 def pending_m0_cases():
     # BOOT-01 deliberately cannot verify product inputs or close the BOOT-09 gate.
     pending = {
-        "m0.inputs.quickjs": "QuickJS source lock/provenance verifier not implemented (task 03)",
-        "m0.inputs.cosmocc": "Pinned Nightly archive/cache verifier not implemented (task 04)",
+        "m0.inputs.quickjs": "Pinned QuickJS source verifier available (task 03); this report does not import its separate cache evidence",
+        "m0.inputs.cosmocc": "Nightly acquisition/cache verifier available; a measured official lock and verified cache are required (task 04)",
         "m0.artifacts": "Hello/eval fat APE build and identities not implemented (task 05)",
         "m0.host.linux-x64": "Same-artifact Linux x64 product probe not executed (task 06)",
         "m0.host.windows-x64": "Same-artifact Windows x64 product probe not executed (task 06)",

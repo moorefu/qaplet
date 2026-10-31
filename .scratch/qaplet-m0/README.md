@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved
+**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-claimed
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -38,6 +38,8 @@
 输入锁03与04满足后构建05。05产物就绪后，06/07/08/09及11/12分别按各自资源展开；10只汇总Core结果。11与12互不依赖，也不阻断10。总体计划BOOT-04在这里拆为构建与跨宿主验收；BOOT-05拆为SCM与Job可行性。
 
 ## 资源前置与当前事实
+
+2026-11-01 实施更新：03 已完成实际 QuickJS 提交锁定、重新获取及 Windows / WSL 离线校验，见[源码验收](quickjs-source-validation.md)。04 已取得官方上游 Nightly run `41169443573` 的原始 artifact，419652152 字节，SHA-256 `f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf`；缓存/编译器验收尚在进行。WSL 已安装并实际调用 `qemu-system-aarch64` 6.2.0（Ubuntu 包 `1:6.2+dfsg-2ubuntu6.31`），尚未锁定或启动 ARM64 guest。服务探针按用户本轮确认改用当前 Windows 宿主，实际 SCM 创建权限不足，既有 Job 归属已测；详见父规格执行更新。下表保留规划时的历史状态，不替代上述新观测。
 
 | 资源 | 规划时状态 | 使用方与完成条件 |
 | --- | --- | --- |

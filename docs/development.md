@@ -74,6 +74,37 @@ python3 scripts/foundation.py validate-report \
 
 源码在 DrvFS（`/mnt/d`），构建在 ext4。两处的读写和直接执行分别实测；本次通过不表示 Windows ACL、chmod、符号链接或大小写语义完全一致。环境指纹与覆盖摘要见[ENV-01 验收记录](../.scratch/qaplet-m0/wsl2-environment-validation.md)及[本地覆盖记录](../.scratch/qaplet-m0/local-coverage.json)。WSL x64 4K 仅表示构建环境就绪，产品 APE 与 ARM64 仍未验收。
 
+## 固定输入入口（BOOT-02 / BOOT-03）
+
+QuickJS 的权威锁、原始许可和有序补丁清单位于 `third_party/quickjs/`。普通使用先显式填充固定提交缓存，再离线校验：
+
+```sh
+make quickjs-fetch OUT=out/inputs/quickjs-fetch
+make quickjs-verify OUT=out/inputs/quickjs-verify
+```
+
+`quickjs-fetch` 使用已提交的固定 commit，不解析移动 master；`quickjs-bump` 才显式重新解析官方 master 并更新锁。默认源码缓存位于 `out/quickjs/`，可用 `QUICKJS_CACHE` 指定另一目录。构建应先校验所选缓存，并在独立目录生成文件，不能修改上游源码树。源码锁验证不是编译或跨宿主验收。
+
+Nightly 入口是 `make toolchain-fetch`、`make toolchain-bump`、`make toolchain-verify`。权威锁位置为 `toolchains/cosmocc.lock.json`；只有取得真实归档并测量工具后才生成该文件，不提交占位锁。默认缓存位于当前执行用户的 `~/.cache/qaplet/toolchains/cosmocc/`，可用 `TOOLCHAIN_CACHE` 覆盖；在 WSL 中优先放 ext4，并用 CLI 的 `--backing-dir /mnt/c` 另测 VHD 所在物理盘空间。`verify` 和 `path` 完全离线；缺失缓存或身份不符时失败，不自动下载。
+
+需要分开获取与 Linux 测量时，显式运行：
+
+```sh
+python scripts/nightly_toolchain.py download \
+  --download-to out/nightly-download/cosmocc.zip \
+  --report out/nightly-download/acquisition.json
+python3 scripts/nightly_toolchain.py fetch \
+  --archive /path/to/cosmocc.zip \
+  --acquisition-report /path/to/acquisition.json \
+  --backing-dir /mnt/c --report out/inputs/nightly-fetch.json
+```
+
+接收端重新比对获取报告里的原始长度与 SHA-256，再安全解包、测量编译器和完整内容。没有成功官方获取记录的本地 ZIP 仅属于 `local-import`，默认不能作为产品工具链使用。工具链 libc 与源码 HEAD 的对应关系无法证明时保持 `unproven`，不能把下载成功当成 APE 成功。
+
+`acquire-nightly.yml` 仅在 integration 分支涉及该工作流或下载脚本的 push，以及显式手动触发时获取官方原始字节；不更新源码锁或工具链锁。它用于本地网络不可达时的获取路径，保留失败日志和归档 7 天。取回 artifact 后仍须本地校验和 Linux 工具测量。
+
+两种输入报告各自使用独立的版本化合同；现有 foundation `validate-report` 不验证它们，也不汇总这些结果关闭 M0。BOOT-09 仍须接入全部 Core 实际证据。
+
 ## CI skeleton
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；没有执行 Actions 服务端校验或 actionlint。
