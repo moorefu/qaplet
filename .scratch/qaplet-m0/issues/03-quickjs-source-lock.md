@@ -4,7 +4,7 @@
 
 **Blocked by:** [01 · 工程骨架与环境诊断](01-foundation.md)。
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Execution prerequisites:** 首次显式获取原版 Bellard QuickJS 上游的网络访问。
 
@@ -26,10 +26,10 @@
 
 ## Acceptance criteria
 
-- [ ] 提交是从官方原版上游实际解析得到；不把总体计划中的参考 SHA 当作当期最新事实。
-- [ ] 锁定后可以重新取得同一提交并验证干净状态；源码快照可追溯到实际内容。
-- [ ] 空补丁集或每个补丁的来源/摘要都可核验，不能隐含本地引擎修改。
-- [ ] 普通构建不再解析移动 HEAD 或静默 git pull；更新有独立显式流程。
+- [x] 提交是从官方原版上游实际解析得到；不把总体计划中的参考 SHA 当作当期最新事实。
+- [x] 锁定后可以重新取得同一提交并验证干净状态；源码快照可追溯到实际内容。
+- [x] 空补丁集或每个补丁的来源/摘要都可核验，不能隐含本地引擎修改。
+- [x] 普通构建不再解析移动 HEAD 或静默 git pull；更新有独立显式流程。
 
 ## Tests
 
@@ -56,4 +56,18 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01: Claimed on `codex/m0-03-quickjs`; implementation uses the confirmed external CLI/source-identity seam.
+
+## Answer
+
+2026-11-01: Resolved actual official Bellard master to
+`e621135dc542e000e31038bedc52944aa0adaf1a`, fetched it twice into independent
+caches, and verified identical content offline on Windows and WSL. The original
+license and explicit empty ordered patch set are tracked with the source lock.
+`scripts/quickjs_source.py` provides separate `bump`, `fetch`, and strictly
+offline `verify` flows. Eleven real Git/CLI contracts cover source, commit,
+license, patch, metadata, upstream failure, and portable manifest identities.
+
+Validation, raw-evidence locations, integration hooks and recovery:
+[BOOT-02 record](../quickjs-source-validation.md). No QuickJS compilation or
+Cosmopolitan compatibility is claimed here.
