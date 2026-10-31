@@ -165,7 +165,7 @@ def download(args, report, directory, archive):
         os.environ["HTTPS_PROXY"] = proxy
         report["network_route"] = "configured Windows HTTPS proxy"
     try:
-        executed, _, _ = command(["curl", "--fail", "--location", "--silent", "--show-error",
+        executed, _, _ = command(["curl", "--disable", "--fail", "--location", "--silent", "--show-error",
             "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
             "--max-time", str(args.download_timeout), "--output", str(archive), NIGHTLY_URL],
             directory, "nightly-download", args.download_timeout + 5)
@@ -190,9 +190,20 @@ def import_receipt(args, identity):
             raise ValueError("archive length/SHA-256 differs from acquisition receipt")
         if receipt["source"]["kind"] != "official-nightly" or receipt["source"]["url"] != NIGHTLY_URL:
             raise ValueError("receipt source is not the official Nightly channel")
-        if not any(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False
-                   and isinstance(item["argv"], list) and item["argv"] and item["argv"][-1] == NIGHTLY_URL
-                   for item in receipt["commands"]):
+        successful = []
+        for item in receipt["commands"]:
+            argv = item["argv"]
+            if (not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv)
+                    or argv[0] not in {"curl", "curl.exe"} or argv[-1] != NIGHTLY_URL):
+                continue
+            if any(arg in {"--insecure", "--proxy-insecure", "--config"} or
+                   (arg.startswith("-") and not arg.startswith("--") and any(option in arg[1:] for option in "kK")) for arg in argv):
+                continue
+            if not all(argv.count(option) == 1 and argv.index(option) + 1 < len(argv)
+                       and argv[argv.index(option) + 1] == "=https" for option in ("--proto", "--proto-redir")):
+                continue
+            successful.append(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False)
+        if not any(successful):
             raise ValueError("receipt has no successful official HTTPS command")
         return {**receipt["source"], "acquisition_report_sha256": sha256(args.acquisition_report)}
     except (OSError, KeyError, TypeError, ValueError) as error:

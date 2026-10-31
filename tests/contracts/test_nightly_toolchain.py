@@ -80,13 +80,22 @@ class NightlyToolchainContract(unittest.TestCase):
 
     def test_import_cannot_claim_official_origin_from_an_incomplete_receipt(self):
         receipt = self.work / "receipt.json"
-        receipt.write_text('{"status":"pass","source":{"kind":"official-nightly"}}', encoding="utf-8")
-        completed, report = self.run_cli("fetch", "--archive", self.archive(), "--acquisition-report", receipt,
-                                         "--backing-dir", self.work)
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-        self.assertIn("receipt", report["reason"].lower())
-        self.assertFalse(self.lock.exists())
-        self.assertEqual(report["commands"], [])
+        archive = self.archive()
+        official = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
+        receipts = [{"status": "pass", "source": {"kind": "official-nightly"}},
+                    {"report_kind": "nightly-toolchain", "schema_version": 1, "operation": "download", "status": "pass",
+                     "downloaded_archive": {"sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "size_bytes": archive.stat().st_size},
+                     "source": {"kind": "official-nightly", "url": official, "retrieved_at": "2026-11-01T00:00:00Z"},
+                     "commands": [{"exit_code": 0, "timed_out": False, "argv": ["curl", "--insecure", official]}]}]
+        for value in receipts:
+            with self.subTest(receipt=value):
+                receipt.write_text(json.dumps(value), encoding="utf-8")
+                completed, report = self.run_cli("fetch", "--archive", archive, "--acquisition-report", receipt,
+                                                 "--backing-dir", self.work)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("receipt", report["reason"].lower())
+                self.assertFalse(self.lock.exists())
+                self.assertEqual(report["commands"], [])
 
     @unittest.skipIf(os.name == "nt", "Tool version commands are exercised in the existing WSL Linux environment")
     def test_explicit_import_is_measured_and_then_resolved_offline(self):
