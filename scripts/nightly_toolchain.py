@@ -4,6 +4,7 @@
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,8 @@ from foundation import ROOT, case_record, command, host_facts, now, sha256
 
 
 NIGHTLY_URL = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
+UPSTREAM_REPOSITORY = "jart/cosmopolitan"
+UPSTREAM_WORKFLOW = ".github/workflows/nightly-cosmocc.yml"
 TOOLS = ("bin/cosmocc", "bin/x86_64-linux-cosmo-gcc", "bin/aarch64-linux-cosmo-gcc")
 
 
@@ -43,6 +46,33 @@ def safe_name(name):
             and PurePosixPath(name).as_posix() == name.rstrip("/"))
 
 
+def validate_official_source(source, archive):
+    provider = source.get("provider", "cosmo.zip")
+    if provider == "cosmo.zip":
+        if source["url"] != NIGHTLY_URL:
+            raise ValueError("official Nightly URL differs")
+    elif provider == "github-actions":
+        github = source["github"]
+        if github["repository"] != UPSTREAM_REPOSITORY or github["workflow_path"] != UPSTREAM_WORKFLOW:
+            raise ValueError("GitHub repository/workflow is not the official Nightly")
+        if any(type(github[key]) is not int or github[key] <= 0 for key in ("run_id", "artifact_id")):
+            raise ValueError("invalid GitHub run/artifact identity")
+        if (not re.fullmatch("[0-9a-f]{40}", github["head_sha"])
+                or len(set(github["head_sha"])) == 1
+                or github["artifact_head_sha"] != github["head_sha"]
+                or github["artifact_workflow_run_id"] != github["run_id"]):
+            raise ValueError("GitHub artifact does not match its measured workflow run")
+        if ((github["run_status"], github["run_conclusion"], github["artifact_name"]) != ("completed", "success", "cosmocc")
+                or github["artifact_expired"] is not False):
+            raise ValueError("GitHub artifact is not a successful available cosmocc Nightly")
+        if {"sha256": github["artifact_sha256"], "size_bytes": github["artifact_size_bytes"]} != archive:
+            raise ValueError("GitHub API digest/length differs from original archive")
+        if source["url"] != f"https://api.github.com/repos/{UPSTREAM_REPOSITORY}/actions/artifacts/{github['artifact_id']}/zip":
+            raise ValueError("GitHub artifact URL differs from its identity")
+    else:
+        raise ValueError("unsupported official Nightly provider")
+
+
 def validate_lock(lock):
     try:
         if type(lock["schema_version"]) is not int or lock["schema_version"] != 1 or lock["kind"] != "cosmocc-nightly":
@@ -52,11 +82,14 @@ def validate_lock(lock):
             raise ValueError("unknown source kind")
         if not isinstance(source["url"], str) or not isinstance(source["retrieved_at"], str):
             raise ValueError("source URL/retrieval timestamp must be strings")
-        if source["kind"] == "official-nightly" and source["url"] != NIGHTLY_URL:
-            raise ValueError("official Nightly URL differs")
+        if source["kind"] == "official-nightly":
+            validate_official_source(source, lock["archive"])
         if source["kind"] == "local-import" and not source["url"].startswith("file:"):
             raise ValueError("local import requires a file URI")
-        if datetime.fromisoformat(source["retrieved_at"].replace("Z", "+00:00")).tzinfo is None:
+        # Python 3.10 accepts microseconds only; PowerShell receipts retain 100ns
+        # precision. Validate a microsecond view while preserving original text.
+        timestamp = re.sub(r"(\.\d{6})\d+", r"\1", source["retrieved_at"])
+        if datetime.fromisoformat(timestamp.replace("Z", "+00:00")).tzinfo is None:
             raise ValueError("retrieval timestamp has no timezone")
         identities = [lock["archive"], *lock["tools"], *lock["files"]]
         for identity in identities:
@@ -75,12 +108,24 @@ def validate_lock(lock):
         if not files or len({entry["path"] for entry in files}) != len(files):
             raise ValueError("empty or duplicated file manifest")
         for entry in files:
-            if not safe_name(entry["path"]) or type(entry["executable"]) is not bool:
+            if (not safe_name(entry["path"]) or type(entry["executable"]) is not bool
+                    or entry["kind"] not in {"file", "symlink"}):
                 raise ValueError("unsafe file manifest")
+            if entry["kind"] == "symlink" and not safe_link_target(entry["target"]):
+                raise ValueError("unsafe symlink target in manifest")
         for tool in lock["tools"]:
             entry = next(item for item in files if item["path"] == tool["path"])
             if (entry["sha256"], entry["size_bytes"], entry["executable"]) != (tool["sha256"], tool["size_bytes"], True):
                 raise ValueError("compiler differs from file manifest")
+        extraction = lock["extraction"]
+        if extraction["execute_bit_policy"] != "archive-unix-modes-v1":
+            raise ValueError("unsupported extraction execute-bit policy")
+        normalized = extraction["normalized_executable_paths"]
+        if not isinstance(normalized, list) or len(set(normalized)) != len(normalized):
+            raise ValueError("invalid normalized executable manifest")
+        for name in normalized:
+            if not safe_name(name) or not any(entry["path"] == name and entry["executable"] for entry in files):
+                raise ValueError("normalized executable differs from file manifest")
         if lock["libc_source"]["status"] != "unproven" or lock["libc_source"]["commit"] is not None:
             raise ValueError("unsupported libc source mapping; separate provenance proof is required")
         if lock["source_head"] is not None:
@@ -89,13 +134,36 @@ def validate_lock(lock):
         raise ValueError("Invalid Nightly lock: " + str(error)) from error
 
 
+def safe_link_target(target):
+    return (isinstance(target, str) and bool(target) and "\\" not in target
+            and ":" not in target and "\x00" not in target and not PurePosixPath(target).is_absolute())
+
+
+def validate_links(tree):
+    root = tree.resolve()
+    for path in tree.rglob("*"):
+        if not path.is_symlink():
+            continue
+        target = os.readlink(path)
+        try:
+            if not safe_link_target(target) or not path.resolve(strict=True).is_relative_to(root):
+                raise ValueError("Unsafe cache symlink: " + str(path))
+        except (OSError, RuntimeError) as error:
+            raise ValueError("Dangling/cyclic/escaping cache symlink: " + str(path)) from error
+
+
 def manifest(tree):
+    validate_links(tree)
     entries = []
     for path in sorted(tree.rglob("*")):
         if path.is_symlink():
-            raise ValueError("Unexpected symlink in extracted cache: " + str(path))
-        if path.is_file():
-            entries.append({"path": path.relative_to(tree).as_posix(), "sha256": sha256(path),
+            target = os.readlink(path)
+            entries.append({"path": path.relative_to(tree).as_posix(), "kind": "symlink", "target": target,
+                            "sha256": hashlib.sha256(target.encode("utf-8")).hexdigest(),
+                            "size_bytes": len(target.encode("utf-8")),
+                            "executable": bool(path.stat().st_mode & 0o111)})
+        elif path.is_file():
+            entries.append({"path": path.relative_to(tree).as_posix(), "kind": "file", "sha256": sha256(path),
                             "size_bytes": path.stat().st_size,
                             "executable": bool(path.stat().st_mode & 0o111)})
         elif not path.is_dir():
@@ -105,6 +173,14 @@ def manifest(tree):
 
 def measure_tools(tree, directory, report, timeout):
     tools = []
+    native_loader = None
+    if report["host"]["os"] == "Linux" and report["host"]["execution_arch"] == "x86_64":
+        candidate = tree / "bin/ape-x86_64.elf"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            with candidate.open("rb") as stream:
+                header = stream.read(20)
+            if header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00":
+                native_loader = candidate
     for relative in TOOLS:
         path = tree / relative
         if not path.is_file() or not os.access(path, os.X_OK):
@@ -112,26 +188,51 @@ def measure_tools(tree, directory, report, timeout):
         with path.open("rb") as stream:
             magic = stream.read(8)
         # Upstream documents the shell entry route for APE from Python subprocess.
-        argv = (["sh", str(path)] if magic.startswith((b"MZ", b"jartsr")) else [str(path)]) + ["--version"]
+        portable = magic.startswith((b"MZ", b"jartsr"))
+        if portable and native_loader:
+            argv = [str(native_loader), str(path), "--version"]
+        else:
+            argv = (["sh", str(path)] if portable else [str(path)]) + ["--version"]
         executed, stdout, stderr = command(argv, directory, "version-" + path.name, timeout)
         report["commands"].append(executed)
         version = (stdout or stderr).strip()
         if executed["exit_code"] != 0 or executed["timed_out"] or not version:
             raise ValueError("Compiler version query failed: " + relative)
         tools.append({"path": relative, "sha256": sha256(path), "size_bytes": path.stat().st_size,
-                      "version": version, "version_argv": [*argv[:-2], relative, "--version"] if len(argv) > 2 else [relative, "--version"]})
+                      "version": version,
+                      "version_argv": [relative if arg == str(path) else "bin/ape-x86_64.elf"
+                                       if native_loader and arg == str(native_loader) else arg for arg in argv],
+                      "version_launcher": ({"path": "bin/ape-x86_64.elf", "sha256": sha256(native_loader),
+                                            "kind": "native-linux-x86_64-elf"} if portable and native_loader else None)})
     return tools
 
 
 def extract(archive, tree):
     with zipfile.ZipFile(archive) as bundle:
-        for item in bundle.infolist():
+        items = bundle.infolist()
+        seen, links = set(), {}
+        for item in items:
+            mode = item.external_attr >> 16
+            name = item.filename.rstrip("/")
+            if (not safe_name(item.filename) or name in seen
+                    or stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR, stat.S_IFLNK)):
+                raise ValueError("Unsafe archive member: " + item.filename)
+            seen.add(name)
+            if stat.S_ISLNK(mode):
+                target = bundle.read(item).decode("utf-8")
+                if not safe_link_target(target):
+                    raise ValueError("Unsafe archive symlink: " + item.filename)
+                links[name] = target
+        for item in items:
+            path = PurePosixPath(item.filename)
+            if any(PurePosixPath(*path.parts[:index]).as_posix() in links for index in range(1, len(path.parts))):
+                raise ValueError("Archive symlink cannot be an extraction parent: " + item.filename)
+        for item in items:
             path = PurePosixPath(item.filename)
             mode = item.external_attr >> 16
-            if (not safe_name(item.filename)
-                    or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))):
-                raise ValueError("Unsafe archive member: " + item.filename)
             target = tree.joinpath(*path.parts)
+            if stat.S_ISLNK(mode):
+                continue
             if item.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
             else:
@@ -139,10 +240,20 @@ def extract(archive, tree):
                 with bundle.open(item) as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output)
                 target.chmod(0o755 if mode & 0o111 else 0o644)
+        root = tree.resolve()
+        for name, value in links.items():
+            path = tree / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not Path(os.path.abspath(path.parent / value)).is_relative_to(root):
+                raise ValueError("Archive symlink escapes extraction: " + name)
+            path.symlink_to(value)
+        validate_links(tree)
 
 
 def freeze(cache):
     for path in cache.rglob("*"):
+        if path.is_symlink():
+            continue
         path.chmod(0o555 if path.is_dir() or path.stat().st_mode & 0o111 else 0o444)
     cache.chmod(0o555)
 
@@ -165,7 +276,7 @@ def download(args, report, directory, archive):
         os.environ["HTTPS_PROXY"] = proxy
         report["network_route"] = "configured Windows HTTPS proxy"
     try:
-        executed, _, _ = command(["curl", "--fail", "--location", "--silent", "--show-error",
+        executed, _, _ = command(["curl", "--disable", "--fail", "--location", "--silent", "--show-error",
             "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
             "--max-time", str(args.download_timeout), "--output", str(archive), NIGHTLY_URL],
             directory, "nightly-download", args.download_timeout + 5)
@@ -177,7 +288,7 @@ def download(args, report, directory, archive):
         raise Unavailable("Official Nightly download failed; see original logs")
     if not archive.is_file() or archive.stat().st_size == 0:
         raise ValueError("Official download produced no nonempty archive")
-    return {"kind": "official-nightly", "url": NIGHTLY_URL, "retrieved_at": now(),
+    return {"kind": "official-nightly", "provider": "cosmo.zip", "url": NIGHTLY_URL, "retrieved_at": now(),
             "note": "Fetched over authenticated HTTPS; digest is locally measured, not an upstream signature"}
 
 
@@ -188,11 +299,42 @@ def import_receipt(args, identity):
             raise ValueError("receipt is not a successful official download")
         if receipt["downloaded_archive"] != identity:
             raise ValueError("archive length/SHA-256 differs from acquisition receipt")
-        if receipt["source"]["kind"] != "official-nightly" or receipt["source"]["url"] != NIGHTLY_URL:
+        if receipt["source"]["kind"] != "official-nightly":
             raise ValueError("receipt source is not the official Nightly channel")
-        if not any(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False
-                   and isinstance(item["argv"], list) and item["argv"] and item["argv"][-1] == NIGHTLY_URL
-                   for item in receipt["commands"]):
+        if receipt["source"].get("provider") == "github-actions":
+            run, artifact = receipt["github_run"], receipt["github_artifact"]
+            if not isinstance(artifact["digest"], str) or not artifact["digest"].startswith("sha256:"):
+                raise ValueError("GitHub API has no SHA-256 archive digest")
+            github = {"repository": run["repository"]["full_name"], "workflow_path": run["path"],
+                "run_id": run["id"], "head_sha": run["head_sha"], "run_status": run["status"],
+                "run_conclusion": run["conclusion"], "artifact_id": artifact["id"],
+                "artifact_name": artifact["name"], "artifact_expired": artifact["expired"],
+                "artifact_sha256": artifact["digest"].removeprefix("sha256:"),
+                "artifact_size_bytes": artifact["size_in_bytes"],
+                "artifact_workflow_run_id": artifact["workflow_run"]["id"],
+                "artifact_head_sha": artifact["workflow_run"]["head_sha"],
+                "run_metadata_sha256": hashlib.sha256(json.dumps(run, sort_keys=True).encode()).hexdigest(),
+                "artifact_metadata_sha256": hashlib.sha256(json.dumps(artifact, sort_keys=True).encode()).hexdigest()}
+            source = {**receipt["source"], "github": github, "acquisition_report_sha256": sha256(args.acquisition_report)}
+            validate_official_source(source, identity)
+            return source
+        if receipt["source"]["url"] != NIGHTLY_URL:
+            raise ValueError("receipt source is not the official Nightly channel")
+        validate_official_source(receipt["source"], identity)
+        successful = []
+        for item in receipt["commands"]:
+            argv = item["argv"]
+            if (not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv)
+                    or argv[0] not in {"curl", "curl.exe"} or argv[-1] != NIGHTLY_URL):
+                continue
+            if any(arg in {"--insecure", "--proxy-insecure", "--config"} or
+                   (arg.startswith("-") and not arg.startswith("--") and any(option in arg[1:] for option in "kK")) for arg in argv):
+                continue
+            if not all(argv.count(option) == 1 and argv.index(option) + 1 < len(argv)
+                       and argv[argv.index(option) + 1] == "=https" for option in ("--proto", "--proto-redir")):
+                continue
+            successful.append(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False)
+        if not any(successful):
             raise ValueError("receipt has no successful official HTTPS command")
         return {**receipt["source"], "acquisition_report_sha256": sha256(args.acquisition_report)}
     except (OSError, KeyError, TypeError, ValueError) as error:
@@ -206,6 +348,8 @@ def acquire(args, report, directory):
         validate_lock(locked)
         if (args.cache_dir / locked["archive"]["sha256"]).exists():
             return resolve(args, report, directory)
+        if locked["source"].get("provider") == "github-actions" and not args.archive:
+            raise Unavailable("GitHub Nightly cache missing: explicitly obtain the locked artifact URL and import with --archive and its acquisition receipt; canonical rolling-channel fallback is forbidden")
     if args.operation == "bump" and not args.lock.is_file():
         raise Unavailable("No existing lock to bump; use explicit fetch")
     if args.operation == "bump":
@@ -237,17 +381,18 @@ def acquire(args, report, directory):
         tree = candidate / "tree"
         tree.mkdir()
         extract(archive, tree)
+        extraction = {"execute_bit_policy": "archive-unix-modes-v1", "normalized_executable_paths": []}
         tools = measure_tools(tree, directory, report, args.timeout)
         lock = {"schema_version": 1, "kind": "cosmocc-nightly", "source": source, "archive": identity,
-                "tools": tools, "files": manifest(tree), "source_head": None,
+                "tools": tools, "files": manifest(tree), "source_head": None, "extraction": extraction,
                 "libc_source": {"status": "unproven", "commit": None,
                     "reason": "No verified mapping from this Nightly archive to a Cosmopolitan source commit"}}
-        validate_lock(lock)
         if locked:
-            if tools != locked["tools"] or lock["files"] != locked["files"]:
+            if tools != locked["tools"] or lock["files"] != locked["files"] or extraction != locked["extraction"]:
                 raise ValueError("Restored compiler/extracted content differs from lock")
             report["retrieval"] = source
             lock = locked
+        validate_lock(lock)
         destination = args.cache_dir / identity["sha256"]
         if destination.exists():
             check_cache(lock, destination)
@@ -266,12 +411,12 @@ def check_cache(lock, cache):
         raise ValueError("Locked cache roots must not be symlinks")
     if not archive.is_file() or not tree.is_dir():
         raise Unavailable("Locked cache is missing; no implicit download is allowed")
-    if os.name != "nt" and any(path.stat().st_mode & 0o222 for path in [cache, archive, tree, *tree.rglob("*")]):
-        raise ValueError("Locked cache must remain read-only; writable content is refused")
     if archive.stat().st_size != lock["archive"]["size_bytes"] or sha256(archive) != lock["archive"]["sha256"]:
         raise ValueError("Locked archive length/SHA-256 mismatch")
     if manifest(tree) != lock["files"]:
         raise ValueError("Extracted cache manifest mismatch")
+    if os.name != "nt" and any(path.stat().st_mode & 0o222 for path in [cache, archive, tree, *tree.rglob("*")] if not path.is_symlink()):
+        raise ValueError("Locked cache must remain read-only; writable content is refused")
 
 
 def resolve(args, report, directory):

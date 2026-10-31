@@ -47,6 +47,21 @@ class NightlyToolchainContract(unittest.TestCase):
                 bundle.writestr(*extra)
         return archive
 
+    def github_receipt(self, archive):
+        # External API fixture, not an assertion about a real upstream run.
+        head = "1234567890abcdef1234567890abcdef12345678"
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        return {"report_kind": "nightly-toolchain", "schema_version": 1, "operation": "download", "status": "pass",
+                "downloaded_archive": {"sha256": digest, "size_bytes": archive.stat().st_size},
+                "source": {"kind": "official-nightly", "provider": "github-actions", "retrieved_at": "2026-11-01T00:00:00.1234567Z",
+                           "url": "https://api.github.com/repos/jart/cosmopolitan/actions/artifacts/22/zip"},
+                "github_run": {"id": 11, "repository": {"full_name": "jart/cosmopolitan"},
+                               "path": ".github/workflows/nightly-cosmocc.yml", "head_sha": head,
+                               "status": "completed", "conclusion": "success"},
+                "github_artifact": {"id": 22, "name": "cosmocc", "size_in_bytes": archive.stat().st_size,
+                                    "digest": "sha256:" + digest, "expired": False,
+                                    "workflow_run": {"id": 11, "head_sha": head}}, "commands": []}
+
     def test_offline_verify_reports_missing_lock_without_fetching(self):
         completed, report = self.run_cli("verify")
         self.assertEqual(completed.returncode, 2, completed.stderr)
@@ -80,13 +95,22 @@ class NightlyToolchainContract(unittest.TestCase):
 
     def test_import_cannot_claim_official_origin_from_an_incomplete_receipt(self):
         receipt = self.work / "receipt.json"
-        receipt.write_text('{"status":"pass","source":{"kind":"official-nightly"}}', encoding="utf-8")
-        completed, report = self.run_cli("fetch", "--archive", self.archive(), "--acquisition-report", receipt,
-                                         "--backing-dir", self.work)
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-        self.assertIn("receipt", report["reason"].lower())
-        self.assertFalse(self.lock.exists())
-        self.assertEqual(report["commands"], [])
+        archive = self.archive()
+        official = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
+        receipts = [{"status": "pass", "source": {"kind": "official-nightly"}},
+                    {"report_kind": "nightly-toolchain", "schema_version": 1, "operation": "download", "status": "pass",
+                     "downloaded_archive": {"sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "size_bytes": archive.stat().st_size},
+                     "source": {"kind": "official-nightly", "url": official, "retrieved_at": "2026-11-01T00:00:00Z"},
+                     "commands": [{"exit_code": 0, "timed_out": False, "argv": ["curl", "--insecure", official]}]}]
+        for value in receipts:
+            with self.subTest(receipt=value):
+                receipt.write_text(json.dumps(value), encoding="utf-8")
+                completed, report = self.run_cli("fetch", "--archive", archive, "--acquisition-report", receipt,
+                                                 "--backing-dir", self.work)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("receipt", report["reason"].lower())
+                self.assertFalse(self.lock.exists())
+                self.assertEqual(report["commands"], [])
 
     @unittest.skipIf(os.name == "nt", "Tool version commands are exercised in the existing WSL Linux environment")
     def test_explicit_import_is_measured_and_then_resolved_offline(self):
@@ -116,6 +140,81 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertEqual(report["commands"], [])
         self.assertEqual(completed.stdout, "")
+
+    @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
+    def test_official_github_nightly_receipt_retains_its_distinct_archive_provenance(self):
+        archive = self.archive()
+        receipt = self.work / "github-receipt.json"
+        value = self.github_receipt(archive)
+        receipt.write_text(json.dumps(value), encoding="utf-8")
+        completed, report = self.run_cli("fetch", "--archive", archive, "--acquisition-report", receipt,
+                                         "--backing-dir", self.work)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        lock = json.loads(self.lock.read_text())
+        self.assertEqual(lock["source"]["provider"], "github-actions")
+        self.assertEqual(lock["source"]["github"]["repository"], "jart/cosmopolitan")
+        self.assertEqual(lock["source"]["github"]["run_id"], 11)
+        self.assertEqual(lock["source"]["github"]["artifact_id"], 22)
+        self.assertEqual(lock["extraction"]["execute_bit_policy"], "archive-unix-modes-v1")
+        self.assertTrue((Path(report["resolved_path"]) / "bin/cosmocc").stat().st_mode & 0o111)
+        self.assertIsNone(lock["libc_source"]["commit"])
+        completed, report = self.run_cli("verify")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.cache.rename(self.work / "old-github-cache")
+        original = self.lock.read_bytes()
+        completed, report = self.run_cli("fetch")
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertIn("artifact", report["reason"].lower())
+        self.assertEqual(report["commands"], [])
+        completed, report = self.run_cli("fetch", "--archive", archive, "--backing-dir", self.work)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.lock.read_bytes(), original)
+
+    def test_untrusted_or_conflicting_github_metadata_is_refused_before_tools(self):
+        archive = self.archive()
+        values = []
+        for section, key, bad in (("github_run", "path", ".github/workflows/other.yml"),
+                                  ("github_run", "conclusion", "failure"),
+                                  ("github_artifact", "digest", "sha256:" + "a" * 64),
+                                  ("github_artifact", "expired", 0)):
+            value = self.github_receipt(archive)
+            value[section][key] = bad
+            values.append(value)
+        value = self.github_receipt(archive)
+        value["github_run"]["repository"]["full_name"] = "untrusted/cosmopolitan"
+        values.append(value)
+        for value in values:
+            with self.subTest(metadata=value):
+                receipt = self.work / "github-invalid.json"
+                receipt.write_text(json.dumps(value), encoding="utf-8")
+                completed, report = self.run_cli("fetch", "--archive", archive, "--acquisition-report", receipt,
+                                                 "--backing-dir", self.work)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("receipt", report["reason"].lower())
+                self.assertEqual(report["commands"], [])
+                self.assertFalse(self.lock.exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink behavior is verified in WSL")
+    def test_internal_symlinks_are_locked_and_escaping_link_tampering_is_refused(self):
+        link = zipfile.ZipInfo("bin/cosmoc++")
+        link.create_system = 3
+        link.external_attr = 0o120777 << 16
+        completed, report = self.run_cli("fetch", "--archive", self.archive("links.zip", (link, "cosmocc")))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        tree = Path(report["resolved_path"])
+        lock = json.loads(self.lock.read_text())
+        recorded = next(item for item in lock["files"] if item["path"] == "bin/cosmoc++")
+        self.assertEqual(recorded["kind"], "symlink")
+        self.assertEqual(recorded["target"], "cosmocc")
+        completed, _ = self.run_cli("verify", "--allow-local-import")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        (tree / "bin").chmod(0o755)
+        (tree / "bin/cosmoc++").unlink()
+        (tree / "bin/cosmoc++").symlink_to("../../../../outside")
+        (tree / "bin").chmod(0o555)
+        completed, report = self.run_cli("verify", "--allow-local-import")
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(report["commands"], [])
 
     @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
     def test_explicit_fetch_restores_the_locked_cache_without_changing_the_lock(self):
@@ -183,6 +282,17 @@ class NightlyToolchainContract(unittest.TestCase):
         candidates = [truncated, self.archive("escape.zip", ("../escaped", "outside")),
                       self.archive("symlink.zip", (link, "../../outside")),
                       self.archive("nonexecutable.zip", executable=False)]
+        loop = zipfile.ZipInfo("self-link")
+        loop.create_system = 3
+        loop.external_attr = 0o120777 << 16
+        candidates.append(self.archive("cycle.zip", (loop, "self-link")))
+        parent = zipfile.ZipInfo("linked-parent")
+        parent.create_system = 3
+        parent.external_attr = 0o120777 << 16
+        linked_parent = self.archive("parent.zip", (parent, "."))
+        with zipfile.ZipFile(linked_parent, "a") as bundle:
+            bundle.writestr("linked-parent/payload", "must not be written through a link")
+        candidates.append(linked_parent)
         for candidate in candidates:
             with self.subTest(candidate=candidate.name):
                 completed, report = self.run_cli("bump", "--archive", candidate)

@@ -1,0 +1,381 @@
+{
+  "report_kind": "nightly-toolchain",
+  "schema_version": 1,
+  "operation": "download",
+  "status": "pass",
+  "started_at": "2026-10-31T23:27:34.290794Z",
+  "finished_at": "2026-10-31T23:32:11Z",
+  "downloaded_archive": {
+    "sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+    "size_bytes": 419652152
+  },
+  "download_path": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\official-nightly-cosmocc-41169443573.zip",
+  "source": {
+    "kind": "official-nightly",
+    "provider": "github-actions",
+    "url": "https://api.github.com/repos/jart/cosmopolitan/actions/artifacts/13031425078/zip",
+    "retrieved_at": "2026-10-31T23:31:51.8024857Z",
+    "note": "Original upstream GitHub Actions Nightly artifact ZIP; official API SHA-256 and length match the local original bytes. This archive is not asserted byte-identical to cosmo.zip Nightly packaging."
+  },
+  "github_run": {
+    "id": 41169443573,
+    "name": "Nightly cosmocc",
+    "node_id": "WFR_kwLOED1fhs8AAAAJlePa9Q",
+    "head_branch": "master",
+    "head_sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+    "path": ".github/workflows/nightly-cosmocc.yml",
+    "display_title": "Nightly cosmocc",
+    "run_number": 807,
+    "event": "schedule",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 112471003,
+    "check_suite_id": 111600169633,
+    "check_suite_node_id": "CS_kwDOED1fhs8AAAAZ--NyoQ",
+    "url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573",
+    "html_url": "https://github.com/jart/cosmopolitan/actions/runs/41169443573",
+    "pull_requests": [
+      {
+        "url": "https://api.github.com/repos/kkpan11/cosmopolitan/pulls/213",
+        "id": 1910275046,
+        "number": 213,
+        "head": {
+          "ref": "master",
+          "sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+          "repo": {
+            "id": 272457606,
+            "url": "https://api.github.com/repos/jart/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        },
+        "base": {
+          "ref": "master",
+          "sha": "d44a7dc6035e8d49a09903f87d9902688de271d2",
+          "repo": {
+            "id": 649458821,
+            "url": "https://api.github.com/repos/kkpan11/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        }
+      },
+      {
+        "url": "https://api.github.com/repos/appotry/cosmopolitan/pulls/92",
+        "id": 977137459,
+        "number": 92,
+        "head": {
+          "ref": "master",
+          "sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+          "repo": {
+            "id": 272457606,
+            "url": "https://api.github.com/repos/jart/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        },
+        "base": {
+          "ref": "master",
+          "sha": "1235ad6006737e143d5c200b62ba66891fd3b7ec",
+          "repo": {
+            "id": 426092131,
+            "url": "https://api.github.com/repos/appotry/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        }
+      },
+      {
+        "url": "https://api.github.com/repos/kokizzu/cosmopolitan/pulls/114",
+        "id": 644776038,
+        "number": 114,
+        "head": {
+          "ref": "master",
+          "sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+          "repo": {
+            "id": 272457606,
+            "url": "https://api.github.com/repos/jart/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        },
+        "base": {
+          "ref": "master",
+          "sha": "782ca71d7c1e5f4fc5d4ae3ad90feb04ef76990a",
+          "repo": {
+            "id": 324932789,
+            "url": "https://api.github.com/repos/kokizzu/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        }
+      },
+      {
+        "url": "https://api.github.com/repos/Mu-L/cosmopolitan/pulls/58",
+        "id": 644694174,
+        "number": 58,
+        "head": {
+          "ref": "master",
+          "sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+          "repo": {
+            "id": 272457606,
+            "url": "https://api.github.com/repos/jart/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        },
+        "base": {
+          "ref": "master",
+          "sha": "782ca71d7c1e5f4fc5d4ae3ad90feb04ef76990a",
+          "repo": {
+            "id": 343255002,
+            "url": "https://api.github.com/repos/Mu-L/cosmopolitan",
+            "name": "cosmopolitan"
+          }
+        }
+      }
+    ],
+    "created_at": "2026-10-31T04:39:15Z",
+    "updated_at": "2026-10-31T04:57:33Z",
+    "actor": {
+      "login": "G4Vi",
+      "id": 2080147,
+      "node_id": "MDQ6VXNlcjIwODAxNDc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2080147?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/G4Vi",
+      "html_url": "https://github.com/G4Vi",
+      "followers_url": "https://api.github.com/users/G4Vi/followers",
+      "following_url": "https://api.github.com/users/G4Vi/following{/other_user}",
+      "gists_url": "https://api.github.com/users/G4Vi/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/G4Vi/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/G4Vi/subscriptions",
+      "organizations_url": "https://api.github.com/users/G4Vi/orgs",
+      "repos_url": "https://api.github.com/users/G4Vi/repos",
+      "events_url": "https://api.github.com/users/G4Vi/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/G4Vi/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "run_attempt": 1,
+    "referenced_workflows": [],
+    "run_started_at": "2026-10-31T04:39:15Z",
+    "triggering_actor": {
+      "login": "G4Vi",
+      "id": 2080147,
+      "node_id": "MDQ6VXNlcjIwODAxNDc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2080147?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/G4Vi",
+      "html_url": "https://github.com/G4Vi",
+      "followers_url": "https://api.github.com/users/G4Vi/followers",
+      "following_url": "https://api.github.com/users/G4Vi/following{/other_user}",
+      "gists_url": "https://api.github.com/users/G4Vi/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/G4Vi/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/G4Vi/subscriptions",
+      "organizations_url": "https://api.github.com/users/G4Vi/orgs",
+      "repos_url": "https://api.github.com/users/G4Vi/repos",
+      "events_url": "https://api.github.com/users/G4Vi/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/G4Vi/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "jobs_url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573/jobs",
+    "logs_url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573/logs",
+    "check_suite_url": "https://api.github.com/repos/jart/cosmopolitan/check-suites/111600169633",
+    "artifacts_url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573/artifacts",
+    "cancel_url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573/cancel",
+    "rerun_url": "https://api.github.com/repos/jart/cosmopolitan/actions/runs/41169443573/rerun",
+    "previous_attempt_url": null,
+    "workflow_url": "https://api.github.com/repos/jart/cosmopolitan/actions/workflows/112471003",
+    "head_commit": {
+      "id": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "tree_id": "39b98a5a1aca0ce501d3c8b5cc80c630468b3b63",
+      "message": "Add bootstrap binary for elf2pe\n\nIt's now easier to cross compile a 2.5 kb hello world program for win32,\non arm64 xnu, that'll run on the very latest Windows, e.g.\n\ncosmo-make -j12 m=x86_64 o/x86_64/tool/hello/hello-pe.ape",
+      "timestamp": "2026-10-20T22:25:16Z",
+      "author": {
+        "name": "Justin Tunney",
+        "email": "jtunney@gmail.com"
+      },
+      "committer": {
+        "name": "Justin Tunney",
+        "email": "jtunney@gmail.com"
+      }
+    },
+    "repository": {
+      "id": 272457606,
+      "node_id": "MDEwOlJlcG9zaXRvcnkyNzI0NTc2MDY=",
+      "name": "cosmopolitan",
+      "full_name": "jart/cosmopolitan",
+      "private": false,
+      "owner": {
+        "login": "jart",
+        "id": 49262,
+        "node_id": "MDQ6VXNlcjQ5MjYy",
+        "avatar_url": "https://avatars.githubusercontent.com/u/49262?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/jart",
+        "html_url": "https://github.com/jart",
+        "followers_url": "https://api.github.com/users/jart/followers",
+        "following_url": "https://api.github.com/users/jart/following{/other_user}",
+        "gists_url": "https://api.github.com/users/jart/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/jart/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/jart/subscriptions",
+        "organizations_url": "https://api.github.com/users/jart/orgs",
+        "repos_url": "https://api.github.com/users/jart/repos",
+        "events_url": "https://api.github.com/users/jart/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/jart/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/jart/cosmopolitan",
+      "description": "build-once run-anywhere c library",
+      "fork": false,
+      "url": "https://api.github.com/repos/jart/cosmopolitan",
+      "forks_url": "https://api.github.com/repos/jart/cosmopolitan/forks",
+      "keys_url": "https://api.github.com/repos/jart/cosmopolitan/keys{/key_id}",
+      "collaborators_url": "https://api.github.com/repos/jart/cosmopolitan/collaborators{/collaborator}",
+      "teams_url": "https://api.github.com/repos/jart/cosmopolitan/teams",
+      "hooks_url": "https://api.github.com/repos/jart/cosmopolitan/hooks",
+      "issue_events_url": "https://api.github.com/repos/jart/cosmopolitan/issues/events{/number}",
+      "events_url": "https://api.github.com/repos/jart/cosmopolitan/events",
+      "assignees_url": "https://api.github.com/repos/jart/cosmopolitan/assignees{/user}",
+      "branches_url": "https://api.github.com/repos/jart/cosmopolitan/branches{/branch}",
+      "tags_url": "https://api.github.com/repos/jart/cosmopolitan/tags",
+      "blobs_url": "https://api.github.com/repos/jart/cosmopolitan/git/blobs{/sha}",
+      "git_tags_url": "https://api.github.com/repos/jart/cosmopolitan/git/tags{/sha}",
+      "git_refs_url": "https://api.github.com/repos/jart/cosmopolitan/git/refs{/sha}",
+      "trees_url": "https://api.github.com/repos/jart/cosmopolitan/git/trees{/sha}",
+      "statuses_url": "https://api.github.com/repos/jart/cosmopolitan/statuses/{sha}",
+      "languages_url": "https://api.github.com/repos/jart/cosmopolitan/languages",
+      "stargazers_url": "https://api.github.com/repos/jart/cosmopolitan/stargazers",
+      "contributors_url": "https://api.github.com/repos/jart/cosmopolitan/contributors",
+      "subscribers_url": "https://api.github.com/repos/jart/cosmopolitan/subscribers",
+      "subscription_url": "https://api.github.com/repos/jart/cosmopolitan/subscription",
+      "commits_url": "https://api.github.com/repos/jart/cosmopolitan/commits{/sha}",
+      "git_commits_url": "https://api.github.com/repos/jart/cosmopolitan/git/commits{/sha}",
+      "comments_url": "https://api.github.com/repos/jart/cosmopolitan/comments{/number}",
+      "issue_comment_url": "https://api.github.com/repos/jart/cosmopolitan/issues/comments{/number}",
+      "contents_url": "https://api.github.com/repos/jart/cosmopolitan/contents/{+path}",
+      "compare_url": "https://api.github.com/repos/jart/cosmopolitan/compare/{base}...{head}",
+      "merges_url": "https://api.github.com/repos/jart/cosmopolitan/merges",
+      "archive_url": "https://api.github.com/repos/jart/cosmopolitan/{archive_format}{/ref}",
+      "downloads_url": "https://api.github.com/repos/jart/cosmopolitan/downloads",
+      "issues_url": "https://api.github.com/repos/jart/cosmopolitan/issues{/number}",
+      "pulls_url": "https://api.github.com/repos/jart/cosmopolitan/pulls{/number}",
+      "milestones_url": "https://api.github.com/repos/jart/cosmopolitan/milestones{/number}",
+      "notifications_url": "https://api.github.com/repos/jart/cosmopolitan/notifications{?since,all,participating}",
+      "labels_url": "https://api.github.com/repos/jart/cosmopolitan/labels{/name}",
+      "releases_url": "https://api.github.com/repos/jart/cosmopolitan/releases{/id}",
+      "deployments_url": "https://api.github.com/repos/jart/cosmopolitan/deployments"
+    },
+    "head_repository": {
+      "id": 272457606,
+      "node_id": "MDEwOlJlcG9zaXRvcnkyNzI0NTc2MDY=",
+      "name": "cosmopolitan",
+      "full_name": "jart/cosmopolitan",
+      "private": false,
+      "owner": {
+        "login": "jart",
+        "id": 49262,
+        "node_id": "MDQ6VXNlcjQ5MjYy",
+        "avatar_url": "https://avatars.githubusercontent.com/u/49262?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/jart",
+        "html_url": "https://github.com/jart",
+        "followers_url": "https://api.github.com/users/jart/followers",
+        "following_url": "https://api.github.com/users/jart/following{/other_user}",
+        "gists_url": "https://api.github.com/users/jart/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/jart/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/jart/subscriptions",
+        "organizations_url": "https://api.github.com/users/jart/orgs",
+        "repos_url": "https://api.github.com/users/jart/repos",
+        "events_url": "https://api.github.com/users/jart/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/jart/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/jart/cosmopolitan",
+      "description": "build-once run-anywhere c library",
+      "fork": false,
+      "url": "https://api.github.com/repos/jart/cosmopolitan",
+      "forks_url": "https://api.github.com/repos/jart/cosmopolitan/forks",
+      "keys_url": "https://api.github.com/repos/jart/cosmopolitan/keys{/key_id}",
+      "collaborators_url": "https://api.github.com/repos/jart/cosmopolitan/collaborators{/collaborator}",
+      "teams_url": "https://api.github.com/repos/jart/cosmopolitan/teams",
+      "hooks_url": "https://api.github.com/repos/jart/cosmopolitan/hooks",
+      "issue_events_url": "https://api.github.com/repos/jart/cosmopolitan/issues/events{/number}",
+      "events_url": "https://api.github.com/repos/jart/cosmopolitan/events",
+      "assignees_url": "https://api.github.com/repos/jart/cosmopolitan/assignees{/user}",
+      "branches_url": "https://api.github.com/repos/jart/cosmopolitan/branches{/branch}",
+      "tags_url": "https://api.github.com/repos/jart/cosmopolitan/tags",
+      "blobs_url": "https://api.github.com/repos/jart/cosmopolitan/git/blobs{/sha}",
+      "git_tags_url": "https://api.github.com/repos/jart/cosmopolitan/git/tags{/sha}",
+      "git_refs_url": "https://api.github.com/repos/jart/cosmopolitan/git/refs{/sha}",
+      "trees_url": "https://api.github.com/repos/jart/cosmopolitan/git/trees{/sha}",
+      "statuses_url": "https://api.github.com/repos/jart/cosmopolitan/statuses/{sha}",
+      "languages_url": "https://api.github.com/repos/jart/cosmopolitan/languages",
+      "stargazers_url": "https://api.github.com/repos/jart/cosmopolitan/stargazers",
+      "contributors_url": "https://api.github.com/repos/jart/cosmopolitan/contributors",
+      "subscribers_url": "https://api.github.com/repos/jart/cosmopolitan/subscribers",
+      "subscription_url": "https://api.github.com/repos/jart/cosmopolitan/subscription",
+      "commits_url": "https://api.github.com/repos/jart/cosmopolitan/commits{/sha}",
+      "git_commits_url": "https://api.github.com/repos/jart/cosmopolitan/git/commits{/sha}",
+      "comments_url": "https://api.github.com/repos/jart/cosmopolitan/comments{/number}",
+      "issue_comment_url": "https://api.github.com/repos/jart/cosmopolitan/issues/comments{/number}",
+      "contents_url": "https://api.github.com/repos/jart/cosmopolitan/contents/{+path}",
+      "compare_url": "https://api.github.com/repos/jart/cosmopolitan/compare/{base}...{head}",
+      "merges_url": "https://api.github.com/repos/jart/cosmopolitan/merges",
+      "archive_url": "https://api.github.com/repos/jart/cosmopolitan/{archive_format}{/ref}",
+      "downloads_url": "https://api.github.com/repos/jart/cosmopolitan/downloads",
+      "issues_url": "https://api.github.com/repos/jart/cosmopolitan/issues{/number}",
+      "pulls_url": "https://api.github.com/repos/jart/cosmopolitan/pulls{/number}",
+      "milestones_url": "https://api.github.com/repos/jart/cosmopolitan/milestones{/number}",
+      "notifications_url": "https://api.github.com/repos/jart/cosmopolitan/notifications{?since,all,participating}",
+      "labels_url": "https://api.github.com/repos/jart/cosmopolitan/labels{/name}",
+      "releases_url": "https://api.github.com/repos/jart/cosmopolitan/releases{/id}",
+      "deployments_url": "https://api.github.com/repos/jart/cosmopolitan/deployments"
+    }
+  },
+  "github_artifact": {
+    "id": 13031425078,
+    "name": "cosmocc",
+    "size_in_bytes": 419652152,
+    "url": "https://api.github.com/repos/jart/cosmopolitan/actions/artifacts/13031425078",
+    "archive_download_url": "https://api.github.com/repos/jart/cosmopolitan/actions/artifacts/13031425078/zip",
+    "expired": false,
+    "created_at": "2026-10-31T04:57:29Z",
+    "expires_at": "2027-01-29T04:39:16Z",
+    "updated_at": "2026-10-31T04:57:29Z",
+    "digest": "sha256:f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+    "workflow_run": {
+      "id": 41169443573,
+      "repository_id": 272457606,
+      "head_repository_id": 272457606,
+      "head_branch": "master",
+      "head_sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d"
+    }
+  },
+  "upstream_workflow_snapshot": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\upstream-nightly-cosmocc-aefad27.yml",
+  "upstream_package_snapshot": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\upstream-package-aefad27.sh",
+  "zip_inspection": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\github-nightly-41169443573.zip-inspection.json",
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "out/m0-integration/download_github_artifact.py",
+        "13031425078",
+        "out/m0-integration/network-candidates/official-nightly-cosmocc-41169443573.zip",
+        "--repo",
+        "jart/cosmopolitan"
+      ],
+      "cwd": "D:\\Workspace\\dairn\\qaplet",
+      "started_at": "2026-10-31T23:27:34.290794Z",
+      "finished_at": "2026-10-31T23:32:11Z",
+      "exit_code": 0,
+      "timed_out": false,
+      "timeout_seconds": null,
+      "stdout_log": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\github-nightly-download.stdout.log",
+      "stderr_log": "D:\\Workspace\\dairn\\qaplet\\out\\m0-integration\\network-candidates\\github-nightly-download.stderr.log",
+      "timing_note": "started_at is Windows process CreationDate; finished_at is successful process exit observed by terminal polling; retrieved_at is archive LastWriteTimeUtc after final bytes were written. Initial API request timeout45s; redirected object-store socket read timeout60s.",
+      "output_capture_note": "Terminal tool decoded stdout retained as UTF-8 with LF newline; this is not a byte-level process capture."
+    }
+  ]
+}
