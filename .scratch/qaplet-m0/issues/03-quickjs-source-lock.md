@@ -4,7 +4,7 @@
 
 **Blocked by:** [01 · 工程骨架与环境诊断](01-foundation.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 首次显式获取原版 Bellard QuickJS 上游的网络访问。
 
@@ -56,4 +56,4 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01: Claimed on `codex/m0-03-quickjs`; implementation uses the confirmed external CLI/source-identity seam.
