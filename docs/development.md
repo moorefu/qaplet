@@ -53,6 +53,8 @@ Linux 下可直接在仓库根目录运行相同 make 入口。Windows 工作目
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位；没有执行 Actions 服务端校验或 actionlint。
 
+托管 runner 的 compiler 配置使用 PATH 中的可执行文件名：Windows 为 `gcc`，其他 bootstrap 行为 `cc`。静态检查拒绝把开发机的编译器绝对路径放入该矩阵；本地 `CC` 仍可显式使用绝对路径。Windows 镜像预装 MSYS2 不代表已安装其 MinGW GCC；本任务使用 runner 提供的系统 GCC，不依赖 MSYS2 目录或安装步骤。
+
 启用的 `bootstrap` job 在已配置 runner 上做环境盘点、真实 C 冒烟和合同回归；doctor 的 blocked 允许继续，但测试失败不允许继续。报告与原始日志即使失败也上传。runner 页大小来自实际 OS 查询，不能从镜像名推断。该 workflow 名称和 artifact 均标为 bootstrap。
 
-禁用的 `m0-build-distribute`、`m0-native-pages`、`m0-qemu-page-gaps` 分别为锁定构建/同摘要制品分发、原生 ARM64 页探测和缺失页配置完整系统 TCG guest 预留位置。SCM 和 Job 分属 `svc-scm`/`svc-job`，使用独立应用制品，不进入 Core 门禁。启用这些位置之前须由对应任务接入可运行的共享脚本、输入与制品；当前不能从 disabled/skip 推出通过。本任务没有 push、调度或宣称远程 CI 成功。
+禁用的 `m0-build-distribute`、`m0-native-pages`、`m0-qemu-page-gaps` 分别为锁定构建/同摘要制品分发、原生 ARM64 页探测和缺失页配置完整系统 TCG guest 预留位置。SCM 和 Job 分属 `svc-scm`/`svc-job`，使用独立应用制品，不进入 Core 门禁。启用这些位置之前须由对应任务接入可运行的共享脚本、输入与制品；当前不能从 disabled/skip 推出通过。首次远程 bootstrap 的实际结果及 Windows 配置修复见[验证记录](../.scratch/qaplet-m0/foundation-validation.md#首次远程-ci-与-windows-配置修复)。

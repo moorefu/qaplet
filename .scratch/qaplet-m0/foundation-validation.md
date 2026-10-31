@@ -2,6 +2,8 @@
 
 日期：2026-10-31（Asia/Shanghai）。任务：[01 工程骨架与环境诊断](issues/01-foundation.md)。本记录只确认 BOOT-01；M0 Core 产品验收未完成。
 
+初始批次在首次提交前完成；之后发生的远程 CI 与修复另记于文末，初始批次的“未执行”不代表后续 CI 状态。
+
 ## 本地结果
 
 最终批次的命令、预期/实际退出码与原始输出定位在 `out/validation/local-checks.json`；11 项检查均符合预期。生成物在 `.gitignore` 的 `out/` 内，当前机器保留，干净检出可按 README 重建。
@@ -48,3 +50,24 @@
 ## 未执行项
 
 未获取 QuickJS/Nightly、未构建或运行产品 APE/QuickJS、未执行完整六类产品矩阵、ARM64 深探针、QEMU、离线重构及 SCM/Job。已有 origin，但没有 push 或触发远程 workflow；CI 仅本地静态检查，未运行 actionlint 或 Actions 服务端校验。任务 02 仍须独立验收其完整工具/磁盘等合同。
+
+## 首次远程 CI 与 Windows 配置修复
+
+用户重新关联 GitHub 后，已读取 [run 41202382602](https://github.com/moorefu/qaplet/actions/runs/41202382602) 的实际状态，执行提交为 `ad509353948f8cef6032da497192f77a50d51824`：
+
+| Bootstrap job | 实际结论 |
+| --- | --- |
+| macos-14 | success |
+| ubuntu-24.04-arm | success |
+| ubuntu-24.04 | success |
+| windows-2022 | failure；C bootstrap blocked，后续合同/静态检查步骤 skipped |
+
+[Windows job 124540572197](https://github.com/moorefu/qaplet/actions/runs/41202382602/job/124540572197) 上传的 artifact `13042059802` 内，`bootstrap.json` 明确报告 `C compiler not found: C:\msys64\mingw64\bin\gcc.exe`，没有执行任何 C 命令。原始 ZIP 位于本机 `out/ci-failure/bootstrap-windows-2022.zip`，SHA-256 为 `48fdc6c5a63c6e6c453dba745289ad256b89aa6a94784bbd83295fe06b20c0ff`。无需把允许失败的 doctor blocked 误当成本次阻断点。
+
+原因是将本机已有的 MSYS2 MinGW 编译器路径写进了托管矩阵。[官方 Windows 2022 镜像清单](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)记录系统 GCC；预装 MSYS2 本身不保证其 `mingw64/bin/gcc.exe` 存在。修复为 Windows 行使用 PATH 中的 `gcc`，继续由共享脚本采集实际编译器路径、版本和摘要，不新增 MSYS2 安装步骤或依赖锁。
+
+本地反馈循环先红后绿：新增回归读取实际 Windows matrix 的 CC 并调用真实 bootstrap；修复前 WSL 返回同样的 compiler-not-found，修复后真实 C 编译/执行通过。另一个回归注入原绝对路径，确认 `check-ci` 拒绝这种托管配置。本地绝对 `CC` 路径仍被支持。
+
+最终 Windows 普通用户上下文 17/17 测试通过；WSL 16 项通过、1 项 Windows 专用用例 skip；CI 静态检查和 Python 编译检查通过。日志及退出码在 `out/ci-fix/validation/`。修改后的远程 job 尚未运行，此处不声称远程已修复通过，也不把三个成功的系统 C bootstrap 计为产品 APE/QuickJS 或完整 M0 成绩。
+
+本次修复另行按 `ad50935` 基准执行两路 code-review：Standards 0 项发现，Spec 0 项发现；待远程复跑的验证限制已明确保留。

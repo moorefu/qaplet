@@ -64,3 +64,5 @@
 code-review 分 Standards / Spec 两路执行：Standards 无发现；Spec 发现依赖受限沙箱假设的 WSL 测试，经普通用户上下文复现、修正和复审后无剩余发现。完整证据定位、摘要及审查记录见[BOOT-01 验证记录](../foundation-validation.md)。
 
 保留并纳入首次提交的既有 AGENTS、术语、ADR 和总体计划；总体计划原文件 SHA-256 仍为父规格固定值。用户提供的 WSL 入口经沙箱外核验实际可用，[环境记录](../environment-check.md)已补充新事实；不关闭任务 02，不声明产品 APE/QuickJS、ARM64/macOS 矩阵或远程 CI 已验证。
+
+2026-10-31 CI 后续修复：实际读取 run 41202382602 的 job 日志与 Windows artifact，确认原 Windows 行固定的 `C:\msys64\mingw64\bin\gcc.exe` 不存在；其余三个 bootstrap job 成功。Windows 改为通过 PATH 查找系统 `gcc`，静态检查拒绝托管矩阵中的开发机路径，并增加读取实际 matrix 配置编译 C 的回归。修复前在 WSL 复现相同 compiler-not-found；修复后 Windows 17 项通过，WSL 16 项通过/1 项 Windows 专用测试 skip，本地 CI 静态检查通过。完整 M0 仍未完成，修改后远程运行结果须另行确认，详见[CI 修复记录](../foundation-validation.md#首次远程-ci-与-windows-配置修复)。

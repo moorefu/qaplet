@@ -70,6 +70,8 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 实际发现现有 WSL2 Ubuntu-22.04 可在普通用户上下文运行，Linux x64/4096 字节页已测量；受限进程看不到同样的发行版。origin 已配置为 `moorefu/qaplet`，但本任务没有 push 或执行远程 CI。产品输入锁、APE、ARM64/macOS 产品宿主、QEMU 和 SCM/Job 探针仍未执行，完整 M0 保持未完成。
 
+后续首次远程 bootstrap 已执行：[run 41202382602](https://github.com/moorefu/qaplet/actions/runs/41202382602)。Linux x64、Linux ARM64、macOS bootstrap 成功；Windows 因 compiler 路径不存在失败，现已修正并通过本地回归。此结果仅更新 bootstrap 状态，未关闭完整 M0；详见[CI 结果与修复](foundation-validation.md#首次远程-ci-与-windows-配置修复)。
+
 ## 状态和证据
 
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。

@@ -7,6 +7,7 @@ fail closed, so expanding the checked schema requires an explicit implementation
 
 from datetime import datetime
 import json
+from pathlib import PurePosixPath, PureWindowsPath
 import re
 
 
@@ -89,6 +90,13 @@ def check_workflow(path):
         for dependency in [needs] if isinstance(needs, str) else needs:
             if dependency not in jobs:
                 raise ValueError("Unknown job dependency: " + dependency)
+    matrix = jobs["bootstrap"].get("strategy", {}).get("matrix", {}).get("include", [])
+    if not matrix:
+        raise ValueError("Bootstrap compiler matrix is empty")
+    for row in matrix:
+        compiler = row.get("cc")
+        if not isinstance(compiler, str) or not compiler or any(path(compiler).name != compiler for path in (PurePosixPath, PureWindowsPath)):
+            raise ValueError("Hosted bootstrap compiler must be an executable name resolved through PATH")
     steps = jobs["bootstrap"]["steps"]
     allowed_runs = {
         "python scripts/foundation.py doctor", "python scripts/foundation.py test-foundation --profile bootstrap",
