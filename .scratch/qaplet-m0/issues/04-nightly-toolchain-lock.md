@@ -4,7 +4,7 @@
 
 **Blocked by:** [01 · 工程骨架与环境诊断](01-foundation.md)、[02 · WSL2 Linux x64 构建环境就绪](02-wsl2-build-environment.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 已就绪 WSL2 Linux x64；首次显式访问官方 Nightly 通道所需网络与缓存空间。
 
@@ -57,4 +57,4 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01: ticket 04 implementer claimed this work on `codex/m0-04-nightly`, based on integration `efeed76`. CLI, real external commands, and structured evidence are the confirmed seams. Implementation uses vertical red-green slices; source HEAD and bundled libc provenance remain separate facts.
