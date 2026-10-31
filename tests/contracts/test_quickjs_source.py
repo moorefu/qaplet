@@ -183,6 +183,49 @@ class QuickJSSourceContract(unittest.TestCase):
         self.assertEqual([entry["path"] for entry in lock["source"]["files"]],
                          ["LICENSE", "Z.c", "a.c", "quickjs.c"])
 
+    def test_malformed_lock_cannot_verify_even_when_cached_bytes_match(self):
+        self.seed()
+        result, _ = self.bump()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        original = self.lock.read_bytes()
+        for field, value in (("schema_version", 99), ("ref", "refs/heads/other"),
+                             ("fetched_at", "not-a-date"), ("repository", "ext::unsafe-command")):
+            with self.subTest(field=field):
+                lock = json.loads(original)
+                lock[field] = value
+                self.lock.write_text(json.dumps(lock), encoding="utf-8")
+                result, report = self.run_cli("verify")
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(report["status"], "fail")
+                self.assertEqual(report["commands"], [])
+        self.lock.write_bytes(original)
+
+    def test_upstream_failure_keeps_prior_lock_and_raw_error_evidence(self):
+        self.seed()
+        result, _ = self.bump()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        previous = self.lock.read_bytes()
+        result, report = self.run_cli("bump", "--repository", str(self.work / "missing-upstream"))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(self.lock.read_bytes(), previous)
+        self.assertNotEqual(report["commands"][-1]["exit_code"], 0)
+        self.assertTrue(Path(report["commands"][-1]["stderr_log"]).read_bytes())
+
+    def test_fetch_rejects_missing_metadata_before_contacting_upstream(self):
+        self.seed()
+        result, _ = self.bump()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("LICENSE", "patches.json"):
+            with self.subTest(name=name):
+                path = self.lock.parent / name
+                data = path.read_bytes()
+                path.unlink()
+                result, report = self.run_cli("fetch", cache=self.work / "new-cache")
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(report["commands"], [])
+                path.write_bytes(data)
+
 
 if __name__ == "__main__":
     unittest.main()
