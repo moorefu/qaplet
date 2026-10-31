@@ -18,7 +18,7 @@ import re
 from urllib.request import getproxies
 
 from evidence import read_json
-from foundation import ROOT, command, host_facts, now, sha256
+from foundation import ROOT, case_record, command, host_facts, now, sha256
 
 
 NIGHTLY_URL = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
@@ -208,7 +208,9 @@ def acquire(args, report, directory):
         raise Unavailable("No existing lock to bump; use explicit fetch")
     if args.operation == "bump":
         validate_lock(read_json(args.lock))
-    if not args.archive and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None:
+        report["previous_lock_sha256"] = sha256(args.lock)
+    official_input = not args.archive or args.acquisition_report or (locked and locked["source"]["kind"] == "official-nightly")
+    if official_input and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None:
         raise Unavailable("WSL download requires explicit --backing-dir for the VHD physical volume (for this machine /mnt/c)")
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     check_space(args, report, args.min_free_bytes)
@@ -308,10 +310,19 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
     report = {"report_kind": "nightly-toolchain", "schema_version": 1,
+              "report_id": directory.name, "m0_core_status": "not_run",
               "started_at": now(), "finished_at": None, "host": host_facts(),
               "status": "not_run", "reason": "", "operation": args.operation,
-              "source": {"script_sha256": sha256(Path(__file__))}, "commands": [], "toolchain": None,
+              "implementation": {"script_sha256": sha256(Path(__file__))},
+              "source": None, "ci": None, "qemu": None, "commands": [], "toolchain": None,
               "lock_path": str(args.lock.resolve()), "cache_root": str(args.cache_dir.resolve())}
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        report["ci"] = {key: os.environ.get(value) for key, value in {
+            "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT",
+            "workflow": "GITHUB_WORKFLOW", "commit": "GITHUB_SHA",
+            "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS",
+            "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion",
+        }.items()}
     try:
         if args.operation == "download":
             if not args.download_to or args.download_to.exists():
@@ -340,6 +351,15 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
+    report["cases"] = [case_record("nightly." + args.operation, report["status"], report["reason"],
+        started_at=report["started_at"], finished_at=report["finished_at"],
+        commands=report["commands"], toolchain=report["toolchain"],
+        expected={"official_url": NIGHTLY_URL, "operation": args.operation},
+        actual={key: report[key] for key in ("downloaded_archive", "resolved_path") if key in report},
+        artifact=({**report["downloaded_archive"], "path": report.get("download_path"), "kind": "cosmocc-original-zip"}
+                  if "downloaded_archive" in report else None),
+        exit_code=(report["commands"][-1]["exit_code"] if report["commands"] else None),
+        timeout_seconds=args.timeout)]
     write_json(args.report, report)
     if report["status"] == "pass" and args.operation == "path":
         print(report["resolved_path"])
