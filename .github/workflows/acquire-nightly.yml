@@ -1,10 +1,6 @@
 {
   "name": "Acquire official cosmocc Nightly",
   "on": {
-    "push": {
-      "branches": ["codex/qaplet-m0-integration"],
-      "paths": [".github/workflows/acquire-nightly.yml", "scripts/nightly_toolchain.py"]
-    },
     "workflow_dispatch": {}
   },
   "permissions": {"contents": "read"},

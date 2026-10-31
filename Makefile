@@ -10,6 +10,9 @@ ENV_DOWNLOAD_URL ?=
 ENV_BACKING_DIR ?=
 QUICKJS_CACHE ?=
 TOOLCHAIN_CACHE ?=
+TOOLCHAIN_ARCHIVE ?=
+TOOLCHAIN_ACQUISITION_REPORT ?=
+TOOLCHAIN_BACKING_DIR ?=
 
 .PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify
 doctor:
@@ -35,5 +38,8 @@ check: check-ci test test-bootstrap
 quickjs-fetch quickjs-bump quickjs-verify:
 	"$(PYTHON)" scripts/quickjs_source.py $(patsubst quickjs-%,%,$@) $(if $(QUICKJS_CACHE),--cache "$(QUICKJS_CACHE)",) --report "$(OUT)/quickjs-source.json"
 
-toolchain-fetch toolchain-bump toolchain-verify:
-	"$(PYTHON)" scripts/nightly_toolchain.py $(patsubst toolchain-%,%,$@) $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) --report "$(OUT)/nightly-toolchain.json"
+toolchain-fetch toolchain-bump:
+	"$(PYTHON)" scripts/nightly_toolchain.py $(patsubst toolchain-%,%,$@) $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) $(if $(TOOLCHAIN_ARCHIVE),--archive "$(TOOLCHAIN_ARCHIVE)",) $(if $(TOOLCHAIN_ACQUISITION_REPORT),--acquisition-report "$(TOOLCHAIN_ACQUISITION_REPORT)",) $(if $(TOOLCHAIN_BACKING_DIR),--backing-dir "$(TOOLCHAIN_BACKING_DIR)",) --report "$(OUT)/nightly-toolchain.json"
+
+toolchain-verify:
+	"$(PYTHON)" scripts/nightly_toolchain.py verify $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) --report "$(OUT)/nightly-toolchain.json"

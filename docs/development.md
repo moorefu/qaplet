@@ -101,7 +101,15 @@ python3 scripts/nightly_toolchain.py fetch \
 
 接收端重新比对获取报告里的原始长度与 SHA-256，再安全解包、测量编译器和完整内容。没有成功官方获取记录的本地 ZIP 仅属于 `local-import`，默认不能作为产品工具链使用。工具链 libc 与源码 HEAD 的对应关系无法证明时保持 `unproven`，不能把下载成功当成 APE 成功。
 
-`acquire-nightly.yml` 仅在 integration 分支涉及该工作流或下载脚本的 push，以及显式手动触发时获取官方原始字节；不更新源码锁或工具链锁。它用于本地网络不可达时的获取路径，保留失败日志和归档 7 天。取回 artifact 后仍须本地校验和 Linux 工具测量。
+本轮官方发布站点在本地及 GitHub runner 都超时，最终从[官方 Nightly run 41169443573](https://github.com/jart/cosmopolitan/actions/runs/41169443573) 取得原始 `cosmocc` artifact。权威锁如实记录 `github-actions` 来源及制品摘要，获取记录保存在 `toolchains/cosmocc.acquisition.json`。新缓存可在取得锁中对应的原始 ZIP 后运行：
+
+```sh
+make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
+  TOOLCHAIN_ACQUISITION_REPORT=toolchains/cosmocc.acquisition.json \
+  TOOLCHAIN_BACKING_DIR=/mnt/c OUT=out/inputs/nightly-fetch
+```
+
+此 GitHub 来源的锁不会因缓存缺失而切换到滚动发布站点。已有权威锁时，精确匹配的 ZIP 副本也可独立用于恢复；首次建立新的官方来源必须提供可核查获取记录。`acquire-nightly.yml` 的一次性 integration push 获取已结束，后续仅显式手动触发；它保留官方发布站点下载的成功/失败日志和归档 7 天，不更新任何锁。取回 artifact 后仍须本地校验和 Linux 工具测量。
 
 两种输入报告各自使用独立的版本化合同；现有 foundation `validate-report` 不验证它们，也不汇总这些结果关闭 M0。BOOT-09 仍须接入全部 Core 实际证据。
 
