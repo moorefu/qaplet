@@ -1,5 +1,9 @@
 # 证据身份与严格回归
 
+当前消费者要求[统一 v3 身份](input-lock.md)。历史报告保留原成绩；缺少当前身份的报告不能在
+新入口重标为当前组合通过。完整新矩阵由相应对齐任务取得，下面的严格回归仍需显式选择匹配的
+实际证据，普通 `make check` 与本地单宿主/断网成绩不替代它。
+
 `python3 scripts/check_evidence.py --config <selection.json> --report out/evidence-check.json` 是只读的严格回归入口。配置 schema_version 为 1、profile 为 `m0-evidence`，并显式选择 `input_manifest`、`guest_report`（实际4096 guest）和 `publication_inputs`（实际五 producer）三个文件；相对路径以配置文件所在目录解释。publication selection 内保留原 producer 路径，按该既有合同提供当前平台可访问的路径。
 
 ```json

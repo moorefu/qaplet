@@ -15,7 +15,7 @@
 
 - **已有证明保留**：v1.4 M0 12 票及 Core gate 已按原合同完成，旧计划、代码、失败和验收历史继续保留。服务相关工作作为未来应用/系统参考，退出当前平台交付主线。
 - **输入事实校正**：现有 cosmocc 原件就是本版指定 Artifact，独立下载/哈希/清单/离线恢复已有证据；不重置为“尚未下载”。当前 QuickJS 则为 `e621135dc542e000e31038bedc52944aa0adaf1a`，目标 `2833510432045f72915919cef680ba59e5153b16` 尚待受控升级及 ARM64 补丁复核。
-- **M1 前置**：统一 v3 锁迁移 → 目标 QuickJS 升级 → M0-A ESM/Promise 微型 C Host；对应任务完成后进入正式 M1。当前构建仍消费既有分锁，本次文档更新不执行切换。
+- **M1 前置**：统一 v3 锁迁移 → 目标 QuickJS 升级 → M0-A ESM/Promise 微型 C Host；对应任务完成后进入正式 M1。[任务 01 已完成统一入口](../../.scratch/qaplet-v15-alignment/issues/01-unified-input-lock.md)，当前使用既有 M0 组合，目标源码升级和新探针仍待 02/03。
 - **平台门禁**：继续原生页覆盖优先，完整系统 QEMU 可补缺失的 ARM64 4K/64K。固定 guest 输入、实际内核页大小和 `native`/`emulated-system` 必须记录；不增加物理 ARM64 64K 硬前置，不外推物理性能。
 - **原件镜像**：长期原 ZIP 镜像及同 SHA 恢复在发布前完成；M1 可先使用逐次校验的已有缓存。原件缺失/损坏仍 fail-closed，不能换 rolling Nightly。
 - **SDK 分期**：M1 实现最小 SDK、owner-thread 约束、有界 POD 队列与协作式 stop/interrupt；M2 完成跨 OS waker、I/O 取消、迟到 completion 和完整调度。
@@ -66,7 +66,7 @@ QuickJS 的本版目标为 `2833510432045f72915919cef680ba59e5153b16` / `VERSION
 
 1. `source_ref`：Run `head_sha` 关联的 **Cosmopolitan 源码 Git Commit**；已从 workflow checkout / job metadata / `tool/cosmocc/package.sh` 的调用链获得构建关联证据。该 Run 在正常可信 GitHub Actions 环境下使用此代码进行构建，但工作流没有提供独立的密码学签名 provenance/attestation，不应写成已取得 SLSA 级证明。
 2. `artifact_zip_sha256`：GitHub `upload-artifact` **生成的原始 Artifact ZIP** 的摘要，不是源码压缩包哈希，也不是从 `https://cosmo.zip/pub/cosmocc/cosmocc.zip` 获得的归档摘要。实际 `download` 后必须由 Qaplet 独立重新哈希，匹配 GitHub 元数据才允许解压/执行。
-3. `extracted_toolchain_manifest`：从上述 ZIP 安全解压并验证模式/链接、完成编译探针后计算的每文件清单。现有锁已记录完整 file/link 清单和模式；统一 v3 的组件摘要算法及迁入结果仍由迁移任务确定，不能用 Artifact ZIP 的 SHA-256 代填组件摘要。
+3. `extracted_toolchain_manifest`：从上述 ZIP 安全解压并验证模式/链接、完成编译探针后计算的每文件清单。现有锁已记录完整 file/link 清单和模式；统一 v3 的组件摘要算法及迁入结果见[实施合同](../development/input-lock.md)，不能用 Artifact ZIP 的 SHA-256 代填组件摘要。
 
 本版选择的 QuickJS 输入为 `2833510432045f72915919cef680ba59e5153b16` / `VERSION=2026-06-04`，实际升级和 Commit/Tree/patch 核验由独立任务执行；txiki.js、LLRT、Redis ae、llamafile、zipalign 和 `moorefu/quickjs-cosmo` 沿用前版所注明的参考提交，仅作参考，不把旧参考 SHA 冒充新的 HEAD。
 
@@ -74,7 +74,7 @@ QuickJS 的本版目标为 `2833510432045f72915919cef680ba59e5153b16` / `VERSION
 
 ### 1.2 统一 v3 锁：复用既有工具链证明，验收新输入组合
 
-目标统一入口为 `toolchains/qaplet.lock.json` / `qaplet.toolchain-lock.v3`，其迁移是 M0-A 增量前置。当前实现仍消费 `third_party/quickjs/source.lock.json`、`toolchains/cosmocc.lock.json` 与 helper 来源锁，须迁移所有消费者后才宣称单一入口完成。[目标选型样例](qaplet-toolchain-lock-selected.json)保留在独立 JSON 文件中；`selected_pending_validation` 描述新 QuickJS/v3 组合尚未验收，不否定既有 cosmocc 原件证明。样例的组件摘要 null 表示 v3 字段尚未迁入，不代表既有清单不存在：
+统一入口为 `toolchains/qaplet.lock.json` / `qaplet.toolchain-lock.v3`，已由任务 01 迁移并验证既有 M0 组合；`third_party/quickjs/source.lock.json`、`toolchains/cosmocc.lock.json` 与 helper 来源锁成为被精确摘要绑定的组件清单。[目标选型样例](qaplet-toolchain-lock-selected.json)保留在独立 JSON 文件中；`selected_pending_validation` 描述目标 QuickJS/v3 组合尚未验收，不否定既有 cosmocc 原件证明。样例的组件摘要 null 保持未验证目标范围，已实施字段见实际统一锁与迁移合同，不代表既有清单不存在：
 
 目标格式字段以该选型文件为参考；它仍是规划输入，不被当前 builder 消费。现有权威锁和完整组件/源码清单保持不变。
 
@@ -1381,7 +1381,7 @@ docs/
 
 ## 22. 本计划所依赖的主要源码与规范索引
 
-本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针；目标 QuickJS 与统一 v3/M0-A 增量仍待实施。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
+本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针；统一 v3 的旧 M0 组合迁移已完成，目标 QuickJS 与新 M0-A 增量仍待实施。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
 
 ### QuickJS / Cosmopolitan / APE
 

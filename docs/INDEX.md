@@ -7,7 +7,7 @@
 - [对齐任务与依赖](../.scratch/qaplet-v15-alignment/README.md)：从统一 v3 锁开始，完成目标 QuickJS 与 M0-A 增量后进入正式 M1。
 - [基线与验收连续性 ADR](adr/0004-v15-platform-baseline.md)：QEMU 补缺、镜像发布门禁和 M1/M2 SDK 边界。
 
-当前构建仍消费现有分锁；`toolchains/qaplet.lock.json`、目标 QuickJS 提交和新增 ESM/Promise 探针由对齐任务实现。计划文件及[选型样例](plans/qaplet-toolchain-lock-selected.json)不代表这些迁移已经执行。
+当前构建通过[统一 v3 入口](development/input-lock.md)消费已验 M0 输入，旧分锁仅作为精确摘要绑定的组件清单。目标 QuickJS 和新增 ESM/Promise 探针仍由任务 02/03 实施；[选型样例](plans/qaplet-toolchain-lock-selected.json)保持待验证目标范围。
 
 ## 开发与术语
 

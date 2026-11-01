@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Confirmed:** 2026-11-01，沿用 grill-with-docs 六项决策及最终确认；用户在 to-spec 中确认继续采用共享外部命令、真实制品和现有证据消费者的测试边界。
-**Execution state:** 本规格已发布到本地任务跟踪器；实现任务尚未执行，实际输入、源码、缓存、probe 和 workflow 不因规格发布自动迁移。
+**Execution state:** 任务 01 已实现并验证统一 v3 入口，保持旧 M0 源码/工具链组合；任务 02–06 尚待按依赖实施。实际结果见各任务及验收记录，规格发布本身不作为实现成绩。
 **Baseline:** [v1.5 实施修订](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)与 [ADR 0004](../../docs/adr/0004-v15-platform-baseline.md)。
 
 ## Problem Statement

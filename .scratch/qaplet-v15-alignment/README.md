@@ -1,17 +1,17 @@
 # v1.5 对齐与 M1 入口
 
 **Status:** ready-for-agent
-**Execution state:** 计划已确认；以下实现任务尚未执行。既有 M0 的完成状态保持不变。
+**Execution state:** 任务 01 已完成并实际验证；统一 v3 使用既有 M0 输入。任务 02–06 仍按依赖推进，既有 M0 的原完成状态与输入范围保持不变。
 
 [当前总体计划](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md) · [正式对齐规格](spec.md) · [决策 ADR](../../docs/adr/0004-v15-platform-baseline.md)
 
-对齐规格已按 `to-spec` 模板发布，状态为 `ready-for-agent`，包含 44 条用户故事、实施与测试决定、范围排除及历史证据引用。测试边界已由用户确认：共享外部命令、真实制品运行与现有证据消费者；以下六张任务的依赖和状态保持不变。
+对齐规格已按 `to-spec` 模板发布，状态为 `ready-for-agent`，包含 44 条用户故事、实施与测试决定、范围排除及历史证据引用。测试边界已由用户确认：共享外部命令、真实制品运行与现有证据消费者；依赖保持不变，各票记录实际执行状态。
 
 ## 推进顺序
 
 | 序号 | 任务 | Blocked by | 阶段作用 |
 | --- | --- | --- | --- |
-| 01 | [统一 v3 构建输入锁](issues/01-unified-input-lock.md) | 无 | M0-A 增量前置 |
+| 01 | [统一 v3 构建输入锁](issues/01-unified-input-lock.md)（resolved） | 无 | M0-A 增量前置已完成 |
 | 02 | [目标 QuickJS 升级与补丁复核](issues/02-quickjs-upgrade.md) | 01 | M0-A 增量前置 |
 | 03 | [ESM/Promise 微型 C Host](issues/03-m0-a-esm-promise.md) | 01, 02 | 通过后进入正式 M1 |
 | 04 | [新输入的跨宿主与 ABI 回归](issues/04-cross-host-revalidation.md) | 03 | 与 M1 OS 无关开发并行；约束相关冻结/验收 |
@@ -24,7 +24,10 @@
 
 ## 存量处理
 
-旧 [M0 12 张任务](../qaplet-m0/README.md)及其 Answer、失败记录、制品身份和 Core gate 均保留。服务应用相关 probe、测试和 workflow 保留为参考，不新增业务应用里程碑。统一锁、源码切换、缓存物化及新探针运行由本目录任务执行，不能将本次计划更新记成实现成绩。
+01 的迁移、Ubuntu/断网验证与输入范围见[验收记录](unified-input-lock-validation.md)。02 的前置已满足；
+统一锁当前固定旧 M0 源码，目标引擎升级和 ESM/Promise 成绩仍由 02/03 签发。
+
+旧 [M0 12 张任务](../qaplet-m0/README.md)及其 Answer、失败记录、制品身份和 Core gate 均保留。服务应用相关 probe、测试和 workflow 保留为参考，不新增业务应用里程碑。统一锁已由 01 实施；源码切换、缓存物化及新探针运行由相应后续任务执行，规划记录不作为实现成绩。
 
 ## 计划更新检查（2026-11-01，b09b061）
 

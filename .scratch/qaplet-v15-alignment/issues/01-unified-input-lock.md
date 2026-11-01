@@ -1,8 +1,8 @@
 # 01：统一 v3 构建输入锁（LOCK-01）
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** 无。
-**Execution prerequisites:** Ubuntu、现有锁及可验证缓存可读；先读 `docs/development.md`。本文不是已经实施的迁移。
+**Execution prerequisites:** Ubuntu、现有锁及可验证缓存可读；先读 `docs/development.md`。实际实施与复跑范围见下方 Answer。
 
 ## Goal
 
@@ -20,15 +20,15 @@
 
 ## Source Files
 
-`toolchains/qaplet.lock.json`（待建）、`docs/plans/qaplet-toolchain-lock-selected.json`、`third_party/quickjs/source.lock.json`、`toolchains/cosmocc.lock.json`、helper 来源锁；`scripts/quickjs_source.py`、`nightly_toolchain.py`、`build_ape.py`、`native_toolchain.py`、`offline_integrity.py`、证据/CI 消费者与相应合同测试。实际代码边界由实施选择，全部入口须纳入迁移清单。
+`toolchains/qaplet.lock.json`、`docs/plans/qaplet-toolchain-lock-selected.json`、`third_party/quickjs/source.lock.json`、`toolchains/cosmocc.lock.json`、helper 来源锁；`scripts/quickjs_source.py`、`nightly_toolchain.py`、`build_ape.py`、`native_toolchain.py`、`offline_integrity.py`、证据/CI 消费者与相应合同测试。实际代码边界由实施选择，全部入口须纳入迁移清单。
 
 ## Acceptance criteria
 
-- [ ] v3 字段、状态转换、清单摘要算法与迁移说明完整；精确输入从单一入口解析。
-- [ ] 构建、输入校验、离线、CI 和证据消费者一致；未消费的旧权威路径被可执行检查发现。
-- [ ] 原 ZIP digest/size、组件清单、源码/补丁与派生 helper 身份保持独立；Run HEAD 关联不升级为 libc 源码或签名证明。
-- [ ] 现有缓存可验证复用；任何新格式物化使用 staging/原子发布，失败保留原数据。
-- [ ] 未验证目标不能变成 pinned；长期镜像状态单独作为发布门禁，不阻断 M1 的已验缓存使用。
+- [x] v3 字段、状态转换、清单摘要算法与迁移说明完整；精确输入从单一入口解析。
+- [x] 构建、输入校验、离线、CI 和证据消费者一致；未消费的旧权威路径被可执行检查发现。
+- [x] 原 ZIP digest/size、组件清单、源码/补丁与派生 helper 身份保持独立；Run HEAD 关联不升级为 libc 源码或签名证明。
+- [x] 现有缓存可验证复用；任何新格式物化使用 staging/原子发布，失败保留原数据。
+- [x] 未验证目标不能变成 pinned；长期镜像状态单独作为发布门禁，不阻断 M1 的已验缓存使用。
 
 ## Tests
 
@@ -52,4 +52,23 @@
 
 ## Comments
 
+规格发布时：尚未实施。
+
 2026-11-01：使用 `implement` 实施。统一入口、旧清单精确绑定、消费者切换、候选限制和迁移 CLI 已实现；Ubuntu 合同回归及实际 Hello/eval 构建已执行，最终配方的断网双构建与独立 code-review 进行中。最终证据和验收勾选在两轴审查及适用验证完成后更新。
+
+2026-11-01：适用验证与独立审查完成，任务 resolved；完整事实和范围见 Answer。
+
+## Answer
+
+已建立唯一 v3 入口和组件/配方精确绑定，迁移全部供应、构建、离线与证据消费者，增加旧权威
+扫描、候选限制、历史报告拒绝重标及完整 helper 来源校验。字段映射、摘要算法、状态与兼容缓存
+布局见[操作合同](../../../docs/development/input-lock.md)，命令、身份、拒绝与审查材料见
+[验收记录](../unified-input-lock-validation.md)。
+
+最终 Ubuntu `make check` 经 dev 入口通过：183 tests、0 failures/errors、51 个明确平台/数据
+opt-in skips。实际普通构建和完整 helper bundle 消费通过；断网 profile 的两次独立构建、14 个
+损坏拒绝、六个 binary 和两种 helper 比较、16 份网络 trace 均通过。选中的 21,180 个文件及
+23,034 个条目前后一致，原件及已有布局复用。
+
+当前 pinned 仍是已验 M0 QuickJS e621135… 与固定原 ZIP，目标 283351… 留给任务 02；任务 03
+完成后才进入正式 M1。原镜像发布门禁仍 pending。旧 M0、原锁、失败日志和原验收结论继续保留。
