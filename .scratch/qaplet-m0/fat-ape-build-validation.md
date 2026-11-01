@@ -76,4 +76,8 @@ Nightly 输入报告记录实际 `9p` / `/mnt/d` / `drvfs-no-metadata-v1`：文�
 
 07/08 的最小复用指针：先调用 `verify_inputs(..., source=False)` 得到原输入，再用 `native_toolchain(args, report, directory, original)` 得到派生编译目录；不要直接执行原缓存 MZ helper。也可通过公共 `prepare-toolchain` CLI 的 `native_toolchain.tree` 获取目录。`run`、`identity`、`headers`、`audit` 和 `build` 的每对象编译/双 CPU map 收集循环可供独立探针脚本复用并生成自己的 artifact 身份，不需同时改本票构建文件。构建后需复核原输入及 `native_toolchain.recheck`。这些是构建证据工具，不构成稳定产品 SDK。
 
-本地代码可合入，ticket 05 仍保持 `claimed`，等待真实 Ubuntu CI 验证 GH_TOKEN 跨仓库固定归档获取、共享配方构建及原字节上传；不把本地 helper 检查代替远程获取验收。完整 M0 / 跨宿主 / SDK 支持声明仍由后续任务负责。
+上述为合入前状态。集成提交 `1b06a7914c34f41909341f495b044c99f8127a00` 随后通过真实 [M0 run 41263354111](https://github.com/moorefu/qaplet/actions/runs/41263354111)，build job `124720949222` 全步骤成功，包含 GH_TOKEN 跨仓库固定官方归档下载、原 SHA/长度校验、两种缓存填充、共享构建和上传。相同提交的 [bootstrap run 41263354057](https://github.com/moorefu/qaplet/actions/runs/41263354057) 成功。
+
+取回的 artifact `13066340529` 为 `m0-build-1b06a7914c34f41909341f495b044c99f8127a00`，ZIP 6753754 字节，SHA-256 `c12384e32b09b10b8025e828491a53f6f8949767fcd66a4f2592aaaa10fc4754`，缓存于 `.cache/downloads/ci/m0-build-1b06a79.zip`。CRC、安全相对路径和解包后 producer SHA/长度检查通过；Hello/eval 分别仍是上表完全相同的字节。独立核对找到 172 份顶层构建命令 stdout/stderr 日志，五项 native case 均通过，62 个派生 helper 与原供应输入的身份均保留在 build-info。
+
+实际 producer 为 Ubuntu 24.04.5 LTS / x86_64 / native / kernel `7.0.0-1017-azure` / page size 4096，runner image `ubuntu24` / `20261026.354.1`。解包原始报告/制品位于 `out/m0-integration/ci05/`，`verification.json` 保存 run/job/artifact、原 ZIP 和文件摘要及本地逐项比对；`inspect_ci05.py` 为此次独立接收核验入口。ticket 05 因而 resolved。完整 M0 / 跨宿主 / SDK 支持声明仍由后续任务负责。

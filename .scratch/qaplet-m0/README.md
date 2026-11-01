@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved
+**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -75,6 +75,8 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 后续首次远程 bootstrap 已执行：[run 41202382602](https://github.com/moorefu/qaplet/actions/runs/41202382602)。Linux x64、Linux ARM64、macOS bootstrap 成功；Windows 因 compiler 路径不存在失败，现已修正并通过本地回归。此结果仅更新 bootstrap 状态，未关闭完整 M0；详见[CI 结果与修复](foundation-validation.md#首次远程-ci-与-windows-配置修复)。
 
 ## 状态和证据
+
+2026-11-01：05 的固定输入 fat Hello/eval 构建、五项本地运行和双 CPU/map/import 审计已通过。WSLInterop 路由修正经原工具失败/派生 Linux 工具成功的同上下文对照验证。集成提交 `1b06a79` 的[真实 Ubuntu CI](https://github.com/moorefu/qaplet/actions/runs/41263354111) 完成精确工具链下载、共享构建及原字节分发，取回文件与本地 canonical SHA 完全一致；见[05 验收](fat-ape-build-validation.md)。06/07/08/09 和 11/12 的前置现已满足，完整 Core/跨宿主/SDK 尚未完成。
 
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。
 

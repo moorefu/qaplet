@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent  
 **Baseline:** 总体计划 v1.4（App-first / 本地优先与原生页覆盖），2026-10-31；SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。  
-**Execution state:** BOOT-01 / ENV-01 已完成工程入口与现有 Ubuntu-22.04 环境验收（见[记录](wsl2-environment-validation.md)）。BOOT-02 已锁定并在 Windows / WSL 验证实际 QuickJS 提交，见[源码记录](quickjs-source-validation.md)。BOOT-03 已完成官方 Nightly 原始 GitHub 制品锁定、编译器测量、断网缓存校验及损坏拒绝验收，见[工具链记录](nightly-toolchain-validation.md)。正式产品 APE 构建/矩阵仍待后续任务，不声明任何 Runtime 能力已验证。
+**Execution state:** BOOT-01 / ENV-01 已完成工程入口与现有 Ubuntu-22.04 环境验收（见[记录](wsl2-environment-validation.md)）。BOOT-02 已锁定并在 Windows / WSL 验证实际 QuickJS 提交，见[源码记录](quickjs-source-validation.md)。BOOT-03 已完成官方 Nightly 原始 GitHub 制品锁定、编译器测量、断网缓存校验及损坏拒绝验收，见[工具链记录](nightly-toolchain-validation.md)。BOOT-04A 已完成 fat Hello/eval、本地实测及真实 Ubuntu CI 下载/构建/分发验收，见[构建记录](fat-ape-build-validation.md)。跨宿主矩阵仍待后续任务，不声明正式 Runtime 或 SDK 能力已验证。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
 
 **Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。
@@ -117,7 +117,7 @@ M0 Core完成必须满足其全部门槛；M0-SVC结果不进入Core阻断集合
 
 - [x] 基础工程、MIT、真实WSL2构建环境及环境报告就绪（01、02）。
 - [x] 实际QuickJS源码与Nightly输入已锁定，provenance/补丁/许可可核验，无伪造占位值。
-- [ ] Hello和最小eval fat APE可构建，slice/header、构建命令和artifact身份齐备。
+- [x] Hello和最小eval fat APE可构建，slice/header、构建命令和artifact身份齐备。
 - [ ] 六类Core目标有实际启动/eval证据；Linux ARM64优先使用原生页覆盖，QEMU仅补缺失组合，native/emulated-system明确，摘要一致。
 - [ ] Linux ARM64 64K深度探针（原生满足时直接测，不足时QEMU）及Windows/Unix I/O基线齐备。
 - [ ] 离线重构和输入损坏拒绝路径有实际结果。
