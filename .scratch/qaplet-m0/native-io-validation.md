@@ -50,9 +50,9 @@ python3 scripts/native_io.py run \
 
 开发 tracer 的完整工具链校验在 `out/ticket08/` 和 `out/ticket08-pipe/`；后续快速迭代明确标为 `development_rebuild`，引用先前已核验 native view，最终 producer 重新完整校验。所有这些报告、产品及原始日志均为 ignored `out/` / 主 `.cache/`，不提交生成物。
 
-## 最终本地 native 基线
+## 本地 native 基线与最终交付
 
-最终 producer：`out/ticket08-final/build-info.json`，report ID `1c6ac8db-6bd7-472a-a845-0922533653af`，status `pass`；原工具链前/后 verify、派生 helper 复核和双 CPU 审计均通过。独立 `native-io.com` 为 **884428 字节**，SHA-256 **`8d34081ddbff7ef2b0d705ebeae5ab75bc23c015f9267fb70d039ad87224aebe`**；build SHA-256 为 `8e40bc177f6d89d619bef574cb554280b88c2f5942c50ad11783bda4fd1eccc5`。Linux git 无法解析 Windows 创建 worktree 的 `D:/.../.git/worktrees/08` 指针，实际 query 失败日志保留在 producer evidence；`source.git_commit` 因此保持 null，源码/所有 recipe 的实际逐文件 SHA-256 和集合摘要完整保留，没有填造提交身份。分支 ancestry 由 Windows git 独立核验。
+本地 native producer：`out/ticket08-final/build-info.json`，report ID `1c6ac8db-6bd7-472a-a845-0922533653af`，status `pass`；原工具链前/后 verify、派生 helper 复核和双 CPU 审计均通过。独立 `native-io.com` 为 **884428 字节**，SHA-256 **`8d34081ddbff7ef2b0d705ebeae5ab75bc23c015f9267fb70d039ad87224aebe`**；build SHA-256 为 `8e40bc177f6d89d619bef574cb554280b88c2f5942c50ad11783bda4fd1eccc5`。Linux git 无法解析 Windows 创建 worktree 的 `D:/.../.git/worktrees/08` 指针，实际 query 失败日志保留在 producer evidence；`source.git_commit` 因此保持 null，源码/所有 recipe 的实际逐文件 SHA-256 和集合摘要完整保留，没有填造提交身份。分支 ancestry 由 Windows git 独立核验。
 
 | 报告 | 实测宿主 | 结果 |
 | --- | --- | --- |
@@ -62,6 +62,8 @@ python3 scripts/native_io.py run \
 两个宿主的原生 wait 状态均为 9472，WEXITSTATUS 为 37；挂起子进程在 150 ms 观察边界后终止，raw wait status 为 9，第二次 wait 的 errno 为 ECHILD (10)。线程实际 TLS 为 initial 17 / child 99 / parent 7，pthread_join 成功。Windows 私有 Console mode 实际 503 → 499 → 503，关闭独立 CONIN$ 后 GetConsoleMode 失败 / Win32 error 6；ConPTY、reader、pipes、thread/process handles 均完成清理。`isatty(0)=0` / `standard_handle_console=0` 的实测值保留，不能从私有 Console 存在推导标准输入是 TTY。
 
 持久负向证据：`out/ticket08-final/timeout-linux.json` 为真实 1 秒 deadline、status fail、进程回收完成和原始终止退出码；`out/ticket08-final/corruption.json` 为末尾 ZIP 资源字节变更后，在任何工具执行前拒绝 SHA-256，commands 为空。Windows/Linux 全部 9 个 focused CLI contracts 均通过；Ubuntu `make check OUT=out/ticket08-final/check` 通过 77 个合同（6 个明确非本票/重型可选或平台 skip）、静态 CI 合同和实际系统 C bootstrap。完整检查后的共享 measured-host/loader 接入另经同一最终 artifact 的全部 focused contracts 及显式 bundle-consumer 命令复核。
+
+最终交付 producer 另从提交 `5d6b594` 对应的完整 recipe 重建并重新执行前后供应校验：`out/ticket08-delivery/build-info.json` / report ID `9c9cc788-8557-41a5-b547-0a206c898c54`，status pass。build SHA 为 `215c2524d3dc9ad0a8529c2f3d9bd66f66b5714f7d0b322be086d816553e4c53`，source/recipe 集合 SHA 为 `bd96fa00d2ec10c3d30a0a1a1b55a5d844f7fd286247c1d6649de87182079339`。独立复核全部记录源码/recipe 与当前字节相符，最终 APE 与上表基线 **完全相同 SHA-256/长度**。新 producer 又经 `out/ticket08-delivery/linux.json` 20/20、`windows.json` 21/21 实际通过；因此后续消费应使用 delivery producer，而历史 native/negative 报告继续保留。
 
 ## 尚待验收
 
