@@ -4,8 +4,12 @@
 `qaplet.toolchain-lock.v3`。任务 01 迁移的是已验 M0 组合：QuickJS
 `e621135dc542e000e31038bedc52944aa0adaf1a`、Tree
 `cdabddcf0f783af024481272227c1f56c3d3e48a`、VERSION `2026-06-04`、现有
-ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 的目标
-`2833510432045f72915919cef680ba59e5153b16` 仍待升级；
+ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 已选择目标
+`2833510432045f72915919cef680ba59e5153b16`、Tree
+`b2763aa1a9395672adc131322f17d7fad7383053`，VERSION/许可和有序 overlay
+保持不变；原始与 patched 源码摘要各自更新，旧 source manifest 保存于
+`third_party/quickjs/history/`。当前为 `selected_pending_validation`，任务 03
+完成 ESM/Promise 前不晋级普通构建；02 的受控成绩不继承旧跨宿主覆盖。
 `docs/plans/qaplet-toolchain-lock-selected.json` 仍是有未知字段的选型样例，不是可构建锁。
 显式候选也必须直接位于某个仓库的 `toolchains/`；解析器和报告防覆盖校验共用物理根目录判定。
 
@@ -64,6 +68,19 @@ Git Commit/Tree 和 VERSION，保留 Git 命令、退出码及原始日志；所
 中记录证据、更新 state；迁移工具没有“跳过验证并 pin”选项。普通 builder、离线构建和 Core
 consumer 拒绝 selected。源码和 Nightly CLI 的显式 `fetch` 以及 `verify --controlled-probe`
 可验证完整候选输入；这些不是普通产品构建成绩，不能签发 release-ready。
+
+任务 02 增加 builder 的显式 `--controlled-probe`：仍逐次完整验证供应输入、派生 helper
+及构建前后身份，只为候选产生标记清楚的真实探针制品。startup 的同名选项允许执行、导出和
+只读导入该候选的 guest 证据；Linux ARM64 guest 导出同时验证 producer 中的独立源、patch
+及 helper 配方，再比较分发 loader 字节。普通消费者拒绝 controlled 报告；受控模式不能签发
+matrix/page-gaps 或完整 Core 成绩。普通 `make check` 的输入 gate 在此阶段拒绝 selected，
+完成 03 后须对晋级后的实际身份重新执行适用回归。
+
+源码 `select --commit <exact>` 仅生成隔离的新 source candidate，不解析 moving master；
+`fetch --mirror <physical-local-git-repository>` 从已缓存 Git 对象离线重新物化，仍对比锁定的
+Commit/Tree、原始内容、ordered patch 与 patched 内容，并保留官方锁身份。新的
+`engine_compatibility_id` 绑定精确 commit/原始/叠加/patch，进入 build fingerprint；相同 VERSION
+不表示可复用字节码或对象。当前没有持久字节码 reader/cache，对象一律使用新的唯一构建目录。
 
 旧 `--lock` 只接受与 v3 绑定身份一致的清单副本，不能另选版本。历史供应单元 fixture 显式使用
 `--fixture-lock`，仅能作用于非生产清单路径；报告标注 fixture_only，普通 producer 要求对应

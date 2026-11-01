@@ -2,10 +2,10 @@
   "schema_version": 1,
   "repository": "https://github.com/bellard/quickjs.git",
   "ref": "refs/heads/master",
-  "commit": "e621135dc542e000e31038bedc52944aa0adaf1a",
-  "fetched_at": "2026-10-31T17:47:52.375016+00:00",
+  "commit": "2833510432045f72915919cef680ba59e5153b16",
+  "fetched_at": "2026-11-01T18:28:03.097680+00:00",
   "upstream": {
-    "sha256": "708c970fcd2d4f26f4e7c1a1f1de2464d16c4d8defb5bafd8c0bdbf21b953447",
+    "sha256": "8afcc7e394aae1ddae380ed63a1ca329d2bbeeb5c9ffdc08b50e0c65e111ac8f",
     "files": [
       {
         "path": ".github/workflows/ci.yml",
@@ -29,8 +29,8 @@
       },
       {
         "path": "Makefile",
-        "size": 16001,
-        "sha256": "a3da435139e13849d89b3730e71140cc9255747eb411df8b829d66b13346f0d2"
+        "size": 16176,
+        "sha256": "bbd9bfdc9764cdd80f2e1154aab6a7e1ecb728423e6e34bd91f977a9ce3a60b3"
       },
       {
         "path": "TODO",
@@ -319,8 +319,8 @@
       },
       {
         "path": "quickjs.c",
-        "size": 2174219,
-        "sha256": "d511247517c128dae0b63f83d048f01b4cf84b307cf0d144a6c65c5cb55f67c8"
+        "size": 2175912,
+        "sha256": "737bf9750cba340cd8ae2645c2ee5717cd4d486abfa07b73656706e7a6ce9ac8"
       },
       {
         "path": "quickjs.h",
@@ -349,8 +349,8 @@
       },
       {
         "path": "run-test262.c",
-        "size": 79877,
-        "sha256": "6e2fa14f303c53db9a7a348101636960242c3f1cc30432815f1cb142da48705b"
+        "size": 79899,
+        "sha256": "a8c4dd33ebd4d2dc6fd61addcac1d6f799345edea9b35f54d308ee097efab196"
       },
       {
         "path": "temporal/calendar.c",
@@ -489,8 +489,8 @@
       },
       {
         "path": "tests/test_builtin.js",
-        "size": 34347,
-        "sha256": "22acf208ee5d0907feeaf3db9446c6adb268d1479b5efb89ea826f5f29983c6f"
+        "size": 34558,
+        "sha256": "3d41510fa7decaf0e908645b556575d68738ee1d77ca0bf93010cdb9823c8e0b"
       },
       {
         "path": "tests/test_closure.js",
@@ -555,7 +555,7 @@
     ]
   },
   "source": {
-    "sha256": "1da9f9ae2f2557143a9f44471fdb73d646bdfa87e11ccfec8dca8f757952b616",
+    "sha256": "562217889e78aa63828113ff112034755d010cd8ec36ad9756eeded91d39138c",
     "files": [
       {
         "path": ".github/workflows/ci.yml",
@@ -579,8 +579,8 @@
       },
       {
         "path": "Makefile",
-        "size": 16001,
-        "sha256": "a3da435139e13849d89b3730e71140cc9255747eb411df8b829d66b13346f0d2"
+        "size": 16176,
+        "sha256": "bbd9bfdc9764cdd80f2e1154aab6a7e1ecb728423e6e34bd91f977a9ce3a60b3"
       },
       {
         "path": "TODO",
@@ -869,8 +869,8 @@
       },
       {
         "path": "quickjs.c",
-        "size": 2174219,
-        "sha256": "d511247517c128dae0b63f83d048f01b4cf84b307cf0d144a6c65c5cb55f67c8"
+        "size": 2175912,
+        "sha256": "737bf9750cba340cd8ae2645c2ee5717cd4d486abfa07b73656706e7a6ce9ac8"
       },
       {
         "path": "quickjs.h",
@@ -899,8 +899,8 @@
       },
       {
         "path": "run-test262.c",
-        "size": 79877,
-        "sha256": "6e2fa14f303c53db9a7a348101636960242c3f1cc30432815f1cb142da48705b"
+        "size": 79899,
+        "sha256": "a8c4dd33ebd4d2dc6fd61addcac1d6f799345edea9b35f54d308ee097efab196"
       },
       {
         "path": "temporal/calendar.c",
@@ -1039,8 +1039,8 @@
       },
       {
         "path": "tests/test_builtin.js",
-        "size": 34347,
-        "sha256": "22acf208ee5d0907feeaf3db9446c6adb268d1479b5efb89ea826f5f29983c6f"
+        "size": 34558,
+        "sha256": "3d41510fa7decaf0e908645b556575d68738ee1d77ca0bf93010cdb9823c8e0b"
       },
       {
         "path": "tests/test_closure.js",

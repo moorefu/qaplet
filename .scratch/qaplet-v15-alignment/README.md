@@ -1,7 +1,7 @@
 # v1.5 对齐与 M1 入口
 
 **Status:** ready-for-agent
-**Execution state:** 任务 01 已完成并实际验证；统一 v3 使用既有 M0 输入。任务 02–06 仍按依赖推进，既有 M0 的原完成状态与输入范围保持不变。
+**Execution state:** 任务 01/02 已完成并实际验证；统一 v3 已选择目标 QuickJS 候选，普通构建等待 03 的 ESM/Promise 验证及晋级。任务 03–06 仍按依赖推进，既有 M0 的原完成状态与输入范围保持不变。
 
 [当前总体计划](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md) · [正式对齐规格](spec.md) · [决策 ADR](../../docs/adr/0004-v15-platform-baseline.md)
 
@@ -12,7 +12,7 @@
 | 序号 | 任务 | Blocked by | 阶段作用 |
 | --- | --- | --- | --- |
 | 01 | [统一 v3 构建输入锁](issues/01-unified-input-lock.md)（resolved） | 无 | M0-A 增量前置已完成 |
-| 02 | [目标 QuickJS 升级与补丁复核](issues/02-quickjs-upgrade.md) | 01 | M0-A 增量前置 |
+| 02 | [目标 QuickJS 升级与补丁复核](issues/02-quickjs-upgrade.md)（resolved） | 01 | M0-A 增量前置已完成 |
 | 03 | [ESM/Promise 微型 C Host](issues/03-m0-a-esm-promise.md) | 01, 02 | 通过后进入正式 M1 |
 | 04 | [新输入的跨宿主与 ABI 回归](issues/04-cross-host-revalidation.md) | 03 | 与 M1 OS 无关开发并行；约束相关冻结/验收 |
 | 05 | [Fast/Cross/Full 分级 CI](issues/05-tiered-ci.md) | 03 | 分阶段接入；M1 验收需相应 Fast/Cross 证据 |
@@ -25,7 +25,8 @@
 ## 存量处理
 
 01 的迁移、Ubuntu/断网验证与输入范围见[验收记录](unified-input-lock-validation.md)。02 的前置已满足；
-统一锁当前固定旧 M0 源码，目标引擎升级和 ESM/Promise 成绩仍由 02/03 签发。
+02 的[精确源码、补丁与 Ubuntu/ARM64 验证](quickjs-upgrade-validation.md)已完成；统一锁当前选择目标
+引擎候选，03 的前置已满足，ESM/Promise 成绩和普通输入晋级仍由 03 签发。
 
 旧 [M0 12 张任务](../qaplet-m0/README.md)及其 Answer、失败记录、制品身份和 Core gate 均保留。服务应用相关 probe、测试和 workflow 保留为参考，不新增业务应用里程碑。统一锁已由 01 实施；源码切换、缓存物化及新探针运行由相应后续任务执行，规划记录不作为实现成绩。
 

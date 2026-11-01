@@ -17,6 +17,33 @@ class StartupGuestContract(unittest.TestCase):
         return subprocess.run([sys.executable, str(CLI), *map(str, arguments)],
                               capture_output=True, text=True, timeout=30)
 
+    @unittest.skipUnless(os.environ.get("QAPLET_CANDIDATE_BUILD"), "Actual controlled candidate producer required")
+    def test_candidate_export_verifies_source_built_arm64_loader_bytes(self):
+        producer = Path(os.environ["QAPLET_CANDIDATE_BUILD"])
+        reports = ROOT / "out/startup-guest-contracts"
+        reports.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="candidate-export-", dir=reports))
+        with tempfile.TemporaryDirectory(prefix="qaplet-candidate-loader-") as temporary:
+            loaders = Path(temporary)
+            loader = loaders / "ape-aarch64.elf"
+            shutil.copyfile(producer.parent / "artifacts/ape-aarch64.elf", loader)
+            arguments = ["guest-manifest", "--controlled-probe", "--build-report", producer,
+                         "--artifact-dir", producer.parent / "artifacts", "--loader-dir", loaders,
+                         "--page-size", "65536", "--manifest", work / "manifest.json"]
+            result = self.invoke(*arguments, "--report", work / "intact.json")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            manifest = json.loads((work / "manifest.json").read_text())
+            self.assertEqual(len(manifest["commands"]), 7)
+            self.assertIn("quickjs-eval.pointer-roundtrip", [item["case_id"] for item in manifest["commands"]])
+            changed = bytearray(loader.read_bytes())
+            changed[-1] ^= 1
+            loader.write_bytes(changed)
+            result = self.invoke(*arguments, "--report", work / "corrupt.json")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            refused = json.loads((work / "corrupt.json").read_text())
+            self.assertIn("SHA-256/size", refused["reason"])
+            self.assertEqual(refused["commands"], [])
+
     def test_absent_native_evidence_plans_both_arm64_page_gaps_without_claiming_coverage(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-page-plan-") as temp:
             work = Path(temp)

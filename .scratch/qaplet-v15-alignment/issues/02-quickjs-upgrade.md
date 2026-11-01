@@ -1,6 +1,6 @@
 # 02：QuickJS 目标提交升级与 ARM64 补丁复核（BOOT-02）
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** [01：统一 v3 输入锁](01-unified-input-lock.md)。
 **Execution prerequisites:** Ubuntu；精确目标 Git 对象可从已验缓存或官方上游取得。获取为显式动作。
 
@@ -22,11 +22,11 @@
 
 ## Acceptance criteria
 
-- [ ] 目标精确 Commit/Tree/VERSION 与官方对象一致，源码可离线重新物化。
-- [ ] 原始与叠加后内容身份分开；ARM64 补丁结论由源码差异和实际运行支持。
-- [ ] 使用新引擎构建最小 eval/对象/指针/错误路径探针，至少在 Ubuntu x64 与实际 ARM64（可用锁定完整 guest）验证关键修复。
-- [ ] 新输入/补丁改变使不兼容字节码、对象及相关构建缓存失效；旧内容仍可追溯。
-- [ ] 不删除旧锁/补丁历史，不把旧六目标成绩自动标成新引擎的覆盖；完整新跨宿主回归由 04 完成。
+- [x] 目标精确 Commit/Tree/VERSION 与官方对象一致，源码可离线重新物化。
+- [x] 原始与叠加后内容身份分开；ARM64 补丁结论由源码差异和实际运行支持。
+- [x] 使用新引擎构建最小 eval/对象/指针/错误路径探针，至少在 Ubuntu x64 与实际 ARM64（可用锁定完整 guest）验证关键修复。
+- [x] 新输入/补丁改变使不兼容字节码、对象及相关构建缓存失效；旧内容仍可追溯。
+- [x] 不删除旧锁/补丁历史，不把旧六目标成绩自动标成新引擎的覆盖；完整新跨宿主回归由 04 完成。
 
 ## Tests
 
@@ -50,4 +50,16 @@
 
 ## Comments
 
-尚未实施。
+2026-11-02：按已确认的共享 CLI、真实制品与证据消费者边界实施；隔离分支 codex/v15-02-quickjs 已同步 integration 788a2aa。保留目标候选状态至 02/03 实际探针共同满足晋级条件。
+
+## Answer
+
+已选择目标 `283351…` / Tree `b2763aa…`，分别锁定 pristine 与 overlay 内容，保留旧 manifest、
+patch 和缓存。目标 quickjs.h 与旧 upstream 相同；未补丁 public JSValue 指针检查在实际锁定
+ARM64 64K guest 仍 exit 3，保留 unchanged full-pointer overlay。最终受控 Ubuntu x64 与相同
+字节 ARM64 完整 guest 的七项 eval/对象/指针/错误路径全部通过，源码可从已验本地 Git 对象离线
+重新物化；九项 source 拒绝及候选门禁合同已执行。
+
+精确身份、真实命令/报告/原始日志、红绿、实际 skips 与非通过范围见
+[任务 02 验收](../quickjs-upgrade-validation.md)。锁仍为 selected，普通 make check/consumer 按设计
+拒绝，03 完成 ESM/Promise 后晋级并重跑完整适用合同。此票不签发新六目标、M1 或 release-ready。

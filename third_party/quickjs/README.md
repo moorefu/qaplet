@@ -14,18 +14,27 @@ QuickJS compilation or Runtime compatibility is established by this source lock.
 Run from the repository root (use `python3` on Linux):
 
 ```sh
-# Explicit initial acquisition or dependency update; resolves master once.
-python scripts/quickjs_source.py bump --report out/quickjs-bump.json
+# Explicit reviewed target selection into isolated candidate metadata.
+# Copy the reviewed patches.json/patches/ there first.
+python scripts/quickjs_source.py select --commit 2833510432045f72915919cef680ba59e5153b16 \
+  --lock out/quickjs-candidate/source.lock.json --report out/quickjs-selection.json
 
 # Explicit acquisition of the existing lock; never resolves master or updates it.
 python scripts/quickjs_source.py fetch --report out/quickjs-fetch.json
 
 # Build prerequisite: strictly offline, read-only source/metadata verification.
-python scripts/quickjs_source.py verify --report out/quickjs-source.json
+python scripts/quickjs_source.py verify --controlled-probe --report out/quickjs-source.json
 ```
 
 All operations support `--lock`, `--cache`, `--report`, and `--timeout` (1–300
-seconds per Git command). `bump --repository /absolute/local/repository` is an
+seconds per Git command). Production `bump` is disabled by the v3 authority.
+`select` requires an exact `--commit`, an isolated new metadata path under `out/`
+or `.cache/`, and a report outside that metadata/cache. It acquires the official
+object without resolving master and does not promote the unified lock.
+`fetch --mirror /absolute/local/git-repository` explicitly restores the same
+Commit/Tree/content from already cached Git objects while retaining the official
+locked repository identity; it neither resolves a moving ref nor changes the lock.
+`bump --fixture-lock --repository /absolute/local/repository` is an
 explicit local fixture/mirror seam; its actual local repository identity is
 recorded instead of claiming an official fetch. The default and only accepted
 remote repository is `https://github.com/bellard/quickjs.git`.
@@ -46,11 +55,13 @@ or symlinked source entries, the wrong detached checkout commit, a modified
 license, and any patch manifest/content change. `.git/` is checkout metadata;
 source identity excludes it, while the detached HEAD must match the lock. Source
 file byte identity is portable between Windows and POSIX; it does not assert
-identical filesystem permissions or build output. No Git executable is required
-for offline verification, and it never fetches, pulls, or repairs a cache.
+identical filesystem permissions or build output. Production v3 verification also
+checks the actual Git Tree and VERSION using Git; it never fetches, pulls, or
+repairs a cache.
 
-`patches.json` starts with an explicit empty array. To introduce a patch, put it
-below `patches/`, add an entry in application order, and run explicit `bump`:
+`patches.json` records one ordered ARM64 overlay. To introduce a patch, put it
+below `patches/`, add an entry in application order, and explicitly select a new
+isolated candidate before generating and validating its v3 lock:
 
 ```json
 {
@@ -81,13 +92,23 @@ new `--cache` directory to diagnose corruption without erasing prior evidence.
 Ordinary builds must call `verify` and stop on any nonzero status. They must not
 call `bump` or `fetch` implicitly.
 
-The current M0 overlay keeps the exact `e621135dc542e000e31038bedc52944aa0adaf1a`
-upstream commit and original license. Actual ARM64 allocations exceeded the
+The current candidate selects `2833510432045f72915919cef680ba59e5153b16`; its
+VERSION remains `2026-06-04`. The previous `e621135dc542e000e31038bedc52944aa0adaf1a`
+manifest is retained in `history/` and Git history, together with its cached bytes
+and original evidence. Actual ARM64 allocations exceeded the
 header's 47-bit NaN-boxed pointer range, causing `JS_NewContextRaw` to dereference
 a truncated pointer. The one-line ordered header patch selects the existing
 full-pointer JSValue representation for ARM64; x86 behavior remains unchanged.
 The original cache is preserved and the derived source has its own manifest and
-cache key. This update did not resolve moving master or invoke `bump`.
+cache key. The target's header is byte-identical to the old upstream header, so
+the overlay remains unchanged. Actual target ARM64 pointer regression evidence
+is recorded by [ticket 02](../../.scratch/qaplet-v15-alignment/issues/02-quickjs-upgrade.md).
+
+`engine_compatibility_id` hashes the repository, exact commit, original and
+patched content identities, and ordered patch identity. Build fingerprints
+include it; equal VERSION text never authorizes bytecode/object compatibility.
+There is currently no persistent bytecode reader/cache to migrate. Objects are
+built in a fresh unique directory, and the target uses a distinct source cache.
 
 The permanent M0 probe checks public JSValue pointer/tag round-tripping with
 bit47 set on ARM64, without dereferencing that synthetic pointer, then exercises

@@ -11,7 +11,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
-from input_lock import component, consume_identity, check_loader_bundle
+from input_lock import component, consume_identity, check_loader_bundle, check_portable_helper, consumption_purpose
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -67,7 +67,7 @@ def loader_bundle(args, report):
         helpers = read_json(manifest)
         if helpers.get("schema_version") != 1 or helpers.get("report_kind") != "ape-loaders" or helpers.get("status") != "pass":
             raise BuildError("Successful ape-loaders v1 manifest required")
-        locked = consume_identity(helpers, report)
+        locked = consume_identity(helpers, report, consumption_purpose("build", args.controlled_probe))
         check_loader_bundle(helpers, locked)
         report["loader_manifest"] = identity(manifest)
         return helpers
@@ -84,11 +84,17 @@ def select_loader(args, report):
     helpers = loader_bundle(args, report)
     if helpers is not None:
         entries = [entry for entry in helpers["helpers"] if entry["os"] == host["os"] and entry["arch"] == host["execution_arch"]]
+    elif args.controlled_probe and host["os"] == "Linux" and host["execution_arch"] == "aarch64":
+        producer = read_json(args.build_report)
+        locked = consume_identity(producer, report, "probe")
+        portable = producer["portable_helpers"]
+        check_portable_helper(portable, locked)
+        entries = [{**portable["loader"], "file": "ape-aarch64.elf", "origin": "controlled source-built ARM64 loader"}]
     else:
         # Exact official loader identities are already in the committed Nightly lock.
         suffix = "elf" if host["os"] == "Linux" else "macho"
         name = "ape-" + host["execution_arch"] + "." + suffix
-        locked = component("cosmocc")
+        locked = component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe))
         entries = [{"file": name, **entry, "origin": "official Nightly lock"} for entry in locked["files"] if entry["path"] == "bin/" + name]
     if len(entries) != 1:
         raise BuildError("Exactly one native loader matching actual OS/architecture required", "blocked")
@@ -322,7 +328,7 @@ def import_guest(args, report, artifacts):
             raise BuildError("Guest startup artifact differs from selected producer: " + name)
         artifact["sha256_after"] = after[path]
     producer = read_json(args.build_report)
-    consume_identity(producer, report)
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
     expected_loader = producer["portable_helpers"]["loader"]
     guest_loader = "/payload/ape-aarch64.elf"
     if before.get(guest_loader) != expected_loader["sha256"] or payloads[guest_loader]["size_bytes"] != expected_loader["size_bytes"]:
@@ -408,7 +414,7 @@ def page_gaps(args, report):
 
 def producer_inputs(args, report):
     producer = read_json(args.build_report)
-    consume_identity(producer, report)
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
     if report["host"]["os"] != "Windows":
         loader_bundle(args, report)
     if producer.get("report_kind") != "ape-build" or producer.get("schema_version") != 1 or producer.get("status") != "pass":
@@ -434,6 +440,7 @@ def producer_inputs(args, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("run", "matrix", "guest-manifest", "import-guest", "page-gaps"))
+    parser.add_argument("--controlled-probe", action="store_true", help="consume candidate probes without issuing ordinary or full-matrix acceptance")
     parser.add_argument("--build-report", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--report", type=Path, required=True)
@@ -463,6 +470,9 @@ def main():
               "host": host_facts(), "ci": ci_facts(), "qemu": {"status": "not_applicable"},
               "commands": [], "cases": [], "artifacts": [], "evidence_directory": str(directory)}
     try:
+        report["controlled_probe"] = args.controlled_probe
+        if args.controlled_probe and args.operation in ("matrix", "page-gaps"):
+            raise BuildError("Controlled probes cannot issue ordinary matrix or scheduling evidence")
         artifacts = producer_inputs(args, report) if args.operation != "page-gaps" else None
         if args.operation == "page-gaps":
             page_gaps(args, report)

@@ -1,10 +1,10 @@
 {
   "schema": "qaplet.toolchain-lock.v3",
-  "lock_state": "pinned",
+  "lock_state": "selected_pending_validation",
   "manifests": {
     "quickjs": {
       "path": "third_party/quickjs/source.lock.json",
-      "sha256": "6d68082c21dd26c94ab4ec6d7c6b1842dd267de7bcffd2f5d94b47971960b3e2",
+      "sha256": "1458cd1d19f701a579fb4f375c7145eec2fca6c43b03fddf8b6ed4f5b4504f6a",
       "size_bytes": 36387
     },
     "cosmocc": {
@@ -68,13 +68,13 @@
     },
     {
       "path": "scripts/ape_helpers.py",
-      "sha256": "5c10772057f09016c4b9789708f5145f77f37c4c246e0cd0ee9dabb2dd985932",
-      "size_bytes": 13733
+      "sha256": "465b22aeb3de7ab13ec864db5c57f40979a4dca6e081031305d23c8f416edd82",
+      "size_bytes": 13883
     },
     {
       "path": "scripts/build_ape.py",
-      "sha256": "1c9a068c90984ee49b7b1ac2105f6b936ca3f2b265a51c6cf701a9755fa8b689",
-      "size_bytes": 34397
+      "sha256": "be3ab0535a54eee90989ea31520652a02795bf9047ad3bb88a4e20d3a00788e8",
+      "size_bytes": 35141
     },
     {
       "path": "scripts/evidence.py",
@@ -88,8 +88,8 @@
     },
     {
       "path": "scripts/input_lock.py",
-      "sha256": "aef9738050d6858d4b48300585e70573b05ccb0221a97ea7c6c95b696731fb6b",
-      "size_bytes": 23142
+      "sha256": "07675578edcb1fa04d81a64ec8aec4ab43cedf9d08c47fb4abc3ba5fa643cfb8",
+      "size_bytes": 23333
     },
     {
       "path": "scripts/native_toolchain.py",
@@ -103,8 +103,8 @@
     },
     {
       "path": "scripts/quickjs_source.py",
-      "sha256": "23327c9902aebc27135a8617fea9ea4e9a29e1949bfed8ad9d493b571e31ca40",
-      "size_bytes": 18218
+      "sha256": "f191d51c76fbd59832dec25e2f26c1dc01606dc10f85af2121703fbe52a486d8",
+      "size_bytes": 20563
     },
     {
       "path": "scripts/startup_loaders.py",
@@ -125,11 +125,11 @@
   "selection": {
     "quickjs": {
       "repository": "https://github.com/bellard/quickjs.git",
-      "commit": "e621135dc542e000e31038bedc52944aa0adaf1a",
-      "git_tree_oid": "cdabddcf0f783af024481272227c1f56c3d3e48a",
+      "commit": "2833510432045f72915919cef680ba59e5153b16",
+      "git_tree_oid": "b2763aa1a9395672adc131322f17d7fad7383053",
       "version_file": "2026-06-04",
-      "upstream_sha256": "708c970fcd2d4f26f4e7c1a1f1de2464d16c4d8defb5bafd8c0bdbf21b953447",
-      "source_sha256": "1da9f9ae2f2557143a9f44471fdb73d646bdfa87e11ccfec8dca8f757952b616",
+      "upstream_sha256": "8afcc7e394aae1ddae380ed63a1ca329d2bbeeb5c9ffdc08b50e0c65e111ac8f",
+      "source_sha256": "562217889e78aa63828113ff112034755d010cd8ec36ad9756eeded91d39138c",
       "patchset_sha256": "dc12be2f49d37dd237e195b9a491be10c68a367c9be1b8c5899222e0692ba616"
     },
     "cosmocc": {
