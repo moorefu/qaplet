@@ -73,8 +73,8 @@
     },
     {
       "path": "scripts/build_ape.py",
-      "sha256": "922b80d4590606bd17e4a526f3b2e70c990f3c8542ec647cada6a9f0f6825b70",
-      "size_bytes": 36285
+      "sha256": "e30b71d77dab83b8f11aa48337401a554d87da6bceeb2ab8116d13c1be06ca5a",
+      "size_bytes": 29509
     },
     {
       "path": "scripts/evidence.py",

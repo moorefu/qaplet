@@ -1,6 +1,6 @@
 # 05：Fast/Cross/Full 分级持续集成（CI-FAST/CROSS/FULL）
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** [03：M0-A 增量](03-m0-a-esm-promise.md)。
 **Execution prerequisites:** 仓库/runner 可读写且新产物可供分发；各测试按已实现能力接入。
 
@@ -50,4 +50,5 @@ Fast 每提交检查输入/源码/最小 Engine；Cross 每 PR 运行同字节�
 
 ## Comments
 
-尚未实施。
+已领取：在 codex/v15-05-tiered-ci 实施；基线 b17bba21437544cb8f4e6b7d6a723518898510c8，包含任务 01–03。
+

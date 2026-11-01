@@ -375,83 +375,12 @@ def native_toolchain(args, report, directory, original):
 
 
 def check_ci(args, report):
-    workflow = read_json(args.workflow)
-    runner = workflow["jobs"]["build"]["runs-on"]
-    if not isinstance(runner, str) or not runner.startswith("ubuntu-"):
-        raise BuildError("M0 product builds require an Ubuntu runner")
-    if workflow.get("permissions") != {"contents": "read", "actions": "read"}:
-        raise BuildError("M0 workflow must use read-only contents/actions permissions")
-    steps = workflow["jobs"]["build"]["steps"]
-    runs = [step["run"] for step in steps if "run" in step]
-    expected = ["make check OUT=out/m0/check",
-                "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json",
-                "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs",
-                "python scripts/ape_helpers.py fetch --report out/m0/inputs/ape-helpers.json",
-                "make build-ape OUT=out/m0",
-                "python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json",
-                "python scripts/pages64k.py build --output-dir out/m0/pages64k/artifacts --report out/m0/pages64k/build-info.json",
-                "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json",
-                "python scripts/startup_loaders.py build --producer-report out/m0/build-info.json --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"]
-    if runs != expected:
-        raise BuildError("M0 build must check, explicitly populate locked inputs, then invoke the shared offline recipe")
-    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and
-               step.get("if") == "${{ always() }}" and step.get("with", {}).get("path") == "out/m0/" and
-               step["with"].get("if-no-files-found") == "error" for step in steps):
-        raise BuildError("M0 must distribute original artifacts and failure evidence")
-    for name, job in workflow["jobs"].items():
-        if name == "build":
-            continue
-        for step in job.get("steps", []):
-            if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders)\.py\s+build|cosmocc", step.get("run", "")):
-                raise BuildError("Test job must consume distributed bytes without recompilation: " + name)
-    native = workflow["jobs"].get("native-startup", {})
-    rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
-    expected_rows = {("ubuntu-24.04", "Linux", "x86_64"), ("windows-2022", "Windows", "x86_64"),
-                     ("macos-15-intel", "Darwin", "x86_64"), ("macos-15", "Darwin", "aarch64"),
-                     ("ubuntu-24.04-arm", "Linux", "aarch64")}
-    if len(rows) != 5 or {(row.get("runner"), row.get("os"), row.get("arch")) for row in rows} != expected_rows:
-        raise BuildError("Native startup must schedule all five explicit OS/architecture runners")
-    if native.get("needs") != "build" or native.get("strategy", {}).get("fail-fast") is not False:
-        raise BuildError("Native startup requires one distributed build and must retain every host result")
-    native_steps = native.get("steps", [])
-    if not any(step.get("uses", "").startswith("actions/download-artifact@") and step.get("with", {}).get("name") == "m0-build-${{ github.sha }}" for step in native_steps):
-        raise BuildError("Native startup must download the same producer artifact")
-    if not any("scripts/startup.py run" in step.get("run", "") and "--expected-arch" in step["run"] and "--expected-os" in step["run"] for step in native_steps):
-        raise BuildError("Native startup must use the shared runner and verify measured OS/architecture")
-    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" for step in native_steps):
-        raise BuildError("Native startup must retain failures and raw logs")
-    io = [step for step in native_steps if "scripts/native_io.py run" in step.get("run", "")]
-    if len(io) != 1 or io[0].get("if") != "${{ !cancelled() }}" or not all(arg in io[0]["run"] for arg in
-        ("--build-report out/m0/io/build-info.json", "--artifact out/m0/io/artifacts/native-io.com",
-         "--loader-dir out/m0/loaders", "--expected-os ${{ matrix.os }}", "--expected-arch ${{ matrix.arch }}",
-         "--runner-label ${{ matrix.runner }}")):
-        raise BuildError("Native I/O must consume the producer artifact and helpers on every measured native host, including startup failures")
-    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" and
-               step.get("with", {}).get("path") == "out/io/${{ matrix.runner }}/" for step in native_steps):
-        raise BuildError("Native I/O must retain every failure and cleanup log")
-    planning = workflow["jobs"].get("page-plan", {})
-    plan_steps = planning.get("steps", [])
-    plans = [step for step in plan_steps if "scripts/startup.py page-gaps" in step.get("run", "")]
-    if len(plans) != 1 or "--input-report out/native-arm64/startup.json" not in plans[0]["run"] or "--github-output" not in plans[0]["run"]:
-        raise BuildError("ARM64 page gaps must be computed from the actual native startup report")
-    gaps = workflow["jobs"].get("arm64-page-gaps", {})
-    if gaps.get("strategy", {}).get("matrix") != "${{ fromJSON(needs.page-plan.outputs.matrix) }}" or "needs.page-plan.outputs.needs_guest == 'true'" not in gaps.get("if", ""):
-        raise BuildError("QEMU must schedule only measured missing ARM64 page configurations")
-    gap_steps = gaps.get("steps", [])
-    for cli in ("scripts/arm64_guest.py fetch", "scripts/arm64_guest.py prepare", "scripts/startup.py guest-manifest",
-                "scripts/native_io.py guest-manifest", "scripts/arm64_guest.py merge-manifests", "scripts/arm64_guest.py run"):
-        if not any(cli in step.get("run", "") for step in gap_steps):
-            raise BuildError("Missing shared full-system page-gap command: " + cli)
-    for cli in ("scripts/startup.py import-guest", "scripts/native_io.py import-guest", "scripts/pages64k.py verify-guest"):
-        if not any(cli in step.get("run", "") and "!cancelled()" in step.get("if", "") for step in gap_steps):
-            raise BuildError("Guest semantic validators must retain failures: " + cli)
-    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" for step in gap_steps):
-        raise BuildError("QEMU page gaps must retain failures and raw serial logs")
-    aggregation = workflow["jobs"].get("startup-matrix", {})
-    if "always()" not in aggregation.get("if", "") or not any("scripts/startup.py matrix" in step.get("run", "") and
-            "--input-dir" in step["run"] for step in aggregation.get("steps", [])):
-        raise BuildError("Six-target startup aggregation must run even when a consumer fails")
-    report.update(status="pass", reason="M0 local JSON/workflow contract passed; remote workflow not executed", workflow=identity(args.workflow))
+    from ci_tiers import check_workflow
+    try:
+        check_workflow(read_json(args.workflow))
+    except ValueError as error:
+        raise BuildError(str(error)) from error
+    report.update(status="pass", reason="Tiered CI local workflow contract passed; remote workflow not executed", workflow=identity(args.workflow))
 
 
 def main():

@@ -23,9 +23,34 @@ GitHub 插件取得 API 结果后先保留原始 JSON，仅将判定字段返回
 
 `ci_evidence.py summarize --input-report <report.json> --report out/summary.json` 按已知schema/report_kind提取计数和清理事实。汇总明确 evidence_verified=false，不能代替完整consumer或新的OS执行；deep producer缺ci时保持null，Job supervisor从facts.cleanup读取。完整结果写报告，终端只显示短摘要。
 
+## Fast / Cross / Full
+
+`m0.yml` 保留原 workflow 身份。共享 `scripts/ci_tiers.py plan` 从实际 event/ref 与 PR diff
+选择层级，并输出可重放的 JSON 与 GitHub outputs；计划中的 `status=pass` 只表示选择有效，
+`execution_status=not_run` 和 `evidence_verified=false` 不表示执行通过。
+
+- 每次 branch push 运行 Ubuntu Fast：仓库/统一锁检查与实际 Hello、eval、ESM/Promise producer。
+- PR 运行 Cross：同一 Ubuntu producer 分发给 Linux x64/ARM64、Windows x64、macOS x64/ARM64。
+  除 `docs/`、`.scratch/` 和根级已知文字说明外的改动均提升到 Full，包含新增未知源码位置、
+  Engine/Host/SDK/include、锁、patch、native fixture 和 CI 脚本。无法取得 PR diff 时失败。
+- 每日 03:17 UTC、`v*rc*` / `v*RC*` tag push 和敏感 PR 运行 Full：增加实测 ARM64 页补缺、
+  64K 深探针、实际断网双构建及供应输入拒绝；Full 不宣称已实现未来 Node/soak/network TLS 合同。
+- `workflow_dispatch` 的 `tier` 可显式选择 fast/cross/full，在所选 ref 重放。手工执行和本地
+  CLI 静态检查须与实际远程 run/commit 的成绩分开记录。
+
+恢复输入缓存之后仍无条件执行原件 SHA/长度、源码、完整 toolchain tree 与 helper 验证。
+cache key 绑定统一锁原始字节，不使用宽松 restore prefix；只有可信默认分支的 push、schedule、
+manual run 且所有验证成功才可 save。PR（包括同仓库 PR）不能写可信 cache。fork PR 只使用
+Actions 提供的只读 token 与可读缓存，不依赖第三方 secret；固定原件无法取得时保留失败原因，
+不能选择 rolling Nightly。长期原 ZIP 镜像仍为 06 的 `missing_resource` 发布门禁。
+
+所有执行通过共享本地 CLI，workflow 仅负责调度、安装执行依赖与分发。每个 job 的证据即使失败
+也上传。完整 Core 的 manifest、原 ZIP transport、日志和 producer/consumer 身份仍由既有只读
+consumer 判定；startup Cross aggregate 不等于完整 Core。
+
 ## CI skeleton
 
-`.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 检查独立 `m0.yml` 的固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。
+`.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 委派共享 tier 合同检查独立 `m0.yml` 的分层选择、可信 cache、固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。
 
 提交前在 Ubuntu 运行 `make check`。Windows/WSL 差异由普通用户上下文的对应验证命令采集，并分别保存报告；其他平台消费 Ubuntu 已构建制品。受限上下文仅补充可见范围内的证据。WSL 不可用负向用例用显式不存在的 `--wsl` 隔离；其回归位于 `tests/contracts/test_foundation.py`。
 
