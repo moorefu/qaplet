@@ -6,16 +6,9 @@ import json
 from pathlib import Path, PurePosixPath
 import subprocess
 
-from workflow_support import identity, read_json, write_json
+from workflow_support import git_read as git, identity, read_json, write_json
 
 AUDIENCES = {"common", "standards", "spec", "aggregate"}
-
-
-def git(repo, *arguments):
-    process = subprocess.run(["git", "-C", str(repo), *arguments], capture_output=True, timeout=60)
-    if process.returncode:
-        raise ValueError("Git read failed: " + process.stderr.decode("utf-8", errors="replace")[:500])
-    return process.stdout
 
 
 def revision(repo, value):

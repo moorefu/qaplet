@@ -19,7 +19,7 @@ GitHub 插件取得 API 结果后先保留原始 JSON，仅将判定字段返回
 }
 ```
 
-缓存固定为主工作区 `.cache/downloads/ci/<name>.zip`；已有坏缓存立即失败。每个交付文件检查CRC，拒绝越界路径、symlink、大小写重复和超限解包，重复验证同时拒绝已修改或额外文件。临时下载/解包目录在失败后清理，既有解包目录的错误字节保留。收据含原归档与逐文件摘要、物理root，可作为Core manifest的transports输入；原报告中的路径保持不变，显式path_mappings负责迁移。
+缓存固定为主工作区 `.cache/downloads/ci/<name>.zip`；已有坏缓存立即失败。每个交付文件检查CRC，拒绝越界路径、symlink、大小写重复和超限解包，重复验证同时拒绝已修改或额外文件。临时下载/解包目录在失败后清理，既有解包目录的错误字节保留。收据含原归档与逐文件摘要、物理root，可作为Core manifest的transports输入；原报告中的路径保持不变，显式path_mappings负责迁移。collection报告使用checkout的out下、解包目录之外的独立文件；报告路径与输入或交付字节碰撞时，只在终端报告错误，保持原字节。
 
 `ci_evidence.py summarize --input-report <report.json> --report out/summary.json` 按已知schema/report_kind提取计数和清理事实。汇总明确 evidence_verified=false，不能代替完整consumer或新的OS执行；deep producer缺ci时保持null，Job supervisor从facts.cleanup读取。完整结果写报告，终端只显示短摘要。
 

@@ -20,6 +20,28 @@ from workflow_support import identity, local_path, now, read_json, workspace, wr
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class ReportCollision(ValueError):
+    """An invalid output target must never receive even a failure report."""
+
+
+def guard_report_target(args):
+    target = args.report.resolve()
+    if args.operation in ("summarize", "runs"):
+        source = args.input_report if args.operation == "summarize" else args.input_response
+        if target == source.resolve():
+            raise ReportCollision("Report target collides with its source input")
+        return
+    if target == args.manifest.resolve() or target.is_relative_to(args.output_dir.resolve()):
+        raise ReportCollision("Report target collides with input or extracted evidence; use a separate report file")
+    ctx = workspace(args.repo)
+    if not target.is_relative_to((Path(ctx["checkout"]) / "out").resolve()):
+        raise ReportCollision("Collection reports must be written below checkout out/, outside the extraction directory")
+    for item in selection(args.manifest):
+        source = item["archive"].get("path")
+        if source and local_path(source, args.manifest.resolve().parent) == target:
+            raise ReportCollision("Report target collides with an original archive")
+
+
 def selection(path):
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("artifacts"), list) or not data["artifacts"]:
@@ -293,19 +315,25 @@ def main():
     run_list.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     started = now()
+    collision = False
     try:
+        guard_report_target(args)
         if args.operation == "summarize":
             result = summarize(args.input_report)
         elif args.operation == "runs":
             result = runs(args.input_response, args.commit)
         else:
             result = collect(args)
+    except ReportCollision as error:
+        collision = True
+        result = {"status": "fail", "reason": str(error)}
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         result = {"status": "fail", "reason": str(error)[:500]}
     result.update(schema_version=1, report_kind="ci-evidence", started_at=started, finished_at=now())
-    write_json(args.report, result)
+    if not collision:
+        write_json(args.report, result)
     summary = result.get("summary", {})
-    print(json.dumps({"status": result["status"], "report": str(args.report),
+    print(json.dumps({"status": result["status"], "report": None if collision else str(args.report),
                       "artifacts": len(result.get("artifacts", [])), "runs": len(result.get("runs", [])),
                       "summary": {key: summary[key] for key in ("kind", "source_status", "case_count", "evidence_items") if key in summary},
                       "reason": result.get("reason", "")[:300]}))

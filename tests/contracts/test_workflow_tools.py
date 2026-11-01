@@ -219,6 +219,35 @@ class WorktreeContextCLI(unittest.TestCase):
 
 
 class CIEvidenceCLI(unittest.TestCase):
+    def test_summary_cannot_overwrite_its_source_report(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source.json"
+            original = json.dumps({"schema_version": 1, "report_kind": "pages64k-build", "status": "pass", "artifacts": []})
+            source.write_text(original, encoding="utf-8")
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/ci_evidence.py"), "summarize",
+                                     "--input-report", str(source), "--report", str(source)], capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(source.read_text(), original)
+
+    def test_collection_report_cannot_overwrite_delivered_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            archive = repo / "source.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("data.txt", "original")
+            config = repo / "selection.json"
+            config.write_text(json.dumps({"schema_version": 1, "artifacts": [{"id": 10, "name": "sample",
+                "archive": {"path": "source.zip", "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                            "size_bytes": archive.stat().st_size}}]}), encoding="utf-8")
+            output = repo / "out/bundle"
+            report = output / "sample/data.txt"
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/ci_evidence.py"), "fetch",
+                                     "--repo", str(repo), "--manifest", str(config), "--output-dir", str(output),
+                                     "--report", str(report)], capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(report.exists())
+
     def test_explicit_http_acquisition_is_cached_and_verify_never_downloads(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary)
