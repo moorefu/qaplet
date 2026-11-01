@@ -475,6 +475,10 @@ def producer_inputs(args, report):
             raise BuildError("Distributed artifact SHA-256/size differs from producer: " + name)
         observed["headers"] = headers(path, [path.with_suffix(".com.dbg"), path.with_suffix(".aarch64.elf")])
         report["artifacts"].append({"name": name, **observed})
+    cases = producer.get("cases", [])
+    if len(cases) != len(CASES) or {case.get("case_id") for case in cases} != {entry[0] for entry in CASES} or any(
+            case.get("status") != "pass" for case in cases):
+        raise BuildError("Producer startup/ESM/jobs catalog incomplete or nonpassing")
     if args.operation == "run":
         check_ci_commit(producer, report)
     return {entry["name"]: entry for entry in report["artifacts"]}

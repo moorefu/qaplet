@@ -99,6 +99,13 @@ class CrossHostIdentity(unittest.TestCase):
         self.assertEqual(code, 1, report["reason"])
         self.assertIn("Duplicate", report["reason"])
 
+    def test_new_input_cannot_relabel_a_global_eval_only_producer(self):
+        producer = copy.deepcopy(self.producer)
+        producer["cases"] = producer["cases"][:7]
+        code, report = self.matrix(producer=producer)
+        self.assertEqual(code, 1, report["reason"])
+        self.assertIn("catalog", report["reason"])
+
     def test_current_matrix_refuses_old_missing_failed_and_conflicting_records(self):
         mutations = {
             "old-input": lambda report: report["input_lock"].update(input_id="b" * 64),
