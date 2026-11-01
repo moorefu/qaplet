@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import uuid
 
@@ -111,6 +112,17 @@ def evaluate_case(case_id, name, kind, host, record, output, errors, artifact):
 
 def native_run(args, report, directory, artifacts):
     measured_host(args, report, directory)
+    if os.name != "nt":
+        # Artifact transport drops Unix execute bits. Both product identities
+        # and headers have already passed producer_inputs before this mutation.
+        for artifact in report["artifacts"]:
+            path = Path(artifact["path"])
+            before = stat.S_IMODE(path.stat().st_mode)
+            path.chmod(before | 0o111)
+            artifact["execute_permissions"] = {"mode_before": oct(before),
+                "mode_after": oct(stat.S_IMODE(path.stat().st_mode)), "x_ok": os.access(path, os.X_OK)}
+            if not artifact["execute_permissions"]["x_ok"]:
+                raise BuildError("Artifact is not executable after restoring verified file permissions; filesystem or access policy may forbid execution", "blocked")
     loader = select_loader(args, report)
     if report["host"]["os"] == "Darwin" and report["host"]["execution_arch"] == "aarch64":
         record, output, errors = command(["/usr/bin/codesign", "--verify", "--strict", loader[0]], directory, "loader-signature", args.timeout)

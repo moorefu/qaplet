@@ -15,8 +15,11 @@ TOOLCHAIN_ACQUISITION_REPORT ?=
 TOOLCHAIN_BACKING_DIR ?=
 APE_BUILD_DIR ?=
 APE_OUTPUT_DIR ?= $(OUT)/artifacts
+OFFLINE_CACHE_ROOT ?= $(CURDIR)/.cache
+OFFLINE_UID ?= 1000
+OFFLINE_GID ?= 1000
 
-.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify build-ape
+.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify build-ape test-offline
 doctor:
 	"$(PYTHON)" scripts/foundation.py doctor --cc "$(CC)" $(if $(WSL),--wsl "$(WSL)",) --report "$(OUT)/doctor.json"
 
@@ -49,3 +52,6 @@ toolchain-verify:
 
 build-ape:
 	"$(PYTHON)" scripts/build_ape.py build $(if $(QUICKJS_CACHE),--source-cache "$(QUICKJS_CACHE)",) $(if $(TOOLCHAIN_CACHE),--toolchain-cache "$(TOOLCHAIN_CACHE)",) $(if $(APE_BUILD_DIR),--build-dir "$(APE_BUILD_DIR)",) --output-dir "$(APE_OUTPUT_DIR)" --report "$(OUT)/build-info.json"
+
+test-offline:
+	"$(PYTHON)" scripts/offline_integrity.py run --cache-root "$(OFFLINE_CACHE_ROOT)" --uid "$(OFFLINE_UID)" --gid "$(OFFLINE_GID)" --report "$(OUT)/offline-integrity.json"

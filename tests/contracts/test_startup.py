@@ -2,6 +2,8 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -46,6 +48,82 @@ class StartupContract(unittest.TestCase):
             self.assertIn("archive", report["reason"])
             self.assertFalse((work / "missing").exists())
             self.assertFalse((work / "loaders").exists())
+
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_STARTUP_BUILD"),
+                         "Ubuntu and explicit distributed producer required")
+    def test_transported_nonexecutable_artifacts_restore_execute_metadata_without_changing_bytes(self):
+        producer = Path(os.environ["QAPLET_STARTUP_BUILD"])
+        reports = ROOT / "out/startup-permission-contracts"
+        reports.mkdir(parents=True, exist_ok=True)
+        report_dir = Path(tempfile.mkdtemp(prefix="transport-0644-", dir=reports))
+        # Temporary POSIX fixtures, not reusable build/source/toolchain caches.
+        # DrvFS without metadata cannot represent the missing execute bits.
+        with tempfile.TemporaryDirectory(prefix="qaplet-transport-0644-") as temp:
+            work = Path(temp)
+            for path in (producer.parent / "artifacts").iterdir():
+                if path.is_file():
+                    shutil.copyfile(path, work / path.name)
+            for name in ("hello", "quickjs-eval"):
+                artifact = work / (name + ".com")
+                artifact.chmod(0o644)
+                self.assertEqual(stat.S_IMODE(artifact.stat().st_mode), 0o644)
+                self.assertFalse(os.access(artifact, os.X_OK))
+            arguments = ["run", "--build-report", producer, "--artifact-dir", work,
+                         "--report", report_dir / "report.json"]
+            if os.environ.get("QAPLET_STARTUP_LOADERS"):
+                arguments += ["--loader-dir", os.environ["QAPLET_STARTUP_LOADERS"]]
+            result = self.invoke(*arguments)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads((report_dir / "report.json").read_text())
+            for artifact in report["artifacts"]:
+                self.assertEqual(stat.S_IMODE(Path(artifact["path"]).stat().st_mode), 0o755)
+                self.assertTrue(os.access(artifact["path"], os.X_OK))
+                self.assertEqual(artifact["execute_permissions"]["mode_before"], "0o644")
+                self.assertEqual(artifact["execute_permissions"]["mode_after"], "0o755")
+                self.assertTrue(artifact["execute_permissions"]["x_ok"])
+                self.assertEqual(artifact["sha256"], artifact["sha256_after"])
+            self.assertTrue(all(case["status"] == "pass" for case in report["cases"]))
+            for artifact in report["artifacts"]:
+                Path(artifact["path"]).chmod(0o644)
+            with (work / "quickjs-eval.com").open("ab") as stream:
+                stream.write(b"changed-after-transport")
+            arguments[arguments.index("--report") + 1] = report_dir / "rejected.json"
+            rejected = self.invoke(*arguments)
+            self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+            rejected_report = json.loads((report_dir / "rejected.json").read_text())
+            self.assertIn("SHA-256", rejected_report["reason"])
+            self.assertEqual(rejected_report["commands"], [])
+            for name in ("hello", "quickjs-eval"):
+                self.assertEqual(stat.S_IMODE((work / (name + ".com")).stat().st_mode), 0o644)
+
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_STARTUP_BUILD"),
+                         "Ubuntu and explicit distributed producer required")
+    def test_existing_noexec_mount_remains_blocked_after_execute_bits_are_restored(self):
+        base = Path("/dev/shm")
+        if not base.is_dir() or not os.statvfs(base).f_flag & os.ST_NOEXEC:
+            self.skipTest("Existing /dev/shm noexec mount is unavailable; no mount changes made")
+        producer = Path(os.environ["QAPLET_STARTUP_BUILD"])
+        reports = ROOT / "out/startup-permission-contracts"
+        reports.mkdir(parents=True, exist_ok=True)
+        report_dir = Path(tempfile.mkdtemp(prefix="existing-noexec-", dir=reports))
+        with tempfile.TemporaryDirectory(prefix="qaplet-noexec-", dir=base) as temp:
+            work = Path(temp)
+            for path in (producer.parent / "artifacts").iterdir():
+                if path.is_file():
+                    shutil.copyfile(path, work / path.name)
+            for name in ("hello", "quickjs-eval"):
+                (work / (name + ".com")).chmod(0o644)
+            result = self.invoke("run", "--build-report", producer, "--artifact-dir", work,
+                                 "--report", report_dir / "report.json")
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            report = json.loads((report_dir / "report.json").read_text())
+            self.assertEqual(report["status"], "blocked")
+            self.assertIn("not executable", report["reason"])
+            self.assertEqual(report["commands"], [])
+            self.assertFalse(report["artifacts"][0]["execute_permissions"]["x_ok"])
+            for name in ("hello", "quickjs-eval"):
+                self.assertEqual((work / (name + ".com")).read_bytes(),
+                                 (producer.parent / "artifacts" / (name + ".com")).read_bytes())
 
     @unittest.skipUnless(os.environ.get("QAPLET_STARTUP_BUILD"), "Explicit distributed producer required")
     def test_real_unchanged_products_report_facts_value_and_nonzero_errors(self):

@@ -180,3 +180,22 @@ schema v1 report_kind 为 native-io，scope 为 build/host；缺项保留 not_ru
 3. 插件传输失败先做一次有限重试，仍失败就报告查询暂不可用。GitHub 404 与账号登录状态分别核验；读取当前身份和仓库可见范围后再判断是否需要用户重新授权。
 
 每次只返回判定所需字段和失败片段。保留已取得的 run/报告对象供后续解析；只有重新运行、状态尚未结束或用户要求刷新时才再次查询远程。
+
+## BOOT-08 断网重构
+
+先在联网环境显式填齐锁定 QuickJS、原 Nightly/派生 Linux 工具视图、APE helper 源码及单独启动 helper 所用 Zig 缓存，再在 Ubuntu 执行：
+
+```sh
+sudo python3 scripts/offline_integrity.py run \
+  --cache-root /mnt/d/Workspace/dairn/qaplet/.cache \
+  --uid 1000 --gid 1000 --report out/offline/offline-integrity.json
+# 等价入口：sudo make test-offline OFFLINE_CACHE_ROOT=/repo/.cache OUT=out/offline
+```
+
+root 仅创建独立 `unshare --net` namespace，`setpriv` 将实际探针和构建降到给定非零 UID/GID。报告记录父/子 namespace、实际 UID、`socket.if_nameindex()`、路由和 literal `203.0.113.1:443` 的 `ENETUNREACH`；共享 sysfs 的网卡目录不作为隔离证明。不更改宿主网络、WSL/binfmt 或 mount。`preflight` 可单独测此环境，成功不代表构建通过。
+
+`run` 在两个全新 `.cache/build/offline/<id>/{first,second}/` 根目录运行实际统一 producer；每次命令有 1200 秒上限，内部 compile/link 另有已有时限。`strace -f` 单独记录 build 的网络/exec 系统调用；setup 的预期被拒连接位于 trace 之外，build 出现任何 IPv4/IPv6 connect/send 尝试都会失败，即使内核已拒绝。没有安装工具、下载、更新或修复 fallback。
+
+精确 before/after inventory 逐文件保存类型、大小、SHA-256、权限和 link target，并拒绝缓存外重定向。它覆盖所选 QuickJS、原 Nightly archive/tree、完整 native 派生视图、锁定 loader/packer 源码和独立启动 helper 的 Zig archive/tree；build 中间件、复制负向 fixture、HOME/XDG/TMP 全在同一物理 `.cache/`。Zig 的可变 global cache 不作为锁定输入。两次 `.com`、`.com.dbg`、`.aarch64.elf` 共六个交付二进制逐字节比较；差异保存 offset/长度/SHA 并失败，不能用解释文字恢复通过。map/命令日志保留实际不同路径。此票不重构或声明单独 macOS ARM64 helper 可复现。
+
+`refusals` 单独在相同隔离条件运行复制用例；缺源/归档、改源码/补丁/HEAD、坏归档/工具内容、占位摘要、冲突 provenance 和缺启动 helper 工具须在 executable 使用前失败，`strace` 和供应报告共同证明没有启动供应 executable。实际输入不被修改。`compare`、`inventory`、`audit-network` 只消费相应本地证据，不独立声称执行过断网构建。完整报告和原始日志保留在 `out/`，历史报告同名替换时原 evidence 目录仍保留；`m0_core_status` 继续 `not_run`，由 10 的完整门禁汇总。
