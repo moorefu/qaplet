@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / tickets-01-through-09-resolved / ticket-10-ready / ticket-11-resolved / ticket-12-claimed
+**Status:** implementation-in-progress / tickets-01-through-09-resolved / ticket-10-ready / ticket-11-resolved / ticket-12-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -75,6 +75,8 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 后续首次远程 bootstrap 已执行：[run 41202382602](https://github.com/moorefu/qaplet/actions/runs/41202382602)。Linux x64、Linux ARM64、macOS bootstrap 成功；Windows 因 compiler 路径不存在失败，现已修正并通过本地回归。此结果仅更新 bootstrap 状态，未关闭完整 M0；详见[CI 结果与修复](foundation-validation.md#首次远程-ci-与-windows-配置修复)。
 
 ## 状态和证据
+
+2026-11-01：12 的应用私有 Job 探针已在用户指定的当前 Windows 宿主完成受控父子/嵌套/拒绝/超时/清理验收，Ubuntu 构建并按同摘要消费；见[验收](job-object-validation.md)。首用 CreateProcessW +2 handle 增长未归因，owned handles 均关闭且重复基线稳定；不声明任意树安全或所有进程 handle 完全无泄漏。独立 Job CI 已接线但尚未远程执行，不改变 Core 门禁。
 
 2026-11-01：05 的固定输入 fat Hello/eval 构建、五项本地运行和双 CPU/map/import 审计已通过。WSLInterop 路由修正经原工具失败/派生 Linux 工具成功的同上下文对照验证。集成提交 `1b06a79` 的[真实 Ubuntu CI](https://github.com/moorefu/qaplet/actions/runs/41263354111) 完成精确工具链下载、共享构建及原字节分发，取回文件与本地 canonical SHA 完全一致；见[05 验收](fat-ape-build-validation.md)。06/07/08/09 和 11/12 的前置现已满足，完整 Core/跨宿主/SDK 尚未完成。
 
