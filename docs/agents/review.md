@@ -4,7 +4,7 @@
 
 ## 生成
 
-context manifest 的 schema_version 为1，contexts为数组。每项提供仓库相对POSIX文件路径path、audience（common/standards/spec/aggregate）。默认source为git，读取固定head的blob；历史独立报告等忽略文件可显式使用source=file，读取并快照当前原始字节。每个路径只能分类一次。
+context manifest 的 schema_version 为1，contexts为数组。每项提供仓库相对POSIX文件路径path、audience（common/standards/spec/aggregate）。规范、需求等参考源标注kind=reference，审查结论标注kind=report（默认）。默认source为git，读取固定head的blob；历史独立报告等忽略文件可显式使用source=file，读取并快照当前原始字节。每个路径只能分类一次。
 
 ```sh
 python3 scripts/review_packet.py build --base BASE --head HEAD \
@@ -15,7 +15,7 @@ python3 scripts/review_packet.py build --base BASE --head HEAD \
   --output-dir out/reviews/RUN/spec
 ```
 
-common和本轴的快照进入packet；另一轴和aggregate材料也从diff中排除。每个packet记录解析后的commit SHA、merge-base、完整commit list、diff与文件摘要。输出必须使用仓库out下的新目录。当前复盘的分类示例为[review-context.json](../../.scratch/qaplet-retro/review-context.json)。
+common和本轴的快照进入packet；另一轴审查结论和aggregate材料也从diff中排除。reference文件的实际变更仍保留在两轴diff中，使规范与需求修改获得完整审查。每个packet记录解析后的commit SHA、merge-base、完整commit list、diff与文件摘要。输出必须使用仓库out下的新目录。当前复盘的分类示例为[review-context.json](../../.scratch/qaplet-retro/review-context.json)。
 
 ## 验证和派发
 

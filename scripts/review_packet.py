@@ -61,11 +61,15 @@ def build(args):
         seen.add(name.casefold())
         if entry.get("audience") not in AUDIENCES:
             raise ValueError("Unknown context audience")
-        entries.append({**entry, "path": name})
+        kind = entry.get("kind", "report")
+        if kind not in ("report", "reference"):
+            raise ValueError("Unknown context kind")
+        entries.append({**entry, "path": name, "kind": kind})
     selected = [e for e in entries if e["audience"] in ("common", args.axis)]
     if not any(e["audience"] == args.axis for e in selected):
         raise ValueError("Review axis needs at least one explicitly classified context")
-    excluded = [e["path"] for e in entries if e not in selected]
+    excluded = [e["path"] for e in entries if e["audience"] == "aggregate" or
+                (e not in selected and e["kind"] == "report")]
     paths = [".", *[":(exclude,literal)" + name for name in excluded]]
     diff = git(repo, "diff", "--no-ext-diff", "--no-textconv", base + "..." + head, "--", *paths)
     if not diff:
@@ -83,7 +87,7 @@ def build(args):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
         item = identity(destination)
-        contexts.append({"source": entry["path"], "audience": entry["audience"],
+        contexts.append({"source": entry["path"], "audience": entry["audience"], "kind": entry["kind"],
                          "file": destination.relative_to(output).as_posix(),
                          "sha256": item["sha256"], "size_bytes": item["size_bytes"]})
     files = []
@@ -93,7 +97,7 @@ def build(args):
     packet = {"schema_version": 1, "axis": args.axis, "repository": str(repo), "base": base, "head": head,
               "merge_base": git(repo, "merge-base", base, head).decode().strip(),
               "excluded_paths": excluded, "contexts": contexts, "files": files,
-              "boundary": "Read only this packet's files. Aggregate and other-axis contexts are omitted from snapshots and diff."}
+              "boundary": "Read this packet's files. Other-axis conclusions and aggregate reports are omitted; normative reference changes remain in the diff."}
     write_json(output / "packet.json", packet)
     return {"status": "pass", "axis": args.axis, "base": base, "head": head, "packet": str(output), "contexts": len(contexts)}
 

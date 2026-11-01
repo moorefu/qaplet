@@ -26,12 +26,13 @@ class ReviewPacketCLI(unittest.TestCase):
             git("config", "user.name", "Fixture")
             git("config", "user.email", "fixture@example.invalid")
             for name, text in (("common.md", "COMMON"), ("standards.md", "STANDARDS-ONLY"),
-                               ("spec.md", "SPEC-ONLY"), ("aggregate.md", "MIXED-CONCLUSIONS"), ("app.py", "print(1)\n")):
+                               ("spec.md", "SPEC-ONLY"), ("aggregate.md", "MIXED-CONCLUSIONS"),
+                               ("requirements.md", "NORMATIVE-REQUIREMENT"), ("app.py", "print(1)\n")):
                 (repo / name).write_text(text, encoding="utf-8")
             git("add", ".")
             git("commit", "-qm", "base")
             base = git("rev-parse", "HEAD")
-            for name in ("standards.md", "spec.md", "aggregate.md", "app.py"):
+            for name in ("standards.md", "spec.md", "aggregate.md", "requirements.md", "app.py"):
                 with (repo / name).open("a", encoding="utf-8") as stream:
                     stream.write("\nCHANGED\n")
             git("commit", "-qam", "change")
@@ -39,7 +40,8 @@ class ReviewPacketCLI(unittest.TestCase):
             config = repo / "contexts.json"
             config.write_text(json.dumps({"schema_version": 1, "contexts": [
                 {"path": "common.md", "audience": "common"}, {"path": "standards.md", "audience": "standards"},
-                {"path": "spec.md", "audience": "spec"}, {"path": "aggregate.md", "audience": "aggregate"}]}), encoding="utf-8")
+                {"path": "spec.md", "audience": "spec"}, {"path": "aggregate.md", "audience": "aggregate"},
+                {"path": "requirements.md", "audience": "spec", "kind": "reference"}]}), encoding="utf-8")
             output = repo / "out/standards"
             result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/review_packet.py"), "build",
                                      "--repo", str(repo), "--base", base, "--head", head,
@@ -52,6 +54,7 @@ class ReviewPacketCLI(unittest.TestCase):
             self.assertEqual({item["source"] for item in packet["contexts"]}, {"common.md", "standards.md"})
             patch = (output / "diff.patch").read_text()
             self.assertIn("app.py", patch)
+            self.assertIn("NORMATIVE-REQUIREMENT", patch)
             self.assertNotIn("SPEC-ONLY", patch)
             self.assertNotIn("MIXED-CONCLUSIONS", patch)
             (output / "diff.patch").write_text("tampered", encoding="utf-8")
