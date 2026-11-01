@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "purpose": "Ubuntu-only build of a separate native Apple Silicon APE loader",
+  "zig": {
+    "version": "0.15.2",
+    "url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+    "archive": "zig-x86_64-linux-0.15.2.tar.xz",
+    "tree": "zig-x86_64-linux-0.15.2",
+    "size_bytes": 53733924,
+    "sha256": "02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
+    "compiler_sha256": "2858dc89dbbfdd08cceda1b841e7fd0a793a1a67b49f150bc3d0d1de44ed7f51",
+    "license": "MIT; bundled components retain their own licenses in the original archive"
+  },
+  "source": {
+    "nightly_archive_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+    "path": "bin/ape-m1.c",
+    "sha256": "78af79e20abbb3f99a97355959b59bd58949564064adb754f0302ebabb4bf7a3",
+    "upstream_file_commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+    "libc_source_mapping": "unproven; this source file match does not establish full libc identity"
+  },
+  "recipe": {
+    "target": "aarch64-macos.11.0",
+    "flags": ["-O", "-fno-sanitize=undefined", "-rtlib=none"],
+    "product_ape_mutation": false,
+    "signing": "Zig Mach-O linker emits an ad-hoc signature on the separate helper; never sign or assimilate product APEs"
+  }
+}

@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 本地WSL/Windows与本地完整系统QEMU先探索；CI采用对应原生runner，ARM64 runner先测页大小，再仅补缺失ARM64页配置的QEMU guest。kernel/rootfs需锁定，当前无运行证据。
 
@@ -56,4 +56,6 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01：在 `codex/m0-06-cross-host` / `out/implement-spec/06` 开工，已确认基于 integration `dc5c0c3`。沿用用户确认的 CLI / 实际 OS / evidence seam；独立实现原生 runner 与 Ubuntu 构建的 loader bundle，ARM64 完整 guest 复用 07。六宿主实际证据齐备前保持 claimed。
+
+原生 baseline 已完成本地 Ubuntu / Windows 五项执行、独立 Mac ARM64 helper 的 Ubuntu 构建、五原生 CI 编排及缺宿主拒绝汇总；见[验收与 64K 交接](../cross-host-startup-validation.md)。Mac/原生 ARM64 CI 仍待实际运行，64K loader/packer 修正与 generic guest 由 07 接续；不能关闭本票或完整 Core。
