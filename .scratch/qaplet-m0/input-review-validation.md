@@ -174,3 +174,14 @@ Unchanged metadata SHA-256 values:
 | Ordered patch manifest | `671e09884c6aecf658799b947d15de92871f7c44c78ac7f6ca42e7a4f6cbfaec` |
 | Nightly lock | `0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469` |
 | GitHub acquisition receipt | `6bf1a137ffb96afca109aa7cd3c62fde3e87256d8083350189fa7242c0ae2a7d` |
+
+## Integration handoff
+
+Merged integration policy tip `0a8065c` after the input-fix commit `8cf6d05`.
+The merge had no conflicts. Its foundation changes are the Ubuntu build guard
+and repository-local environment cache default; the input fix's shared command
+cwd/environment support remains intact. The updated AGENTS/development policy
+was read, and `git diff --check` passed. No broad suite or large-cache verification
+was repeated for the conflict-free merge. The integration owner reported its
+Ubuntu policy checks green; ticket 05 consumes the current verifier again in the
+canonical Ubuntu build. No hosted macOS rerun or full M0 completion is claimed.

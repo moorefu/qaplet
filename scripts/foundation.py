@@ -241,6 +241,12 @@ def pending_m0_cases():
 
 
 def smoke(args, report, directory):
+    try:
+        ubuntu = sys.platform == "linux" and platform.freedesktop_os_release().get("ID") == "ubuntu"
+    except (OSError, AttributeError):
+        ubuntu = False
+    if not ubuntu:
+        return case_record("bootstrap.c-smoke", "blocked", "Builds require Ubuntu; this host validates supplied artifacts and SDKs")
     compiler = shutil.which(args.cc)
     if not compiler:
         return case_record("bootstrap.c-smoke", "blocked", "C compiler not found: " + args.cc)
@@ -296,8 +302,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--input-report", type=Path, help="report for structural validation, without treating it as product execution")
-    parser.add_argument("--build-dir", type=Path, default=Path.home() / ".cache/qaplet/environment",
-                        help="environment evidence/build location; use a Linux filesystem in WSL")
+    parser.add_argument("--build-dir", type=Path, default=ROOT / ".cache/environment",
+                        help="environment build/cache location within this repository")
     parser.add_argument("--min-free-bytes", type=int, default=2 * 1024**3,
                         help="minimum free bytes on source and build filesystems (default 2 GiB)")
     parser.add_argument("--download-url", help="explicit HTTPS test download; omitted means environment acceptance is blocked")

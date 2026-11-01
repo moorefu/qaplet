@@ -247,12 +247,29 @@ class FoundationContract(unittest.TestCase):
         self.assertEqual(report["m0_core_status"], "not_run")
         self.assertIn("not run", report["reason"].lower())
 
-    def test_ci_windows_compiler_builds_through_the_shared_entry_point(self):
+    def test_ci_rejects_non_ubuntu_build_runner(self):
+        project = self.copy_project()
+        path = project / ".github/workflows/foundation.yml"
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+        workflow["jobs"]["bootstrap"]["strategy"]["matrix"]["include"][0]["os"] = "windows-2022"
+        path.write_text(json.dumps(workflow), encoding="utf-8")
+        result, report = self.run_cli("check-ci")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Ubuntu", report["reason"])
+
+    @unittest.skipIf(sys.platform == "linux", "Checks a non-Linux host without invoking a compiler")
+    def test_bootstrap_requires_ubuntu_before_selecting_a_compiler(self):
+        result, report = self.run_cli("test-foundation", "--profile", "bootstrap", "--cc", "qaplet-missing-policy-cc")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("Ubuntu", report["cases"][0]["reason"])
+        self.assertEqual(report["cases"][0]["commands"], [])
+
+    def test_ci_ubuntu_compiler_builds_through_the_shared_entry_point(self):
         workflow = json.loads((ROOT / ".github/workflows/foundation.yml").read_text(encoding="utf-8"))
-        windows = next(row for row in workflow["jobs"]["bootstrap"]["strategy"]["matrix"]["include"]
-                       if row["os"] == "windows-2022")
+        ubuntu = next(row for row in workflow["jobs"]["bootstrap"]["strategy"]["matrix"]["include"]
+                      if row["os"] == "ubuntu-24.04")
         result, report = self.run_cli("test-foundation", "--profile", "bootstrap",
-                                      env=dict(os.environ, CC=windows["cc"]))
+                                      env=dict(os.environ, CC=ubuntu["cc"]))
         self.assertEqual(result.returncode, 0, report["reason"] if report else result.stderr)
         self.assertEqual(report["cases"][0]["actual"]["answer"], 42)
 
@@ -260,9 +277,8 @@ class FoundationContract(unittest.TestCase):
         project = self.copy_project()
         path = project / ".github/workflows/foundation.yml"
         workflow = json.loads(path.read_text(encoding="utf-8"))
-        windows = next(row for row in workflow["jobs"]["bootstrap"]["strategy"]["matrix"]["include"]
-                       if row["os"] == "windows-2022")
-        windows["cc"] = r"C:\msys64\mingw64\bin\gcc.exe"
+        ubuntu = workflow["jobs"]["bootstrap"]["strategy"]["matrix"]["include"][0]
+        ubuntu["cc"] = r"C:\msys64\mingw64\bin\gcc.exe"
         path.write_text(json.dumps(workflow), encoding="utf-8")
         result, report = self.run_cli("check-ci")
         self.assertEqual(result.returncode, 1, result.stderr)

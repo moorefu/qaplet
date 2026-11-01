@@ -13,7 +13,7 @@
         {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
         {
           "name": "Fetch original Nightly bytes and measured acquisition receipt",
-          "run": "python scripts/nightly_toolchain.py download --download-to out/nightly-download/cosmocc.zip --report out/nightly-download/acquisition.json --download-timeout 900"
+          "run": "python scripts/nightly_toolchain.py download --download-to .cache/downloads/nightly/cosmocc.zip --report out/nightly-download/acquisition.json --download-timeout 900"
         },
         {
           "name": "Preserve original archive and acquisition evidence",
@@ -21,7 +21,8 @@
           "if": "${{ always() }}",
           "with": {
             "name": "cosmocc-nightly-download-${{ github.run_id }}-${{ github.run_attempt }}",
-            "path": "out/nightly-download/",
+            "path": ".cache/downloads/nightly/\nout/nightly-download/",
+            "include-hidden-files": true,
             "if-no-files-found": "error",
             "retention-days": 7
           }
