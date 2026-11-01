@@ -22,6 +22,19 @@ class SCMContract(unittest.TestCase):
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["capability"], "not_run")
 
+    def test_ci_rejects_core_make_compilation_on_windows_consumer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work = Path(temp)
+            workflow = json.loads((ROOT / ".github/workflows/svc-scm.yml").read_text())
+            workflow["jobs"]["windows-scm"]["steps"].insert(3, {"run": "make build-ape OUT=out/mutated"})
+            candidate = work / "workflow.json"
+            candidate.write_text(json.dumps(workflow))
+            executed = subprocess.run([sys.executable, str(CLI), "check-ci", "--workflow", str(candidate),
+                "--report", str(work / "report.json")], capture_output=True, text=True)
+            self.assertEqual(executed.returncode, 1, executed.stdout + executed.stderr)
+            report = json.loads((work / "report.json").read_text())
+            self.assertIn("must not compile", report["reason"])
+
     def test_missing_locked_inputs_block_build_without_creating_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             work = Path(temp)

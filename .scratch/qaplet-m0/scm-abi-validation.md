@@ -70,7 +70,7 @@ Windows supervisor 在验证分发 SHA/长度后生成 `qaplet-m0-scm-<UUID>` �
 
 ## TDD 与当前能力状态
 
-Ubuntu 上逐个红→绿：缺缓存先因 CLI 缺失失败后 blocked/不创建缓存；篡改分发物先缺 `run` 后在执行前 SHA 拒绝；无 loader 的 consumer 先虚假 pass 后 blocked；独立 CI 入口先缺命令后检查 Ubuntu producer/Windows consumer/always cleanup。所有保留测试均走 CLI seam，不 mock SCM 或 callback 成功。
+Ubuntu 上逐个红→绿：缺缓存先因 CLI 缺失失败后 blocked/不创建缓存；篡改分发物先缺 `run` 后在执行前 SHA 拒绝；无 loader 的 consumer 先虚假 pass 后 blocked；独立 CI 入口先缺命令后检查 Ubuntu producer/Windows consumer/always cleanup；向 Windows consumer 注入 `make build-ape` 先错误接受、修正后拒绝。五项保留测试均走 CLI seam，不 mock SCM 或 callback 成功。
 
 真实管理员 SCM 生命周期已在用户授权的当前宿主通过。`out/implement-spec/11/out/scm-uac/` 固定 service plan、invocation manifest 和 entry script 经协调者审核并通过必要 OS UAC 启动；entry 在执行前验证 manifest 和全部 imported scripts、Python executable、producer、artifact、plan 的 SHA-256。该次 entry SHA `7940fc8078f96798d6b2d3334f51617db4546b7230b44b1ac03fad94f671680d`，invocation SHA `79dc76a99645169c080b49309d2a075f84c34f1f40e48bc26b412d278e85c90e`，plan SHA `fd5adee3031dac35860e8628081518faf36907da84b1ed2925164534755b8dbe`。
 
@@ -83,3 +83,9 @@ Ubuntu 上逐个红→绿：缺缓存先因 CLI 缺失失败后 blocked/不创�
 Core 边界在独立应用实现后实际再次检查：`out/implement-spec/11/out/scm-core-boundary/{hello,quickjs-eval}.json` 均 pass；Core Hello SHA `467f8889db7a671cd238a7cc56df933951fea686c7c524480f4112870da3695d`、eval SHA `426a7b05367fc6fd8d4831eebb2439782b3b66141af115094cc1efa766b05cd4` 与 07 的已提供 producer 一致，两个 CPU link maps/global symbols 和 PE imports 均无服务符号。Linux 独立消费报告 `out/implement-spec/11/out/scm-linux-consumer/scm.json` 同样 pass；它与 producer 的 Linux 普通入口不是同一条执行记录。
 
 API 合同依据：[CreateServiceW](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-createservicew)、[QueryServiceStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatusex)、[ControlService](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-controlservice)、[DeleteService](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-deleteservice)。当前服务探针结果不改变 M0 Core 完整门禁状态。
+
+## 最终集成检查与证据保留
+
+实施提交 `1109264` 后，已把 integration `8fb7c39` 合入本实施分支（merge `4f90c03`），包含 06 的 adaptive startup 和 editor watcher 修复。随后 Ubuntu 直接 `wsl --cd <worktree> -- make check OUT=out/scm-final-check-2` 返回 0：107 项合同测试通过，23 项显式实际输入/guest/宿主 opt-in 测试按其条件 skipped，bootstrap C compile/run 通过；五项 SCM 合同全部通过。原始完整输出在 `out/scm-final-check-2/make-check.log`，静态/基础报告在同目录。此前一次 `make check` 的内部检查已通过，但外层 bash exit-code 引用错误返回非零；该输出也保留，没有把包装器失败隐藏为通过。独立 SCM 真实 Ubuntu/Windows 证据在上文另列，不用这些 skipped 的其他任务测试代替。
+
+为后续清理实施 worktree 保留原始字节，全部本票 `out/` 输出（包括初次编译失败、普通权限 blocked、管理员成功、两次检查输出和 UAC 审核输入）已复制到主工作区 `out/m0-integration/svc-scm-11-verified/`，227 个文件 / 18547822 字节。`export-manifest.json` 为每个相对文件记录 SHA-256 与长度，复制后逐文件复核。原始报告仍保留当时实际执行的 worktree/Linux 路径；移动后按该 export 根和相对路径定位原始日志。UAC entry 只是历史审核证据，不是可重复执行的安装命令；新运行生成新 UUID/新 evidence。中间构建仍在主工作区 `.cache/build/`，没有把输入缓存或原始 evidence 纳入 Git。

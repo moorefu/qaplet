@@ -262,7 +262,7 @@ def check_ci(args, report):
             raise BuildError("SCM producer is missing a shared locked-input/build step: " + required)
     steps = consumer["steps"]
     for step in steps:
-        if re.search(r"cosmocc|svc_scm\.py\s+build|build_ape\.py\s+build", step.get("run", "")):
+        if re.search(r"cosmocc|make\s+build-ape|svc_scm\.py\s+build|build_ape\.py\s+build", step.get("run", "")):
             raise BuildError("SCM Windows consumer must not compile")
     transfers = [step for step in steps if "download-artifact@" in step.get("uses", "")]
     if len(transfers) != 1 or transfers[0]["with"]["name"] != "svc-scm-build-${{ github.sha }}":
