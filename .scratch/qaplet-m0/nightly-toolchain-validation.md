@@ -113,9 +113,10 @@ The authoritative [lock](../../toolchains/cosmocc.lock.json) contains the full
 measured versions, archive/file/link/compiler identities and source URL. The
 [acquisition receipt](../../toolchains/cosmocc.acquisition.json) is preserved
 byte-for-byte (including original line endings); its SHA-256 is in the lock.
-[Validation evidence](../../toolchains/validation.json) and
-[raw logs](../../toolchains/evidence/) are tracked so worktree cleanup does not
-discard actual version and offline/refusal observations.
+[Validation summary](../../toolchains/validation.json) is tracked. Raw logs in
+`toolchains/evidence/` are local generated outputs and are ignored by Git; preserve
+them locally or through CI artifacts during worktree cleanup rather than staging
+them. Fresh execution reports and raw logs belong under `out/`.
 
 The native Linux loader explicitly launched the two APE GCC executables. The
 shell driver ran through its own shebang. No WSLInterop or global binfmt setting

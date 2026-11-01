@@ -11,8 +11,10 @@ artifact `13031425078`, not the cosmo.zip server's packaging. Its original ZIP i
 419,652,152 bytes, SHA-256
 `f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf`.
 The receipt is `cosmocc.acquisition.json`; measured versions, full content/link
-manifest and source identities are in `cosmocc.lock.json`. `validation.json` and
-`evidence/` retain actual offline/restore/refusal results and raw logs.
+manifest and source identities are in `cosmocc.lock.json`. `validation.json`
+records the offline/restore/refusal summary. Raw logs in `evidence/` are local
+generated outputs and are ignored by Git; fresh CLI runs retain reports and
+raw logs under `out/`.
 
 ```sh
 # Initial cosmo.zip acquisition in a checkout without a lock (separate provider).
