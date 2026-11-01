@@ -215,7 +215,8 @@ def check_tier_transport(workflow):
     require(save > last_input, "Trusted cache save must follow complete restored-input verification")
     offline = [step for step in build if "scripts/offline_integrity.py run" in step.get("run", "")]
     require(len(offline) == 1 and offline[0].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
-            '--cache-root "$PWD/.cache"' in offline[0]["run"] and '--uid "$(id -u)"' in offline[0]["run"], "Full requires actual disconnected nonroot rebuild/refusals")
+            offline[0]["run"].startswith("mkdir -p out/m0/offline\nsudo ") and
+            '--cache-root "$PWD/.cache"' in offline[0]["run"] and '--uid "$(id -u)"' in offline[0]["run"], "Full requires runner-owned report directory before actual disconnected nonroot rebuild/refusals")
     sealing = [step for step in build if "scripts/ci_tiers.py seal-offline" in step.get("run", "")]
     require(len(sealing) == 1 and sealing[0].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
             sealing[0]["run"] == "python scripts/ci_tiers.py seal-offline --offline-report out/m0/offline/offline-integrity.json --report out/m0/offline/transport-receipt.json", "Full must retain actual offline helper bytes and recipe receipt")

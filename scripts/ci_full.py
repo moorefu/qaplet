@@ -39,7 +39,7 @@ def seal_offline(path):
             require(identity(supplied["path"]) == supplied, "Disconnected helper bytes changed before transport")
             target = destination / (side + "-" + item["name"])
             shutil.copyfile(supplied["path"], target)
-            mappings.append({"source": supplied["path"], "relative": "offline/transport/" + target.name})
+            mappings.append({"source": supplied["path"], "relative": target.relative_to(path.parent.parent).as_posix()})
     write_json(path.parent / "extra-path-mappings.json", mappings)
     difference = path.parent / "recipe-source.diff"
     difference.write_bytes(b"")
@@ -177,7 +177,7 @@ def collect_actions(output, commit):
     headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     def request(url):
         return urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request(api + "/runs/" + run_id + "/artifacts?per_page=100"), timeout=60) as response:
+    with urllib.request.build_opener(NoRedirect()).open(request(api + "/runs/" + run_id + "/artifacts?per_page=100"), timeout=60) as response:
         listing = json.load(response)
     require(listing["total_count"] <= 100, "Artifact listing exceeds bounded collection")
     selection, metadata = [], []
