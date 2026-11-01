@@ -185,3 +185,25 @@ was read, and `git diff --check` passed. No broad suite or large-cache verificat
 was repeated for the conflict-free merge. The integration owner reported its
 Ubuntu policy checks green; ticket 05 consumes the current verifier again in the
 canonical Ubuntu build. No hosted macOS rerun or full M0 completion is claimed.
+
+## Independent re-review
+
+Both reviewers inspected the pinned fix tip `92f01db` against `cf0d125` after integration merge `10214fe`.
+
+### Standards
+
+0 actionable findings. The two documented contract breaches and the process-runner duplication with a demonstrated timeout defect are resolved. The reviewer checked the rollback, complete curl grammar, shared bounded cleanup and measured DrvFS branch, including retained regression and actual-cache evidence.
+
+### Spec
+
+0 actionable findings. Both stale-success-report paths now produce failure evidence; canonical extraction roots handle the macOS alias-parent case. Full content/type/link validation and regular-file no-write checks remain on DrvFS, with strict POSIX permission checks elsewhere. An optional restricted-context WSL rerun was unavailable to this reviewer; this does not change the recorded ordinary-user Ubuntu checks or actual-cache verification.
+
+Final review counts: Standards 0; Spec 0. No compiler was run on Windows or macOS for this re-review.
+
+## Ubuntu build and repository cache policy
+
+The user subsequently required Ubuntu builds, artifact/SDK consumption on other platforms, and one repository-root `.cache/`. Commit `0a8065c` records this in AGENTS/development/spec, restricts bootstrap scheduling to Ubuntu, blocks non-Ubuntu bootstrap compilation before compiler selection, and ignores `.cache/`. The new CLI policy checks were observed red then green; Ubuntu `make check` passed 52 tests with two platform skips, static checks and actual Ubuntu system C bootstrap. Evidence is `out/m0-integration/checks/ubuntu-policy-{red,green,check}/`.
+
+Main-workspace reusable source, the original Nightly ZIP and extracted toolchain, guest inputs/unpacked data, prior environment data and project build caches were migrated into `D:\Workspace\dairn\qaplet\.cache`. Every copied regular file was compared by SHA-256, and symlink targets/types were preserved. After actual QuickJS/Nightly verification passed, a second content inventory comparison preceded removal of each old project cache directory. Old `/home/moore/.cache/qaplet/` entries now contain compatibility links into repository `.cache/`, retaining historical evidence paths while storing the bytes in the requested directory. The completed migration record is `out/m0-integration/cache-migration.json`; measured filesystem behavior is `out/m0-integration/cache-capabilities.json`. Shared pre-existing user tools outside this project's cache were not moved.
+
+The canonical-cache Hello/eval build `80c4e13b-17e4-4f39-9cee-13f1415358c0` produced the same two fat bytes as before migration. A Windows consumption-only preflight matched both producer hashes before/after all five commands; Hello/facts/default eval passed, and thrown/syntax errors produced the expected exception text and nonzero raw Windows status 256. This preflight is retained at `out/m0-integration/windows-startup-preflight/`; formal task 06 matrix evidence remains separate. Task 05 still needs its full native regression and actual Ubuntu CI build/upload acceptance.
