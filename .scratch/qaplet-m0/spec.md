@@ -1,9 +1,11 @@
 # Qaplet M0：Core APE、工具链与原生风险探针
 
-**Status:** implementation-in-progress / M0-Core-gate-passed / M0-SVC-independent  
+**Status:** resolved / M0-Core-gate-passed / M0-SVC-independent  
 **Baseline:** 总体计划 v1.4（App-first / 本地优先与原生页覆盖），2026-10-31；SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。  
 **Execution state:** 01–09 已完成实际输入、构建、六目标 startup/I/O、64K 与断网证据；10 的完整只读 Core gate 已通过，见[Core 验收](core-evidence-gate-validation.md)。SCM/Job 均已完成实际本地与独立 CI；Job 首次 handle-count +2 的 handle 身份仍未归因，能力限已测 owned fixtures。正式 Runtime、SDK 和后续产品 API 不在 M0 完成声明内；各票及原始失败保留可追溯历史。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
+
+**Final review:** 四项审查问题及相对 guest CLI 问题已修复，实际新配方断网双构建与完整 Core 重新通过；固定合并提交 `fc1d718a4cdd178f560002c76a20562c2783a00a` 的两路隔离上下文终审均为零遗留、零新增问题，见[最终记录](final-review-validation.md)。
 
 **Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。
 

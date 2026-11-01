@@ -3,7 +3,8 @@
 **Status:** resolved
 **Base:** efeed762290823ae01130ee9217127cf21aab4c3
 **Reviewed HEAD:** 4f5417ae54c33f983cb103f33107d92d0e0fba72
-**Diff:** `git diff efeed762290823ae01130ee9217127cf21aab4c3...HEAD`
+**Original diff:** `git diff efeed762290823ae01130ee9217127cf21aab4c3...4f5417ae54c33f983cb103f33107d92d0e0fba72`
+**Final rechecked merge:** fc1d718a4cdd178f560002c76a20562c2783a00a
 
 两轴使用独立 fresh context；完整 commit list、diff 和原始报告保存在 `out/m0-integration/final-review-inputs/` 与 `out/m0-integration/final-review/`。以下保留两轴原结论，修复状态另行追加。
 
@@ -67,3 +68,37 @@ canonical manifests 已转为选择新 proof；替换前两份原文件逐字节
 Windows 初次新 manifest 使用 forward slashes，full gate 通过，但既有 mutation fixture 的 native-path 字符串替换产生 30 个 `StopIteration` errors；该日志及原 manifest 单独保留，转换为与旧 canonical 一致的 native Windows 路径后 27/27 通过。此项是证据选择文件格式修正，没有更改 build recipe 或改写 offline proof。
 
 22 个 staged recipe inputs 的 SHA/长度逐一与实际 pair 相等，避免 Git 换行规范化在合并时改变已测配方；19 份 standalone publication source/recipe 原始字节也另存 snapshot。最终日志包括 `make-check-final.log`、`core-consumers-windows-final.log`、`publication-actual.log`、`posix-{red,green}/process.json`、`zero-diff-original-consumer-red.json` 和 `index-recipe-verification.json`，均位于上述稳定输出。未执行新的 Windows SCM/Job 生命周期或宣称更广的 handle/tree 安全性；原独立 SVC 结果与未知 libc/TLS 边界继续保留。
+
+## 独立合并与最终隔离复审
+
+fresh merger 将 fixer `3d2f003f8078937165db7930d7224ec3c4458e6c` 精确合并为 `fc1d718a4cdd178f560002c76a20562c2783a00a`；双 parent 和 tree 与预期一致。合并前后 public full Core 均为 175/617 pass，实际 4K 相对 cwd CLI 为 guest-transport pass / Core not_run，22 个 offline recipe inputs 的工作字节和 Git blobs 均与实际 pair 精确相同。额外 19 份 standalone source snapshots 保留原始字节，其中 5 份与合并 blob 仅 CRLF/LF 不同，未冒称全部 raw-identical。收据为 `out/m0-integration/final-fixes-merge/receipt.json`。
+
+一次中间复审读取聚合文档时接触到另一轴历史文本，因此未作为最终独立结论。最终两名审查者重新使用 fresh context，各自只接收本轴原报告、源码与实际证据；修复 delta 排除本聚合文档以避免交叉影响。原完整审查与本次修复 delta 相衔接，固定上下文见 `out/m0-integration/final-review/merged-pin.json`，以下分别保留两轴最终报告。
+
+### Standards 最终复审
+
+Standards recheck at `fc1d718`: **0 unresolved original findings; 0 new findings**.
+
+- **Original packaging breach resolved.** [publish_ape](D:/Workspace/dairn/qaplet/scripts/build_ape.py:282) now publishes the loader and all three notice files for all five producers, satisfying [the documented rule](D:/Workspace/dairn/qaplet/third_party/ape-helpers/README.md:42): “Producer distributions include source metadata and license text.” Independent read-only byte checks confirmed each distribution’s `LICENSE`, `source.lock.json`, and HACL notice against the repository/locked source. Every artifact has both recorded CPU maps with matching hashes and lengths; all distributed loaders exactly match their recorded source-built loader.
+- **Original possible Duplicated Code resolved.** All five producers call the shared publication function; suffix copying, CPU-map validation, loader copying, and notices now have one implementation. Producer-specific compilation, audits, and reports remain separate.
+
+No additional documented-standard breach or material baseline-smell judgement was identified in the remaining fix delta.
+
+Evidence limits: all **22 offline recipe inputs** match current files byte for byte, with `changed_inputs: []`. All **19 standalone publication snapshots** retain their recorded bytes; compared with the merged commit, 14 match raw bytes and five differ only by CRLF-to-LF normalization. They are not all raw-identical.
+
+Recorded validation reports 149 Ubuntu tests with 19 explicit skips and no failures, passing bootstrap, and 27/27 Windows consumer tests. This recheck inspected source and existing evidence only; it ran no builds, services, or new test fixtures and changed no files.
+
+### Spec 最终复审
+
+0 unresolved original findings; 0 new Spec findings.
+
+- The worker-directory finding is resolved. Issue 09:13 requires “维护者能断网重构相同输入”. The launcher changes ownership/mode only on its newly created UUID evidence directory. Retained POSIX red/green evidence shows the original permission failure, followed by successful UID/GID 1000 execution.
+- The empty-recipe finding is resolved. Issue 09:17 requires “在独立构建目录从锁定缓存重复构建foundation制品”; issue 10:17 requires “生成只包含实测状态的实施报告”. Equal inventories now pass, actual current bytes are rehashed, falsely empty differences fail, and the historical `check_ci` AST exception remains narrow. The original consumer’s retained `IndexError` establishes the regression.
+
+I independently verified all 22 recipe inputs against working and pinned-merge bytes, six binary/two helper byte comparisons, identical 21,180-file before/after inventories, and all 16 raw traces: both builds recorded 192 `execve` calls; each refusal recorded one; Internet attempts were zero. Retained Windows/Linux full consumers pass with 175 cases and 617 evidence items.
+
+The publication and relative guest-CLI changes introduce no observed missing, partial, wrongly implemented, or excess requirement. Producer flags/audits remain intact, service results remain independent, and guest validation retains Core `not_run`.
+
+Limits: read-only delta/source/evidence recheck; no new builds, guest execution, service operations, or test runs.
+
+最终复审：Standards 零遗留、零新增，本轴无未解决严重项；Spec 零遗留、零新增，本轴无未解决严重项。

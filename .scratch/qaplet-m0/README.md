@@ -1,10 +1,12 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / tickets-01-through-12-resolved / Core-gate-passed / final-review-pending
+**Status:** resolved / tickets-01-through-12-resolved / Core-gate-passed / final-review-passed
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
 ## 入口
+
+最终验收（2026-11-01）：12 张任务均已 resolved；修复后实际 Core 175 项、断网 16 项通过，Ubuntu 完整检查 149 tests / 0 failures / 19 explicit skips，Windows consumer 27/27。两路隔离上下文终审均为零遗留、零新增问题，见[最终审查与修复记录](final-review-validation.md)。下方规划快照和阶段记录继续保留，当前完成范围以本段和各票 Answer 为准；正式 Runtime/SDK 不在 M0 范围内。
 
 - [M0 spec](spec.md)：范围、验收、测试、资源与失败合同。
 - [术语](../../GLOSSARY.md)
