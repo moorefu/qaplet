@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "contexts": [
+    {"path": "AGENTS.md", "audience": "common"},
+    {"path": "GLOSSARY.md", "audience": "common"},
+    {"path": "docs/development.md", "audience": "standards"},
+    {"path": "docs/development/environment.md", "audience": "standards"},
+    {"path": "docs/agents/review.md", "audience": "standards"},
+    {"path": ".gitattributes", "audience": "standards"},
+    {"path": ".scratch/qaplet-retro/issues/01-workflow-guardrails.md", "audience": "spec"},
+    {"path": ".scratch/qaplet-m0/final-review-validation.md", "audience": "aggregate"},
+    {"path": ".scratch/qaplet-m0/input-review-validation.md", "audience": "aggregate"},
+    {"path": ".scratch/qaplet-retro/validation.md", "audience": "aggregate"}
+  ]
+}
