@@ -61,7 +61,7 @@ Ubuntu-22.04 / WSL2 Linux x86_64、kernel `6.6.87.2-microsoft-standard-WSL2`、4
 - `out/check-ticket12-integrated.log` 与 `out/check-ticket12-integrated/`：并入最新 integration 后的最终全套 check 输出及各共享检查报告；此前 `out/check-ticket12-final.log` 的 114 tests 通过记录亦保留。
 - `out/svc-job/core-inspect-{hello,eval}.json`：对 07 当前 Core Hello `467f8889...` 和 eval `426a7b05...` 的独立同摘要 import/map/headers audit 均 pass。Core 配方未修改，也未加入本应用代码。
 
-`.github/workflows/svc-job.yml` 是独立 Ubuntu producer / Windows consumer，含实际 fence deadline 合同、失败证据上传；本票没有 push 或执行新远程 Job workflow，远程验证保持 not_run。所有 M0-SVC 报告的 `m0_core_status` 保持 not_run，不关闭完整 Core 门禁。
+`.github/workflows/svc-job.yml` 是独立 Ubuntu producer / Windows consumer，含实际 fence deadline 合同、失败证据上传；后续实际远程结果见末节。所有 M0-SVC 报告的 `m0_core_status` 保持 not_run，不关闭完整 Core 门禁。
 
 ## Consumer merge review 修复
 
@@ -74,3 +74,25 @@ Ubuntu-22.04 / WSL2 Linux x86_64、kernel `6.6.87.2-microsoft-standard-WSL2`、4
 实际 Windows 使用同一个 `0410864e...` artifact 重新通过；missing-export/suite 各自 exit 0、未超时，accounting total 1/10、active 均 0，reap/3 handle close 全成立。实际 `--probe-mode hang --timeout 1` 正确 fail：missing-export fence pass，suite exit 98 / timed_out，自己的 accounting active 0、reap 和全部 close 仍成立。新原始结果在 `out/svc-job/consumer-fix/windows/{job,timeout}.json`，两次 launch 全部 facts 不再丢失。受限进程上下文另一次 missing-export capture 观测 15s timeout、零残留，普通用户上下文相同字节成功；两份记录均保留，未诊断其上下文差异，不外推为宿主 ABI 失败。
 
 已并入 integration `f24787b`。consumer 修复后的 Windows 9/9 公开合同、Ubuntu 9 tests/1 Windows-only skip 通过；完整 Ubuntu `make check` 116 tests/25 explicit skips、static/bootstrap pass，记录于 `out/svc-job/consumer-fix/check.log` 和 `check/`。原三次 handle 增长/稳定基线、两个初始 failure、Core audits 和首份 archive 保持原样；新 evidence 另行归档。
+
+## 真实独立 CI（2026-11-01）
+
+修正合入 `e17981cee18d1d88d27f63bcbc0fa8691c24fe86` 后，
+[Job run 41273469604](https://github.com/moorefu/qaplet/actions/runs/41273469604)
+completed/success：Ubuntu producer 和 Windows consumer 均通过。制品 755199 字节，
+SHA `0410864e8232379a7559410978f804da534b1550107f9a39ccdc050ef1bfaffb`，
+与本地相同。实际 Windows x86_64/native/4096、kernel `10.0.20348`，
+image `win22` / `20261026.347.1`；12 个实际 case 全通过。
+
+两次 launch 的完整 supervisor facts 均保留并参与判定：missing-export/suite
+accounting total 为 1/10，active 均为 0，terminate/reap/Job/process/thread close
+全部成立。Python runner 本身原先在 Job 中、实测 limits 0；只分配新建的受控
+artifact 及其后代。native 自有句柄 24 打开/24 关闭；首次进程创建前为 91，
+三次初始化后为 93/93/93，完整 suite 前后 93/93。初次 +2 的来源仍未证明，
+`capability_scope` 继续限定为已测 owned fixtures 与初始化后的稳定基线。
+
+原 producer/Windows ZIP 的服务端长度/SHA、全部 CRC、制品字节、全部 fence
+断言和 184 个唯一原始日志路径已独立复核。artifact IDs 为 `13070352016` /
+`13069749760`，原归档在主 `.cache/downloads/ci/`，解包报告位于
+[`ci12-e179/`](../../out/m0-integration/ci12-e179/)；`verification.json` 和
+`acceptance.json` 分别记录传输与实际结果核查。历史失败与本地实际 timeout 证据保留。
