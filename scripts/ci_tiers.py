@@ -163,7 +163,7 @@ def check_tier_transport(workflow):
         "description": "Replay a tier on this exact ref", "type": "choice", "required": True,
         "default": "cross", "options": ["fast", "cross", "full"]}, "Manual replay must select an explicit tier")
     jobs = workflow["jobs"]
-    required = {"tier-plan", "build", "native-startup", "page-plan", "arm64-page-gaps", "startup-matrix"}
+    required = {"tier-plan", "build", "native-startup", "page-plan", "arm64-page-gaps", "startup-matrix", "full-core"}
     require(required <= jobs.keys(), "Missing required tier job")
     require(jobs["build"].get("needs") == "tier-plan" and "if" not in jobs["build"], "Every selected tier must build Fast on Ubuntu")
     selected = {
@@ -171,6 +171,7 @@ def check_tier_transport(workflow):
         "page-plan": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
         "arm64-page-gaps": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
         "startup-matrix": "${{ always() && needs.tier-plan.outputs.run_cross == 'true' && needs.build.result == 'success' }}",
+        "full-core": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
     }
     for name, condition in selected.items():
         require(jobs[name].get("if") == condition and "tier-plan" in jobs[name].get("needs", []), "Required tier condition/dependency differs: " + name)
@@ -179,6 +180,7 @@ def check_tier_transport(workflow):
     calls = [step for step in planning["steps"] if "run" in step]
     require(len(calls) == 1 and calls[0].get("id") == "plan" and calls[0]["run"] ==
         'python scripts/ci_tiers.py plan --event-name "$CI_EVENT_NAME" --event-json "$GITHUB_EVENT_PATH" --ref "$CI_REF" --github-output "$GITHUB_OUTPUT" --report out/tier/plan.json', "Workflow must call the shared tier planner")
+    require("if" not in calls[0], "The required tier planner cannot be skipped")
     for key in ("tier", "run_cross", "run_full", "write_cache", "native_matrix", "cache_key"):
         require(planning.get("outputs", {}).get(key) == "${{ steps.plan.outputs." + key + " }}", "Required shared planner output missing: " + key)
     cache_paths = ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2"
@@ -193,7 +195,7 @@ def check_tier_transport(workflow):
             if uses.startswith("actions/cache/"):
                 require(name == "build" and step.get("with", {}) == {"path": cache_paths, "key": "${{ needs.tier-plan.outputs.cache_key }}"}, "Cache must bind exact locked input bytes")
                 if uses.startswith("actions/cache/save@"):
-                    require(step.get("if") == "${{ success() && needs.tier-plan.outputs.write_cache == 'true' }}", "Only verified trusted default-branch events may save caches")
+                    require(step.get("if") == "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}", "Only verified trusted default-branch events may save caches")
                 else:
                     require(uses.startswith("actions/cache/restore@") and "if" not in step, "Only split cache restore/save is permitted")
             elif "actions/cache@" in uses:
@@ -201,14 +203,28 @@ def check_tier_transport(workflow):
             if any(command in run for command in ("fetch_locked_toolchain.py", "make quickjs-fetch", "scripts/ape_helpers.py fetch", "scripts/startup_loaders.py fetch")):
                 require("if" not in step, "Restored cache inputs must always be verified; cache-hit bypass refused")
     build = jobs["build"]["steps"]
+    require(all("if" not in step for step in build if "run" in step and not any(command in step["run"] for command in
+                ("sudo apt-get", "scripts/offline_integrity.py run", "scripts/ci_tiers.py seal-offline"))), "Required Fast input/compiler/probe commands cannot be skipped")
     require(sum(step.get("uses", "").startswith("actions/cache/restore@") for step in build) == 1 and
             sum(step.get("uses", "").startswith("actions/cache/save@") for step in build) == 1, "Build requires split trusted cache restore/save")
     restore = next(i for i, step in enumerate(build) if step.get("uses", "").startswith("actions/cache/restore@"))
     verify = next(i for i, step in enumerate(build) if "fetch_locked_toolchain.py" in step.get("run", ""))
     require(restore < verify, "Cache verification must follow restore")
+    save = next(i for i, step in enumerate(build) if step.get("uses", "").startswith("actions/cache/save@"))
+    last_input = max(i for i, step in enumerate(build) if "scripts/startup_loaders.py build" in step.get("run", ""))
+    require(save > last_input, "Trusted cache save must follow complete restored-input verification")
     offline = [step for step in build if "scripts/offline_integrity.py run" in step.get("run", "")]
     require(len(offline) == 1 and offline[0].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
             '--cache-root "$PWD/.cache"' in offline[0]["run"] and '--uid "$(id -u)"' in offline[0]["run"], "Full requires actual disconnected nonroot rebuild/refusals")
+    sealing = [step for step in build if "scripts/ci_tiers.py seal-offline" in step.get("run", "")]
+    require(len(sealing) == 1 and sealing[0].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
+            sealing[0]["run"] == "python scripts/ci_tiers.py seal-offline --offline-report out/m0/offline/offline-integrity.json --report out/m0/offline/transport-receipt.json", "Full must retain actual offline helper bytes and recipe receipt")
+    core = jobs["full-core"]
+    require(core.get("needs") == ["tier-plan", "build", "native-startup", "arm64-page-gaps", "startup-matrix"] and core.get("runs-on") == "ubuntu-24.04", "Full Core must await all selected same-commit jobs")
+    require([step["run"] for step in core["steps"] if "run" in step] == [
+        'python scripts/ci_tiers.py collect-actions --commit "$CI_COMMIT" --output-dir out/full/archives --report out/full/acquisition.json',
+        'python scripts/ci_tiers.py manifest --collection-report out/full/collection.json --commit "$CI_COMMIT" --report out/full/manifest.json',
+        'python scripts/core_gate.py evaluate --input-manifest out/full/manifest.json --report out/full/core.json'], "Full requires original ZIP verification, explicit same-commit selection and existing Core consumer")
     matrix = [step for step in jobs["startup-matrix"]["steps"] if "scripts/startup.py matrix" in step.get("run", "")]
     require(len(matrix) == 1 and '--profile "$CI_TIER"' in matrix[0]["run"] and matrix[0].get("env") == {"CI_TIER": "${{ needs.tier-plan.outputs.tier }}"}, "Cross and Full must use matching aggregate profiles")
     for name in required:
@@ -218,26 +234,43 @@ def check_tier_transport(workflow):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("plan",))
-    parser.add_argument("--event-name", required=True)
-    parser.add_argument("--event-json", type=Path, required=True)
+    parser.add_argument("operation", choices=("plan", "seal-offline", "manifest", "collect-actions"))
+    parser.add_argument("--event-name")
+    parser.add_argument("--event-json", type=Path)
     parser.add_argument("--changed-paths", type=Path, help="explicit JSON path list for local replay")
     parser.add_argument("--ref", default="")
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument("--offline-report", type=Path)
+    parser.add_argument("--collection-report", type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--commit")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     try:
-        result = plan(args)
-        if args.github_output:
+        if args.operation == "plan":
+            require(args.event_name and args.event_json, "Tier plan requires event name and payload")
+            result = plan(args)
+        else:
+            from ci_full import collect_actions, manifest, seal_offline
+            if args.operation == "seal-offline":
+                require(args.offline_report, "Offline transport requires actual report")
+                result = seal_offline(args.offline_report.resolve())
+            elif args.operation == "manifest":
+                require(args.collection_report, "Full manifest requires verified collection report")
+                result = manifest(args.collection_report, args.commit)
+            else:
+                require(args.output_dir, "Actions collection needs an output directory")
+                result = collect_actions(args.output_dir.resolve(), args.commit)
+        if args.operation == "plan" and args.github_output:
             with args.github_output.open("a", encoding="utf-8") as output:
                 for key in ("tier", "run_cross", "run_full", "write_cache", "native_matrix", "cache_key"):
                     value = result[key]
                     output.write(key + "=" + (json.dumps(value, separators=(",", ":")) if not isinstance(value, str) else value) + "\n")
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "fail", "reason": str(error), "evidence_verified": False}
     write_json(args.report, result)
     print(json.dumps({key: result.get(key) for key in ("status", "tier", "reason")}))
-    return 0 if result["status"] == "pass" else 1
+    return 0 if result.get("status") == "pass" or result.get("profile") == "full" else 1
 
 
 if __name__ == "__main__":

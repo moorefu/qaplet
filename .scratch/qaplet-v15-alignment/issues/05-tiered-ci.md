@@ -52,3 +52,15 @@ Fast 每提交检查输入/源码/最小 Engine；Cross 每 PR 运行同字节�
 
 已领取：在 codex/v15-05-tiered-ci 实施；基线 b17bba21437544cb8f4e6b7d6a723518898510c8，包含任务 01–03。
 
+2026-11-02：首个实现提交 `536fa7d` 已冻结 builder `check_ci` 字节并刷新统一锁的 recipe 绑定；
+outside-check_ci AST 与原 producer 相同，证据在主工作区 `out/v15/05/recipe-refresh.json`。
+共享 `ci_tiers.py` 负责层级/敏感路径/显式状态；原 `m0.yml` identity 保留，增加可信缓存、
+实际 Full offline pair 与原始 ZIP/Core consumer 编排。`ci_full.py` 准备 transport/manifest，
+不替代已有消费者。新测试从公共 CLI 拒绝缓存绕过、不可信 save、缺必需 job、空矩阵、
+skip/continue-on-error 掩盖 probe、空 collection 与其他 commit。
+
+本地 Ubuntu `dev.py check` 已通过（201 tests，62 个显式平台/数据 skips，真实 bootstrap pass）；
+这是通用回归与静态成绩，不是远程 Fast/Cross/Full 成绩。合并 04 后将复核，共享真实 pair 的
+seal/完整远程 run 与原 ZIP 下载仍待执行；任务因此保持 claimed。所有实际文件保留主工作区
+`out/v15/05/`，不将旧 commit 的 CI 成绩重标为本次通过。
+

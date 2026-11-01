@@ -48,6 +48,15 @@ Actions 提供的只读 token 与可读缓存，不依赖第三方 secret；固�
 也上传。完整 Core 的 manifest、原 ZIP transport、日志和 producer/consumer 身份仍由既有只读
 consumer 判定；startup Cross aggregate 不等于完整 Core。
 
+Full 的 `seal-offline` 在实际 pair 成功后重新核对 recipe 与 helper 原字节，保留四个 helper 比较
+原件并生成 identical recipe receipt；这一步只准备 transport。`collect-actions` 只读取当前 run 的
+相同 commit 制品，下载原 ZIP 并核对 provider SHA-256，再复用 `ci_evidence.py fetch` 检查 CRC、
+路径与解包内容。鉴权只发往 GitHub API；下载 redirect 不携带 token，不保存 token 或签名 URL。
+PR API head 与实际 merge commit 分别保留，消费者仍绑定实际测试的 merge commit。
+`manifest` 保留显式原路径映射、原 ZIP/provider ID 与必需 producer/native/guest/offline 选择，
+然后 `core_gate.py evaluate` 执行原完整合同。缺必需 report、错误 commit、坏原件或失败 probe
+不能以空 manifest、计划状态或下载成功替代。
+
 ## CI skeleton
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 委派共享 tier 合同检查独立 `m0.yml` 的分层选择、可信 cache、固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。

@@ -158,8 +158,13 @@
           "run": "sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/m0/offline/offline-integrity.json"
         },
         {
+          "name": "Seal current offline recipe and helper bytes for transport",
+          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
+          "run": "python scripts/ci_tiers.py seal-offline --offline-report out/m0/offline/offline-integrity.json --report out/m0/offline/transport-receipt.json"
+        },
+        {
           "name": "Save only verified trusted default-branch inputs",
-          "if": "${{ success() && needs.tier-plan.outputs.write_cache == 'true' }}",
+          "if": "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}",
           "uses": "actions/cache/save@v4",
           "with": {
             "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
@@ -506,6 +511,62 @@
           "with": {
             "name": "m0-startup-matrix-${{ github.sha }}",
             "path": "out/startup-matrix/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "full-core": {
+      "needs": [
+        "tier-plan",
+        "build",
+        "native-startup",
+        "arm64-page-gaps",
+        "startup-matrix"
+      ],
+      "if": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Collect original current-run ZIPs with provider digests",
+          "env": {
+            "GITHUB_TOKEN": "${{ github.token }}",
+            "CI_COMMIT": "${{ github.sha }}"
+          },
+          "run": "python scripts/ci_tiers.py collect-actions --commit \"$CI_COMMIT\" --output-dir out/full/archives --report out/full/acquisition.json"
+        },
+        {
+          "name": "Select required same-commit Full inputs without rewriting reports",
+          "env": {
+            "CI_COMMIT": "${{ github.sha }}"
+          },
+          "run": "python scripts/ci_tiers.py manifest --collection-report out/full/collection.json --commit \"$CI_COMMIT\" --report out/full/manifest.json"
+        },
+        {
+          "name": "Run existing read-only full Core consumer",
+          "run": "python scripts/core_gate.py evaluate --input-manifest out/full/manifest.json --report out/full/core.json"
+        },
+        {
+          "name": "Retain original archives, consumer report and raw failure logs",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-full-core-${{ github.sha }}",
+            "path": "out/full/",
             "if-no-files-found": "error",
             "retention-days": 7
           }
