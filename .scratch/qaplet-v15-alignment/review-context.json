@@ -498,6 +498,18 @@
       "audience": "spec",
       "kind": "reference",
       "source": "git"
+    },
+    {
+      "path": "scripts/ci_identity.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/review-fixes-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
     }
   ]
 }
