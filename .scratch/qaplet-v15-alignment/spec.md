@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Confirmed:** 2026-11-01，沿用 grill-with-docs 六项决策及最终确认；用户在 to-spec 中确认继续采用共享外部命令、真实制品和现有证据消费者的测试边界。
-**Execution state:** 任务 01–05 与三条审查修正已实现并实际验证。当前 pinned 输入 `f0b8dbcf…` 在精确集成提交 `b3adfb8…` 的 Fast/Cross/Full、六目标 Core/64K/offline 与独立本地 4K/publication 严格回归 34/34、无 skip 通过，见[审查修正验收](review-fixes-validation.md)；旧 e41/1b 的 33/33 保留原范围。统一 v3、目标 QuickJS/ARM64 overlay 与 ESM/Promise 微型 Host 提供正式 M1 入口，尚未实现 M1/SDK；06 保持 needs-info、用户暂缓，不声明 release-ready。
+**Execution state:** 任务 01–05 与审查修正已实现并实际验证。当前 pinned 输入 `f0b8dbcf…` 在精确集成提交 `b3adfb8…` 的 Fast/Cross/Full、六目标 Core/64K/offline 与独立本地 4K/publication 严格回归 34/34、无 skip 通过，见[审查修正验收](review-fixes-validation.md)；末轮清单/断言去重单独验收且构建输入未变，旧 e41/1b 的 33/33 保留原范围。统一 v3、目标 QuickJS/ARM64 overlay 与 ESM/Promise 微型 Host 提供正式 M1 入口，尚未实现 M1/SDK；06 保持 needs-info、用户暂缓，不声明 release-ready。
 **Baseline:** [v1.5 实施修订](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)与 [ADR 0004](../../docs/adr/0004-v15-platform-baseline.md)。
 
 ## Problem Statement

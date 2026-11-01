@@ -141,3 +141,30 @@ producer/guest/publication/选择文件及 HACL notice 源码未变。可复用�
 
 旧 e41/1b 的 33/33 继续保留其原组合；这里新增的 34/34 仅证明本次 b3/f0 与明确选择的本地输入。
 正式 M1/SDK 仍未实现，06 长期原 ZIP 镜像仍由用户暂缓，release_ready=false。
+
+## 末轮去重收尾（构建输入不变）
+
+第二轮独立审查固定 `01f6328…` 到 `2da38f1…`，两个 packet 均先验证再派发。
+[Standards](../../out/v15/reviews/results/standards-v2.md)没有硬规则违规，提出两项 P3 重复代码建议；
+[Spec](../../out/v15/reviews/results/spec-v2.md)没有发现。独立实施提交 `e7c0e3…` 由新 merger
+合入 `17071c9672003b1e8c5327e448a0fcd969849c8c`：CI 验证器从既有 NATIVE 清单派生期望集合与数量，
+微型 Host 的三个失败场景组共用断言，原场景表与独立测试名保留。
+
+[实施收据](../../out/worktrees/v15-review-polish/out/review-polish/completion.json)与
+[Ubuntu 定向检查](../../out/worktrees/v15-review-polish/out/review-polish/targeted-validation.json)
+记录 CI 公共 CLI 8 项通过（两项 root namespace/实际 offline pair 的 opt-in 用例显式 skip），
+以及实际 supplied Host 8/8、无 skip。五平台清单另由独立 literal oracle 核对，空矩阵、缺少平台、
+重复平台均实际被 CLI 拒绝；producer、startup、APE 和 launcher 原始字节前后不变。
+
+合并后的 [Ubuntu 仓库入口](../../out/v15/final/check.json)实际执行 `make check`：
+统一锁/CI 合同、219 项普通合同（73 项显式平台或输入 skip）与真实 C bootstrap 全部通过。
+普通合同的 skip 保留其原适用范围；上文完整严格回归仍为明确选择的 b3/f0 数据集 34/34、无 skip。
+
+[最终输入检查](../../out/v15/final/integrity.json)逐项核对统一锁及其 23 个绑定文件与 b3/Git 原字节，
+raw lock 仍为 `861ae65b…`、8051 字节，input_id 保持 `f0b8dbcf…`。
+本次三文件整理不改变原源码、构建配方、workflow、工具链或产品字节；b3 的完整实际 CI 成绩保留
+其原提交范围。末次 push 的 Fast 状态另保存在 `out/v15/final/`。
+
+六个自有实施 Git worktree 已清理；每个忽略输出与缓存目录移回原绝对路径，
+`out/v15/cleanup/*-before.json` 与 `*-after.json` 的逐文件 SHA/长度清单完全一致。
+主工作区原 ZIP、缓存、旧 M0 与失败证据均保留，06 继续按用户安排本地暂存。

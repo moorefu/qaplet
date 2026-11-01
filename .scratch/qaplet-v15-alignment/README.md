@@ -1,7 +1,7 @@
 # v1.5 对齐与 M1 入口
 
 **Status:** ready-for-agent
-**Execution state:** 任务 01–05 与三条审查修正已完成。当前 pinned 输入 `f0b8dbcf…` 在精确集成提交 `b3adfb8…` 的 Fast/Cross/Full、六目标 Core/64K/offline 及独立本地 4K/publication 严格回归 34/34、无 skip 均已实际验收，见[审查修正验收](review-fixes-validation.md)。旧 e41/1b 的 33/33 与既有 M0 保留原完成状态和输入范围。正式 M1 可进入但尚未实现 M1/SDK；06 保持 needs-info、用户暂缓，不声明 release-ready。
+**Execution state:** 任务 01–05 与审查修正已完成。当前 pinned 输入 `f0b8dbcf…` 在精确集成提交 `b3adfb8…` 的 Fast/Cross/Full、六目标 Core/64K/offline 及独立本地 4K/publication 严格回归 34/34、无 skip 均已实际验收，见[审查修正验收](review-fixes-validation.md)。末轮清单/断言去重及其检查单独记录，构建输入保持不变。旧 e41/1b 的 33/33 与既有 M0 保留原完成状态和输入范围。正式 M1 可进入但尚未实现 M1/SDK；06 保持 needs-info、用户暂缓，不声明 release-ready。
 
 [当前总体计划](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md) · [正式对齐规格](spec.md) · [决策 ADR](../../docs/adr/0004-v15-platform-baseline.md)
 
