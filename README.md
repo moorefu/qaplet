@@ -50,3 +50,5 @@ make build-ape OUT=out/m0
 普通报告和逐次运行的制品/原始日志保存在 `out/`，不提交到 Git；ENV-01 的 Linux 构建证据默认放在 `~/.cache/qaplet/environment/`，JSON 报告仍写入 `OUT`。其复跑命令和显式 HTTPS 下载参数见[本地开发说明](docs/development.md#env-01-环境验收与目录)。退出码：`0` 是当前 scope 通过，`1` 是失败或证据写入失败，`2` 是 blocked/not_run。GNU Make 会将 recipe 的非零状态转为自身的非零状态；精确检查 CLI 退出码可直接调用 `python scripts/foundation.py ...`。
 
 入口、报告字段、WSL 权限上下文和 CI 预留位置见[本地开发说明](docs/development.md)。[M0 spec](.scratch/qaplet-m0/spec.md)、[任务索引](.scratch/qaplet-m0/README.md)和[ADR](docs/adr/)定义产品验收；bootstrap 成功不关闭 M0。自有代码采用 [MIT](LICENSE)，[第三方许可](THIRD_PARTY_NOTICES.md)单列。
+
+完整缓存填齐后，Ubuntu 用 `sudo make test-offline OFFLINE_CACHE_ROOT=/repo/.cache OUT=out/offline` 创建独立断网 namespace，再降为非 root 用户实际重构两次并逐字节比较。`OFFLINE_UID` / `OFFLINE_GID` 默认 1000；worktree 指向主仓库物理 `.cache/`。入口保留 exact cache inventory、实际网络/进程 trace、复制负向 fixture 和拒绝结果，缺工具/输入时失败且不联网修复。准备步骤、时限及独立 helper 范围见[断网重构说明](docs/development.md#boot-08-断网重构)。
