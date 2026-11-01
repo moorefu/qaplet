@@ -20,6 +20,7 @@
           "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
         },
         {"name": "Build and locally verify both fat probes using shared recipe", "run": "make build-ape OUT=out/m0"},
+        {"name": "Ubuntu-build independent native I/O artifact", "run": "python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json"},
         {"name": "Explicitly acquire locked Ubuntu helper compiler", "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"},
         {"name": "Ubuntu-build separate native loaders", "run": "python scripts/startup_loaders.py build --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"},
         {
@@ -49,11 +50,18 @@
         {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
         {"uses": "actions/download-artifact@v8", "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0"}},
         {"name": "Measure native host and execute unchanged producer bytes", "run": "python scripts/startup.py run --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/startup/${{ matrix.runner }}/startup.json"},
+        {"name": "Measure native handles and controlled terminal/process fixtures", "if": "${{ !cancelled() }}", "run": "python scripts/native_io.py run --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/io/${{ matrix.runner }}/io.json"},
         {
           "name": "Retain every native result and raw log",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
           "with": {"name": "m0-startup-${{ matrix.runner }}-${{ github.sha }}", "path": "out/startup/${{ matrix.runner }}/", "if-no-files-found": "error", "retention-days": 7}
+        },
+        {
+          "name": "Retain every I/O result and cleanup log",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {"name": "m0-io-${{ matrix.runner }}-${{ github.sha }}", "path": "out/io/${{ matrix.runner }}/", "if-no-files-found": "error", "retention-days": 7}
         }
       ]
     }

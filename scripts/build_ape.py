@@ -341,6 +341,7 @@ def check_ci(args, report):
                 "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json",
                 "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs",
                 "make build-ape OUT=out/m0",
+                "python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json",
                 "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json",
                 "python scripts/startup_loaders.py build --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"]
     if runs != expected:
@@ -353,7 +354,7 @@ def check_ci(args, report):
         if name == "build":
             continue
         for step in job.get("steps", []):
-            if re.search(r"build-ape|build_ape\.py\s+build|startup_loaders\.py\s+build|cosmocc", step.get("run", "")):
+            if re.search(r"build-ape|build_ape\.py\s+build|native_io\.py\s+build|startup_loaders\.py\s+build|cosmocc", step.get("run", "")):
                 raise BuildError("Test job must consume distributed bytes without recompilation: " + name)
     native = workflow["jobs"].get("native-startup", {})
     rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
@@ -371,6 +372,15 @@ def check_ci(args, report):
         raise BuildError("Native startup must use the shared runner and verify measured OS/architecture")
     if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" for step in native_steps):
         raise BuildError("Native startup must retain failures and raw logs")
+    io = [step for step in native_steps if "scripts/native_io.py run" in step.get("run", "")]
+    if len(io) != 1 or io[0].get("if") != "${{ !cancelled() }}" or not all(arg in io[0]["run"] for arg in
+        ("--build-report out/m0/io/build-info.json", "--artifact out/m0/io/artifacts/native-io.com",
+         "--loader-dir out/m0/loaders", "--expected-os ${{ matrix.os }}", "--expected-arch ${{ matrix.arch }}",
+         "--runner-label ${{ matrix.runner }}")):
+        raise BuildError("Native I/O must consume the producer artifact and helpers on every measured native host, including startup failures")
+    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" and
+               step.get("with", {}).get("path") == "out/io/${{ matrix.runner }}/" for step in native_steps):
+        raise BuildError("Native I/O must retain every failure and cleanup log")
     report.update(status="pass", reason="M0 local JSON/workflow contract passed; remote workflow not executed", workflow=identity(args.workflow))
 
 
