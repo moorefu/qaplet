@@ -16,13 +16,14 @@
 | 便宜预检 | 已跟踪生成输出、Python语法、工具CI合同、所选recipe工作/暂存字节先核对；offline先真实namespace/降权写入preflight，之后才运行原双构建 |
 | 按需导航 | `docs/development.md` 39行入口，环境/CI/证据/产品探针分流；旧ENV-01/Core anchors与历史验收保留，AGENTS仅增加审查导航 |
 
-新增 `.github/workflows/workflow-tools.yml` 在Ubuntu先preflight再运行公开CLI合同，并保留失败报告。原Makefile、构建脚本和22个已验收recipe inputs字节保持不变；本轮没有重做APE构建、断网pair或Windows服务生命周期。
+新增 `.github/workflows/workflow-tools.yml` 在Ubuntu先preflight再运行公开CLI合同，并保留失败报告。原Makefile、构建脚本和22个已验收recipe inputs字节保持不变；本地实施未重做APE构建、断网pair或Windows服务生命周期。推送还会触发原M0/SVC workflow，其Ubuntu构建与托管宿主验证按实际run独立记录。
 
 ## 实际验证
 
 - `out/retro/evidence-regressions.json`：真实保留数据执行32/32 consumer regressions，0 failures / 0 errors / 0 skips；完整日志和逐测试progress在其UUID evidence目录。该回放不代表新的OS执行。
 - `out/retro/check-release.json`：新dev入口调用既有Ubuntu `make check`，165 tests / 0 failures / 50明确平台或数据opt-in skips，静态合同与真实系统C bootstrap通过。该普通profile不代替上述32项严格回归。
 - 实际required-skip负向：临时源码副本给既有ActualCoreEvidence加skip，仍消费真实数据执行preflight，严格入口正确失败；普通CI无此数据时仅该专用集成回归明确skip。
+- 最终工具合同显式提供真实证据时16/16通过、零skip；普通CI保留该实际数据集成用例的opt-in边界。
 - `out/retro/collected.json`：新工具从主cache离线核验实际最终CI的14个ZIP、CRC及694份解包文件。真实回环HTTP验证显式获取、命中缓存、verify不下载、坏缓存不自愈；ZIP traversal/symlink/大小写碰撞/坏CRC均拒绝。
 - `out/retro/core-summary.json` 正确计数175 cases / 617 evidence items，声明evidence_verified=false；`run-overview.json` 从保留响应提取精确提交的4条实际成功结果，network_requests=0。
 - `out/retro/namespace-preflight.json`：新offline wrapper只执行已有实际preflight，worker UID/GID1000、独立netnamespace、仅lo、literal外连ENETUNREACH101；未执行后续pair。`offline-plan.json`仅为明确标识planned的命令计划。
