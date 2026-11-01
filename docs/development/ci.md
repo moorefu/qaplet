@@ -57,6 +57,11 @@ PR API head 与实际 merge commit 分别保留，消费者仍绑定实际测试
 然后 `core_gate.py evaluate` 执行原完整合同。缺必需 report、错误 commit、坏原件或失败 probe
 不能以空 manifest、计划状态或下载成功替代。
 
+特权 producer 前先由 runner 创建 `out/m0/offline`；sudo 仍只执行 namespace setup，worker
+降权运行实际构建，原报告由 root 写入。随后非 root seal 可在该 runner-owned 父目录新建 receipt
+与 transport，避免对仓库/缓存做递归 chown/chmod。可用 `QAPLET_CI_POSIX_UID` / `_GID` 在 Ubuntu
+root controller 显式运行对应 CLI 合同：实际 namespace preflight 与 `setpriv` 非 root receipt writer。
+
 ## CI skeleton
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 委派共享 tier 合同检查独立 `m0.yml` 的分层选择、可信 cache、固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。

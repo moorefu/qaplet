@@ -1,5 +1,8 @@
 """Tier decisions and workflow transport through the shared public CLI."""
 import json
+import hashlib
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -11,6 +14,60 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_CI_POSIX_UID"), "Explicit Ubuntu root controller and nonroot namespace fixture required")
+    def test_runner_can_write_transport_receipt_after_privileged_offline_setup(self):
+        self.assertEqual(os.geteuid(), 0, "Only the controlled namespace fixture setup needs root")
+        uid, gid = int(os.environ["QAPLET_CI_POSIX_UID"]), int(os.environ["QAPLET_CI_POSIX_GID"])
+        self.assertGreater(uid, 0)
+        self.assertGreater(gid, 0)
+        runner = ["setpriv", "--reuid=" + str(uid), "--regid=" + str(gid), "--init-groups"]
+        work = Path(tempfile.mkdtemp(prefix="qaplet-ci-owner-", dir="/tmp"))
+        os.chown(work, uid, gid)
+        try:
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            command = next(step["run"] for step in workflow["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
+            first = command.splitlines()[0]
+            if first.startswith("mkdir -p "):
+                setup = subprocess.run([*runner, "sh", "-ec", first], cwd=work, capture_output=True, text=True, timeout=10)
+                self.assertEqual(setup.returncode, 0, setup.stdout + setup.stderr)
+            report = work / "out/m0/offline/offline-integrity.json"
+            produced = subprocess.run([sys.executable, str(ROOT / "scripts/offline_integrity.py"), "preflight",
+                "--uid", str(uid), "--gid", str(gid), "--report", str(report)], cwd=ROOT, capture_output=True, text=True, timeout=90)
+            self.assertEqual(produced.returncode, 0, produced.stdout + produced.stderr)
+            event = work / "event.json"
+            event.write_text("{}")
+            written = subprocess.run([*runner, sys.executable, str(CLI), "plan", "--event-name", "workflow_dispatch", "--event-json",
+                str(event), "--report", str(report.parent / "transport-receipt.json")], capture_output=True, text=True, timeout=20)
+            self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+            self.assertEqual(report.parent.stat().st_uid, uid)
+            self.assertEqual(report.stat().st_uid, 0)
+            self.assertEqual(json.loads(report.read_text())["m0_core_status"], "not_run")
+        finally:
+            # Only this fresh POSIX fixture is removed by root; never repository/cache permissions.
+            self.assertEqual(work.parent, Path("/tmp"))
+            self.assertTrue(work.name.startswith("qaplet-ci-owner-"))
+            shutil.rmtree(work)
+
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_CI_OFFLINE_REPORT"), "Explicit actual current Ubuntu offline pair required")
+    def test_actual_offline_pair_seals_original_helpers_and_passes_recipe_consumer(self):
+        source = Path(os.environ["QAPLET_CI_OFFLINE_REPORT"])
+        original = source.read_bytes()
+        with tempfile.TemporaryDirectory(prefix="qaplet-seal-offline-") as temp:
+            work = Path(temp)
+            result = subprocess.run([sys.executable, str(CLI), "seal-offline", "--offline-report", str(source),
+                "--report", str(work / "seal.json")], capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(source.read_bytes(), original)
+            mappings = json.loads((source.parent / "extra-path-mappings.json").read_text())
+            self.assertEqual(len(mappings), 4)
+            for entry in mappings:
+                copied = source.parent.parent / entry["relative"]
+                self.assertEqual(hashlib.sha256(copied.read_bytes()).digest(), hashlib.sha256(Path(entry["source"]).read_bytes()).digest())
+            checked = subprocess.run([sys.executable, str(ROOT / "scripts/dev.py"), "preflight", "--recipe-receipt",
+                str(source.parent / "recipe-comparison.json"), "--report", str(work / "preflight.json")], capture_output=True, text=True, timeout=120)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertEqual(json.loads((work / "preflight.json").read_text())["preflight"]["recipe_scope"], "identical")
+
     def test_full_manifest_refuses_empty_or_other_commit_collections(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-manifest-") as temp:
             work = Path(temp)
@@ -30,7 +87,7 @@ class CITiersContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-contract-") as temp:
             work = Path(temp)
             original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
-            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal", "skip_core_consumer"):
+            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal", "skip_core_consumer", "missing_runner_parent"):
                 value = json.loads(json.dumps(original))
                 if mutation == "missing_core":
                     del value["jobs"]["full-core"]
@@ -44,8 +101,11 @@ class CITiersContract(unittest.TestCase):
                     value["jobs"]["native-startup"]["strategy"]["matrix"]["include"] = []
                 elif mutation == "skip_seal":
                     next(step for step in value["jobs"]["build"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
-                else:
+                elif mutation == "skip_core_consumer":
                     next(step for step in value["jobs"]["full-core"]["steps"] if "scripts/core_gate.py evaluate" in step.get("run", ""))["if"] = "${{ false }}"
+                else:
+                    step = next(step for step in value["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
+                    step["run"] = step["run"].removeprefix("mkdir -p out/m0/offline\n")
                 path = work / "workflow.json"
                 path.write_text(json.dumps(value))
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
