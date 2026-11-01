@@ -1,0 +1,31 @@
+--- a/tool/build/apelink.c
++++ b/tool/build/apelink.c
+@@ -526,6 +526,7 @@
+             pagesz) {
+       p[i].p_memsz = (p[i + 1].p_vaddr + p[i + 1].p_memsz) - p[i].p_vaddr;
+       p[i].p_filesz = (p[i + 1].p_offset + p[i + 1].p_filesz) - p[i].p_offset;
++      p[i].p_align = MAX(p[i].p_align, p[i + 1].p_align);
+       if (i + 2 < e->e_phnum) {
+         memmove(p + i + 1, p + i + 2, (e->e_phnum - (i + 2)) * sizeof(*p));
+       }
+@@ -1567,7 +1568,7 @@
+   //      segments to be contiguous similar to portable executable
+   //      except that applies to both the file and virtual spaces.
+   //
+-  vaddr = 0;
++  vaddr = in->minload;
+   if (in->we_are_generating_pe) {
+     if (in->we_must_skew_pe_vaspace) {
+       image_align = 65535;
+@@ -1579,6 +1580,11 @@
+   } else {
+     image_align = pagesz;
+   }
++  for (i = 0; i < in->elf->e_phnum; ++i) {
++    Elf64_Phdr *phdr = GetElfProgramHeaderAddress(in->elf, in->size, i);
++    if (phdr->p_type == PT_LOAD)
++      image_align = MAX(image_align, phdr->p_align);
++  }
+   while ((offset & (image_align - 1)) != (vaddr & (image_align - 1))) {
+     ++offset;
+   }

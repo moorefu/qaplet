@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 优先本地完整系统QEMU 64K guest进行探索；持续集成时，原生Linux ARM64 runner若实测64K则直接测试，否则以QEMU补64K。锁定kernel/config/rootfs及QEMU/TCG/machine/CPU；qemu-user或WSL x64的页查询不能满足ARM64 64K前置。
 
@@ -56,4 +56,4 @@ ARM64 64K portability 探针、页大小与 header 检查、ZIP 测试资源及�
 
 ## Comments
 
-尚未实施。
+2026-11-01：ticket07 在 `codex/m0-07-arm64-64k` 独立 worktree 开始实施；基于 integration `dc5c0c3`，已确认祖先关系。TDD seam 沿父规格已确认的外部 CLI、实际 OS 与结构化报告；共享完整系统 guest runner 由本任务维护，06/08 复用。

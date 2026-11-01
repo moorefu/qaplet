@@ -1,4 +1,11 @@
 {
   "schema_version": 1,
-  "patches": []
+  "patches": [
+    {
+      "path": "patches/0001-arm64-full-pointer-values.patch",
+      "sha256": "6197ebf127147d917470759f603ff614f6eff68fe581a43f2a5dd37a2be26eff",
+      "origin": "Qaplet M0 actual ARM64 64K failure at pinned Bellard commit; project-owned portability overlay",
+      "reason": "ARM64 malloc returns valid 48-bit pointers; upstream 47-bit NaN boxing truncates bit47 and crashes JS_NewContextRaw. Select the existing full-pointer JSValue representation for ARM64; upstream commit and original tree remain unchanged."
+    }
+  ]
 }
