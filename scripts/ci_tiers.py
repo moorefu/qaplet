@@ -225,6 +225,7 @@ def check_tier_transport(workflow):
         'python scripts/ci_tiers.py collect-actions --commit "$CI_COMMIT" --output-dir out/full/archives --report out/full/acquisition.json',
         'python scripts/ci_tiers.py manifest --collection-report out/full/collection.json --commit "$CI_COMMIT" --report out/full/manifest.json',
         'python scripts/core_gate.py evaluate --input-manifest out/full/manifest.json --report out/full/core.json'], "Full requires original ZIP verification, explicit same-commit selection and existing Core consumer")
+    require(all("if" not in step for step in core["steps"] if "run" in step), "Required Full collection/selection/Core consumer cannot be skipped")
     matrix = [step for step in jobs["startup-matrix"]["steps"] if "scripts/startup.py matrix" in step.get("run", "")]
     require(len(matrix) == 1 and '--profile "$CI_TIER"' in matrix[0]["run"] and matrix[0].get("env") == {"CI_TIER": "${{ needs.tier-plan.outputs.tier }}"}, "Cross and Full must use matching aggregate profiles")
     for name in required:
