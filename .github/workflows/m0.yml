@@ -1,18 +1,91 @@
 {
-  "name": "M0 locked fat APE",
+  "name": "M0 Fast / Cross / Full (locked inputs)",
   "on": {
-    "push": {},
+    "push": {
+      "branches": [
+        "**"
+      ],
+      "tags": [
+        "v*rc*",
+        "v*RC*"
+      ]
+    },
     "pull_request": {},
-    "workflow_dispatch": {}
+    "workflow_dispatch": {
+      "inputs": {
+        "tier": {
+          "description": "Replay a tier on this exact ref",
+          "type": "choice",
+          "required": true,
+          "default": "cross",
+          "options": [
+            "fast",
+            "cross",
+            "full"
+          ]
+        }
+      }
+    },
+    "schedule": [
+      {
+        "cron": "17 3 * * *"
+      }
+    ]
   },
   "permissions": {
     "contents": "read",
     "actions": "read"
   },
   "jobs": {
+    "tier-plan": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "outputs": {
+        "tier": "${{ steps.plan.outputs.tier }}",
+        "run_cross": "${{ steps.plan.outputs.run_cross }}",
+        "run_full": "${{ steps.plan.outputs.run_full }}",
+        "write_cache": "${{ steps.plan.outputs.write_cache }}",
+        "native_matrix": "${{ steps.plan.outputs.native_matrix }}",
+        "cache_key": "${{ steps.plan.outputs.cache_key }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "id": "plan",
+          "name": "Select shared tier and report capability states",
+          "env": {
+            "CI_EVENT_NAME": "${{ github.event_name }}",
+            "CI_REF": "${{ github.ref }}"
+          },
+          "run": "python scripts/ci_tiers.py plan --event-name \"$CI_EVENT_NAME\" --event-json \"$GITHUB_EVENT_PATH\" --ref \"$CI_REF\" --github-output \"$GITHUB_OUTPUT\" --report out/tier/plan.json"
+        },
+        {
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-tier-${{ github.sha }}",
+            "path": "out/tier/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
     "build": {
       "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 30,
+      "timeout-minutes": 90,
       "steps": [
         {
           "uses": "actions/checkout@v7",
@@ -29,6 +102,15 @@
         {
           "name": "Local checks before acquisition and compilation",
           "run": "make check OUT=out/m0/check"
+        },
+        {
+          "name": "Restore immutable inputs (verification remains mandatory)",
+          "id": "cache",
+          "uses": "actions/cache/restore@v4",
+          "with": {
+            "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
+            "key": "${{ needs.tier-plan.outputs.cache_key }}"
+          }
         },
         {
           "name": "Explicitly acquire exact locked upstream artifact",
@@ -66,6 +148,25 @@
           "run": "python scripts/startup_loaders.py build --producer-report out/m0/build-info.json --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"
         },
         {
+          "name": "Install tracing for actual disconnected Full rebuild",
+          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
+          "run": "sudo apt-get update\nsudo apt-get install -y --no-install-recommends strace"
+        },
+        {
+          "name": "Execute disconnected pair and supplier refusals",
+          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
+          "run": "sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/m0/offline/offline-integrity.json"
+        },
+        {
+          "name": "Save only verified trusted default-branch inputs",
+          "if": "${{ success() && needs.tier-plan.outputs.write_cache == 'true' }}",
+          "uses": "actions/cache/save@v4",
+          "with": {
+            "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
+            "key": "${{ needs.tier-plan.outputs.cache_key }}"
+          }
+        },
+        {
           "name": "Distribute original bytes and all evidence",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
@@ -76,10 +177,14 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "needs": "tier-plan"
     },
     "native-startup": {
-      "needs": "build",
+      "needs": [
+        "tier-plan",
+        "build"
+      ],
       "runs-on": "${{ matrix.runner }}",
       "timeout-minutes": 10,
       "strategy": {
@@ -141,7 +246,7 @@
         {
           "name": "Plan from actual native ARM64 page measurement",
           "id": "native-pages",
-          "if": "${{ !cancelled() && matrix.os == 'Linux' && matrix.arch == 'aarch64' }}",
+          "if": "${{ !cancelled() && needs.tier-plan.outputs.run_full == 'true' && matrix.os == 'Linux' && matrix.arch == 'aarch64' }}",
           "run": "python scripts/startup.py page-gaps --input-report out/startup/${{ matrix.runner }}/startup.json --github-output \"$GITHUB_OUTPUT\" --report out/startup/${{ matrix.runner }}/page-plan.json"
         },
         {
@@ -187,14 +292,16 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}"
     },
     "page-plan": {
       "needs": [
+        "tier-plan",
         "build",
         "native-startup"
       ],
-      "if": "${{ always() && needs.build.result == 'success' }}",
+      "if": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
       "runs-on": "ubuntu-22.04",
       "timeout-minutes": 5,
       "outputs": {
@@ -242,10 +349,11 @@
     },
     "arm64-page-gaps": {
       "needs": [
+        "tier-plan",
         "build",
         "page-plan"
       ],
-      "if": "${{ always() && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
+      "if": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
       "runs-on": "ubuntu-22.04",
       "timeout-minutes": 20,
       "strategy": {
@@ -341,11 +449,12 @@
     },
     "startup-matrix": {
       "needs": [
+        "tier-plan",
         "build",
         "native-startup",
         "arm64-page-gaps"
       ],
-      "if": "${{ always() && needs.build.result == 'success' }}",
+      "if": "${{ always() && needs.tier-plan.outputs.run_cross == 'true' && needs.build.result == 'success' }}",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 5,
       "steps": [
@@ -386,7 +495,10 @@
         },
         {
           "name": "Require all six measured targets on the new producer identities",
-          "run": "python scripts/startup.py matrix --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --input-dir out/startup-results --report out/startup-matrix/matrix.json"
+          "run": "python scripts/startup.py matrix --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --input-dir out/startup-results --profile \"$CI_TIER\" --report out/startup-matrix/matrix.json",
+          "env": {
+            "CI_TIER": "${{ needs.tier-plan.outputs.tier }}"
+          }
         },
         {
           "if": "${{ always() }}",
