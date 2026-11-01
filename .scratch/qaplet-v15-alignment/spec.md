@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Confirmed:** 2026-11-01，沿用 grill-with-docs 六项决策及最终确认；用户在 to-spec 中确认继续采用共享外部命令、真实制品和现有证据消费者的测试边界。
-**Execution state:** 任务 01/02/03 已实现并实际验证：统一 v3、目标 QuickJS/ARM64 overlay 与 Ubuntu ESM/Promise 微型 Host；新配方已晋级 pinned，可进入正式 M1。04/05 继续负责新跨宿主/ABI 与分级 CI，06 保持 needs-info；实际结果见各任务及验收记录，规格发布本身不作为实现成绩。
+**Execution state:** 任务 01–05 已实现并实际验证：统一 v3、目标 QuickJS/ARM64 overlay、Ubuntu ESM/Promise 微型 Host、新输入六目标 Core 与 Fast/Cross/Full；严格回归 33/33、无 skip。新配方为 pinned，可进入正式 M1；06 保持 needs-info、用户暂缓。实际结果见各任务及验收记录，这些基础成绩不表示正式 M1 实现或 release-ready。
 **Baseline:** [v1.5 实施修订](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)与 [ADR 0004](../../docs/adr/0004-v15-platform-baseline.md)。
 
 ## Problem Statement
