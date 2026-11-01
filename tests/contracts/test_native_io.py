@@ -1,5 +1,6 @@
 """Native I/O public CLI contracts; supplied artifacts are never rebuilt by hosts."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -64,6 +65,24 @@ class NativeIOContract(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             report = json.loads((work / "io.json").read_text())
             self.assertIn("SHA-256", report["reason"])
+            self.assertEqual(report["commands"], [])
+
+    def test_malformed_producer_identity_still_writes_failure_evidence(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-io-malformed-") as temp:
+            work = Path(temp)
+            data = b"native I/O malformed identity fixture"
+            (work / "native-io.com").write_bytes(data)
+            producer = {"schema_version": 1, "report_kind": "native-io", "scope": "build", "status": "pass",
+                        "source": None, "build": {"sha256": "2" * 64}, "artifacts": [
+                            {"name": "native-io", "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}]}
+            (work / "build.json").write_text(json.dumps(producer))
+            result = subprocess.run([sys.executable, CLI, "run", "--artifact", work / "native-io.com",
+                                     "--build-report", work / "build.json", "--report", work / "io.json"],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertTrue((work / "io.json").is_file(), result.stdout + result.stderr)
+            report = json.loads((work / "io.json").read_text())
+            self.assertEqual(report["status"], "fail")
             self.assertEqual(report["commands"], [])
 
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_PRODUCER"), "explicit Ubuntu-built native I/O artifact required")

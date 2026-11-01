@@ -124,7 +124,7 @@ def consume(args, report, directory):
     if not args.artifact or not args.artifact.is_file() or not args.build_report or not args.build_report.is_file():
         raise BuildError("Supplied artifact and producer build report are required; no compilation on validation hosts", "blocked")
     producer = read_json(args.build_report)
-    if producer.get("report_kind") != "native-io" or producer.get("status") != "pass":
+    if not isinstance(producer, dict) or producer.get("report_kind") != "native-io" or producer.get("status") != "pass":
         raise BuildError("Invalid or nonpassing native I/O producer report")
     artifacts = [a for a in producer["artifacts"] if a["name"] == "native-io"]
     if len(artifacts) != 1:
@@ -134,7 +134,10 @@ def consume(args, report, directory):
         raise BuildError("Artifact SHA-256/length differs from Ubuntu producer; refused before execution")
     if producer.get("scope") != "build":
         raise BuildError("A host run report cannot substitute for the Ubuntu producer report")
-    if producer.get("schema_version") != 1 or not producer.get("source", {}).get("sha256") or not producer.get("build", {}).get("sha256"):
+    if producer.get("schema_version") != 1 or not isinstance(producer.get("source"), dict) or not isinstance(producer.get("build"), dict):
+        raise BuildError("Producer schema/source/build identity is missing")
+    digests = (producer["source"].get("sha256"), producer["build"].get("sha256"))
+    if not all(isinstance(value, str) and len(value) == 64 and set(value) <= set("0123456789abcdef") for value in digests):
         raise BuildError("Producer schema/source/build identity is missing")
     if artifact.get("audit", {}).get("status") != "pass" or [s.get("machine") for s in artifact.get("headers", {}).get("slices", [])] != [62, 183]:
         raise BuildError("Producer does not prove audited fat x86_64/AArch64 content")
@@ -161,10 +164,15 @@ def consume(args, report, directory):
     fixture.mkdir()
     executable = fixture / ("native io.exe" if os.name == "nt" else "native io.com")
     shutil.copyfile(args.artifact, executable)
-    executable.chmod(0o755)
     if sha256(executable) != artifact["sha256"]:
         raise BuildError("Unicode/space executable fixture differs from supplied artifact")
+    mode_before = executable.stat().st_mode & 0o777
+    executable.chmod(0o755)
     report["process_fixture"] = identity(executable)
+    report["process_fixture"]["permissions"] = {"mode_before": mode_before, "mode_after": executable.stat().st_mode & 0o777,
+                                                "executable_after": os.access(executable, os.X_OK)}
+    if os.name != "nt" and not os.access(executable, os.X_OK):
+        raise BuildError("Verified native I/O fixture cannot execute on this filesystem", "blocked")
     report["process_fixture"]["child_argv"] = ["--child", "参数 空格", 'quote"slash\\', "literal&|;$()"]
     argv = ([loader] if loader else []) + [executable, "--" + args.probe_mode] + (["--launcher", loader] if loader else [])
     executed, stdout, stderr = run(report, directory, "suite", argv, args.timeout, expected=None)
@@ -295,7 +303,7 @@ def main():
             build(args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
     if not report["cases"] and report["status"] != "pass":

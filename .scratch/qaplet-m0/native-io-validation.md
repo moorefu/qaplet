@@ -65,6 +65,12 @@ python3 scripts/native_io.py run \
 
 最终交付 producer 另从提交 `5d6b594` 对应的完整 recipe 重建并重新执行前后供应校验：`out/ticket08-delivery/build-info.json` / report ID `9c9cc788-8557-41a5-b547-0a206c898c54`，status pass。build SHA 为 `215c2524d3dc9ad0a8529c2f3d9bd66f66b5714f7d0b322be086d816553e4c53`，source/recipe 集合 SHA 为 `bd96fa00d2ec10c3d30a0a1a1b55a5d844f7fd286247c1d6649de87182079339`。独立复核全部记录源码/recipe 与当前字节相符，最终 APE 与上表基线 **完全相同 SHA-256/长度**。新 producer 又经 `out/ticket08-delivery/linux.json` 20/20、`windows.json` 21/21 实际通过；因此后续消费应使用 delivery producer，而历史 native/negative 报告继续保留。
 
+消费端随后增加一条 malformed producer identity 的红绿合同：匹配 artifact 摘要但 `source: null` 的输入原先触发 AttributeError 而无结构化报告；现在拒绝非对象 source/build 与非规范 SHA，并始终保留 fail evidence、commands 为空。此变更没有改变 C/APE 字节，两个宿主 focused contracts 增至 10/10。交付 producer 仍精确记录其 `5d6b594` 版本，host 报告的 runner 字段单列当前消费代码身份。
+
+随后 78 合同的完整复核保留一个既有 DrvFS 测试失败：`test_drvfs_cache_preserves_archive_modes_and_refuses_dirty_inputs_before_execution` 在 `/08/.cache/input-review-drvfs-r2uin60y/official-cache/` 将 `.candidate-u8nx7fw1` rename 为固定 fixture SHA 目录时返回 EACCES，堆栈定位既有 `test_nightly_toolchain.py:358`。之前 77 全检查通过；失败后独立 18 个工具链合同全部通过，但再次完整 78 复核在同一合同的初始 cache publish（`:314`）又出现 EACCES，目录为 `input-review-drvfs-8lf10xi1/cache/.candidate-9i1mg2a6`。**完整 run 可复现，独立 suite 未复现；根因未知，没有宣称修复或最终全检查通过**。所有 08 合同在两次 full run 均通过。没有修改生产重试、缓存权限策略或主固定输入缓存；该临时测试 fixture 由原合同自清理。最后 recorded full check 的退出 1、原始 stdout/stderr 与完整堆栈保存在 `out/ticket08-delivery/check-last/{command.json,make-check.stdout.log,make-check.stderr.log}`。该既有 04/05 验证问题单独交回 integration 处理，不以过滤此失败恢复绿色。
+
+消费端保留下载后权限语义：先验证原件与 Unicode fixture 的 SHA，再对私有 fixture 恢复 execute bit，记录 before/after mode 和 X_OK；POSIX 仍不可执行时 blocked。没有对未核对的原件运行 chmod，也不通过原生 helper 绕过 noexec 判定。
+
 ## 尚待验收
 
 本地 Windows x86_64 与 WSL Ubuntu x86_64 为 native / 4096 字节页。正式同摘要 native CI 五个 runner 由共享 `.github/workflows/m0.yml` 编排：Ubuntu producer 构建一次；五个消费 job 运行 startup 和 I/O，分别上传失败/原始日志。I/O 即使 startup 先失败也尝试采集，不在消费 job 编译。
