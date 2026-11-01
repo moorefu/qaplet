@@ -1381,7 +1381,7 @@ docs/
 
 ## 22. 本计划所依赖的主要源码与规范索引
 
-本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针；统一 v3 迁移、目标 QuickJS 与新 M0-A ESM/Promise 增量已完成并晋级 pinned；新跨宿主、分级 CI 与镜像发布门禁仍待相应任务。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
+本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针。任务 01–05 已完成：统一 v3 迁移、目标 QuickJS 与 M0-A ESM/Promise 增量已晋级 pinned；[04](../../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)记录所验输入的六目标 Core、页补缺及严格回归，[05](../../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)记录 Fast/Cross/Full 实际执行。后续配方变化须重新验收其新输入。06 原件镜像发布门禁由用户暂缓，release-ready 仍未满足；正式 M1/SDK 尚未实现。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
 
 ### QuickJS / Cosmopolitan / APE
 

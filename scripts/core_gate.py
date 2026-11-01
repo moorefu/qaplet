@@ -14,6 +14,7 @@ import uuid
 import zipfile
 
 from build_ape import BuildError, FORBIDDEN, headers
+from ci_identity import validate_ci_identity
 from input_lock import component, attach, consume_identity, check_loader_bundle, check_portable_helper
 from evidence import read_json
 from foundation import ROOT, decode, now
@@ -252,9 +253,7 @@ class Gate:
         ci = item.get("ci") or inherited
         if ci is None:
             return None
-        require(all(ci.get(key) for key in ("run_id", "run_attempt", "workflow", "commit", "runner_name", "runner_os", "runner_arch", "image_os", "image_version")),
-                "CI execution requires run, commit, runner and image identities")
-        require(re.fullmatch(r"[a-f0-9]{40}", ci["commit"]), "Invalid CI commit")
+        validate_ci_identity(ci)
         report_sha = self.evidence.ids.get(item.get("report_id"))
         transports = [info for info in self.evidence.files.values() if info["sha256"] == report_sha]
         require(transports and all(type(info["artifact_id"]) is int and info["artifact_id"] > 0 and

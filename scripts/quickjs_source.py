@@ -208,14 +208,17 @@ def acquire(args, report, commit):
     return source
 
 
-def bump(args, report):
+def create_source_lock(args, report):
     repository(args.repository)
     patches, patch_bytes = patch_manifest(args)
     git = shutil.which("git")
     if not git:
-        raise SourceError("Git is required for explicit bump", "blocked")
+        raise SourceError("Git is required for source lock creation (exact selection or fixture bump)", "blocked")
     commit = args.commit
     if commit is None:
+        # Resolving moving master belongs only to the legacy fixture operation.
+        if args.operation != "bump" or not args.fixture_lock:
+            raise SourceError("Moving master resolution requires the legacy fixture-only bump")
         resolved = run(report, [git, "ls-remote", args.repository, "refs/heads/master"], GIT_CWD, args.timeout).decode().split()
         if len(resolved) != 2 or not re.fullmatch(r"[0-9a-f]{40}", resolved[0]) or resolved[1] != "refs/heads/master":
             raise SourceError("Upstream master did not resolve to exactly one commit")
@@ -345,7 +348,7 @@ def main():
             if args.operation == "bump":
                 raise ValueError("Production bump must update a reviewed unified v3 candidate; moving master is forbidden")
         if args.operation in ("bump", "select"):
-            report["source"] = bump(args, report)
+            report["source"] = create_source_lock(args, report)
         elif args.lock.is_file():
             lock = locked.component("quickjs", args.lock) if locked else json.loads(args.lock.read_text(encoding="utf-8"))
             validate_lock(lock)

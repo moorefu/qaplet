@@ -80,7 +80,10 @@ class CrossHostIdentity(unittest.TestCase):
         native["ci"] = dict(ci)
         code, report = self.matrix(producer, native)
         self.assertEqual(code, 2, report["reason"])
-        for changed in (dict(ci, commit="b" * 40), None, dict(ci, runner_name=None)):
+        invalid_identities = [dict(ci, commit="b" * 40), None]
+        invalid_identities += [dict(ci, **{field: None}) for field in ci]
+        invalid_identities += [dict(ci, commit=value) for value in ("A" * 40, "a" * 39, 123)]
+        for changed in invalid_identities:
             with self.subTest(ci=changed):
                 native["ci"] = changed
                 code, report = self.matrix(producer, native)

@@ -15,6 +15,34 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CoreGateCLI(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("QAPLET_M0A_BUILD"), "Explicit current actual APE producer required")
+    def test_ci_producer_identity_is_validated_before_archive_and_host_checks(self):
+        # Mutations of a real producer exercise rejection, not remote execution.
+        original = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text())
+        ci = dict(run_id="1", run_attempt="1", workflow="contract-fixture", commit="a" * 40,
+                  runner_name="fixture", runner_os="Linux", runner_arch="X64", image_os="fixture", image_version="1")
+        mutations = [(dict(ci, runner_name=None), "complete run, commit, runner and image identities"),
+                     (dict(ci, commit=123), "exact lowercase Git SHA"),
+                     (dict(ci, commit="A" * 40), "exact lowercase Git SHA"),
+                     (ci, "verified archive with provider artifact/commit identity")]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            producer = directory / "producer.json"
+            manifest = directory / "inputs.json"
+            output = directory / "gate.json"
+            manifest.write_text(json.dumps({"schema_version": 1, "profile": "full",
+                                            "producers": {"startup": str(producer)},
+                                            "startup_reports": [], "io_reports": [], "pages64k_reports": [],
+                                            "offline_report": None, "offline_recipe_comparison": None}))
+            for changed, reason in mutations:
+                with self.subTest(ci=changed):
+                    producer.write_text(json.dumps(dict(original, ci=changed)))
+                    result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "evaluate",
+                                             "--input-manifest", str(manifest), "--report", str(output)],
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(reason, " ".join(json.loads(output.read_text())["core"]["errors"]))
+
     def test_empty_results_cannot_complete_core(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

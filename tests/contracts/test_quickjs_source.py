@@ -65,6 +65,14 @@ class QuickJSSourceContract(unittest.TestCase):
         self.assertEqual(report["commands"], [])
         self.assertFalse(self.cache.exists())
 
+    def test_exact_selection_without_git_reports_source_lock_creation_requirement(self):
+        result, report = self.run_cli("select", "--commit", "a" * 40, env=dict(os.environ, PATH=""))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["reason"], "Git is required for source lock creation (exact selection or fixture bump)")
+        self.assertEqual(report["commands"], [])
+        self.assertFalse(self.lock.exists())
+
     def test_explicit_bump_locks_resolved_commit_license_and_content_for_offline_use(self):
         commit = self.seed()
         result, report = self.bump()

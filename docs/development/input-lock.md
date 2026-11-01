@@ -14,6 +14,10 @@ ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 已选择目标
 `docs/plans/qaplet-toolchain-lock-selected.json` 仍是有未知字段的选型样例，不是可构建锁。
 显式候选也必须直接位于某个仓库的 `toolchains/`；解析器和报告防覆盖校验共用物理根目录判定。
 
+审查后的源码选择内部重命名改变了冻结 recipe，已按 selected、受控 17 项实际 producer/startup、
+pinned 的流程形成新 input_id；精确引擎/patch/toolchain 保持原值。新身份、晋级原字节与旧报告的
+历史范围见[审查修正验收](../../.scratch/qaplet-v15-alignment/review-fixes-validation.md)。
+
 ## 字段与独立身份
 
 | 字段 | 合同 |
