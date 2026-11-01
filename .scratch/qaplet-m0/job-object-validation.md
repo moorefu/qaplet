@@ -1,6 +1,6 @@
 # BOOT-05B · 应用私有 Job Object 实测
 
-2026-11-01。依据用户“直接使用本机”和 Ubuntu-only build 的执行更新，在 `codex/m0-12-job`、`out/implement-spec/12` 实施；开始于 integration `8fb7c39`，最终已并入 `1129cd82059c3a8ea62515196516342205c96b82`。本地 Windows 是开发宿主，不是隔离 VM。SCM 和 Core 均独立于此探针。
+2026-11-01。依据用户“直接使用本机”和 Ubuntu-only build 的执行更新，在 `codex/m0-12-job`、`out/implement-spec/12` 实施；开始于 integration `8fb7c39`，最终已并入 integration `2e8ef9c`（包括 09/11），merge commit `ba92665`。本地 Windows 是开发宿主，不是隔离 VM。SCM 和 Core 均独立于此探针。
 
 ## 结果及身份
 
@@ -49,7 +49,7 @@ Ubuntu-22.04 / WSL2 Linux x86_64、kernel `6.6.87.2-microsoft-standard-WSL2`、4
 
 ## 验证与复现
 
-共享入口及完整条件见[探针说明](../../docs/svc-job-probe.md)。本地 final `make check` 在 Ubuntu 通过：114 tests，25 explicit skips，CI static + bootstrap pass。Windows 使用最终 producer 的 7 个公开 CLI/真实 OS 合同全部通过，包括故意超时；Ubuntu 使用同 producer/loader 的 7 tests、1 Windows-only skip 通过。TDD 的 missing/changed producer 与 CI Windows 编译拒绝均先观察 red，再实现 green。
+共享入口及完整条件见[探针说明](../../docs/svc-job-probe.md)。并入最新 integration 后，最终 `make check` 在 Ubuntu 通过：115 tests，25 explicit skips，CI static + bootstrap pass。Windows 使用最终 producer 的 8 个公开 CLI/真实 OS 合同全部通过，包括故意超时；Ubuntu 使用同 producer/loader 的 8 tests、1 Windows-only skip 通过。TDD 的 missing/changed/malformed producer 与 CI Windows 编译拒绝均先观察 red，再实现 green。
 
 以下位置相对于 `out/implement-spec/12/`；原始命令、API 值及 stdout/stderr 位于对应 report 的 `commands` / `evidence`，报告本身按每次 UUID 保留：
 
@@ -58,7 +58,7 @@ Ubuntu-22.04 / WSL2 Linux x86_64、kernel `6.6.87.2-microsoft-standard-WSL2`、4
 - `out/svc-job/measured/windows/timeout.json`：实际 launcher deadline 的 fail 和完整零残留证据。
 - `out/svc-job/first/windows/{job,repeated}.json`：两个原版 handle-count fail。
 - `out/svc-job/contracts/`：公开 CLI 合同结果与 raw logs；ordinary-user Python 创建的安全临时目录须在相应普通用户上下文读取。
-- `out/check-ticket12-final.log` 与 `out/check-ticket12-final/`：最终全套 check 输出及各共享检查报告。
+- `out/check-ticket12-integrated.log` 与 `out/check-ticket12-integrated/`：并入最新 integration 后的最终全套 check 输出及各共享检查报告；此前 `out/check-ticket12-final.log` 的 114 tests 通过记录亦保留。
 - `out/svc-job/core-inspect-{hello,eval}.json`：对 07 当前 Core Hello `467f8889...` 和 eval `426a7b05...` 的独立同摘要 import/map/headers audit 均 pass。Core 配方未修改，也未加入本应用代码。
 
 `.github/workflows/svc-job.yml` 是独立 Ubuntu producer / Windows consumer，含实际 fence deadline 合同、失败证据上传；本票没有 push 或执行新远程 Job workflow，远程验证保持 not_run。所有 M0-SVC 报告的 `m0_core_status` 保持 not_run，不关闭完整 Core 门禁。

@@ -62,6 +62,6 @@
 
 ## Answer
 
-2026-11-01：完成应用私有 Job APE、Ubuntu producer、同摘要 Windows consumer、独立 kill-on-close launcher fence 和独立 CI workflow。三个完整 Windows cycle 验证 owned parent+child、nested leaf、assignment access denied、重复 close、early exit、150ms leaf deadline 和全部 fixture 清理；实际 1 秒 launcher timeout 正确 fail 且 active 0。Windows 7/7 公开合同、Ubuntu 7/1 skip 及最终 `make check` 114/25 explicit skips 通过；Core Hello/eval 独立 imports audit 均通过。远程 Job CI 未执行。
+2026-11-01：完成应用私有 Job APE、Ubuntu producer、同摘要 Windows consumer、独立 kill-on-close launcher fence 和独立 CI workflow。三个完整 Windows cycle 验证 owned parent+child、nested leaf、assignment access denied、重复 close、early exit、150ms leaf deadline 和全部 fixture 清理；实际 1 秒 launcher timeout 正确 fail 且 active 0。Windows 8/8 公开合同、Ubuntu 8/1 skip 及并入最新 integration 后最终 `make check` 115/25 explicit skips 通过；Core Hello/eval 独立 imports audit 均通过。远程 Job CI 未执行。
 
 能力只对上述 owned fixture、实际 close 和初始化后的稳定计数 verified。首版两次真实 handle-count failure 保留；最终 staged 结果将首次 +2 定位到 CreateProcessW 路径，但 handle 身份仍未归因，不声明所有进程 handle 完全无泄漏或任意树安全。完整身份、命令、实际值、失败复现、限制与后续方向见[验收](../job-object-validation.md)及[共享入口](../../../docs/svc-job-probe.md)。
