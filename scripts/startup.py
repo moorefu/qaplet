@@ -87,7 +87,7 @@ def loader_bundle(args, report):
         helpers = read_json(manifest)
         if helpers.get("schema_version") != 1 or helpers.get("report_kind") != "ape-loaders" or helpers.get("status") != "pass":
             raise BuildError("Successful ape-loaders v1 manifest required")
-        locked = consume_identity(helpers, report, consumption_purpose("build", args.controlled_probe))
+        locked = consume_identity(helpers, report, consumption_purpose("build", getattr(args, "controlled_probe", False)))
         check_loader_bundle(helpers, locked)
         report["loader_manifest"] = identity(manifest)
         return helpers
@@ -104,7 +104,7 @@ def select_loader(args, report):
     helpers = loader_bundle(args, report)
     if helpers is not None:
         entries = [entry for entry in helpers["helpers"] if entry["os"] == host["os"] and entry["arch"] == host["execution_arch"]]
-    elif args.controlled_probe and host["os"] == "Linux" and host["execution_arch"] == "aarch64":
+    elif getattr(args, "controlled_probe", False) and host["os"] == "Linux" and host["execution_arch"] == "aarch64":
         producer = read_json(args.build_report)
         locked = consume_identity(producer, report, "probe")
         portable = producer["portable_helpers"]
@@ -114,7 +114,7 @@ def select_loader(args, report):
         # Exact official loader identities are already in the committed Nightly lock.
         suffix = "elf" if host["os"] == "Linux" else "macho"
         name = "ape-" + host["execution_arch"] + "." + suffix
-        locked = component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe))
+        locked = component("cosmocc", purpose=consumption_purpose("build", getattr(args, "controlled_probe", False)))
         entries = [{"file": name, **entry, "origin": "official Nightly lock"} for entry in locked["files"] if entry["path"] == "bin/" + name]
     if len(entries) != 1:
         raise BuildError("Exactly one native loader matching actual OS/architecture required", "blocked")

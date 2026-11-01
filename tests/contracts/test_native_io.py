@@ -15,6 +15,31 @@ CLI = ROOT / "scripts/native_io.py"
 
 
 class NativeIOContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_PRODUCER") and os.environ.get("QAPLET_TEST_IO_LOADER_DIR"),
+                         "Explicit actual I/O producer and distributed loader directory required")
+    def test_loader_directory_uses_pinned_inputs_without_a_candidate_probe_option(self):
+        producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
+        environment = dict(os.environ)
+        ci = json.loads(producer.read_text()).get("ci")
+        if ci:
+            # Replay only: simulate the recorded CI call boundary, never a new CI receipt.
+            environment["GITHUB_ACTIONS"] = "true"
+            for key, name in {"run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW",
+                    "commit": "GITHUB_SHA", "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS", "runner_arch": "RUNNER_ARCH",
+                    "image_os": "ImageOS", "image_version": "ImageVersion"}.items():
+                environment[name] = ci[key]
+        else:
+            environment.pop("GITHUB_ACTIONS", None)
+        with tempfile.TemporaryDirectory(prefix="qaplet-io-loader-directory-") as temporary:
+            report_path = Path(temporary) / "io.json"
+            result = subprocess.run([sys.executable, CLI, "run", "--build-report", producer,
+                "--artifact", producer.parent / "artifacts/native-io.com", "--loader-dir", os.environ["QAPLET_TEST_IO_LOADER_DIR"],
+                "--report", report_path], env=environment, capture_output=True, text=True, timeout=60)
+            report = json.loads(report_path.read_text())
+            self.assertEqual(result.returncode, 0, report["reason"])
+            self.assertTrue(report["cases"])
+            self.assertTrue(all(case["status"] == "pass" for case in report["cases"]))
+
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit portable producer and guest helper required")
     def test_guest_manifest_exports_same_bytes_and_explicit_unicode_argv(self):
         producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
