@@ -14,6 +14,7 @@ TOOLCHAIN_ARCHIVE ?=
 TOOLCHAIN_ACQUISITION_REPORT ?=
 TOOLCHAIN_BACKING_DIR ?=
 APE_BUILD_DIR ?=
+APE_HELPER_SOURCE_CACHE ?=
 APE_OUTPUT_DIR ?= $(OUT)/artifacts
 OFFLINE_CACHE_ROOT ?= $(CURDIR)/.cache
 OFFLINE_UID ?= 1000
@@ -51,7 +52,7 @@ toolchain-verify:
 	"$(PYTHON)" scripts/nightly_toolchain.py verify $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) --report "$(OUT)/nightly-toolchain.json"
 
 build-ape:
-	"$(PYTHON)" scripts/build_ape.py build $(if $(QUICKJS_CACHE),--source-cache "$(QUICKJS_CACHE)",) $(if $(TOOLCHAIN_CACHE),--toolchain-cache "$(TOOLCHAIN_CACHE)",) $(if $(APE_BUILD_DIR),--build-dir "$(APE_BUILD_DIR)",) --output-dir "$(APE_OUTPUT_DIR)" --report "$(OUT)/build-info.json"
+	"$(PYTHON)" scripts/build_ape.py build $(if $(QUICKJS_CACHE),--source-cache "$(QUICKJS_CACHE)",) $(if $(TOOLCHAIN_CACHE),--toolchain-cache "$(TOOLCHAIN_CACHE)",) $(if $(APE_HELPER_SOURCE_CACHE),--helper-source-cache "$(APE_HELPER_SOURCE_CACHE)",) $(if $(APE_BUILD_DIR),--build-dir "$(APE_BUILD_DIR)",) --output-dir "$(APE_OUTPUT_DIR)" --report "$(OUT)/build-info.json"
 
 test-offline:
 	"$(PYTHON)" scripts/offline_integrity.py run --cache-root "$(OFFLINE_CACHE_ROOT)" --uid "$(OFFLINE_UID)" --gid "$(OFFLINE_GID)" --report "$(OUT)/offline-integrity.json"

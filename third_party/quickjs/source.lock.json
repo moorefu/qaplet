@@ -555,7 +555,7 @@
     ]
   },
   "source": {
-    "sha256": "708c970fcd2d4f26f4e7c1a1f1de2464d16c4d8defb5bafd8c0bdbf21b953447",
+    "sha256": "1da9f9ae2f2557143a9f44471fdb73d646bdfa87e11ccfec8dca8f757952b616",
     "files": [
       {
         "path": ".github/workflows/ci.yml",
@@ -874,8 +874,8 @@
       },
       {
         "path": "quickjs.h",
-        "size": 52022,
-        "sha256": "a062b897b6c96c78ea99ae055a35b5849ff29183e1ed68925a0c58580765c35d"
+        "size": 51998,
+        "sha256": "43a53e56ef0c0b401092c7baf3b0cb350f3af15b1cf5d5b75a8e5ded4ef389e7"
       },
       {
         "path": "readme-cosmo.txt",
@@ -1104,8 +1104,15 @@
       }
     ]
   },
-  "patch_manifest_sha256": "671e09884c6aecf658799b947d15de92871f7c44c78ac7f6ca42e7a4f6cbfaec",
-  "patches": [],
+  "patch_manifest_sha256": "dc12be2f49d37dd237e195b9a491be10c68a367c9be1b8c5899222e0692ba616",
+  "patches": [
+    {
+      "path": "patches/0001-arm64-full-pointer-values.patch",
+      "sha256": "6197ebf127147d917470759f603ff614f6eff68fe581a43f2a5dd37a2be26eff",
+      "origin": "Qaplet M0 actual ARM64 64K failure at pinned Bellard commit; project-owned portability overlay",
+      "reason": "ARM64 malloc returns valid 48-bit pointers; upstream 47-bit NaN boxing truncates bit47 and crashes JS_NewContextRaw. Select the existing full-pointer JSValue representation for ARM64; upstream commit and original tree remain unchanged."
+    }
+  ],
   "license": {
     "upstream_path": "LICENSE",
     "path": "LICENSE",

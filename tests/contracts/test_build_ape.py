@@ -132,6 +132,8 @@ class BuildAPEContract(unittest.TestCase):
             self.assertEqual(cases["quickjs-eval.value"]["actual"]["stdout"], "42\n")
             self.assertEqual(cases["quickjs-eval.exception"]["actual"]["exit_code"], 1)
             self.assertIn("m0-probe", cases["quickjs-eval.exception"]["actual"]["stderr"])
+            self.assertEqual(cases["quickjs-eval.pointer-roundtrip"]["actual"]["stdout"], "JSValue pointer round-trip: pass\n")
+            self.assertEqual(cases["quickjs-eval.objects-lifecycle"]["actual"]["stdout"], "9990000\n")
             artifact = work / "artifacts/hello.com"
 
             def inspect():

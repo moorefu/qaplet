@@ -19,8 +19,13 @@ from foundation import ROOT, command, host_facts, now, sha256
 from native_toolchain import prepare as prepare_native_toolchain
 from native_toolchain import recheck as recheck_native_toolchain
 from nightly_toolchain import write_json
+import ape_helpers
 
 SOURCES = ("quickjs.c", "dtoa.c", "libregexp.c", "libunicode.c", "cutils.c")
+OBJECT_LIFECYCLE_EXPRESSION = ('(() => { let total=0; for(let round=0;round<20;round++){ '
+    'const a=Array.from({length:1000},(_,i)=>({n:i,s:"value"+i})); '
+    'const m=new Map(a.map(o=>[o.s,o])); '
+    'total += Array.from(m.values()).reduce((s,o)=>s+o.n,0); } return total; })()')
 FORBIDDEN = re.compile(r"\b(?:__imp_)?(?:OpenSCManager[AW]?|CreateService[AW]?|OpenService[AW]?|"
                        r"StartService[AW]?|StartServiceCtrlDispatcher[AW]?|RegisterServiceCtrlHandler(?:Ex)?[AW]?|"
                        r"SetServiceStatus|ControlService(?:Ex)?[AW]?|DeleteService|ChangeServiceConfig\w*|"
@@ -112,6 +117,8 @@ def headers(ape, sidecars):
             if not loads or not any(load["flags"] & 1 for load in loads):
                 raise BuildError("Fat slice has no executable LOAD segment")
             item["load_segments"] = loads
+            if item["machine"] == 183:
+                item["page_layout_65536"] = ape_helpers.loads(header[:64] + data[64:], require_arm64=True)
             slices.append(item)
     if [s["machine"] for s in slices] != [62, 183]:
         raise BuildError("Fat APE must contain exactly x86_64 and aarch64 slices")
@@ -121,6 +128,8 @@ def headers(ape, sidecars):
         item = elf_header(content, len(content))
         if item["machine"] != machine:
             raise BuildError("Sidecar ELF architecture differs from fat slice")
+        if machine == 183:
+            item["page_layout_65536"] = ape_helpers.loads(content, require_arm64=True)
         measured.append({**identity(path), **item})
     return {"prefix_hex": data[:8].hex(), "slices": slices, "sidecars": measured}
 
@@ -195,6 +204,7 @@ def build(args, report, directory):
     if distribution.get("ID") != "ubuntu":
         raise BuildError("Product builds require Ubuntu; other hosts consume distributed artifacts", "blocked")
     tree = native_toolchain(args, report, directory, tree)
+    helpers = prepare_portable_helpers(args, report, directory, tree)
     source = Path(report["source"]["path"])
     output = args.output_dir.resolve()
     if output.exists() and any(output.iterdir()):
@@ -207,6 +217,14 @@ def build(args, report, directory):
     if any(" " in str(path) for path in (tree, source, work)):
         raise BuildError("Locked cosmocc does not support spaces in build/input paths")
     output.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
+    report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
+    notices = output / "ape-helper-notices"
+    notices.mkdir()
+    for filename in ("LICENSE", "source.lock.json"):
+        shutil.copyfile(ROOT / "third_party/ape-helpers" / filename, notices / filename)
+    source_root = ape_helpers.source_cache(args.helper_source_cache.resolve())
+    (notices / "HACL-LICENSE.txt").write_text("\n".join((source_root / "third_party/haclstar/blake2b.c").read_text().splitlines()[:28]) + "\n")
     (work / "tmp").mkdir()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC")
     common = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
@@ -244,9 +262,7 @@ def build(args, report, directory):
                 [tree / "bin/cosmocc", *common, "-c", path, "-o", obj], args.compile_timeout, work, environment)
             objects.append(obj)
         destination = work / (name + ".com")
-        run(report, directory, name + "-link",
-            [tree / "bin/cosmocc", "-Os", "-Wl,-Map=%.map", *objects, "-lm", "-lpthread", "-o", destination],
-            args.compile_timeout, work, environment)
+        link_portable(args, report, directory, tree, helpers, name, objects, destination, work, environment)
         fallback = work / "tmp/.ape-1.10"
         if fallback.is_file():
             if sha256(fallback) != sha256(tree / "bin/ape-x86_64.elf"):
@@ -268,11 +284,43 @@ def build(args, report, directory):
             native_case(args, report, directory, tree, artifact, "value", [], expected_output="42\n")
             native_case(args, report, directory, tree, artifact, "exception", ["throw new Error('m0-probe')"], 1, error="Error: m0-probe")
             native_case(args, report, directory, tree, artifact, "syntax-error", ["("], 1, error="SyntaxError:")
+            native_case(args, report, directory, tree, artifact, "pointer-roundtrip", ["--pointer-check"], expected_output="JSValue pointer round-trip: pass\n")
+            native_case(args, report, directory, tree, artifact, "objects-lifecycle", [OBJECT_LIFECYCLE_EXPRESSION], expected_output="9990000\n")
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
                              read_json(ROOT / "toolchains/cosmocc.lock.json"))
     report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
+
+
+def prepare_portable_helpers(args, report, directory, tree):
+    """Shared source-locked helper build; independent probe producers reuse it."""
+    return ape_helpers.prepare(args, report, directory, tree, run)
+
+
+def link_portable(args, report, directory, tree, helpers, name, objects, destination, work, environment,
+                  libraries=("-lm", "-lpthread")):
+    """Official driver links; reviewed source-built packer preserves 64K layout."""
+    for key in ("loader", "packer"):
+        if sha256(Path(helpers[key]["path"])) != helpers[key]["sha256"]:
+            raise BuildError("Source-built helper changed before packaging")
+    run(report, directory, name + "-link",
+        [tree / "bin/cosmocc", "-Os", "-Wl,-z,max-page-size=65536", "-Wl,-Map=%.map", *objects,
+         *libraries, "-o", destination], args.compile_timeout, work, environment)
+    sidecars = [destination.with_suffix(".com.dbg"), destination.with_suffix(".aarch64.elf")]
+    ape_helpers.loads(sidecars[1].read_bytes(), require_arm64=True)
+    # The original driver remains untouched; its original packed output is
+    # retained as diagnostic evidence and replaced by a separately built packer.
+    original = destination.with_suffix(".original-packer.com")
+    shutil.copyfile(destination, original)
+    run(report, directory, name + "-repack",
+        [helpers["packer"]["path"], "-V", "-1", "-l", tree / "bin/ape-x86_64.elf", "-l", helpers["loader"]["path"],
+         "-M", tree / "bin/ape-m1.c", "-o", destination, *sidecars], args.compile_timeout, work, environment)
+    run(report, directory, name + "-repacked-pecheck", [tree / "bin/pecheck", destination], args.timeout, work, environment)
+    report.setdefault("packing", []).append({"name": name, "original_packer_output": identity(original),
+        "repacked_output": identity(destination), "max_page_size": 65536, "common_page_size": "official per-CPU defaults",
+        "embedded_arm64_loader": helpers["loader"], "packer": helpers["packer"], "source": helpers["source"],
+        "commands": report["commands"][-3:]})
 
 
 def native_toolchain(args, report, directory, original):
@@ -347,6 +395,7 @@ def main():
     parser.add_argument("operation", choices=("build", "inspect", "check-ci", "prepare-toolchain"))
     parser.add_argument("--source-cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
+    parser.add_argument("--helper-source-cache", type=Path, default=ROOT / ".cache/sources/ape-loader")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "out/ape/artifacts")
     parser.add_argument("--report", type=Path, default=ROOT / "out/ape/build-info.json")
     parser.add_argument("--build-dir", type=Path, help="repository .cache/build root; unique subdirectory is retained")

@@ -21,7 +21,7 @@
 | `make test-foundation` | `out/m0.json` | 当前始终非通过，列出输入、制品、六类宿主与必需探针缺口 |
 | `make test` | unittest 输出 | 命令合同回归通过，不是产品矩阵 |
 | `make check-ci` | `out/check-ci.json` | JSON/YAML 语法及项目编排合同通过，远程未运行 |
-| `make build-ape` | `out/build-info.json` / `out/artifacts/` | 两个固定输入离线校验、Hello / QuickJS fat APE、双 CPU headers/link map/import 检查及 Linux x64 实际值/错误路径 |
+| `make build-ape` | `out/build-info.json` / `out/artifacts/` | QuickJS/Nightly/helper source 固定输入离线校验、Hello / QuickJS fat APE、双 CPU headers/link map/import 检查及 Linux x64 实际值/错误路径 |
 
 这些 make recipe 与 CI 复用同一 Python CLI。也可直接执行：
 
@@ -147,7 +147,7 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 生成文件为 `artifacts/{hello,quickjs-eval}.com`、`.com.dbg`、`.aarch64.elf`、`.{x86_64,aarch64}.map` 和 `.build-commands.log`。Hello 输出包含 `probe`、编译执行架构和 `sysconf` 页大小的 JSON；eval 的 `--facts` 输出同样事实，默认求值 `6 * 7` 输出 `42`，一个参数作为 JS 表达式；异常和语法错误向 stderr 写出异常，Ubuntu 实测退出 `1`。跨宿主应断言错误语义及非零状态，并记录各宿主实际值（Windows 预检观测 256）。两探针通过锁定的原生 ELF APE loader 运行；WSLInterop/binding 状态记录在 build-info，不修改全局注册。
 
-原版最小引擎使用 `quickjs.c dtoa.c libregexp.c libunicode.c cutils.c`，`-Os -fwrapv -D_GNU_SOURCE` 和 VERSION 中的 `CONFIG_VERSION`；不定义 `CONFIG_TEMPORAL_INTL`，不启用 LTO，无上游补丁。自有探针是 M0 验证程序，不是 Runtime/Embed SDK。所有服务专属导入（SCM / Job Object 等）均由两个 CPU 的符号、map 和最终 PE imports 拒绝；常规 libc 进程/线程能力可出现。
+最小引擎使用 `quickjs.c dtoa.c libregexp.c libunicode.c cutils.c`，`-Os -fwrapv -D_GNU_SOURCE` 和 VERSION 中的 `CONFIG_VERSION`；不定义 `CONFIG_TEMPORAL_INTL`，不启用 LTO。05 初次构建的空 patch 清单是历史输入；07 实际 ARM64 运行发现 47-bit pointer truncation 后，在同一 Bellard pin 上追加有序 header overlay，改用上游已有的完整指针表示，见下节。自有探针是 M0 验证程序，不是 Runtime/Embed SDK。所有服务专属导入（SCM / Job Object 等）均由两个 CPU 的符号、map 和最终 PE imports 拒绝；常规 libc 进程/线程能力可出现。
 
 独立审计：`python3 scripts/build_ape.py inspect --artifact out/m0/artifacts/hello.com --expected-sha256 <expected> --report out/inspect.json`。预期摘要先于工具执行比较；之后读取相邻的两个 sidecar 和 CPU map，缺失 slice/文件、坏边界或服务符号均失败。完整实际构建合同可显式运行 `QAPLET_TEST_SOURCE_CACHE=/path/to/cache make check OUT=out/check-native`；普通 `make check` 不会下载或强制每次重编大输入。
 
@@ -174,6 +174,31 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 schema v1 report_kind 为 native-io，scope 为 build/host/manifest/guest；缺项保留 not_run 且非通过，缺实际交互设施为 blocked，异常为 fail，limitation 必须有实测返回值和明确原因。`--probe-mode hang --timeout 1` 是实际负向 deadline fixture，成功清理后仍报告 fail。所有命令/原始日志和 fixture 身份保留在独立 evidence UUID。共享 M0 workflow 的 Ubuntu producer 一次生成并分发；五个 native job 只验证，startup 失败后仍尝试 I/O 并分别保留证据。完整记录和当前未测宿主见 [I/O 基线](../.scratch/qaplet-m0/native-io-validation.md)。
 
 `guest-manifest --build-report BUILD --artifact FILE --loader ARM64_ELF --page-size 65536 --manifest OUTPUT --report REPORT` 导出经过 SHA/LOAD 对齐验证的 Unicode/空格路径 payload（scope manifest，不运行 guest）；由 07 的 `merge-manifests` 和完整 guest runner 统一处理镜像、锁和启动。`import-guest --build-report BUILD --artifact FILE --guest-report GUEST_JSON --report IO_JSON` 复核实际 QEMU/guest/前后摘要/原始日志，再用 native 共用的 20 个必需值断言生成 scope guest 结果。host 保留真实 QEMU 物理宿主，execution/guest 明确 emulated-system 和实际页大小；不能作为物理 ARM64 或原生性能成绩。
+
+## BOOT-06 · 64K 构建与实际 guest
+
+07 的实测及各阶段失败见 [64K 验收](../.scratch/qaplet-m0/arm64-64k-validation.md)。
+主工作区新增 `.cache/sources/ape-loader/<pin>/` 固定 official source；显式执行
+`python3 scripts/ape_helpers.py fetch --report out/ape-helpers-fetch.json` 后普通 build
+仅离线验证。worktree 的 `make build-ape` 可用 `APE_HELPER_SOURCE_CACHE` 指向主仓库
+`.cache/sources/ape-loader`。`portable_helpers` 单列 independently source-built 的
+ARM64 64K Linux loader、patched packer、有效 headers、来源/patch/result SHA 与实际
+命令。原 Nightly、原 helpers、原缓存和 libc `unproven` 声明不改。
+
+共享 `prepare_portable_helpers` / `link_portable` 供 Hello/eval、pages64k 与 I/O 三种
+独立 producer 使用：official cosmocc 保持原 driver，仅 MAXPAGESIZE=65536，再由
+源码 packer 保留 incoming LOAD alignment 重新打包，嵌入新 ARM64 loader。禁止把
+全部 COMMONPAGESIZE 也改成 64K（实测 x86 PC16 overflow）。新原生消费必须匹配
+各自新 SHA，不能复用旧 16K artifact 的报告。
+
+独立深度入口为 `scripts/pages64k.py build`、`guest-manifest`、`verify-guest` 和
+`run-native`。后者仅接受实际 native Linux/AArch64/65536。共享
+`scripts/arm64_guest.py fetch/verify/prepare/merge-manifests/run` 使用
+`guests/arm64.lock.json` 的 immutable Ubuntu snapshot，`prepare` 和 `run` 不联网。
+命令支持 Unicode/空格路径、前后 guest SHA、独立 TMPDIR、actual cwd、原始 stdout/
+stderr/串口、时限与 cleanup；宿主/guest 及 native/emulated-system 分开记录。
+guest kernel/config/rootfs 和 QEMU binary/version/TCG/machine/CPU 均有实际身份。
+完整 CI 的 page-gap 选择与 native startup importer 由 06 接入同一入口。
 
 ## CI 查询与故障定位
 

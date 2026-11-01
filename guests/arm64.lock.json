@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "archive_base_url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/",
+  "original_archive_base_url": "https://ports.ubuntu.com/ubuntu-ports/",
+  "snapshot_id": "20261031T234300Z",
+  "provenance": "Ubuntu noble-updates signed InRelease -> main/binary-arm64/Packages.xz -> exact arm64 Debian packages; independently verified 2026-10-31",
+  "signer_fingerprint": "F6ECB3762474EDA9D21B7022871920D1991BC93C",
+  "metadata": {
+    "noble-updates-InRelease": {
+      "size_bytes": 126125,
+      "sha256": "8eb1e59e1d6bea248c204a9d43920aef4263891fa47e4881695a384ef46b0c79",
+      "url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/dists/noble-updates/InRelease"
+    },
+    "noble-updates-main-arm64-Packages.xz": {
+      "size_bytes": 1461744,
+      "sha256": "080189be0ca7d2d305d5fb0a5db5f988177e339055d974a934000e1627cbb711",
+      "url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/dists/noble-updates/main/binary-arm64/Packages.xz"
+    }
+  },
+  "packages": {
+    "busybox-static_1.36.1-6ubuntu3.1_arm64.deb": {
+      "size_bytes": 910700,
+      "sha256": "d96535e0402c011e0ee43449799df2f4504d44b842e4f2b3a6cbc845508eaafc",
+      "archive_path": "pool/main/b/busybox/busybox-static_1.36.1-6ubuntu3.1_arm64.deb",
+      "package": "busybox-static",
+      "version": "1:1.36.1-6ubuntu3.1"
+    },
+    "libc-bin_2.39-0ubuntu8.9_arm64.deb": {
+      "size_bytes": 591286,
+      "sha256": "5a96fe62c7803a4b886b29afbb67b5e41952de918abd217d2b8fdfbc44c3b72d",
+      "archive_path": "pool/main/g/glibc/libc-bin_2.39-0ubuntu8.9_arm64.deb",
+      "package": "libc-bin",
+      "version": "2.39-0ubuntu8.9"
+    },
+    "libc6_2.39-0ubuntu8.9_arm64.deb": {
+      "size_bytes": 2776414,
+      "sha256": "ad109797c5f78a5eeb6d4c296bfbaae68b239111a0c9ac0eb97b8d430284ac45",
+      "archive_path": "pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb",
+      "package": "libc6",
+      "version": "2.39-0ubuntu8.9"
+    },
+    "linux-buildinfo-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb": {
+      "size_bytes": 699544,
+      "sha256": "8fb5447aa91a5839cd232cf20651697bdced6eece0c29c36bdb989c49d7a7fcd",
+      "archive_path": "pool/main/l/linux/linux-buildinfo-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb",
+      "package": "linux-buildinfo-6.8.0-147-generic-64k",
+      "version": "6.8.0-147.147"
+    },
+    "linux-image-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb": {
+      "size_bytes": 18207916,
+      "sha256": "8995fd72c93c04f9a621f870451764abb6f87625ce2baa03ad9d13d752b1bf54",
+      "archive_path": "pool/main/l/linux-signed/linux-image-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb",
+      "package": "linux-image-6.8.0-147-generic-64k",
+      "version": "6.8.0-147.147"
+    },
+    "linux-image-6.8.0-147-generic_6.8.0-147.147_arm64.deb": {
+      "size_bytes": 18313352,
+      "sha256": "75159df987469ba9feb93a638a7f2a42511802fbf0f06ff891d2702bd7d3b23c",
+      "archive_path": "pool/main/l/linux-signed/linux-image-6.8.0-147-generic_6.8.0-147.147_arm64.deb",
+      "package": "linux-image-6.8.0-147-generic",
+      "version": "6.8.0-147.147"
+    },
+    "linux-buildinfo-6.8.0-147-generic_6.8.0-147.147_arm64.deb": {
+      "size_bytes": 700002,
+      "sha256": "c20634cc9df715dadb48bce8f3ca7ff20ee92fb48b1e64646aa2b965a4659e99",
+      "archive_path": "pool/main/l/linux/linux-buildinfo-6.8.0-147-generic_6.8.0-147.147_arm64.deb",
+      "package": "linux-buildinfo-6.8.0-147-generic",
+      "version": "6.8.0-147.147"
+    }
+  },
+  "common_packages": [
+    "busybox-static_1.36.1-6ubuntu3.1_arm64.deb",
+    "libc-bin_2.39-0ubuntu8.9_arm64.deb",
+    "libc6_2.39-0ubuntu8.9_arm64.deb"
+  ],
+  "profiles": {
+    "65536": {
+      "id": "ubuntu-noble-6.8.0-147-64k",
+      "kernel_release": "6.8.0-147-generic-64k",
+      "packages": [
+        "linux-image-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb",
+        "linux-buildinfo-6.8.0-147-generic-64k_6.8.0-147.147_arm64.deb"
+      ],
+      "config": {
+        "size_bytes": 335763,
+        "sha256": "17325c06fb19d6a4f7f18703c2b1e2bd6676a44b3d1d42c1f78bb05afa2c281e"
+      },
+      "image": {
+        "size_bytes": 60270984,
+        "sha256": "39e298eabca51c5589424b1d78408233aeae04cc73be9a7b4c28f32661b2e9a8"
+      }
+    },
+    "4096": {
+      "id": "ubuntu-noble-6.8.0-147-4k",
+      "kernel_release": "6.8.0-147-generic",
+      "packages": [
+        "linux-image-6.8.0-147-generic_6.8.0-147.147_arm64.deb",
+        "linux-buildinfo-6.8.0-147-generic_6.8.0-147.147_arm64.deb"
+      ],
+      "acquisition_status": "metadata-identified; actual boot required before coverage"
+    }
+  },
+  "qemu": {
+    "version": "6.2.0",
+    "machine": "virt-6.2,gic-version=3",
+    "cpu": "cortex-a72"
+  },
+  "rootfs_files": {
+    "bin/busybox": {
+      "package": "busybox-static_1.36.1-6ubuntu3.1_arm64.deb",
+      "path": "usr/bin/busybox",
+      "size_bytes": 1914704,
+      "sha256": "52151e7f322f926b64049cdaa1410dc3ea6485525e0624b05813791c219ae933"
+    },
+    "usr/bin/getconf": {
+      "package": "libc-bin_2.39-0ubuntu8.9_arm64.deb",
+      "path": "usr/bin/getconf",
+      "size_bytes": 67592,
+      "sha256": "1d56daacf02783a4a847360225d63156138feb39a63a0726a265928c3fe585ea"
+    },
+    "lib/ld-linux-aarch64.so.1": {
+      "package": "libc6_2.39-0ubuntu8.9_arm64.deb",
+      "path": "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+      "size_bytes": 203968,
+      "sha256": "390027e5f45f236bd1838bc54bf464c5ff01d260ab9f8b415ea8276641bce505"
+    },
+    "lib/aarch64-linux-gnu/libc.so.6": {
+      "package": "libc6_2.39-0ubuntu8.9_arm64.deb",
+      "path": "usr/lib/aarch64-linux-gnu/libc.so.6",
+      "size_bytes": 1722920,
+      "sha256": "0f1905dc27dbc6715875c70527bc8da846a10084c9c483e9d8ff76dce8d69d0e"
+    }
+  }
+}

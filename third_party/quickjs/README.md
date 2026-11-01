@@ -80,3 +80,17 @@ reviewed metadata commit and its verified cache to roll back; use an explicit
 new `--cache` directory to diagnose corruption without erasing prior evidence.
 Ordinary builds must call `verify` and stop on any nonzero status. They must not
 call `bump` or `fetch` implicitly.
+
+The current M0 overlay keeps the exact `e621135dc542e000e31038bedc52944aa0adaf1a`
+upstream commit and original license. Actual ARM64 allocations exceeded the
+header's 47-bit NaN-boxed pointer range, causing `JS_NewContextRaw` to dereference
+a truncated pointer. The one-line ordered header patch selects the existing
+full-pointer JSValue representation for ARM64; x86 behavior remains unchanged.
+The original cache is preserved and the derived source has its own manifest and
+cache key. This update did not resolve moving master or invoke `bump`.
+
+The permanent M0 probe checks public JSValue pointer/tag round-tripping with
+bit47 set on ARM64, without dereferencing that synthetic pointer, then exercises
+actual context/object/eval/free behavior. The original header deterministically
+fails this check even if ASLR happens to place current allocations below bit47.
+Details and raw regressions are in the [64K validation record](../../.scratch/qaplet-m0/arm64-64k-validation.md).
