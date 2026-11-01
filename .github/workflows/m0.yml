@@ -20,11 +20,40 @@
           "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
         },
         {"name": "Build and locally verify both fat probes using shared recipe", "run": "make build-ape OUT=out/m0"},
+        {"name": "Explicitly acquire locked Ubuntu helper compiler", "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"},
+        {"name": "Ubuntu-build separate native loaders", "run": "python scripts/startup_loaders.py build --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"},
         {
           "name": "Distribute original bytes and all evidence",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
           "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0/", "if-no-files-found": "error", "retention-days": 7}
+        }
+      ]
+    },
+    "native-startup": {
+      "needs": "build",
+      "runs-on": "${{ matrix.runner }}",
+      "timeout-minutes": 10,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {"include": [
+          {"runner": "ubuntu-24.04", "os": "Linux", "arch": "x86_64"},
+          {"runner": "windows-2022", "os": "Windows", "arch": "x86_64"},
+          {"runner": "macos-15-intel", "os": "Darwin", "arch": "x86_64"},
+          {"runner": "macos-15", "os": "Darwin", "arch": "aarch64"},
+          {"runner": "ubuntu-24.04-arm", "os": "Linux", "arch": "aarch64"}
+        ]}
+      },
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0"}},
+        {"name": "Measure native host and execute unchanged producer bytes", "run": "python scripts/startup.py run --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/startup/${{ matrix.runner }}/startup.json"},
+        {
+          "name": "Retain every native result and raw log",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {"name": "m0-startup-${{ matrix.runner }}-${{ github.sha }}", "path": "out/startup/${{ matrix.runner }}/", "if-no-files-found": "error", "retention-days": 7}
         }
       ]
     }

@@ -298,7 +298,9 @@ def check_ci(args, report):
     expected = ["make check OUT=out/m0/check",
                 "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json",
                 "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs",
-                "make build-ape OUT=out/m0"]
+                "make build-ape OUT=out/m0",
+                "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json",
+                "python scripts/startup_loaders.py build --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"]
     if runs != expected:
         raise BuildError("M0 build must check, explicitly populate locked inputs, then invoke the shared offline recipe")
     if not any(step.get("uses", "").startswith("actions/upload-artifact@") and
@@ -309,8 +311,24 @@ def check_ci(args, report):
         if name == "build":
             continue
         for step in job.get("steps", []):
-            if re.search(r"build-ape|build_ape\.py\s+build|cosmocc", step.get("run", "")):
+            if re.search(r"build-ape|build_ape\.py\s+build|startup_loaders\.py\s+build|cosmocc", step.get("run", "")):
                 raise BuildError("Test job must consume distributed bytes without recompilation: " + name)
+    native = workflow["jobs"].get("native-startup", {})
+    rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
+    expected_rows = {("ubuntu-24.04", "Linux", "x86_64"), ("windows-2022", "Windows", "x86_64"),
+                     ("macos-15-intel", "Darwin", "x86_64"), ("macos-15", "Darwin", "aarch64"),
+                     ("ubuntu-24.04-arm", "Linux", "aarch64")}
+    if len(rows) != 5 or {(row.get("runner"), row.get("os"), row.get("arch")) for row in rows} != expected_rows:
+        raise BuildError("Native startup must schedule all five explicit OS/architecture runners")
+    if native.get("needs") != "build" or native.get("strategy", {}).get("fail-fast") is not False:
+        raise BuildError("Native startup requires one distributed build and must retain every host result")
+    native_steps = native.get("steps", [])
+    if not any(step.get("uses", "").startswith("actions/download-artifact@") and step.get("with", {}).get("name") == "m0-build-${{ github.sha }}" for step in native_steps):
+        raise BuildError("Native startup must download the same producer artifact")
+    if not any("scripts/startup.py run" in step.get("run", "") and "--expected-arch" in step["run"] and "--expected-os" in step["run"] for step in native_steps):
+        raise BuildError("Native startup must use the shared runner and verify measured OS/architecture")
+    if not any(step.get("uses", "").startswith("actions/upload-artifact@") and step.get("if") == "${{ always() }}" for step in native_steps):
+        raise BuildError("Native startup must retain failures and raw logs")
     report.update(status="pass", reason="M0 local JSON/workflow contract passed; remote workflow not executed", workflow=identity(args.workflow))
 
 

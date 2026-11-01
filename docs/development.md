@@ -153,6 +153,18 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 独立 `.github/workflows/m0.yml` 只构建一次并上传 `out/m0/`。它先运行 `make check`，再显式执行 `fetch_locked_toolchain.py` 从锁定官方 artifact URL 取原始 ZIP（GH_TOKEN 只经环境和 curl stdin，不写入 argv/报告），SHA/长度必须匹配；已有正确原 ZIP 可直接传给 `make toolchain-fetch`。bootstrap 失败、归档过期、鉴权或网络错误均不回退滚动 Nightly，也不改锁。CI 随后运行与本地相同的输入 fetch 和 `build-ape`；跨宿主测试 job 由后续任务消费上传字节和摘要，不重新编译。本地实际验收见 [fat APE 记录](../.scratch/qaplet-m0/fat-ape-build-validation.md)。
 
+## BOOT-04B 原生启动入口
+
+`scripts/startup_loaders.py fetch` 显式获取独立锁定的 Zig Linux 归档；`verify` 与 `build` 离线校验全部内容。`build` 仅允许 Ubuntu x86_64，生成独立 loader bundle（包括 Ubuntu 交叉构建的 Mac ARM64 Mach-O），不更改产品 APE。worktree 使用 `--zig-cache`、`--toolchain-cache`、`--build-dir` 指向主工作区 `.cache/`。原生验证不调用宿主编译器：
+
+```sh
+python scripts/startup.py run --build-report out/m0/build-info.json \
+  --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders \
+  --report out/startup/startup.json
+```
+
+`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。`matrix` 用重复的 `--input-report` 汇总六目标，缺项保持 blocked；`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 guest payload，不声明实际运行。详细本地状态与未解决的 64K loader/packer 问题见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)。五原生 CI 消费同一 Ubuntu 构建字节并保留失败；这不等于六宿主已通过。
+
 ## CI 查询与故障定位
 
 1. 先按待验证的提交 SHA 找到对应 run，读取 status/conclusion。run 已 completed/success 即完成成功核验；将 SHA、run 链接和结果写回任务证据。
