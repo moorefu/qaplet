@@ -7,6 +7,8 @@
 
 **Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。
 
+**Build/cache override（2026-11-01，用户确认）：** 用户要求“构建都在 Ubuntu 上，其他平台只做制品验证与 SDK 验证，需要缓存的东西统一放本目录 .cache 下”。主制品与 SDK 发行物由 Ubuntu 构建并分发相同字节，其他宿主仅消费验证；可复用输入、归档、guest 和构建中间文件以主工作区根目录 `.cache/` 为缓存根。此确认覆盖下文及历史记录中的 home/ext4 缓存偏好和 Windows/macOS 编译调度；报告及最终制品使用 `out/`。执行与权限事实见[开发说明](../../docs/development.md)。
+
 ## Problem Statement
 
 Qaplet 尚没有可执行工程、锁定构建输入或新项目的跨平台运行证据。后续 Runtime、Node API、SDK 和应用交付均依赖 APE/工具链与底层系统行为的可行性。需要以有限的原生探针建立可追溯的地基，并让服务应用的专有 ABI 风险独立于 Core。

@@ -2,6 +2,14 @@
 
 共享执行脚本位于 `scripts/`，系统 C 冒烟位于 `tests/native/`，命令合同测试位于 `tests/contracts/`；没有创建未实现的 Runtime、SDK 或应用目录占位。
 
+## 当前构建与缓存约定
+
+2026-11-01 用户确认：构建统一在 Ubuntu 完成，其他平台验证已生成的同一摘要制品与 SDK。包含编译的 `make check`、合同回归及 bootstrap CI 因而在 Ubuntu 执行；Windows/macOS 使用对应验证入口消费制品。
+
+可复用源码、工具链原归档/解包树、guest 输入和构建中间文件统一保存在仓库根目录 `.cache/`，报告与最终制品使用 `out/`。当前主工作区对应 `D:\Workspace\dairn\qaplet\.cache` / `/mnt/d/Workspace/dairn/qaplet/.cache`；多个实施 worktree 的实际运行应显式使用这一个主工作区缓存。CI 使用其检出目录下的 `.cache/`。缓存目录已被 Git 忽略；默认构建离线校验已锁输入，显式获取操作负责填充缓存。
+
+本机该目录位于没有 `metadata` 选项的 DrvFS。实际执行、读写和内部符号链接可用；文件可设为无写权限，但非执行位和目录只读位不能按 POSIX 原样表示。工具链验证须在报告中记录实测权限限制，并持续核对原归档 SHA-256、所有文件内容/类型和链接目标；在支持 POSIX 权限的 Ubuntu 文件系统保留完整权限校验。没有更改全局 WSL/mount 设置。下文与历史验收记录中的 ext4/home 缓存、Windows 编译和旧 CI 矩阵是此前观测，当前默认与调度以本节及配置为准。
+
 ## 命令与 scope
 
 | 入口 | 报告 | 成功含义 |
@@ -59,7 +67,6 @@ Linux 下可直接在仓库根目录运行相同 make 入口。Windows 工作目
 
 ```sh
 make test-environment OUT=out/env01/wsl-final \
-  ENV_BACKING_DIR=/mnt/c \
   ENV_DOWNLOAD_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/dists/jammy/InRelease
 python3 scripts/foundation.py validate-report \
   --input-report out/env01/wsl-final/environment.json \
@@ -68,11 +75,11 @@ python3 scripts/foundation.py validate-report \
 
 此 URL 仅作 HTTPS 下载探针，保存实际长度/摘要，不作为产品依赖锁。省略 URL 会得到 blocked；不自动联网。GitHub TLS 失败和软件源超时等原始记录也保留，不能由另一端点通过推断所有下载站点可达。
 
-默认构建与逐命令证据放在 Linux 用户的 `~/.cache/qaplet/environment/<uuid>/`（此次为 ext4），JSON 报告放在 Windows 可编辑源码树的 `OUT` 下。可用 `ENV_BUILD_DIR` 指定其他构建根目录；构建目录不可创建时在报告旁保留 blocked 证据。tar.gz 与 ZIP 对仓库 C 源码做真实创建、解包和 SHA-256 往返验证；HTTPS 下载另作独立用例。系统 C 输出的架构与 sysconf 页大小须与宿主测量一致。新 login shell 重新检查工具与两个目录；这不要求终止发行版或重启机器。
+默认构建与逐命令证据放在仓库 `.cache/environment/<uuid>/`，JSON 报告放在 `OUT` 下。`ENV_BUILD_DIR` 可用于 worktree 显式选择主工作区 `.cache/environment`；构建目录不可创建时在报告旁保留 blocked 证据。tar.gz 与 ZIP 对仓库 C 源码做真实创建、解包和 SHA-256 往返验证；HTTPS 下载另作独立用例。系统 C 输出的架构与 sysconf 页大小须与宿主测量一致。新 login shell 重新检查工具与两个目录；这不要求终止发行版或重启机器。
 
-验收默认要求源码盘、构建文件系统以及显式提供的 VHD 所在盘各至少 2 GiB 可用空间；CLI `--min-free-bytes` 可提高阈值。这是小型环境探针的下限，后续 Nightly/QuickJS/QEMU 任务应按实际归档、解包、缓存和构建峰值另算空间，不能据此保证任意产品构建容量。`ENV_BACKING_DIR` 来自实际 VHD 路径，不能从 ext4 显示的虚拟容量反推；此次 VHD 在 C 盘，所以测 `/mnt/c`。
+验收默认要求源码盘、构建文件系统以及显式提供的 backing 盘各至少 2 GiB 可用空间；CLI `--min-free-bytes` 可提高阈值。这是小型环境探针的下限，后续 Nightly/QuickJS/QEMU 任务应按实际归档、解包、缓存和构建峰值另算空间。当前源码与缓存都在 D 盘；历史 ext4 缓存的 VHD 在 C 盘，其 `/mnt/c` 测量不能当作当前缓存盘。仅当确有该存储依赖时显式提供 `ENV_BACKING_DIR`，不能从 ext4 显示的虚拟容量反推物理空间。
 
-源码在 DrvFS（`/mnt/d`），构建在 ext4。两处的读写和直接执行分别实测；本次通过不表示 Windows ACL、chmod、符号链接或大小写语义完全一致。环境指纹与覆盖摘要见[ENV-01 验收记录](../.scratch/qaplet-m0/wsl2-environment-validation.md)及[本地覆盖记录](../.scratch/qaplet-m0/local-coverage.json)。WSL x64 4K 仅表示构建环境就绪，产品 APE 与 ARM64 仍未验收。
+当前源码与缓存都在 DrvFS（`/mnt/d`）。历史 ENV-01 另测过 ext4 构建目录，其通过不表示 Windows ACL、chmod、符号链接或大小写语义完全一致；当前权限限制见本节开头。历史环境指纹见[ENV-01 验收记录](../.scratch/qaplet-m0/wsl2-environment-validation.md)及[本地覆盖记录](../.scratch/qaplet-m0/local-coverage.json)。环境验收与产品 APE/ARM64 成绩分别判定。
 
 ## 固定输入入口（BOOT-02 / BOOT-03）
 
@@ -83,20 +90,20 @@ make quickjs-fetch OUT=out/inputs/quickjs-fetch
 make quickjs-verify OUT=out/inputs/quickjs-verify
 ```
 
-`quickjs-fetch` 使用已提交的固定 commit，不解析移动 master；`quickjs-bump` 才显式重新解析官方 master 并更新锁。默认源码缓存位于 `out/quickjs/`，可用 `QUICKJS_CACHE` 指定另一目录。构建应先校验所选缓存，并在独立目录生成文件，不能修改上游源码树。源码锁验证不是编译或跨宿主验收。
+`quickjs-fetch` 使用已提交的固定 commit，不解析移动 master；`quickjs-bump` 才显式重新解析官方 master 并更新锁。默认源码缓存位于 `.cache/quickjs/`，worktree 可用 `QUICKJS_CACHE` 指定主工作区缓存。构建先校验所选缓存，并在 `.cache/build/` 的独立目录生成中间文件。源码锁验证不是编译或跨宿主验收。
 
-Nightly 入口是 `make toolchain-fetch`、`make toolchain-bump`、`make toolchain-verify`。权威锁位置为 `toolchains/cosmocc.lock.json`；只有取得真实归档并测量工具后才生成该文件，不提交占位锁。默认缓存位于当前执行用户的 `~/.cache/qaplet/toolchains/cosmocc/`，可用 `TOOLCHAIN_CACHE` 覆盖；在 WSL 中优先放 ext4，并用 CLI 的 `--backing-dir /mnt/c` 另测 VHD 所在物理盘空间。`verify` 和 `path` 完全离线；缺失缓存或身份不符时失败，不自动下载。
+Nightly 入口是 `make toolchain-fetch`、`make toolchain-bump`、`make toolchain-verify`。权威锁为 `toolchains/cosmocc.lock.json`，默认缓存为 `.cache/toolchains/cosmocc/`，可用 `TOOLCHAIN_CACHE` 指定主工作区缓存。`verify` 和 `path` 完全离线；缺失缓存或身份不符时失败，不自动下载。当前 DrvFS 缓存直接测其物理卷空间；仅在实际使用 VHD 存储时另提供对应 backing 卷，不假定为 C 盘。
 
 需要分开获取与 Linux 测量时，显式运行：
 
 ```sh
 python scripts/nightly_toolchain.py download \
-  --download-to out/nightly-download/cosmocc.zip \
+  --download-to .cache/downloads/cosmocc.zip \
   --report out/nightly-download/acquisition.json
 python3 scripts/nightly_toolchain.py fetch \
   --archive /path/to/cosmocc.zip \
   --acquisition-report /path/to/acquisition.json \
-  --backing-dir /mnt/c --report out/inputs/nightly-fetch.json
+  --report out/inputs/nightly-fetch.json
 ```
 
 接收端重新比对获取报告里的原始长度与 SHA-256，再安全解包、测量编译器和完整内容。没有成功官方获取记录的本地 ZIP 仅属于 `local-import`，默认不能作为产品工具链使用。工具链 libc 与源码 HEAD 的对应关系无法证明时保持 `unproven`，不能把下载成功当成 APE 成功。
@@ -106,7 +113,7 @@ python3 scripts/nightly_toolchain.py fetch \
 ```sh
 make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
   TOOLCHAIN_ACQUISITION_REPORT=toolchains/cosmocc.acquisition.json \
-  TOOLCHAIN_BACKING_DIR=/mnt/c OUT=out/inputs/nightly-fetch
+  OUT=out/inputs/nightly-fetch
 ```
 
 此 GitHub 来源的锁不会因缓存缺失而切换到滚动发布站点。已有权威锁时，精确匹配的 ZIP 副本也可独立用于恢复；首次建立新的官方来源必须提供可核查获取记录。`acquire-nightly.yml` 的一次性 integration push 获取已结束，后续仅显式手动触发；它保留官方发布站点下载的成功/失败日志和归档 7 天，不更新任何锁。取回 artifact 后仍须本地校验和 Linux 工具测量。
@@ -117,11 +124,11 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；没有执行 Actions 服务端校验或 actionlint。
 
-提交前运行 `make check`。涉及 Windows/WSL 执行差异时，分别在普通 Windows 用户上下文和现有 WSL 运行同一入口，分别保存 `OUT`。受限上下文测试可补充失败证据，真实用户上下文负责核验可用环境。WSL 不可用负向用例用显式不存在的 `--wsl` 隔离；其回归已经位于 `tests/contracts/test_foundation.py`。
+提交前在 Ubuntu 运行 `make check`。Windows/WSL 差异由普通用户上下文的对应验证命令采集，并分别保存报告；其他平台消费 Ubuntu 已构建制品。受限上下文仅补充可见范围内的证据。WSL 不可用负向用例用显式不存在的 `--wsl` 隔离；其回归位于 `tests/contracts/test_foundation.py`。
 
-托管 runner 的 compiler 配置使用 PATH 中的可执行文件名：Windows 为 `gcc`，其他 bootstrap 行为 `cc`。静态检查拒绝把开发机的编译器绝对路径放入该矩阵；本地 `CC` 仍可显式使用绝对路径。Windows 镜像预装 MSYS2 不代表已安装其 MinGW GCC；本任务使用 runner 提供的系统 GCC，不依赖 MSYS2 目录或安装步骤。
+bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。静态检查拒绝非 Ubuntu 编译行及开发机编译器绝对路径；Ubuntu 本地 `CC` 仍可显式使用绝对路径。历史 Windows GCC 配置修复保留在验收记录中，当前不再调度 Windows/macOS bootstrap 编译。
 
-启用的 `bootstrap` job 在已配置 runner 上做环境盘点、真实 C 冒烟和合同回归；doctor 的 blocked 允许继续，但测试失败不允许继续。报告与原始日志即使失败也上传。runner 页大小来自实际 OS 查询，不能从镜像名推断。该 workflow 名称和 artifact 均标为 bootstrap。
+启用的 `bootstrap` job 在 Ubuntu 上做环境盘点、真实 C 冒烟和合同回归；doctor 的 blocked 允许继续，测试失败则阻断。报告与原始日志即使失败也上传。runner 页大小来自实际 OS 查询，不能从镜像名推断。该 workflow 名称和 artifact 均标为 bootstrap；其他平台的产品/SDK 验证由对应 workflow 消费同摘要制品。
 
 禁用的 `m0-build-distribute`、`m0-native-pages`、`m0-qemu-page-gaps` 分别为锁定构建/同摘要制品分发、原生 ARM64 页探测和缺失页配置完整系统 TCG guest 预留位置。SCM 和 Job 分属 `svc-scm`/`svc-job`，使用独立应用制品，不进入 Core 门禁。启用这些位置之前须由对应任务接入可运行的共享脚本、输入与制品；当前不能从 disabled/skip 推出通过。首次远程 bootstrap 的实际结果及 Windows 配置修复见[验证记录](../.scratch/qaplet-m0/foundation-validation.md#首次远程-ci-与-windows-配置修复)。
 
