@@ -67,10 +67,11 @@ def manifest(collection_path, commit):
     collection = read_json(collection_path)
     artifacts = collection.get("artifacts")
     require(collection.get("status") == "pass" and isinstance(artifacts, list) and artifacts, "A nonempty verified artifact collection is required")
-    transports, files, documents, explicit = [], [], [], {}
+    transports, files, documents, explicit, artifact_files = [], [], [], {}, {}
     for artifact in artifacts:
         require(artifact["name"].endswith("-" + commit) and type(artifact["id"]) is int and artifact["id"] > 0, "Artifact belongs to another commit or lacks provider identity")
         root = Path(artifact["root"])
+        artifact_files[artifact["name"]] = (str(root.resolve()), [])
         require(identity(artifact["archive"]["path"]) == artifact["archive"], "Original artifact archive changed")
         transports.append({key: artifact[key] for key in ("id", "name", "root", "archive")})
         for record in artifact["files"]:
@@ -79,6 +80,7 @@ def manifest(collection_path, commit):
             measured = identity(path)
             require(all(measured[key] == record[key] for key in ("sha256", "size_bytes")), "Collected evidence bytes changed")
             files.append((record["member"], str(path.resolve())))
+            artifact_files[artifact["name"]][1].append((record["member"], str(path.resolve())))
             if path.suffix == ".json":
                 data = read_json(path)
                 documents.append((artifact["name"], record["member"], path, data))
@@ -86,24 +88,33 @@ def manifest(collection_path, commit):
                     for entry in data:
                         target = (root / entry["relative"]).resolve()
                         require(target.is_relative_to(root.resolve()), "Extra evidence mapping escaped artifact root")
-                        require(entry["source"] not in explicit or explicit[entry["source"]] == str(target), "Conflicting evidence mapping")
-                        explicit[entry["source"]] = str(target)
+                        original = entry["source"].replace("\\", "/").rstrip("/")
+                        require(original not in explicit or explicit[original] == str(target), "Conflicting evidence mapping")
+                        explicit[original] = str(target)
     # Match full retained member suffixes, preferring the longest (offline contains nested producers).
     # Ambiguous basenames cannot create mappings; the consumer will fail if one is needed.
     mapping = dict(explicit)
-    for _, _, _, data in documents:
+    for artifact_name, _, _, data in documents:
         for original in strings(data):
             normalized = original.replace("\\", "/")
             if not normalized.startswith("/") and not re.match(r"^[A-Za-z]:/", normalized):
                 continue
+            # Unique nested log/member paths also establish the artifact's original root.
+            # This resolves repeated top-level guest.json names when both page gaps run.
+            target_root, local_files = artifact_files[artifact_name]
+            for member, _ in local_files:
+                if "/" in member and normalized.endswith("/" + member):
+                    source_root = normalized[:-len(member)].rstrip("/")
+                    require(source_root not in mapping or mapping[source_root] == target_root, "Conflicting original artifact roots")
+                    mapping[source_root] = target_root
             matches = [(len(member), target) for member, target in files if normalized.endswith("/" + member)]
             if matches:
                 length = max(number for number, _ in matches)
                 candidates = {target for number, target in matches if number == length}
                 if len(candidates) == 1:
                     target = candidates.pop()
-                    require(original not in mapping or mapping[original] == target, "Conflicting original evidence paths")
-                    mapping[original] = target
+                    require(normalized not in mapping or mapping[normalized] == target, "Conflicting original evidence paths")
+                    mapping[normalized] = target
     selected = {"startup": [], "io": [], "pages64k": []}
     producers = {"startup": [], "io": [], "pages64k": []}
     offline, recipe = [], []
@@ -160,6 +171,7 @@ def collect_actions(output, commit):
         payload = read_json(Path(os.environ["GITHUB_EVENT_PATH"]))
         run_commit = payload["pull_request"]["head"]["sha"]
         require(re.fullmatch(r"[0-9a-f]{40}", run_commit), "Exact PR head identity required")
+    require(output.absolute() == output.resolve() and output.resolve().is_relative_to((ROOT / "out").resolve()), "Actions archives must use a physical directory below checkout out/")
     output.mkdir(parents=True, exist_ok=True)
     api = "https://api.github.com/repos/" + repository + "/actions"
     headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
@@ -179,6 +191,12 @@ def collect_actions(output, commit):
         require(re.fullmatch(r"sha256:[0-9a-f]{64}", digest or ""), "Provider archive digest is required")
         number = artifact["id"]
         require(type(number) is int and number > 0, "Provider artifact ID required")
+        target = output / (str(number) + ".zip")
+        if target.exists():
+            require(not target.is_symlink() and identity(target)["sha256"] == digest.removeprefix("sha256:"), "Retained original archive differs from provider digest; refusing overwrite")
+            selection.append({"id": number, "name": name, "archive": identity(target)})
+            metadata.append({"id": number, "name": name, "digest": digest, "commit": commit, "run_head_commit": run_commit, "run_id": run_id})
+            continue
         # Auth is confined to the API host. The signed redirect is fetched by a separate unauthenticated request.
         try:
             urllib.request.build_opener(NoRedirect()).open(request(api + "/artifacts/" + str(number) + "/zip"), timeout=60)
@@ -188,7 +206,6 @@ def collect_actions(output, commit):
             url = redirect.headers["Location"]
         from ci_evidence import check_url
         check_url(url)
-        target = output / (str(number) + ".zip")
         partial = target.with_suffix(".partial")
         try:
             with urllib.request.urlopen(url, timeout=90) as incoming, partial.open("wb") as stream:
