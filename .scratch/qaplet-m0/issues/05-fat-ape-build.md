@@ -4,7 +4,7 @@
 
 **Blocked by:** [03 · QuickJS 源码锁与来源记录](03-quickjs-source-lock.md)、[04 · Nightly 工具链锁与离线缓存](04-nightly-toolchain-lock.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 已验证的源码与工具链、Linux x64 构建环境。
 
@@ -57,4 +57,4 @@ Hello 与 eval 产物、build-info、源码/工具链/补丁身份、编译日�
 
 ## Comments
 
-尚未实施。
+2026-11-01：ticket 05 implementer 已领取；分支 `codex/m0-05-fat-ape`，基于 integration `cf0d125`。按已确认的 CLI / 原生行为 / evidence seam 执行 TDD。

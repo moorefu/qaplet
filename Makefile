@@ -13,8 +13,10 @@ TOOLCHAIN_CACHE ?=
 TOOLCHAIN_ARCHIVE ?=
 TOOLCHAIN_ACQUISITION_REPORT ?=
 TOOLCHAIN_BACKING_DIR ?=
+APE_BUILD_DIR ?=
+APE_OUTPUT_DIR ?= $(OUT)/artifacts
 
-.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify
+.PHONY: check doctor test-environment test-foundation test-bootstrap test check-ci quickjs-fetch quickjs-bump quickjs-verify toolchain-fetch toolchain-bump toolchain-verify build-ape
 doctor:
 	"$(PYTHON)" scripts/foundation.py doctor --cc "$(CC)" $(if $(WSL),--wsl "$(WSL)",) --report "$(OUT)/doctor.json"
 
@@ -32,6 +34,7 @@ test:
 
 check-ci:
 	"$(PYTHON)" scripts/foundation.py check-ci --report "$(OUT)/check-ci.json"
+	"$(PYTHON)" scripts/build_ape.py check-ci --report "$(OUT)/check-m0-ci.json"
 
 check: check-ci test test-bootstrap
 
@@ -43,3 +46,6 @@ toolchain-fetch toolchain-bump:
 
 toolchain-verify:
 	"$(PYTHON)" scripts/nightly_toolchain.py verify $(if $(TOOLCHAIN_CACHE),--cache-dir "$(TOOLCHAIN_CACHE)",) --report "$(OUT)/nightly-toolchain.json"
+
+build-ape:
+	"$(PYTHON)" scripts/build_ape.py build $(if $(QUICKJS_CACHE),--source-cache "$(QUICKJS_CACHE)",) $(if $(TOOLCHAIN_CACHE),--toolchain-cache "$(TOOLCHAIN_CACHE)",) $(if $(APE_BUILD_DIR),--build-dir "$(APE_BUILD_DIR)",) --output-dir "$(APE_OUTPUT_DIR)" --report "$(OUT)/build-info.json"

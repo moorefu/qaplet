@@ -13,6 +13,7 @@
 | `make test-foundation` | `out/m0.json` | 当前始终非通过，列出输入、制品、六类宿主与必需探针缺口 |
 | `make test` | unittest 输出 | 命令合同回归通过，不是产品矩阵 |
 | `make check-ci` | `out/check-ci.json` | JSON/YAML 语法及项目编排合同通过，远程未运行 |
+| `make build-ape` | `out/build-info.json` / `out/artifacts/` | 两个固定输入离线校验、Hello / QuickJS fat APE、双 CPU headers/link map/import 检查及 Linux x64 实际值/错误路径 |
 
 这些 make recipe 与 CI 复用同一 Python CLI。也可直接执行：
 
@@ -115,7 +116,7 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
 
 ## CI skeleton
 
-`.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；没有执行 Actions 服务端校验或 actionlint。
+`.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 检查独立 `m0.yml` 的固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。
 
 提交前运行 `make check`。涉及 Windows/WSL 执行差异时，分别在普通 Windows 用户上下文和现有 WSL 运行同一入口，分别保存 `OUT`。受限上下文测试可补充失败证据，真实用户上下文负责核验可用环境。WSL 不可用负向用例用显式不存在的 `--wsl` 隔离；其回归已经位于 `tests/contracts/test_foundation.py`。
 
@@ -124,6 +125,22 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
 启用的 `bootstrap` job 在已配置 runner 上做环境盘点、真实 C 冒烟和合同回归；doctor 的 blocked 允许继续，但测试失败不允许继续。报告与原始日志即使失败也上传。runner 页大小来自实际 OS 查询，不能从镜像名推断。该 workflow 名称和 artifact 均标为 bootstrap。
 
 禁用的 `m0-build-distribute`、`m0-native-pages`、`m0-qemu-page-gaps` 分别为锁定构建/同摘要制品分发、原生 ARM64 页探测和缺失页配置完整系统 TCG guest 预留位置。SCM 和 Job 分属 `svc-scm`/`svc-job`，使用独立应用制品，不进入 Core 门禁。启用这些位置之前须由对应任务接入可运行的共享脚本、输入与制品；当前不能从 disabled/skip 推出通过。首次远程 bootstrap 的实际结果及 Windows 配置修复见[验证记录](../.scratch/qaplet-m0/foundation-validation.md#首次远程-ci-与-windows-配置修复)。
+
+## BOOT-04A fat APE 构建和报告
+
+所有产品构建在 Ubuntu 里运行；其他平台只消费同摘要制品和验证 SDK。运行 `make build-ape OUT=out/m0` 默认读取仓库 `.cache/quickjs/` / `.cache/toolchains/cosmocc/` 实体缓存；可设 `QUICKJS_CACHE` / `TOOLCHAIN_CACHE` 指向主仓库 `.cache/`，缺失或损坏时保留 blocked/fail 报告，不获取网络输入。构建前、构建后分别执行两个供应脚本的离线 `verify`，四份输入报告及其摘要保存在同次 evidence 目录。输出目录必须为空或不存在；复跑指定新 `OUT`。
+
+默认工作目录为仓库 `.cache/build/<report-id>/`，worktree 可用 `APE_BUILD_DIR` 指向主仓库 `.cache/build/`。该目录保留对象、失败现场和临时文件；输入目录不写入，不通过符号链接将缓存转移到仓库外。实际 DrvFS 权限/工具行为以迁移后的验证结果为准。`cosmocc` 本身不支持含空格的参数路径，构建在编译前检查这一限制。默认每个 compile/link 上限 300 秒，单次执行/审计 30 秒；CLI 可显式调整。超时终止进程组并保留日志。
+
+`scripts/build_ape.py` 的 `build` / `inspect` / `check-ci` 使用独立的 `ape-build` v1 报告，BOOT-01 的 `validate-report` 不验证此合同。报告记录 source/toolchain lock 和实际内容身份、完整 argv/cwd/时间/原始日志、所用 flags、原版 QuickJS C 文件顺序、Temporal/Intl 关闭状态、APE 资源顺序及实际 BUILDLOG、两种 CPU 的 ELF header/LOAD 边界和片段摘要、原制品/sidecar/map 摘要、链接符号与 PE 导入检查、本地架构/页大小及 eval 错误路径。`m0_core_status` 保持 `not_run`，libc 源码映射保留输入锁的 `unproven`；后续门禁仍须消费完整矩阵证据。
+
+生成文件为 `artifacts/{hello,quickjs-eval}.com`、`.com.dbg`、`.aarch64.elf`、`.{x86_64,aarch64}.map` 和 `.build-commands.log`。Hello 输出包含 `probe`、编译执行架构和 `sysconf` 页大小的 JSON；eval 的 `--facts` 输出同样事实，默认求值 `6 * 7` 输出 `42`，一个参数作为 JS 表达式；异常和语法错误向 stderr 写出异常并退出 `1`。两探针通过锁定的原生 ELF APE loader 运行；WSLInterop/binding 状态记录在 build-info，不修改全局注册。
+
+原版最小引擎使用 `quickjs.c dtoa.c libregexp.c libunicode.c cutils.c`，`-Os -fwrapv -D_GNU_SOURCE` 和 VERSION 中的 `CONFIG_VERSION`；不定义 `CONFIG_TEMPORAL_INTL`，不启用 LTO，无上游补丁。自有探针是 M0 验证程序，不是 Runtime/Embed SDK。所有服务专属导入（SCM / Job Object 等）均由两个 CPU 的符号、map 和最终 PE imports 拒绝；常规 libc 进程/线程能力可出现。
+
+独立审计：`python3 scripts/build_ape.py inspect --artifact out/m0/artifacts/hello.com --expected-sha256 <expected> --report out/inspect.json`。预期摘要先于工具执行比较；之后读取相邻的两个 sidecar 和 CPU map，缺失 slice/文件、坏边界或服务符号均失败。完整实际构建合同可显式运行 `QAPLET_TEST_SOURCE_CACHE=/path/to/cache make check OUT=out/check-native`；普通 `make check` 不会下载或强制每次重编大输入。
+
+独立 `.github/workflows/m0.yml` 只构建一次并上传 `out/m0/`。它先运行 `make check`，再显式执行 `fetch_locked_toolchain.py` 从锁定官方 artifact URL 取原始 ZIP（GH_TOKEN 只经环境和 curl stdin，不写入 argv/报告），SHA/长度必须匹配；已有正确原 ZIP 可直接传给 `make toolchain-fetch`。bootstrap 失败、归档过期、鉴权或网络错误均不回退滚动 Nightly，也不改锁。CI 随后运行与本地相同的输入 fetch 和 `build-ape`；跨宿主测试 job 由后续任务消费上传字节和摘要，不重新编译。本地实际验收见 [fat APE 记录](../.scratch/qaplet-m0/fat-ape-build-validation.md)。
 
 ## CI 查询与故障定位
 
