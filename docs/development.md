@@ -163,7 +163,11 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
   --report out/startup/startup.json
 ```
 
-`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。`matrix` 用重复的 `--input-report` 汇总六目标，缺项保持 blocked；`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 guest payload，不声明实际运行。详细本地状态与未解决的 64K loader/packer 问题见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)。五原生 CI 消费同一 Ubuntu 构建字节并保留失败；这不等于六宿主已通过。
+`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。每个宿主执行七项：Hello/eval facts、42、JSValue pointer roundtrip、object/Map 分配与销毁、异常和语法错误。helper `build --producer-report BUILD` 将 07 producer 的独立 source-built ARM64 loader 绑定到分发 bundle。
+
+`page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核七项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
+
+`matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。当前新摘要的本地结果及未完成 native CI 验收见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)，本地成功不等于六宿主已经通过。
 
 ## BOOT-07 native I/O
 

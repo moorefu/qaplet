@@ -80,6 +80,17 @@ class BuildAPEContract(unittest.TestCase):
                 self.assertTrue(Path(command["stdout_log"]).is_file())
                 self.assertTrue(Path(command["stderr_log"]).is_file())
 
+    def test_ci_refuses_a_fixed_guest_matrix_that_ignores_native_page_measurement(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-page-ci-") as temp:
+            work = Path(temp)
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            workflow["jobs"]["arm64-page-gaps"]["strategy"]["matrix"] = {"page_size": [4096, 65536]}
+            (work / "m0.yml").write_text(json.dumps(workflow))
+            result = subprocess.run([sys.executable, str(CLI), "check-ci", "--workflow", str(work / "m0.yml"),
+                                     "--report", str(work / "check.json")], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("missing ARM64", json.loads((work / "check.json").read_text())["reason"])
+
     def test_inspection_rejects_changed_artifact_before_using_any_toolchain(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-corrupt-ape-") as temp:
             work = Path(temp)
