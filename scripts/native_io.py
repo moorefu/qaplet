@@ -22,6 +22,7 @@ from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from native_toolchain import recheck
 from nightly_toolchain import write_json
+from startup import ci_facts, check_ci_commit
 
 RESOURCE = b"qaplet M0 I/O ZIP\n"
 REQUIRED = {"facts", "socket.readiness", "socket.halfclose", "socket.invalid", "socket.cleanup",
@@ -145,6 +146,8 @@ def producer_inputs(args, report):
         raise BuildError("Producer does not prove audited fat x86_64/AArch64 content")
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
                   producer_report=identity(args.build_report), artifacts=[{**artifact, "path": str(args.artifact.resolve())}])
+    if args.operation == "run":
+        check_ci_commit(producer, report)
     return producer, artifact
 
 
@@ -312,6 +315,7 @@ def import_guest(args, report):
         raise BuildError("Full-system guest evidence report is required", "blocked")
     producer, artifact = producer_inputs(args, report)
     guest_report = read_json(args.guest_report)
+    check_ci_commit(producer, guest_report)
     report["guest_report"] = identity(args.guest_report)
     if guest_report.get("schema_version") != 1 or guest_report.get("report_kind") != "arm64-guest" or guest_report.get("status") != "pass":
         raise BuildError("Complete successful arm64-guest v1 transport evidence is required")
@@ -435,17 +439,12 @@ def main():
     report = {"schema_version": 1, "report_kind": "native-io", "report_id": directory.name,
               "scope": {"build": "build", "run": "host", "import-guest": "guest", "guest-manifest": "manifest"}[args.operation],
               "started_at": now(), "finished_at": None, "status": "not_run", "m0_core_status": "not_run",
-              "reason": "", "host": host_facts(), "ci": None, "qemu": None, "source": None,
+              "reason": "", "host": host_facts(), "ci": ci_facts(), "qemu": None, "source": None,
               "toolchain": None, "build": None, "artifacts": [], "cases": [], "commands": [],
               "input_reports": {}, "evidence_directory": str(directory)}
     report["required_cases"] = sorted(REQUIRED) if args.operation == "run" else []
     report["runner"] = [identity(ROOT / "scripts" / name) for name in ("native_io.py", "native_io_terminal.py", "startup.py")]
     report["requested_host"] = {"os": args.expected_os, "arch": args.expected_arch, "runner_label": args.runner_label}
-    if os.environ.get("GITHUB_ACTIONS") == "true":
-        report["ci"] = {key: os.environ.get(value) for key, value in {
-            "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW",
-            "commit": "GITHUB_SHA", "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS",
-            "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion"}.items()}
     try:
         if args.operation in ("run", "build") and (args.expected_os and args.expected_os != report["host"]["os"] or args.expected_arch and args.expected_arch != report["host"]["execution_arch"]):
             raise BuildError("Actual host OS/execution architecture differs from scheduled target")

@@ -1,6 +1,6 @@
 # 04：新输入的同字节跨宿主及 ABI 回归（BOOT-04B/06/07）
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** [03：M0-A 增量](03-m0-a-esm-promise.md)。
 **Execution prerequisites:** 新产物与身份可用；对应原生 runner 或已锁定完整 ARM64 guest 可执行。
 
@@ -50,4 +50,4 @@ helper 冒称直接运行、TCG 冒称物理 native、x64 4K 冒充 ARM64、旧�
 
 ## Comments
 
-尚未实施。
+2026-11-02：任务 04 已由 codex/v15-04-cross-host 领取，基于 b17bba21437544cb8f4e6b7d6a723518898510c8（01–03 已合并）；先按共享 CLI/实际制品/既有只读 consumer 完成红绿合同，再于 05 配方冻结后执行新证据。

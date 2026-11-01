@@ -75,6 +75,8 @@ gate 从既有权威 case catalog 检查 17 项 startup（含 ESM/jobs）、20/2
 
 同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。recipe 对比保留测试/当前两套原始 fingerprint：输入闭包和实际当前字节相同时接受 `changed_inputs: []`；非空差异仅接受原有 `build_ape.py` 的 `check_ci` AST 证明，不冒称该差异后的配方已额外断网执行。声明的差异必须与两份 inventory 精确一致。
 
+新 CI 选择还将三个 producer 及其 native/完整 guest consumer 的 commit 逐边比较：任一方有 CI 身份时，另一方也必须有完整身份；不同 run 可消费同 commit 的已验原归档，不能用缺字段或另一 commit 绕过。64K producer 直接记录 CI，guest 导入保留实际 guest CI 与独立 validation_ci；历史缺 CI 的报告不能补写成为当前 CI 成绩。各报告仍须匹配原归档 provider ID、commit 后缀和实际字节。
+
 完整实际 manifest、通过报告、红绿及负向回归见 [10 验收](../../.scratch/qaplet-m0/core-evidence-gate-validation.md)。标准 `make check` 不自动寻找历史 `out/`；真实 consumer 回归须显式设置 `QAPLET_GATE_MANIFEST`。供应/build 配方不因新增 consumer 而改变。
 
 guest catalog 按实际目标页大小选择：4096 仅需要 Hello/eval + I/O、17 项 startup 和一个 I/O suite；65536 另需 deep payload、facts/suite/shell-header 三条入口。`arm64_page_gaps` 只对已测页集合实施补缺规则：native 65536 可由4096 guest补缺，native 16384 需4096和65536两个guest；该纯调度模型不声明这些硬件已实际执行。
