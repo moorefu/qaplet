@@ -5,13 +5,13 @@ import argparse
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 import stat
 import sys
 import uuid
 
 from build_ape import BuildError, M0A_CASES, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
+from ci_identity import validate_ci_identity
 from input_lock import component, consume_identity, check_loader_bundle, check_portable_helper, consumption_purpose
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
@@ -46,12 +46,10 @@ def check_ci_commit(producer, consumer):
     if identities == [None, None]:
         return
     for ci in identities:
-        if not isinstance(ci, dict) or not all(ci.get(key) for key in (
-                "run_id", "run_attempt", "workflow", "commit", "runner_name", "runner_os",
-                "runner_arch", "image_os", "image_version")):
-            raise BuildError("CI producer/consumer requires complete run, commit, runner and image identities")
-        if not isinstance(ci["commit"], str) or not re.fullmatch(r"[a-f0-9]{40}", ci["commit"]):
-            raise BuildError("CI producer/consumer commit must be an exact lowercase Git SHA")
+        try:
+            validate_ci_identity(ci)
+        except ValueError as error:
+            raise BuildError(str(error)) from error
     if identities[0]["commit"] != identities[1]["commit"]:
         raise BuildError("CI consumer commit differs from selected producer commit")
 
