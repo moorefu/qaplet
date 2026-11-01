@@ -41,6 +41,19 @@ class GuestPageCatalog(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("QAPLET_GATE_4K_GUEST") and os.environ.get("QAPLET_GATE_MANIFEST"), "Explicit actual locked 4096 guest and producer evidence required")
 class Actual4KGuest(unittest.TestCase):
+    def test_direct_guest_cli_path_is_relative_to_working_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "guest.json").write_bytes(Path(os.environ["QAPLET_GATE_4K_GUEST"]).read_bytes())
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "validate-guest",
+                                     "--input-manifest", os.environ["QAPLET_GATE_MANIFEST"],
+                                     "--guest-report", "guest.json", "--report", "validated.json"],
+                                    cwd=directory, capture_output=True, text=True, timeout=120)
+            report = json.loads((directory / "validated.json").read_text())
+            self.assertEqual(result.returncode, 0, report["guest_validation"]["errors"])
+            self.assertEqual(report["guest_validation"]["guest"]["page_size"], 4096)
+            self.assertEqual(report["m0_core_status"], "not_run")
+
     def validate(self, guest, directory, manifest=None):
         path = directory / "guest.json"
         path.write_text(json.dumps(guest), encoding="utf-8")

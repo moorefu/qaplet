@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 import uuid
+import ape_helpers
+from build_ape import publish_ape
 
 from build_ape import (BuildError, headers, identity, link_portable, native_toolchain,
                        prepare_portable_helpers, run, verify_inputs)
@@ -65,17 +67,7 @@ def build(args, report, directory):
         "commands": report["commands"][-2:], "object": identity(objects[1])}
     destination = work / "svc-scm.com"
     link_portable(args, report, directory, tree, helpers, "svc-scm", objects, destination, work, env, libraries=())
-    for suffix in (".com", ".com.dbg", ".aarch64.elf"):
-        shutil.copyfile(work / ("svc-scm" + suffix), output / ("svc-scm" + suffix))
-    maps = []
-    for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
-        selected = list((work / "tmp").glob(pattern))
-        if len(selected) != 1:
-            raise BuildError("Expected one SCM CPU map: " + arch)
-        target = output / ("svc-scm." + arch + ".map")
-        shutil.copyfile(selected[0], target)
-        maps.append(identity(target))
-    (output / "svc-scm.com").chmod(0o755)
+    maps = publish_ape(work, output, "svc-scm", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     artifact = {"name": "svc-scm", **identity(output / "svc-scm.com"),
         "headers": headers(output / "svc-scm.com", [output / "svc-scm.com.dbg", output / "svc-scm.aarch64.elf"]),
         "maps": maps, "build_commands": identity(output / "svc-scm.build-commands.log")}

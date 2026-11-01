@@ -205,6 +205,10 @@ def launch(args, report, directory):
     for tool in ("unshare", "setpriv"):
         if not shutil.which(tool):
             raise BuildError("Required namespace tool is missing: " + tool, "blocked")
+    # This invocation just created the UUID evidence directory. Give only that
+    # controlled directory to the worker; never change repository/cache owners.
+    os.chown(directory, args.uid, args.gid)
+    directory.chmod(0o750)
     child_path = directory / "isolated.json"
     argv = ["unshare", "--net", "setpriv", "--reuid=" + str(args.uid), "--regid=" + str(args.gid),
             "--init-groups", sys.executable, str(Path(__file__).resolve()), "worker", "--parent-netns",

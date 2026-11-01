@@ -11,6 +11,8 @@ import re
 import shutil
 import sys
 import uuid
+import ape_helpers
+from build_ape import publish_ape
 
 from build_ape import BuildError
 from build_ape import identity
@@ -80,15 +82,7 @@ def build(args, report, directory):
     run(report, directory, "job-compile", [tree / "bin/cosmocc", *flags, "-c", work / source.name, "-o", obj], args.compile_timeout, work, env)
     run(report, directory, "job-msabi-assembly", [tree / "bin/x86_64-linux-cosmo-objdump", "-dr", obj], args.timeout, work, env)
     link_portable(args, report, directory, tree, helpers, "svc-job", [obj], work / "svc-job.com", work, env, libraries=())
-    for suffix in (".com", ".com.dbg", ".aarch64.elf"):
-        shutil.copyfile(work / ("svc-job" + suffix), output / ("svc-job" + suffix))
-    maps = []
-    for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
-        selected = list((work / "tmp").glob(pattern))
-        if len(selected) != 1: raise BuildError("Expected exactly one Job CPU map: " + arch)
-        target = output / ("svc-job." + arch + ".map")
-        shutil.copyfile(selected[0], target); maps.append(identity(target))
-    (output / "svc-job.com").chmod(0o755)
+    maps = publish_ape(work, output, "svc-job", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     artifact = {"name": "svc-job", **identity(output / "svc-job.com"), "maps": maps,
         "headers": headers(output / "svc-job.com", [output / "svc-job.com.dbg", output / "svc-job.aarch64.elf"]),
         "build_commands": identity(output / "svc-job.build-commands.log")}

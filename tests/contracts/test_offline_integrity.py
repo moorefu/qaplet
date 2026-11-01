@@ -6,12 +6,40 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import os
+import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts/offline_integrity.py"
 
 
 class OfflineIntegrityContract(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_OFFLINE_ROOT_PREFLIGHT") == "1",
+                         "Explicit root namespace setup on Ubuntu required")
+    def test_root_preflight_worker_can_write_evidence_on_posix_filesystem(self):
+        self.assertEqual(os.geteuid(), 0)
+        with tempfile.TemporaryDirectory(prefix="qaplet-posix-preflight-", dir="/tmp") as temp:
+            work = Path(temp)
+            work.chmod(0o755)
+            output = work / "fresh/preflight.json"
+            result = subprocess.run([sys.executable, str(CLI), "preflight", "--uid", "1000", "--gid", "1000",
+                                     "--report", str(output)], capture_output=True, text=True, timeout=30)
+            if os.environ.get("QAPLET_REVIEW_EVIDENCE"):
+                target = Path(os.environ["QAPLET_REVIEW_EVIDENCE"])
+                shutil.copytree(work, target)
+                (target / "process.json").write_text(json.dumps({"exit_code": result.returncode,
+                    "stdout": result.stdout, "stderr": result.stderr,
+                    "directories": [{"path": str(path.relative_to(work)), "uid": path.stat().st_uid,
+                        "gid": path.stat().st_gid, "mode": oct(path.stat().st_mode & 0o777)}
+                        for path in [work, *work.rglob("*")] if path.is_dir()]}))
+            report = json.loads(output.read_text())
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(report["network"]["uid"], 1000)
+            self.assertEqual(report["network"]["gid"], 1000)
+            self.assertEqual(report["network"]["interfaces"], ["lo"])
+            self.assertEqual(report["network"]["blocked_connect"]["errno"], 101)
+            self.assertNotEqual(report["network"]["parent_namespace"], report["network"]["child_namespace"])
+
     def test_network_audit_blocks_an_implicit_connect_even_when_kernel_denies_it(self):
         with tempfile.TemporaryDirectory(prefix="offline-network-") as temp:
             work = Path(temp)
