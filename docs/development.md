@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已接入既有 M0 输入；目标 QuickJS 和新 M0-A 仍由[后续对齐任务](../.scratch/qaplet-v15-alignment/README.md)执行，计划样例不作为当前构建输入。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已接入目标 QuickJS 候选；任务 02 的受控 eval/ARM64 探针与任务 03 的 ESM/Promise 共同决定晋级。普通构建在候选阶段仍拒绝，计划样例不作为当前构建输入。实际状态见[对齐任务](../.scratch/qaplet-v15-alignment/README.md)。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 

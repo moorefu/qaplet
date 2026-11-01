@@ -29,15 +29,15 @@ class InputLockContract(unittest.TestCase):
             self.assertTrue(report.is_file(), result.stdout + result.stderr)
             return result, json.loads(report.read_text())
 
-    def test_current_baseline_resolves_original_identities_without_touching_cache(self):
-        result, report = self.run_cli()
+    def test_current_target_resolves_exact_identities_without_touching_cache(self):
+        result, report = self.run_cli("--purpose", "probe")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(report["selection"]["quickjs"]["commit"],
-                         "e621135dc542e000e31038bedc52944aa0adaf1a")
+                         "2833510432045f72915919cef680ba59e5153b16")
         self.assertEqual(report["selection"]["cosmocc"]["archive"]["sha256"],
                          "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf")
         self.assertEqual(report["selection"]["quickjs"]["git_tree_oid"],
-                         "cdabddcf0f783af024481272227c1f56c3d3e48a")
+                         "b2763aa1a9395672adc131322f17d7fad7383053")
         self.assertFalse(report["release_ready"])
         self.assertEqual(report["commands"], [])
 

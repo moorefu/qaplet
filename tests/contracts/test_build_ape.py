@@ -1,9 +1,11 @@
 """Public M0 fat-APE CLI contracts; real input failures never fetch."""
 import json
 import os
+import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -13,6 +15,32 @@ CLI = ROOT / "scripts/build_ape.py"
 
 
 class BuildAPEContract(unittest.TestCase):
+    def test_candidate_build_requires_explicit_controlled_probe_and_still_verifies_inputs(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-candidate-build-") as temp:
+            repo = Path(temp)
+            for name in ("scripts", "toolchains", "third_party", "tests/native"):
+                shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("evidence", "__pycache__"))
+            shutil.copyfile(ROOT / "Makefile", repo / "Makefile")
+            path = repo / "toolchains/qaplet.lock.json"
+            value = json.loads(path.read_text())
+            value["lock_state"] = "selected_pending_validation"
+            for entry in value["recipes"]:
+                raw = (repo / entry["path"]).read_bytes()
+                entry.update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
+            path.write_text(json.dumps(value))
+            argv = [sys.executable, str(repo / "scripts/build_ape.py"), "build", "--report", str(repo / "out/build.json")]
+            ordinary = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+            refused = json.loads((repo / "out/build.json").read_text())
+            self.assertEqual(ordinary.returncode, 1, ordinary.stdout + ordinary.stderr)
+            self.assertIn("selected_pending_validation", refused["reason"])
+            self.assertEqual(refused["commands"], [])
+            controlled = subprocess.run([*argv, "--controlled-probe"], capture_output=True, text=True, timeout=30)
+            checked = json.loads((repo / "out/build.json").read_text())
+            self.assertEqual(controlled.returncode, 2, controlled.stdout + controlled.stderr)
+            self.assertTrue(checked["controlled_probe"])
+            self.assertIn("source cache is missing", checked["reason"])
+            self.assertEqual(checked["artifacts"], [])
+
     @contextmanager
     def native_output(self, prefix):
         # Native evidence must survive a failure and other WSL invocations.
@@ -61,6 +89,7 @@ class BuildAPEContract(unittest.TestCase):
             work = Path(temp)
             report = work / "build.json"
             result = subprocess.run([sys.executable, str(CLI), "build",
+                                     "--controlled-probe",
                                      "--source-cache", str(work / "absent-source"),
                                      "--toolchain-cache", str(work / "absent-toolchain"),
                                      "--output-dir", str(work / "artifacts"),

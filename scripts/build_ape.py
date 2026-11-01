@@ -14,7 +14,7 @@ import struct
 import sys
 import uuid
 
-from input_lock import component, attach
+from input_lock import component, attach, consumption_purpose
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from native_toolchain import prepare as prepare_native_toolchain
@@ -56,7 +56,9 @@ def run(report, directory, label, argv, timeout, cwd=ROOT, environment=None, exp
 
 
 def verify_inputs(args, report, directory, source=True, stage="before"):
-    current = attach({})
+    purpose = consumption_purpose("build", getattr(args, "controlled_probe", False))
+    current = attach({}, purpose)
+    probe_options = ["--controlled-probe"] if purpose == "probe" else []
     previous = report.setdefault("input_lock", current.identity())
     if previous != current.identity():
         raise BuildError("Unified input lock changed during build")
@@ -64,7 +66,7 @@ def verify_inputs(args, report, directory, source=True, stage="before"):
         target = directory / (stage + "-quickjs-source.json")
         executed, _, _ = run(report, directory, stage + "-source-verify",
                              [sys.executable, ROOT / "scripts/quickjs_source.py", "verify", "--cache",
-                              args.source_cache, "--report", target], 120, expected=None)
+                              args.source_cache, "--report", target, *probe_options], 120, expected=None)
         checked = read_json(target)
         if checked.get("input_lock") != previous:
             raise BuildError("Source consumer resolved different unified inputs")
@@ -75,14 +77,14 @@ def verify_inputs(args, report, directory, source=True, stage="before"):
     target = directory / (stage + "-nightly-toolchain.json")
     executed, _, _ = run(report, directory, stage + "-toolchain-verify",
                          [sys.executable, ROOT / "scripts/nightly_toolchain.py", "verify", "--cache-dir",
-                          args.toolchain_cache, "--report", target], 300, expected=None)
+                          args.toolchain_cache, "--report", target, *probe_options], 300, expected=None)
     checked = read_json(target)
     if checked.get("input_lock") != previous:
         raise BuildError("Toolchain consumer resolved different unified inputs")
     report["input_reports"][stage + "-toolchain"] = identity(target)
     if executed["exit_code"] != 0 or checked["status"] != "pass":
         raise BuildError("Toolchain verification: " + checked["reason"], checked["status"])
-    lock = component("cosmocc")
+    lock = current.component("cosmocc")
     report["toolchain"] = {key: checked["toolchain"][key] for key in
                            ("archive", "source", "tools", "libc_source", "source_head")}
     report["toolchain_lock"] = identity(ROOT / "toolchains/cosmocc.lock.json")
@@ -238,7 +240,7 @@ def build(args, report, directory):
     report["build"] = {"flags": common, "quickjs_sources": list(SOURCES), "temporal_intl": "disabled (CONFIG_TEMPORAL_INTL undefined)",
                        "lto": False, "resource_order": ["ape-x86_64.elf", "ape-aarch64.elf", "ape-m1.c", "x86_64 ELF", "aarch64 ELF"],
                        "recipe_files": [identity(path) for path in recipe_files], "source_date_epoch": 0,
-                       "launcher": identity(tree / "bin/ape-x86_64.elf"), "libc_source": component("cosmocc")["libc_source"]}
+                       "launcher": identity(tree / "bin/ape-x86_64.elf"), "libc_source": report["toolchain"]["libc_source"]}
     report["build"]["environment"] = {key: environment[key] for key in
                                        ("PATH", "HOME", "TMPDIR", "SOURCE_DATE_EPOCH", "LC_ALL", "TZ") if key in environment}
     report["build"]["path_ape"] = shutil.which("ape", path=environment.get("PATH"))
@@ -247,6 +249,7 @@ def build(args, report, directory):
     report["build"]["binfmt"] = {path.name: path.read_text() for path in context.iterdir()
                                   if path.is_file() and path.name != "register"} if context.is_dir() else {}
     report["build"]["source_sha256"] = report["source"]["sha256"]
+    report["build"]["engine_compatibility_id"] = report["source"]["engine_compatibility_id"]
     report["build"]["toolchain_lock_sha256"] = report["toolchain_lock"]["sha256"]
     report["build"]["native_helpers_sha256"] = report["native_toolchain"]["helper_set_sha256"]
     report["build"]["native_layout_sha256"] = report["native_toolchain"]["layout_sha256"]
@@ -270,7 +273,8 @@ def build(args, report, directory):
             if sha256(fallback) != sha256(tree / "bin/ape-x86_64.elf"):
                 raise BuildError("Self-extracted APE loader differs from locked native loader")
             report["ape_fallback_cache"] = identity(fallback)
-        publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
+        publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                    consumption_purpose("build", args.controlled_probe)))
         report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
         artifact = audit(args, report, directory, tree, name, output)
         artifact["build_commands"] = identity(log)
@@ -285,7 +289,7 @@ def build(args, report, directory):
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
-                             component("cosmocc"))
+                             component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
     report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
 
 
@@ -349,7 +353,7 @@ def native_toolchain(args, report, directory, original):
     if distribution.get("ID") != "ubuntu":
         raise BuildError("Native helper derivation requires Ubuntu", "blocked")
     return prepare_native_toolchain(original, args.toolchain_cache.resolve(),
-                                    component("cosmocc"), report, directory, run,
+                                    component("cosmocc", purpose=consumption_purpose("build", getattr(args, "controlled_probe", False))), report, directory, run,
                                     args.compile_timeout)
 
 
@@ -436,6 +440,7 @@ def check_ci(args, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("build", "inspect", "check-ci", "prepare-toolchain"))
+    parser.add_argument("--controlled-probe", action="store_true", help="explicit candidate validation only; ordinary/release consumers still refuse selected inputs")
     parser.add_argument("--source-cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--helper-source-cache", type=Path, default=ROOT / ".cache/sources/ape-loader")
@@ -463,7 +468,7 @@ def main():
               "m0_core_status": "not_run", "reason": "", "commands": [], "cases": [],
               "source": None, "toolchain": None, "build": None, "artifacts": [],
               "host": host_facts(), "ci": None, "qemu": None, "input_reports": {}, "evidence_directory": str(directory),
-              "native_toolchain": None}
+              "native_toolchain": None, "controlled_probe": args.controlled_probe}
     if os.environ.get("GITHUB_ACTIONS") == "true":
         report["ci"] = {key: os.environ.get(value) for key, value in {
             "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW",

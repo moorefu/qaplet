@@ -198,10 +198,12 @@ def attach(report, purpose="build"):
     return locked
 
 
-def consume_identity(producer, report):
-    locked = InputLock()
+def consume_identity(producer, report, purpose="build"):
+    locked = InputLock(purpose=purpose)
     if not isinstance(producer, dict) or "input_lock" not in producer:
         raise ValueError("Supplied producer requires a unified v3 input identity; historical evidence keeps its original scope")
+    if producer.get("controlled_probe") and purpose != "probe":
+        raise ValueError("Controlled probe evidence requires explicit controlled consumption")
     if producer["input_lock"] != locked.identity():
         raise ValueError("Supplied producer resolved different unified v3 inputs")
     report["input_lock"] = locked.identity()

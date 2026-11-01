@@ -102,6 +102,43 @@ class QuickJSSourceContract(unittest.TestCase):
         self.assertEqual((Path(report["source"]["path"]) / "quickjs.c").read_bytes(), b"int answer = 42;\n")
         self.assertFalse(any("ls-remote" in command["argv"] for command in report["commands"]))
 
+    def test_select_locks_an_exact_commit_even_when_master_has_moved(self):
+        commit = self.seed()
+        (self.upstream / "quickjs.c").write_bytes(b"int answer = 99;\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "Move master beyond the selected target")
+        result, report = self.run_cli("select", "--commit", commit,
+                                      "--repository", str(self.upstream))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(report["source"]["commit"], commit)
+        self.assertEqual((Path(report["source"]["path"]) / "quickjs.c").read_bytes(), b"int answer = 42;\n")
+        self.assertFalse(any("ls-remote" in command["argv"] for command in report["commands"]))
+
+    def test_selection_report_cannot_overwrite_the_candidate_lock(self):
+        commit = self.seed()
+        self.report = self.lock
+        result, _ = self.run_cli("select", "--commit", commit, "--repository", str(self.upstream))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.lock.exists())
+        self.assertFalse(self.cache.exists())
+
+    def test_same_version_different_source_has_a_different_engine_compatibility_identity(self):
+        self.seed()
+        (self.upstream / "VERSION").write_bytes(b"2026-06-04\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "Version text shared by both inputs")
+        first = self.git("rev-parse", "HEAD")
+        _, first_report = self.run_cli("select", "--commit", first, "--repository", str(self.upstream))
+        (self.upstream / "quickjs.c").write_bytes(b"int answer = 99;\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "Different engine at the same VERSION")
+        self.lock = self.work / "second-metadata/source.lock.json"
+        result, second_report = self.run_cli("select", "--commit", self.git("rev-parse", "HEAD"),
+                                            "--repository", str(self.upstream))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(first_report["source"]["engine_compatibility_id"],
+                            second_report["source"]["engine_compatibility_id"])
+
     def test_patch_manifest_tampering_is_rejected_offline(self):
         self.seed()
         result, _ = self.bump()
@@ -112,6 +149,19 @@ class QuickJSSourceContract(unittest.TestCase):
         self.assertEqual(report["status"], "fail")
         self.assertIn("patch", report["reason"].lower())
         self.assertEqual(report["commands"], [])
+
+    def test_offline_fetch_rematerializes_from_a_local_git_mirror_without_changing_the_lock(self):
+        self.seed()
+        result, original = self.bump()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lock_bytes = self.lock.read_bytes()
+        mirror = Path(original["source"]["path"])
+        self.upstream.rename(self.work / "unavailable-upstream")
+        result, restored = self.run_cli("fetch", "--mirror", str(mirror), cache=self.work / "restored")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.lock.read_bytes(), lock_bytes)
+        self.assertEqual(restored["source"]["sha256"], original["source"]["sha256"])
+        self.assertEqual(restored["source"]["commit"], original["source"]["commit"])
 
     def test_explicit_bump_preserves_records_and_applies_ordered_patches(self):
         self.seed()

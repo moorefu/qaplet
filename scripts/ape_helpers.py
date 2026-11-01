@@ -17,7 +17,7 @@ import sys
 import uuid
 
 from foundation import ROOT, host_facts, now, sha256
-from input_lock import component, attach
+from input_lock import component, attach, consumption_purpose
 from evidence import read_json
 from nightly_toolchain import write_json
 
@@ -98,8 +98,9 @@ def prepare(args, report, directory, tree, run):
     from build_ape import BuildError
     if platform.system() != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
         raise BuildError("APE helper builds require Ubuntu", "blocked")
-    cache = source_cache(args.helper_source_cache.resolve())
-    sources = verify_source(cache)
+    purpose = consumption_purpose("build", getattr(args, "controlled_probe", False))
+    cache = source_cache(args.helper_source_cache.resolve(), purpose)
+    sources = verify_source(cache, purpose)
     base = (args.build_dir or ROOT / ".cache/build").resolve()
     work = base / (report["report_id"] + "-ape-helpers")
     work.mkdir(parents=True)
@@ -160,10 +161,10 @@ def prepare(args, report, directory, tree, run):
               "patched_source": identity(patched / "tool/build/apelink.c"), "effective_headers": list(unique.values()),
               "recipe": identity(Path(__file__)), "build_directory": str(work),
               "loader_postprocessing": "Raw Linux OSABI0 ld/objcopy; upstream FreeBSD fixup deliberately omitted",
-              "toolchain_archive_sha256": component("cosmocc")["archive"]["sha256"]}
+              "toolchain_archive_sha256": component("cosmocc", purpose=purpose)["archive"]["sha256"]}
     result["sha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     report["portable_helpers"] = result
-    verify_source(cache)
+    verify_source(cache, purpose)
     return result
 
 

@@ -179,7 +179,11 @@ def verify(args, lock):
     license_path = args.lock.parent / "LICENSE"
     if not license_path.is_file() or digest(license_path.read_bytes()) != lock["license"]["sha256"]:
         raise SourceError("Original license is missing or modified")
+    compatibility = {"repository": lock["repository"], "commit": lock["commit"],
+                     "upstream_sha256": lock["upstream"]["sha256"], "source_sha256": lock["source"]["sha256"],
+                     "patchset_sha256": lock["patch_manifest_sha256"]}
     return {"repository": lock["repository"], "ref": lock["ref"], "commit": lock["commit"],
+            "engine_compatibility_id": digest(canonical(compatibility)),
             "sha256": lock["source"]["sha256"], "path": str(source),
             "clean": True, "patches": lock["patches"], "lock_sha256": digest(args.lock.read_bytes())}
 
@@ -210,10 +214,13 @@ def bump(args, report):
     git = shutil.which("git")
     if not git:
         raise SourceError("Git is required for explicit bump", "blocked")
-    resolved = run(report, [git, "ls-remote", args.repository, "refs/heads/master"], GIT_CWD, args.timeout).decode().split()
-    if len(resolved) != 2 or not re.fullmatch(r"[0-9a-f]{40}", resolved[0]) or resolved[1] != "refs/heads/master":
-        raise SourceError("Upstream master did not resolve to exactly one commit")
-    source = acquire(args, report, resolved[0])
+    commit = args.commit
+    if commit is None:
+        resolved = run(report, [git, "ls-remote", args.repository, "refs/heads/master"], GIT_CWD, args.timeout).decode().split()
+        if len(resolved) != 2 or not re.fullmatch(r"[0-9a-f]{40}", resolved[0]) or resolved[1] != "refs/heads/master":
+            raise SourceError("Upstream master did not resolve to exactly one commit")
+        commit = resolved[0]
+    source = acquire(args, report, commit)
     license_path = source / "LICENSE"
     if not license_path.is_file() or not license_path.stat().st_size:
         raise SourceError("Upstream original LICENSE is missing")
@@ -221,7 +228,7 @@ def bump(args, report):
     identity = manifest(source)
     apply_patches(args, report, source, patches)
     lock = {"schema_version": 1, "repository": args.repository, "ref": "refs/heads/master",
-            "commit": resolved[0], "fetched_at": now(), "upstream": identity, "source": manifest(source),
+            "commit": commit, "fetched_at": now(), "upstream": identity, "source": manifest(source),
             "patch_manifest_sha256": digest(patch_bytes), "patches": patches,
             "license": {"upstream_path": "LICENSE", "path": "LICENSE", "sha256": digest(license_bytes)}}
     validate_lock(lock)
@@ -268,7 +275,7 @@ def fetch(args, report, lock):
         raise SourceError("Ordered patch manifest differs from the lock")
     target = cache_path(args, lock)
     if not target.exists():
-        args.repository = lock["repository"]
+        args.repository = str(args.mirror) if args.mirror else lock["repository"]
         source = acquire(args, report, lock["commit"])
         if manifest(source) != lock["upstream"]:
             raise SourceError("Fetched upstream content differs from the lock")
@@ -282,17 +289,25 @@ def fetch(args, report, lock):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("verify", "fetch", "bump"))
+    parser.add_argument("operation", choices=("verify", "fetch", "bump", "select"))
+    parser.add_argument("--commit", help="exact 40-hex object for isolated candidate selection; never resolves master")
     parser.add_argument("--lock", type=Path, default=ROOT / "third_party/quickjs/source.lock.json")
     parser.add_argument("--fixture-lock", action="store_true", help="isolated historical supply tests only; no production build claim")
     parser.add_argument("--controlled-probe", action="store_true", help="verify candidate inputs only; never authorizes ordinary builds")
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--report", type=Path, default=ROOT / "out/quickjs-source.json")
     parser.add_argument("--repository", default=OFFICIAL)
+    parser.add_argument("--mirror", type=Path, help="explicit local Git object repository for offline fetch; locked official identity remains unchanged")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     if not 1 <= args.timeout <= 300:
         parser.error("--timeout must be between 1 and 300 seconds")
+    if args.operation == "select" and (not args.commit or not re.fullmatch(r"[0-9a-f]{40}", args.commit)):
+        parser.error("select requires --commit with an exact 40-hex object ID")
+    if args.commit and args.operation != "select":
+        parser.error("--commit is only supported by select")
+    if args.mirror and (args.operation != "fetch" or not args.mirror.is_absolute()):
+        parser.error("--mirror requires fetch and an absolute local Git repository")
     report = {"schema_version": 1, "scope": "quickjs-source", "report_id": str(uuid.uuid4()),
               "operation": args.operation, "started_at": now(), "commands": [],
               "status": "blocked", "reason": "Source lock is missing", "source": None,
@@ -300,12 +315,27 @@ def main():
               "toolchain": None, "build": None, "artifact": None,
               "runner": {"path": str(Path(__file__).resolve()), "sha256": digest(Path(__file__).read_bytes())}}
     args.lock, args.cache, args.report = args.lock.resolve(), args.cache.resolve(), args.report.resolve()
+    if args.operation == "select" and (args.report.is_relative_to(args.lock.parent) or args.report.is_relative_to(args.cache)):
+        print(json.dumps({"status": "fail", "reason": "Selection report must be outside candidate metadata and source cache", "report_written": False}))
+        return 1
     evidence = args.report.parent / "evidence" / report["report_id"]
     evidence.mkdir(parents=True, exist_ok=True)
     report["evidence_directory"] = str(evidence)
     try:
+        if args.mirror:
+            if not args.mirror.is_dir() or args.mirror.resolve() != args.mirror.absolute():
+                raise ValueError("Explicit source mirror must be an existing physical local directory")
+            report["acquisition_mirror"] = str(args.mirror)
         locked = None
-        if args.fixture_lock:
+        if args.operation == "select":
+            fixture_only(args.lock, ROOT / "third_party/quickjs/source.lock.json")
+            if args.lock.exists():
+                raise ValueError("Candidate source lock already exists; select never replaces a prior lock")
+            if not args.fixture_lock and args.repository != OFFICIAL:
+                raise ValueError("Production candidate selection requires the official Bellard repository")
+            report["candidate_selection"] = True
+            report["fixture_only"] = args.fixture_lock
+        elif args.fixture_lock:
             fixture_only(args.lock, ROOT / "third_party/quickjs/source.lock.json")
             report["fixture_only"] = True
         else:
@@ -314,7 +344,7 @@ def main():
             locked.component("quickjs", args.lock)
             if args.operation == "bump":
                 raise ValueError("Production bump must update a reviewed unified v3 candidate; moving master is forbidden")
-        if args.operation == "bump":
+        if args.operation in ("bump", "select"):
             report["source"] = bump(args, report)
         elif args.lock.is_file():
             lock = locked.component("quickjs", args.lock) if locked else json.loads(args.lock.read_text(encoding="utf-8"))
