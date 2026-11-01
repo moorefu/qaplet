@@ -1,0 +1,47 @@
+{
+  "schema": "qaplet.toolchain-lock.v3",
+  "lock_state": "selected_pending_validation",
+  "quickjs": {
+    "repo": "https://github.com/bellard/quickjs.git",
+    "selected_ref": "master",
+    "commit": "2833510432045f72915919cef680ba59e5153b16",
+    "version_file": "2026-06-04",
+    "git_tree_oid": null,
+    "patchset_sha256": null
+  },
+  "cosmopolitan_reference": {
+    "repo": "https://github.com/jart/cosmopolitan.git",
+    "source_role": "github_actions_run_head",
+    "commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d"
+  },
+  "cosmocc_nightly": {
+    "distribution_kind": "github_actions_artifact_zip",
+    "repository": "jart/cosmopolitan",
+    "workflow_path": ".github/workflows/nightly-cosmocc.yml",
+    "run_id": 41169443573,
+    "run_attempt": 1,
+    "run_head_commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+    "artifact_id": 13031425078,
+    "artifact_name": "cosmocc",
+    "artifact_url": "https://github.com/jart/cosmopolitan/actions/runs/41169443573/artifacts/13031425078",
+    "archive_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+    "archive_size_bytes": 419652152,
+    "archive_digest_source": "github_artifact_metadata_and_local_sha256",
+    "observed_expires_at_utc": "2027-01-29T04:39:16Z",
+    "source_provenance": "workflow_run_checkout_and_build_log",
+    "signed_attestation": false,
+    "local_archive_hash_verified": true,
+    "extracted_component_manifest_sha256": null
+  },
+  "retrieval_policy": {
+    "prefer_immutable_preserved_mirror": true,
+    "allow_upstream_artifact_id": true,
+    "allow_rolling_nightly_fallback": false,
+    "preserve_original_artifact_zip": true
+  },
+  "build_policy": {
+    "network_during_build": false,
+    "require_exact_digest": true,
+    "source_date_epoch": 0
+  }
+}

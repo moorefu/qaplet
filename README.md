@@ -1,6 +1,8 @@
 # Qaplet
 
-可移植 JavaScript 应用运行时与应用交付平台。M0 Core 已有固定输入、Ubuntu fat APE 构建、六类实际宿主启动/I/O、ARM64 64K 深探针和断网重构证据；完整证据由 [Core gate](.scratch/qaplet-m0/core-evidence-gate-validation.md) 验证。正式 Runtime、SDK 和后续产品 API 保持各自阶段边界；服务应用独立验收。
+可移植 JavaScript 应用运行时与应用交付平台。当前路线见[文档入口](docs/INDEX.md)和 [v1.5 执行计划](docs/plans/qaplet-v1-implementation-plan-v1.5.md)。既有 v1.4 M0 已完成固定输入、Ubuntu fat APE、六目标启动/I/O、ARM64 64K 和断网合同；原结论由 [Core gate](.scratch/qaplet-m0/core-evidence-gate-validation.md) 保留。
+
+正式 M1 前先完成[统一 v3 锁、QuickJS 目标升级和 M0-A ESM/Promise 增量](.scratch/qaplet-v15-alignment/README.md)。当前构建仍使用既有分锁；新计划和选型样例不代表已经切换输入。具体业务应用退出当前交付主线，已完成的服务相关工作保留作参考。
 
 Ubuntu 本地构建需要 Python 3.10+、GNU Make，以及可执行的 GCC 或 Clang 系统 C 编译器。无需安装 Python 包；其他平台使用已生成制品的验证入口。
 

@@ -1,5 +1,7 @@
 # 开发与验证入口
 
+当前规划和迁移范围见[文档入口](INDEX.md)。本页描述已实现的操作路径；v1.5 的统一 v3 锁、目标 QuickJS 和新 M0-A 由[对齐任务](../.scratch/qaplet-v15-alignment/README.md)执行后再更新这些入口，计划样例不作为当前构建输入。
+
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
 ## 当前构建与缓存约定

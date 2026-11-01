@@ -4,6 +4,8 @@
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
+**后续路线（2026-11-01）：** 本目录保持已完成 v1.4 M0 的原合同与证据；当前主线改用 [v1.5 实施修订](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)。新输入/新合同的差距由[独立对齐任务](../qaplet-v15-alignment/README.md)处理，不能将本目录 resolved 自动视为新 M0-A/B/C 已通过。服务专有成果继续保留作参考。
+
 ## 入口
 
 最终验收（2026-11-01）：12 张任务均已 resolved；修复后实际 Core 175 项、断网 16 项通过，Ubuntu 完整检查 149 tests / 0 failures / 19 explicit skips，Windows consumer 27/27。两路隔离上下文终审均为零遗留、零新增问题，见[最终审查与修复记录](final-review-validation.md)。下方规划快照和阶段记录继续保留，当前完成范围以本段和各票 Answer 为准；正式 Runtime/SDK 不在 M0 范围内。
@@ -98,22 +100,22 @@ Windows export/layout、管理员 ServiceMain/HandlerEx/status 与 SCM 查询/�
 post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM workflow run
 `41271366311` 已成功且原始字节/日志已核验；当前完整 Core 由10独立通过。
 
-## 后续里程碑（本轮不生成详细spec或任务）
+## 后续里程碑（当前 v1.5 路线）
 
 | 阶段 | 目标与交接条件 |
 | --- | --- |
-| M1 | QuickJS Engine、基础CLI与通用Embed SDK；依据BOOT-04结果进入 |
+| v1.5 对齐 | 统一 v3 锁 → 目标 QuickJS 升级/补丁复核 → M0-A ESM/Promise 微型 Host；新输入另做跨宿主/ABI 回归 |
+| M1 | QuickJS Engine、基础 CLI 与最小通用 Embed SDK；有界 POD 队列及协作式停止，Linux Fast/主要宿主 Cross 验收 |
 | M2 | Loop/Reactor/WorkPool/Process及SDK事件桥；消费M0原生行为基线 |
-| M3 | Node基础兼容与真实CLI；并行启动服务应用JS配置/systemd Direct原型 |
+| M3 | Node 核心 API、ESM/CJS/package resolver、TTY 与精选通用 CLI/TUI 验证 |
 | M4 | 网络、TLS、HTTP/Fetch/SSE/WebSocket；独立安全验收 |
 | M5 | QJB格式、严格解析与按需资源加载 |
 | M6 | 普通App Compiler及通用自定义Native Host构建合同 |
 | M7 | 大资源ZIP64/STORE/对齐映射 |
-| M8 | qaplet-svc的JS业务、应用私有Native Host与系统适配完整交付 |
-| M9 | Core/App各自的兼容、安全、性能、供应链和发布证据 |
-| M10 | Runtime/SDK与Service App分别按已声明范围判定发布 |
+| M8 | 平台跨宿主质量、安全、离线重构、长期原 ZIP 镜像及供应链证据收口 |
+| M9 | 按实际能力与对应门禁判定 v1.0 发布 |
 
-详细内容继续引用总体计划；只有依赖事实就绪、即将实施的阶段再细化。
+历史 App-first/M10 路线仍在 v1.4 总体计划和 Git 历史中保留；具体服务应用不进入当前里程碑。当前细节以 v1.5 和对齐规格为准，M1 的具体接口与逐票分解在进入其执行 spec 时细化。
 
 2026-11-01：10 的完整 Core gate 通过六目标 startup/I/O、12项 deep、实际断网 pair/14 refusal 和 Core link/import 边界。三类 producer 与各自产品/derived helper 身份分别保留；许可/TLS未知项公开。独立 Job CI `41273469604` 在 `e17981c` 成功，首次 +2 handle 身份仍未归因，能力只限已测 owned fixtures。完整 manifest、报告、负向回归和边界见[10 验收](core-evidence-gate-validation.md)。全部12票已有 Answer，最终integration review另行执行。
 
