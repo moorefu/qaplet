@@ -20,7 +20,7 @@ from foundation import ROOT, decode, now
 from native_io import REQUIRED as IO_REQUIRED, matches_contract
 from nightly_toolchain import write_json
 from pages64k import REQUIRED as DEEP_REQUIRED
-from startup import CASES as STARTUP_CASES, evaluate_case, target_key
+from startup import CASES as STARTUP_CASES, evaluate_case, target_key, check_ci_commit
 
 
 def require(condition, reason):
@@ -267,6 +267,7 @@ class Gate:
 
     def context(self, item, producer):
         consume_identity(item, self.output)
+        check_ci_commit(producer, item)
         for field in ("source", "toolchain", "build"):
             require(item[field] == producer[field], "Host/producer context mismatch: " + field)
         self.evidence.read(item["producer_report"])
@@ -325,6 +326,8 @@ class Gate:
         self.toolchain(item)
         require(item["host"]["os"] == "Linux" and item["host"]["execution_mode"] == "native", "Ubuntu native producer required")
         self.ci(item, item["host"])
+        for selected in self.producers.values():
+            check_ci_commit(selected, item)
         require(item.get("commands"), "Producer has no execution commands")
         require(all(case.get("status") == "pass" for case in item.get("cases", [])) and
                 all(case.get("status") == "pass" for case in item.get("negative_cases", [])), "Producer contains a nonpassing Core case")
@@ -523,6 +526,8 @@ class Gate:
         require(item["guest_lock"]["sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Guest lock identity mismatch")
         facts, qemu = item["guest"], item["qemu"]
         page = facts["page_size"]
+        for family in guest_requirements(page)["families"]:
+            check_ci_commit(self.producers[family], item)
         require(page in (4096, 65536), "Wrong guest page configuration")
         profile = lock["profiles"][str(page)]
         require(facts["os"] == "Linux" and facts["architecture"] == "aarch64" and facts["execution_mode"] == "emulated-system" and
@@ -636,6 +641,9 @@ class Gate:
     def deep(self, reference):
         item = self.evidence.report(reference, "pages64k-validation")
         producer = self.producers["pages64k"]
+        consume_identity(item, self.output)
+        check_ci_commit(producer, item)
+        self.ci(item, item["host"] if not item.get("guest_report") else None)
         self.evidence.read(item["producer"])
         require(same(item["producer"], self.identity(self.producer_paths[producer["report_id"]])), "64K selected producer report identity mismatch")
         require(same(item["artifact"], producer["artifacts"][0]) and item["build"] == producer["build"] and item["toolchain"] == producer["toolchain"], "64K producer identity mismatch")

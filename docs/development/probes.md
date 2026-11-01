@@ -108,6 +108,8 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 
 `matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。完整 CI `41271366261` 已通过，native Linux ARM64 实测 4096，完整系统 guest 仅补 65536；见 [06 验收](../../.scratch/qaplet-m0/cross-host-startup-validation.md)及 [Core gate](../../.scratch/qaplet-m0/core-evidence-gate-validation.md)。
 
+`matrix --profile cross` 只汇总五种实际 native OS/架构，Linux ARM64 保留实测页大小；guest 不替代 native。默认 `--profile full` 仍要求六个页配置目标。两种汇总均保留缺项和失败，拒绝重复 report ID、错误 producer 引用/上下文、旧输入及缺失 ESM/jobs 清单；成功不签发完整 Core。CI producer/实际执行 consumer 必须同时有完整 run/commit/runner/image 身份且 commit 相同；本地只读导入不改写实际执行 CI。
+
 ## BOOT-07 native I/O
 
 `python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json` 在 Ubuntu 生成独立 fat APE，复用已锁定工具链的前后校验与派生 native helper 审计。worktree 显式传 `--toolchain-cache /mnt/d/Workspace/dairn/qaplet/.cache/toolchains/cosmocc --build-dir /mnt/d/Workspace/dairn/qaplet/.cache/build`，输出仍在 `out/`。此 native 基线使用当前官方布局；ARM64 64K loader/packer 修复和运行由 07 继续验收，不能将 headers 中存在 ARM64 当作运行成绩。

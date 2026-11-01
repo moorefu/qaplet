@@ -87,7 +87,7 @@ class Actual4KGuest(unittest.TestCase):
             report = json.loads(output.read_text())
             self.assertEqual(result.returncode, 0, report["guest_validation"]["errors"])
             self.assertEqual(report["guest_validation"]["guest"]["page_size"], 4096)
-            self.assertEqual(len(report["guest_validation"]["cases"]), 8)
+            self.assertEqual(len(report["guest_validation"]["cases"]), 18)
             self.assertEqual(report["core"]["status"], "not_run")
             self.assertEqual(report["m0_core_status"], "not_run")
 

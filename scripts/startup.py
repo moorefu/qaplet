@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import sys
@@ -37,6 +38,22 @@ def ci_facts():
         "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW",
         "commit": "GITHUB_SHA", "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS",
         "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion"}.items()}
+
+
+def check_ci_commit(producer, consumer):
+    """Join actual execution identities, independently of where reports are read."""
+    identities = [producer.get("ci"), consumer.get("ci")]
+    if identities == [None, None]:
+        return
+    for ci in identities:
+        if not isinstance(ci, dict) or not all(ci.get(key) for key in (
+                "run_id", "run_attempt", "workflow", "commit", "runner_name", "runner_os",
+                "runner_arch", "image_os", "image_version")):
+            raise BuildError("CI producer/consumer requires complete run, commit, runner and image identities")
+        if not isinstance(ci["commit"], str) or not re.fullmatch(r"[a-f0-9]{40}", ci["commit"]):
+            raise BuildError("CI producer/consumer commit must be an exact lowercase Git SHA")
+    if identities[0]["commit"] != identities[1]["commit"]:
+        raise BuildError("CI consumer commit differs from selected producer commit")
 
 
 def measured_host(args, report, directory):
@@ -225,17 +242,36 @@ def validate_startup(item, artifacts):
 
 def matrix(args, report, artifacts):
     report["report_kind"] = "ape-startup-matrix"
+    report["profile"] = args.profile
     report["inputs"] = []
     report["additional_reports"] = []
-    coverage = {name: {"target": name, "status": "blocked", "reason": "No actual startup report", "reports": []} for name, *_ in TARGETS}
+    targets = [name for name, *_ in TARGETS] if args.profile == "full" else [
+        "linux-x86_64", "windows-x86_64", "macos-x86_64", "macos-aarch64", "linux-aarch64"]
+    coverage = {name: {"target": name, "status": "blocked", "reason": "No actual startup report", "reports": []} for name in targets}
     report["coverage"] = list(coverage.values())
     paths = [*args.input_report, *(path for root in args.input_dir for path in sorted(root.rglob("startup.json")))]
+    producer = read_json(args.build_report)
+    selected = identity(args.build_report)
+    report_ids = set()
     for path in paths:
         item = read_json(path)
+        if not item.get("report_id") or item["report_id"] in report_ids:
+            raise BuildError("Duplicate/missing selected startup report identity")
+        report_ids.add(item["report_id"])
         consume_identity(item, report)
+        check_ci_commit(producer, item)
+        if any(item.get("producer_report", {}).get(key) != selected[key] for key in ("sha256", "size_bytes")) or any(
+                item.get(field) != producer[field] for field in ("source", "toolchain", "build")):
+            raise BuildError("Startup report differs from selected producer report/context")
         validate_startup(item, artifacts)
         report["inputs"].append(identity(path))
         key = target_key(item["host"])
+        if args.profile == "cross":
+            host = item["host"]
+            if host["execution_mode"] != "native":
+                raise BuildError("Cross requires five actual native hosts; a guest cannot replace a native target")
+            if host["os"] == "Linux" and host["execution_arch"] == "aarch64":
+                key = "linux-aarch64"
         if key is None:
             host = item["host"]
             if host["os"] == "Linux" and host["execution_arch"] == "aarch64" and host["execution_mode"] == "native":
@@ -253,7 +289,8 @@ def matrix(args, report, artifacts):
             slot.update(status="pass", reason="17 actual startup/eval/ESM/jobs cases on unchanged producer bytes")
     statuses = [entry["status"] for entry in coverage.values()] + [entry["status"] for entry in report["additional_reports"]]
     report.update(status="fail" if "fail" in statuses else "pass" if all(value == "pass" for value in statuses) else "blocked",
-                  reason="Six required measured targets, including failures and missing reports, retained")
+                  reason=("Six required measured targets" if args.profile == "full" else "Five required native hosts") +
+                         ", including failures and missing reports, retained; complete Core remains separate")
 
 
 def guest_manifest(args, report, artifacts):
@@ -287,6 +324,7 @@ def import_guest(args, report, artifacts):
     if not args.guest_report or not args.guest_report.is_file():
         raise BuildError("Actual full-system guest report required", "blocked")
     incoming = read_json(args.guest_report)
+    check_ci_commit(read_json(args.build_report), incoming)
     report["guest_report"] = identity(args.guest_report)
     if incoming.get("schema_version") != 1 or incoming.get("report_kind") != "arm64-guest":
         raise BuildError("Supported arm64-guest v1 evidence required")
@@ -437,6 +475,12 @@ def producer_inputs(args, report):
             raise BuildError("Distributed artifact SHA-256/size differs from producer: " + name)
         observed["headers"] = headers(path, [path.with_suffix(".com.dbg"), path.with_suffix(".aarch64.elf")])
         report["artifacts"].append({"name": name, **observed})
+    cases = producer.get("cases", [])
+    if len(cases) != len(CASES) or {case.get("case_id") for case in cases} != {entry[0] for entry in CASES} or any(
+            case.get("status") != "pass" for case in cases):
+        raise BuildError("Producer startup/ESM/jobs catalog incomplete or nonpassing")
+    if args.operation == "run":
+        check_ci_commit(producer, report)
     return {entry["name"]: entry for entry in report["artifacts"]}
 
 
@@ -444,6 +488,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("run", "matrix", "guest-manifest", "import-guest", "page-gaps"))
     parser.add_argument("--controlled-probe", action="store_true", help="consume candidate probes without issuing ordinary or full-matrix acceptance")
+    parser.add_argument("--profile", choices=("full", "cross"), default="full", help="matrix coverage: six page targets or five native hosts")
     parser.add_argument("--build-report", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--report", type=Path, required=True)

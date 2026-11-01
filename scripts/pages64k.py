@@ -21,6 +21,7 @@ from input_lock import component, consume_identity
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
+from startup import ci_facts, check_ci_commit
 
 REQUIRED = {"environment", "pthread-tls", "allocation", "unaligned-munmap-rejected", "mmap-mprotect-munmap",
             "zero-map-rejected", "unaligned-map-rejected", "unaligned-file-map-rejected", "filesystem-cleanup",
@@ -109,6 +110,7 @@ def verify_guest(args, report):
     guest = read_json(args.guest_report)
     producer = read_json(args.input_report)
     consume_identity(producer, report)
+    check_ci_commit(producer, guest)
     if guest["status"] != "pass" or guest["report_kind"] != "arm64-guest" or producer["status"] != "pass":
         raise BuildError("Passing real guest and independent producer reports are required")
     actual = guest["guest"]
@@ -136,7 +138,8 @@ def verify_guest(args, report):
                    exit_code=suite["actual"]["exit_code"], artifact={key: producer["artifacts"][0][key] for key in ("path", "sha256", "size_bytes")},
                    reason="Actual independent C assertion within the recorded guest suite interval", argv=suite["argv"],
                    stdout_log=suite["stdout_log"], stderr_log=suite["stderr_log"])
-    report.update(cases=rows, guest=guest["guest"], qemu=guest["qemu"], cleanup=guest["cleanup"],
+    report.update(validation_ci=report["ci"], ci=guest.get("ci"),
+        cases=rows, guest=guest["guest"], qemu=guest["qemu"], cleanup=guest["cleanup"],
         producer=identity(args.input_report), guest_report=identity(args.guest_report), artifact=producer["artifacts"][0],
         build=producer["build"], toolchain=producer["toolchain"], portable_helpers=producer["portable_helpers"])
 
@@ -147,6 +150,7 @@ def run_native(args, report, directory):
         raise BuildError("Actual native Linux/AArch64/65536 host required; use full-system guest for a missing page configuration", "blocked")
     producer = read_json(args.input_report)
     consume_identity(producer, report)
+    check_ci_commit(producer, report)
     if producer.get("status") != "pass" or producer.get("report_kind") != "pages64k-build":
         raise BuildError("Passing independent probe producer required")
     artifact = args.artifact.resolve()
@@ -212,7 +216,7 @@ def main():
     directory.mkdir(parents=True)
     report = {"schema_version": 1, "report_kind": "pages64k-" + ("build" if args.operation == "build" else "validation"),
               "report_id": directory.name, "started_at": now(), "status": "not_run", "commands": [], "cases": [],
-              "artifacts": [], "host": host_facts(), "input_reports": {}, "build": None, "toolchain": None,
+              "artifacts": [], "host": host_facts(), "ci": ci_facts(), "input_reports": {}, "build": None, "toolchain": None,
               "source": {"probe": identity(ROOT / "tests/native/pages64k.c")}}
     try:
         if args.operation == "build":
