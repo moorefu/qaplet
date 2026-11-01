@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-**Execution prerequisites:** 本地WSL/Windows与本地完整系统QEMU先探索；CI采用对应原生runner，ARM64 runner先测页大小，再仅补缺失ARM64页配置的QEMU guest。kernel/rootfs需锁定，当前无运行证据。
+**Execution prerequisites:** 本地WSL/Windows与本地完整系统QEMU先探索；CI采用对应原生runner，ARM64 runner先测页大小，再仅补缺失ARM64页配置的QEMU guest。kernel/rootfs需锁定；最新实际覆盖和原始证据见下文 Answer。
 
 ## Goal
 
