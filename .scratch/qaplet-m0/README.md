@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved / BOOT-06-resolved
+**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved / BOOT-06-resolved / BOOT-05A-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -86,6 +86,13 @@ BOOT-01/ENV-01 命令、schema 和环境验收已实现；产品 probe 和完整
 packer 修正和 ARM64 full-pointer QuickJS overlay 已完成，见[64K 记录](arm64-64k-validation.md)。
 所有新 APE 有各自摘要；06/08/10 必须消费这些新身份重新验证，旧 16K/旧 QuickJS
 成功或失败均只属于历史记录。完整 Core 仍由 10 的矩阵门禁判定。
+
+11 的应用私有 SCM ABI 已在用户授权的当前 Windows 宿主完成真实生命周期，
+见[SCM 记录](scm-abi-validation.md)。Ubuntu 构建的独立 fat APE 在 Linux 普通入口、
+Windows export/layout、管理员 ServiceMain/HandlerEx/status 与 SCM 查询/重复 stop/删除
+均通过；普通 token 的 error 5 保留为 blocked。服务、受控进程与句柄清理及独立
+post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM workflow 的远程
+结果待后续调度；该本地 verified 能力不表示隔离 VM 或完整 Core 矩阵已通过。
 
 ## 后续里程碑（本轮不生成详细spec或任务）
 
