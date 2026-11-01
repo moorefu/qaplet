@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved / BOOT-06-resolved / BOOT-05A-resolved
+**Status:** implementation-in-progress / tickets-01-through-09-resolved / ticket-10-ready / ticket-11-resolved / ticket-12-claimed
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
