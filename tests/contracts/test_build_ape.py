@@ -1,6 +1,7 @@
 """Public M0 fat-APE CLI contracts; real input failures never fetch."""
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,14 @@ CLI = ROOT / "scripts/build_ape.py"
 
 
 class BuildAPEContract(unittest.TestCase):
+    @contextmanager
+    def native_output(self, prefix):
+        # Native evidence must survive a failure and other WSL invocations.
+        # User policy keeps build outputs under the repository's out directory.
+        parent = ROOT / "out/native-contracts"
+        parent.mkdir(parents=True, exist_ok=True)
+        yield Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+
     def native_cache_options(self):
         options = []
         for variable, option in (("QAPLET_TEST_TOOLCHAIN_CACHE", "--toolchain-cache"),
@@ -34,6 +43,12 @@ class BuildAPEContract(unittest.TestCase):
 
             result = check()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            workflow["jobs"]["build"]["runs-on"] = "windows-latest"
+            result = check()
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            report = json.loads((work / "check.json").read_text())
+            self.assertIn("Ubuntu", report["reason"])
+            workflow["jobs"]["build"]["runs-on"] = "ubuntu-24.04"
             workflow["jobs"]["test"] = {"runs-on": "ubuntu-24.04", "needs": "build",
                                         "steps": [{"run": "make build-ape OUT=out/test"}]}
             result = check()
@@ -79,7 +94,7 @@ class BuildAPEContract(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_TEST_SOURCE_CACHE"), "Ubuntu with explicit locked input cache required")
     def test_locked_build_produces_two_audited_fat_probes_and_real_eval_error(self):
-        with tempfile.TemporaryDirectory(prefix="qaplet-fat-contract-") as temp:
+        with self.native_output("fat-contract-") as temp:
             work = Path(temp)
             result = subprocess.run([sys.executable, str(CLI), "build",
                                      "--source-cache", os.environ["QAPLET_TEST_SOURCE_CACHE"],
@@ -87,9 +102,27 @@ class BuildAPEContract(unittest.TestCase):
                                      "--output-dir", str(work / "artifacts"),
                                      "--report", str(work / "build.json")],
                                     capture_output=True, text=True, timeout=900)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            diagnostic = result.stdout + result.stderr
+            if result.returncode and (work / "build.json").is_file():
+                failed = json.loads((work / "build.json").read_text())
+                if failed["commands"]:
+                    diagnostic += Path(failed["commands"][-1]["stderr_log"]).read_text(errors="replace")
+            self.assertEqual(result.returncode, 0, diagnostic)
             report = json.loads((work / "build.json").read_text())
             self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["native_toolchain"]["kind"], "derived-linux-elf-x86_64")
+            helpers = {helper["path"]: helper for helper in report["native_toolchain"]["helpers"]}
+            self.assertIn("bin/mktemper", helpers)
+            self.assertTrue(any(name.startswith("libexec/gcc/x86_64-linux-cosmo/") and name.endswith("/cc1") for name in helpers))
+            self.assertEqual(report["native_toolchain"]["source_archive_sha256"], report["toolchain"]["archive"]["sha256"])
+            for helper in helpers.values():
+                self.assertNotEqual(helper["source_sha256"], helper["derived_sha256"])
+                with (Path(report["native_toolchain"]["tree"]) / helper["path"]).open("rb") as stream:
+                    self.assertEqual(stream.read(6), b"\x7fELF\x02\x01")
+            native_tree = Path(report["native_toolchain"]["tree"])
+            compiler_commands = [command for command in report["commands"] if command["argv"][0].endswith("/cosmocc")]
+            self.assertTrue(compiler_commands)
+            self.assertTrue(all(Path(command["argv"][0]).parent == native_tree / "bin" for command in compiler_commands))
             self.assertEqual([a["name"] for a in report["artifacts"]], ["hello", "quickjs-eval"])
             for artifact in report["artifacts"]:
                 self.assertEqual([s["machine"] for s in artifact["headers"]["slices"]], [62, 183])
@@ -138,7 +171,7 @@ class BuildAPEContract(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_TEST_SOURCE_CACHE"), "Ubuntu with explicit locked input cache required")
     def test_actual_compile_failure_has_raw_logs_and_nonpassing_case(self):
-        with tempfile.TemporaryDirectory(prefix="qaplet-compile-failure-") as temp:
+        with self.native_output("compile-failure-") as temp:
             work = Path(temp)
             result = subprocess.run([sys.executable, str(CLI), "build", "--cflag=-qaplet-invalid-flag",
                                      "--source-cache", os.environ["QAPLET_TEST_SOURCE_CACHE"],
@@ -150,7 +183,9 @@ class BuildAPEContract(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             self.assertTrue(report["cases"])
             self.assertEqual(report["cases"][-1]["status"], "fail")
-            self.assertTrue(Path(report["commands"][-1]["stderr_log"]).read_bytes())
+            diagnostic = Path(report["commands"][-1]["stderr_log"]).read_text(errors="replace")
+            self.assertIn("-qaplet-invalid-flag", diagnostic)
+            self.assertIn("unrecognized command-line option", diagnostic)
             self.assertEqual(report["artifacts"], [])
 
 

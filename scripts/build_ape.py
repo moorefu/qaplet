@@ -10,14 +10,14 @@ from pathlib import Path
 import platform
 import re
 import shutil
-import signal
 import struct
-import subprocess
 import sys
 import uuid
 
 from evidence import read_json
-from foundation import ROOT, host_facts, now, sha256
+from foundation import ROOT, command, host_facts, now, sha256
+from native_toolchain import prepare as prepare_native_toolchain
+from native_toolchain import recheck as recheck_native_toolchain
 from nightly_toolchain import write_json
 
 SOURCES = ("quickjs.c", "dtoa.c", "libregexp.c", "libunicode.c", "cutils.c")
@@ -42,37 +42,11 @@ class BuildError(Exception):
 
 def run(report, directory, label, argv, timeout, cwd=ROOT, environment=None, expected=0):
     """Bounded real process with its own process group and raw byte logs."""
-    record = {"argv": list(map(str, argv)), "cwd": str(cwd), "started_at": now(),
-              "exit_code": None, "timed_out": False, "timeout_seconds": timeout,
-              "stdout_log": str(directory / (label + ".stdout.log")),
-              "stderr_log": str(directory / (label + ".stderr.log"))}
-    output, errors = b"", b""
-    try:
-        options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-        with subprocess.Popen(record["argv"], cwd=cwd, env=environment,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options) as process:
-            try:
-                output, errors = process.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                record["timed_out"] = True
-                if os.name == "nt":
-                    subprocess.run([str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/taskkill.exe"),
-                                    "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=5)
-                    if process.poll() is None:
-                        process.kill()
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                output, errors = process.communicate(timeout=5)
-            record["exit_code"] = process.returncode
-    except (OSError, subprocess.SubprocessError) as error:
-        errors = str(error).encode("utf-8")
-    record["finished_at"] = now()
-    Path(record["stdout_log"]).write_bytes(output)
-    Path(record["stderr_log"]).write_bytes(errors)
+    record, output, errors = command(list(map(str, argv)), directory, label, timeout, cwd=cwd, env=environment)
     report["commands"].append(record)
     if expected is not None and (record["exit_code"] != expected or record["timed_out"]):
         raise BuildError("Command failed or timed out: " + label + "; see raw logs")
-    return record, output.decode("utf-8", errors="replace"), errors.decode("utf-8", errors="replace")
+    return record, output, errors
 
 
 def verify_inputs(args, report, directory, source=True, stage="before"):
@@ -220,6 +194,7 @@ def build(args, report, directory):
     report["host"]["distribution"] = {key: distribution.get(key) for key in ("ID", "VERSION_ID", "PRETTY_NAME")}
     if distribution.get("ID") != "ubuntu":
         raise BuildError("Product builds require Ubuntu; other hosts consume distributed artifacts", "blocked")
+    tree = native_toolchain(args, report, directory, tree)
     source = Path(report["source"]["path"])
     output = args.output_dir.resolve()
     if output.exists() and any(output.iterdir()):
@@ -237,15 +212,24 @@ def build(args, report, directory):
     common = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
               "-I" + str(source), "-ffile-prefix-map=" + str(source) + "=quickjs",
               "-ffile-prefix-map=" + str(work) + "=build", *args.cflag]
-    recipe_files = [ROOT / "scripts/build_ape.py", ROOT / "tests/native/ape_hello.c", ROOT / "tests/native/quickjs_eval.c"]
+    recipe_files = [ROOT / name for name in ("Makefile", "scripts/build_ape.py", "scripts/native_toolchain.py",
+                    "scripts/foundation.py", "scripts/evidence.py", "scripts/nightly_toolchain.py", "scripts/quickjs_source.py",
+                    "tests/native/ape_hello.c", "tests/native/quickjs_eval.c")]
     report["build"] = {"flags": common, "quickjs_sources": list(SOURCES), "temporal_intl": "disabled (CONFIG_TEMPORAL_INTL undefined)",
                        "lto": False, "resource_order": ["ape-x86_64.elf", "ape-aarch64.elf", "ape-m1.c", "x86_64 ELF", "aarch64 ELF"],
                        "recipe_files": [identity(path) for path in recipe_files], "source_date_epoch": 0,
                        "launcher": identity(tree / "bin/ape-x86_64.elf"), "libc_source": read_json(ROOT / "toolchains/cosmocc.lock.json")["libc_source"]}
+    report["build"]["environment"] = {key: environment[key] for key in
+                                       ("PATH", "HOME", "TMPDIR", "SOURCE_DATE_EPOCH", "LC_ALL", "TZ") if key in environment}
+    report["build"]["path_ape"] = shutil.which("ape", path=environment.get("PATH"))
     context = Path("/proc/sys/fs/binfmt_misc")
     report["build"]["binfmt_entries"] = sorted(path.name for path in context.iterdir()) if context.is_dir() else []
+    report["build"]["binfmt"] = {path.name: path.read_text() for path in context.iterdir()
+                                  if path.is_file() and path.name != "register"} if context.is_dir() else {}
     report["build"]["source_sha256"] = report["source"]["sha256"]
     report["build"]["toolchain_lock_sha256"] = report["toolchain_lock"]["sha256"]
+    report["build"]["native_helpers_sha256"] = report["native_toolchain"]["helper_set_sha256"]
+    report["build"]["native_layout_sha256"] = report["native_toolchain"]["layout_sha256"]
     report["build"]["sha256"] = hashlib.sha256(json.dumps(report["build"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     for name, probe, upstream in (("hello", "ape_hello.c", ()), ("quickjs-eval", "quickjs_eval.c", SOURCES)):
         log = output / (name + ".build-commands.log")
@@ -286,11 +270,27 @@ def build(args, report, directory):
             native_case(args, report, directory, tree, artifact, "syntax-error", ["("], 1, error="SyntaxError:")
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
+    recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
+                             read_json(ROOT / "toolchains/cosmocc.lock.json"))
     report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
+
+
+def native_toolchain(args, report, directory, original):
+    if report["host"]["os"] != "Linux" or report["host"]["execution_arch"] != "x86_64":
+        raise BuildError("Native helper derivation requires Ubuntu x86_64", "blocked")
+    distribution = platform.freedesktop_os_release()
+    if distribution.get("ID") != "ubuntu":
+        raise BuildError("Native helper derivation requires Ubuntu", "blocked")
+    return prepare_native_toolchain(original, args.toolchain_cache.resolve(),
+                                    read_json(ROOT / "toolchains/cosmocc.lock.json"), report, directory, run,
+                                    args.compile_timeout)
 
 
 def check_ci(args, report):
     workflow = read_json(args.workflow)
+    runner = workflow["jobs"]["build"]["runs-on"]
+    if not isinstance(runner, str) or not runner.startswith("ubuntu-"):
+        raise BuildError("M0 product builds require an Ubuntu runner")
     if workflow.get("permissions") != {"contents": "read", "actions": "read"}:
         raise BuildError("M0 workflow must use read-only contents/actions permissions")
     steps = workflow["jobs"]["build"]["steps"]
@@ -316,7 +316,7 @@ def check_ci(args, report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "inspect", "check-ci"))
+    parser.add_argument("operation", choices=("build", "inspect", "check-ci", "prepare-toolchain"))
     parser.add_argument("--source-cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "out/ape/artifacts")
@@ -342,7 +342,8 @@ def main():
               "started_at": now(), "finished_at": None, "status": "not_run",
               "m0_core_status": "not_run", "reason": "", "commands": [], "cases": [],
               "source": None, "toolchain": None, "build": None, "artifacts": [],
-              "host": host_facts(), "ci": None, "qemu": None, "input_reports": {}, "evidence_directory": str(directory)}
+              "host": host_facts(), "ci": None, "qemu": None, "input_reports": {}, "evidence_directory": str(directory),
+              "native_toolchain": None}
     if os.environ.get("GITHUB_ACTIONS") == "true":
         report["ci"] = {key: os.environ.get(value) for key, value in {
             "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW",
@@ -360,6 +361,11 @@ def main():
                 raise BuildError("inspect requires a .com artifact")
             report["artifacts"].append(audit(args, report, directory, tree, artifact.stem, artifact.parent))
             report.update(status="pass", reason="Fat headers, sidecars and service import boundary verified; no runtime claim")
+        elif args.operation == "prepare-toolchain":
+            original = verify_inputs(args, report, directory, source=False)
+            native_toolchain(args, report, directory, original)
+            verify_inputs(args, report, directory, source=False, stage="after")
+            report.update(status="pass", reason="Original Nightly verified and derived Linux ELF helper view checked; product probes not run")
         else:
             check_ci(args, report)
     except BuildError as error:
