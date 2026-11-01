@@ -10,11 +10,10 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 import uuid
 
-from foundation import host_facts
+from foundation import command, host_facts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,38 +41,29 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def write_json(path, value):
+def write_bytes(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
-    temporary.write_bytes((json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
-    os.replace(temporary, path)
+    try:
+        temporary.write_bytes(data)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def write_json(path, value):
+    write_bytes(path, (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def run(report, argv, cwd, timeout):
     directory = Path(report["evidence_directory"])
     label = str(len(report["commands"]))
-    record = {"argv": [str(arg) for arg in argv], "cwd": str(cwd), "started_at": now(),
-              "exit_code": None, "timed_out": False, "timeout_seconds": timeout,
-              "stdout_log": str(directory / (label + ".stdout.log")),
-              "stderr_log": str(directory / (label + ".stderr.log"))}
-    output, errors = b"", b""
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1")
-    try:
-        result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, timeout=timeout)
-        record["exit_code"] = result.returncode
-        output, errors = result.stdout, result.stderr
-    except subprocess.TimeoutExpired as error:
-        record["timed_out"] = True
-        output, errors = error.stdout or b"", error.stderr or b""
-    except OSError as error:
-        errors = str(error).encode("utf-8")
-    record["finished_at"] = now()
-    Path(record["stdout_log"]).write_bytes(output)
-    Path(record["stderr_log"]).write_bytes(errors)
+    record, _, _ = command(argv, directory, label, timeout, cwd=cwd, env=env)
     report["commands"].append(record)
     if record["exit_code"] != 0 or record["timed_out"]:
         raise SourceError("Command failed; see raw logs: " + " ".join(map(str, argv[:3])), "blocked")
-    return output
+    return Path(record["stdout_log"]).read_bytes()
 
 
 def manifest(source):
@@ -125,7 +115,9 @@ def validate_lock(lock):
             if not isinstance(entry["path"], str) or not entry["path"]:
                 raise SourceError("Invalid source manifest path")
             path = Path(entry["path"])
-            if path.is_absolute() or ".." in path.parts or "\\" in entry["path"] or path.parts[0] == ".git":
+            parts = entry["path"].split("/")
+            if (path.is_absolute() or any(part in ("", ".", "..") for part in parts)
+                    or "\\" in entry["path"] or ":" in entry["path"] or parts[0] == ".git"):
                 raise SourceError("Invalid source manifest path")
             if not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) or type(entry["size"]) is not int or entry["size"] < 0:
                 raise SourceError("Invalid source file identity")
@@ -241,9 +233,25 @@ def bump(args, report):
     else:
         source.rename(target)
     args.lock.parent.mkdir(parents=True, exist_ok=True)
-    (args.lock.parent / "LICENSE").write_bytes(license_bytes)
-    (args.lock.parent / "patches.json").write_bytes(patch_bytes)
-    write_json(args.lock, lock)
+    metadata = {args.lock.parent / "LICENSE": license_bytes,
+                args.lock.parent / "patches.json": patch_bytes}
+    previous = {path: path.read_bytes() if path.exists() else None for path in metadata}
+    published = []
+    try:
+        for path, data in metadata.items():
+            if previous[path] != data:
+                write_bytes(path, data)
+                published.append(path)
+        write_json(args.lock, lock)
+    except OSError:
+        # The lock is the commit point. Failed publication must leave the old
+        # lock's license/patch bytes usable, including Windows read-only locks.
+        for path in reversed(published):
+            if previous[path] is None:
+                path.unlink()
+            else:
+                write_bytes(path, previous[path])
+        raise
     return verify(args, lock)
 
 
@@ -275,7 +283,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("verify", "fetch", "bump"))
     parser.add_argument("--lock", type=Path, default=ROOT / "third_party/quickjs/source.lock.json")
-    parser.add_argument("--cache", type=Path, default=ROOT / "out/quickjs")
+    parser.add_argument("--cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--report", type=Path, default=ROOT / "out/quickjs-source.json")
     parser.add_argument("--repository", default=OFFICIAL)
     parser.add_argument("--timeout", type=int, default=120)

@@ -32,10 +32,13 @@ python3 scripts/nightly_toolchain.py bump --archive /path/to/new-nightly.zip \
 ```
 
 Defaults are `toolchains/cosmocc.lock.json`,
-`~/.cache/qaplet/toolchains/cosmocc/<archive-sha256>/{archive.zip,tree/}`, and
+`<repository>/.cache/toolchains/cosmocc/<archive-sha256>/{archive.zip,tree/}`, and
 `out/nightly-toolchain.json`. `--lock`, `--cache-dir`, and `--report` override them.
-In WSL the cache should be on ext4; `--backing-dir /mnt/c` measures the physical
-volume holding this machine's VHD, separately from ext4 virtual capacity.
+All required actual inputs belong under the current repository's `.cache/`,
+including through its WSL path. Explicit `--cache-dir` remains available for
+isolated fixtures. Source/cache free space is measured on their actual volumes.
+WSL caches on a VHD filesystem additionally require explicit `--backing-dir` for
+its physical volume; a Windows-drive DrvFS cache does not claim VHD storage.
 Acquisition requires a 4 GiB free-space floor by default and checks expanded ZIP
 size plus a 512 MiB reserve before extraction. A failed disk/network/compiler or
 integrity check cannot replace the lock. `fetch` with an existing lock never
@@ -66,6 +69,11 @@ python3 scripts/nightly_toolchain.py fetch \
 execution or write a lock. The receipt records successful authenticated HTTPS
 from the fixed official URL, measurement time, length and digest. Import
 rechecks the bytes against that trusted receipt before assigning official origin.
+cosmo.zip receipt commands must match the published curl option grammar: full
+allowlisted options, one official URL, authenticated HTTPS for transfers and
+redirects, and no duplicate options. Both historical and current command forms
+are accepted; abbreviations, short-option clusters, config overrides and extra
+transfers are rejected. Current acquisition disables implicit curl config.
 The receipt is local evidence, not an upstream signature; preserve it and its raw
 logs. The scoped acquisition workflow uses this same command and never updates
 the lock. Windows uses its configured HTTPS proxy when curl has no explicit
@@ -88,10 +96,20 @@ authoritative digest already identifies those bytes.
 Each extracted file's digest, length and execute bit is locked. Relative symlinks
 are locked by their target text and validated resolution within the tree. ZIP
 paths cannot escape; absolute/escaping/dangling/cyclic links, links used as
-extraction parents, special files and duplicate entries are rejected,
-and the cache is made read-only. Verification checks the original ZIP and all
-extracted files before running version commands; missing, writable or modified
-caches are refused. It never silently repairs them. Versions are measurements,
+extraction parents, encrypted members, special files and duplicate entries are rejected,
+and the cache is made read-only where the filesystem represents those modes.
+Verification checks the original ZIP and all extracted files before running
+version commands; missing, writable regular files or modified caches are refused.
+On capable POSIX filesystems, directory no-write and file execute bits remain
+strictly checked. For a detected WSL DrvFS mount, a disposable sibling probe
+measures chmod behavior and reports `filesystem_permissions`. If regular-file
+no-write cannot be enforced, verification blocks. If file execute bits or
+directory no-write cannot be represented, the report explicitly records those
+limits under `drvfs-no-metadata-v1`: execute identity comes from the unchanged
+original ZIP and lock, all regular files must still be non-writable, tools must
+actually execute, and complete bytes/types/entry sets/link targets and safe link
+resolution remain checked. A different filesystem cannot opt into this policy.
+Verification never silently repairs an accepted cache. Versions are measurements,
 not evidence that Hello/eval or the product matrix has passed. The report has its
 own `report_kind: nightly-toolchain`, schema version 1 and named `nightly.*`
 cases; the BOOT-01 report-schema validator does not certify this separate format.

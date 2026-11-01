@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import unittest
@@ -26,7 +27,6 @@ class NightlyToolchainContract(unittest.TestCase):
         self.output = self.work / "report.json"
 
     def run_cli(self, operation, *args, env=None):
-        self.output.unlink(missing_ok=True)
         completed = subprocess.run([sys.executable, str(CLI), operation,
             "--lock", str(self.lock), "--cache-dir", str(self.cache),
             "--report", str(self.output), *map(str, args)],
@@ -93,6 +93,25 @@ class NightlyToolchainContract(unittest.TestCase):
         self.assertFalse(self.lock.exists())
         self.assertEqual(report["commands"], [])
 
+    def test_encrypted_archive_replaces_previous_pass_with_failure_evidence(self):
+        archive = self.archive("encrypted.zip")
+        data = bytearray(archive.read_bytes())
+        # The fixture marks the first member encrypted in both ZIP headers.
+        # No password or encrypted payload is needed to exercise refusal.
+        for offset in (6, data.index(b"PK\x01\x02") + 8):
+            flags = struct.unpack_from("<H", data, offset)[0]
+            struct.pack_into("<H", data, offset, flags | 1)
+        archive.write_bytes(data)
+        self.output.write_text('{"status":"pass","report_id":"previous-pass"}', encoding="utf-8")
+        completed, report = self.run_cli("fetch", "--archive", archive)
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(report["status"], "fail", completed.stderr)
+        self.assertNotEqual(report["report_id"], "previous-pass")
+        self.assertIn("encrypt", report["reason"].lower())
+        self.assertEqual(report["commands"], [])
+        self.assertFalse(self.lock.exists())
+        self.assertEqual(list(self.cache.iterdir()), [])
+
     def test_import_cannot_claim_official_origin_from_an_incomplete_receipt(self):
         receipt = self.work / "receipt.json"
         archive = self.archive()
@@ -111,6 +130,43 @@ class NightlyToolchainContract(unittest.TestCase):
                 self.assertIn("receipt", report["reason"].lower())
                 self.assertFalse(self.lock.exists())
                 self.assertEqual(report["commands"], [])
+
+    @unittest.skipIf(os.name == "nt", "Receipt acceptance runs real POSIX fixture compiler commands")
+    def test_official_https_receipts_accept_recorded_commands_and_refuse_curl_overrides(self):
+        archive = self.archive()
+        official = "https://cosmo.zip/pub/cosmocc/cosmocc.zip"
+        old = ["curl", "--fail", "--location", "--silent", "--show-error",
+               "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
+               "--max-time", "300", "--output", "original.zip", official]
+        current = [old[0], "--disable", *old[1:]]
+        receipt = self.work / "receipt.json"
+        cases = [(old, True), (current, True)]
+        for override in (["--insec"], ["--proxy-insec"], ["-fLk"], ["--conf", "settings"],
+                         ["-fLKsettings"], ["--proto", "=http,https"],
+                         ["--proto-redir", "=http,https"], ["--next"],
+                         ["https://untrusted.invalid/other.zip"], ["--url", official]):
+            cases.append(([*current[:-1], *override, official], False))
+        for index, (argv, accepted) in enumerate(cases):
+            with self.subTest(argv=argv):
+                value = {"report_kind": "nightly-toolchain", "schema_version": 1,
+                         "operation": "download", "status": "pass",
+                         "downloaded_archive": {"sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                                                "size_bytes": archive.stat().st_size},
+                         "source": {"kind": "official-nightly", "url": official,
+                                    "retrieved_at": "2026-11-01T00:00:00Z"},
+                         "commands": [{"argv": argv, "exit_code": 0, "timed_out": False}]}
+                receipt.write_text(json.dumps(value), encoding="utf-8")
+                lock = self.work / (str(index) + ".lock.json")
+                completed, report = self.run_cli("fetch", "--archive", archive,
+                    "--acquisition-report", receipt, "--backing-dir", self.work,
+                    "--lock", lock, "--cache-dir", self.work / ("cache-" + str(index)))
+                self.assertEqual(completed.returncode, 0 if accepted else 1, completed.stderr)
+                if accepted:
+                    self.assertEqual(report["toolchain"]["source"]["kind"], "official-nightly")
+                else:
+                    self.assertIn("receipt", report["reason"].lower())
+                    self.assertEqual(report["commands"], [])
+                    self.assertFalse(lock.exists())
 
     @unittest.skipIf(os.name == "nt", "Tool version commands are exercised in the existing WSL Linux environment")
     def test_explicit_import_is_measured_and_then_resolved_offline(self):
@@ -215,6 +271,92 @@ class NightlyToolchainContract(unittest.TestCase):
         completed, report = self.run_cli("verify", "--allow-local-import")
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertEqual(report["commands"], [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX alias parents reproduce macOS /var to /private/var")
+    def test_internal_archive_links_work_when_the_cache_parent_has_a_symlink_alias(self):
+        physical = self.work / "physical"
+        physical.mkdir()
+        alias = self.work / "alias"
+        alias.symlink_to(physical, target_is_directory=True)
+        self.cache = alias / "cache"
+        link = zipfile.ZipInfo("bin/cosmoc++")
+        link.create_system = 3
+        link.external_attr = 0o120777 << 16
+        completed, report = self.run_cli("fetch", "--archive", self.archive("alias.zip", (link, "cosmocc")))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((Path(report["resolved_path"]) / "bin/cosmoc++").is_file())
+        completed, report = self.run_cli("verify", "--allow-local-import")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires actual WSL DrvFS storage")
+    def test_drvfs_cache_preserves_archive_modes_and_refuses_dirty_inputs_before_execution(self):
+        storage = Path(os.environ.get("QAPLET_TEST_CACHE_ROOT", ROOT / ".cache"))
+        storage.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="input-review-drvfs-", dir=storage) as scratch:
+            location = Path(scratch)
+            probe = location / "mode-probe"
+            probe.write_bytes(b"permission probe")
+            probe.chmod(0o444)
+            probe_mode = probe.stat().st_mode
+            probe.chmod(0o644)
+            probe.unlink()
+            if not probe_mode & 0o111 or probe_mode & 0o222:
+                self.skipTest("Storage represents POSIX execute bits or cannot enforce file no-write")
+            link = zipfile.ZipInfo("bin/cosmoc++")
+            link.create_system = 3
+            link.external_attr = 0o120777 << 16
+            archive = self.archive("drvfs.zip", (link, "cosmocc"))
+            completed, _ = self.run_cli("fetch", "--archive", archive)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            original_lock = self.lock.read_bytes()
+            self.cache = location / "cache"
+            completed, report = self.run_cli("fetch", "--archive", archive, "--allow-local-import")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(self.lock.read_bytes(), original_lock)
+            completed, report = self.run_cli("verify", "--allow-local-import")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            permissions = report["filesystem_permissions"]
+            self.assertEqual(permissions["policy"], "drvfs-no-metadata-v1")
+            self.assertTrue(permissions["regular_file_readonly_enforced"])
+            self.assertFalse(permissions["directory_readonly_enforced"])
+            self.assertFalse(permissions["file_execute_bits_enforced"])
+            self.assertTrue(permissions["limits"])
+            tree = Path(report["resolved_path"])
+            header = tree / "include/fixture.h"
+            original_header = header.read_bytes()
+            for damage in ("writable-file", "changed-bytes", "extra-entry", "changed-link"):
+                with self.subTest(damage=damage):
+                    if damage == "writable-file":
+                        header.chmod(0o644)
+                    elif damage == "changed-bytes":
+                        header.chmod(0o644)
+                        header.write_bytes(b"damaged fixture bytes")
+                        header.chmod(0o444)
+                    elif damage == "extra-entry":
+                        (tree / "extra").write_bytes(b"extra")
+                    else:
+                        (tree / "bin/cosmoc++").unlink()
+                        (tree / "bin/cosmoc++").symlink_to("../include/fixture.h")
+                    completed, report = self.run_cli("verify", "--allow-local-import")
+                    self.assertEqual(completed.returncode, 1, completed.stderr)
+                    self.assertEqual(report["commands"], [])
+                    self.assertEqual(self.lock.read_bytes(), original_lock)
+                    if damage in ("writable-file", "changed-bytes"):
+                        header.chmod(0o644)
+                        header.write_bytes(original_header)
+                        header.chmod(0o444)
+                    elif damage == "extra-entry":
+                        (tree / "extra").unlink()
+                    else:
+                        (tree / "bin/cosmoc++").unlink()
+                        (tree / "bin/cosmoc++").symlink_to("cosmocc")
+            receipt = self.work / "drvfs-receipt.json"
+            receipt.write_text(json.dumps(self.github_receipt(archive)), encoding="utf-8")
+            completed, report = self.run_cli("fetch", "--archive", archive,
+                "--acquisition-report", receipt, "--lock", location / "official.lock.json",
+                "--cache-dir", location / "official-cache")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(report["filesystem_permissions"]["policy"], "drvfs-no-metadata-v1")
 
     @unittest.skipIf(os.name == "nt", "Tool execution is verified in WSL")
     def test_explicit_fetch_restores_the_locked_cache_without_changing_the_lock(self):
