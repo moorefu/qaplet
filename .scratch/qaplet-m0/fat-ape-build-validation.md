@@ -54,8 +54,26 @@ Nightly 输入报告记录实际 `9p` / `/mnt/d` / `drvfs-no-metadata-v1`：文�
 
 迁移后的原 ZIP 另经 `fetch_locked_toolchain.py` 的已有归档路径实际验证通过，报告 `out/implement-spec/05/out/ticket05/canonical-archive.json`。它证明锁中原字节仍然一致，尚不能代替真实 CI 中跨仓库鉴权和下载的验收。
 
+## WSLInterop 修正与最终本地验收
+
+后续完整合同回归暴露真实启动路由错误：部分 WSL invocation 有启用的 `WSLInterop` / `MZ` / `/init` 注册。原版工具链 helper 被启动为 Windows 进程，无法使用 Linux `/mnt/d/...` 路径；原生 Windows 的错误退出实测 256，bridge 观测 0，与 8 位截断一致。`mktemper` 没有输出但 driver 继续，产生空重定向及找不到对象文件的连锁错误。原始失败保存在 `out/implement-spec/05/out/native-contracts/fat-contract-10vbhf9h/`；root 独立 `/proc` 与 Windows 进程证明见 `out/m0-integration/builder-diagnosis/same-invocation-red-2cdfd44f-3637-4bf8-9efc-5ba90a59ac62/` 及 `direct-watch-2144f85a-a79c-440d-b839-6e311a0a83ae/`。此前没有 WSLInterop 的成功上下文不适用于这一启动路由。
+
+修正只在构建消费层：`native_toolchain.py` 用锁中原生 ELF loader 启动锁中官方 `assimilate -e -x -o`，从原工具副本得到独立 Linux ELF 视图。62 个可执行 MZ helper（原总长 610039160 字节）全部覆盖，含 GCC `cc1` 等内部程序；shell driver 按原字节复制，目录相对查找与安全 archive links 保留。原 ZIP、原 tree、权威锁及 libc `unproven` 声明均不变。派生物单列为 `derived-linux-elf-x86_64`，不冒充官方原始归档字节。
+
+每个转换结果都必须匹配独立预期 SHA：从已验证原文件解码 x86_64 ELF64 header、按官方 Linux 转换规则规范 OSABI，保留并散列完整原 body，同时重新核对原文件 SHA。复用也重新计算预期值、核对全输出/readonly/layout/link；可写 receipt 只是来源说明，不是完整性权威。构建后再次检查派生视图。缓存全在主仓库 `.cache/toolchains/cosmocc/official-assimilate-linux-x86_64-v1/<archive-sha>/tree`；不 seed loader、不重试失败编译、不改全局 binfmt/WSL/mount。
+
+同一启用 WSLInterop 的 invocation 完成原始/派生对照：原 driver 3/3 复现错误（0.063–0.068 秒），派生 driver 3/3 编译成功（0.232–0.239 秒）；派生进程 `/proc` 采样没有 `/init`，同时 Windows 观察器记录原始 helper 2 次、派生 helper 0 次。证据位于 `out/implement-spec/05/out/ticket05/route-proof/` 的 `summary.json`、`windows-helper-events.json`、`original-16227d1c-878b-4590-9ccb-fac55c1ddaf8/` 与 `derived-4d5287f2-600d-46ed-ae9b-433c6a5773de/`。
+
+最终产品报告为 `out/implement-spec/05/out/ticket05/native-build/build-info.json`，report ID `f8b29a87-fb56-4187-abb2-c10a79e17c73`，UTC 01:47:06–01:50:20。当次 build-info 同样记录启用的 WSLInterop，原输入和派生输入前后检查通过、五项真实运行和双 CPU/map/import 审计通过。两个最终产品仍是上表完全相同字节的 fat APE。构建身份摘要 `3cd1593095bf417e107166ff2d4b2e3a6f05763c964495ad61c693ff044b0b15`，派生 helper 集合摘要 `356c58a98fd84d8cabd55006bbb6027cf617121bfe49c7abef44d82e467f209b`。
+
+最终 `native-build/invalid-flag.json` 证实真正 GCC 拒绝 `-qaplet-invalid-flag`，退出 1、无制品、非通过 case 和原始诊断齐备。测试现明确断言该 flag 与 `unrecognized command-line option`，启动失败不能冒充预期编译错误。公共构建合同检查派生格式/内部 helper/原派生身份及实际 compiler argv 路径。native fixture 的产物/日志保留在 ignored `out/native-contracts/`，失败不会丢失诊断。共享 `run` 委托已测试的 `foundation.command` 保留时限、进程组清理与原字节日志。
+
+合并 integration `664bec0` 后，Ubuntu 普通 `make check OUT=out/ticket05/native-build/check` 通过：65 个合同、0 失败、5 个明确 skip（2 个重型实际构建由上述 focused 入口完成，3 个平台专属合同），CI 静态检查和实际系统 C bootstrap 均通过。四个独立 inspect 用例此前已由独立诊断完整验证，5/5 native public methods 通过；产品/inspect 行为和最终字节未改变，没有重复四次昂贵输入扫描。新的 CI 合同还以红绿回归拒绝非 Ubuntu build runner。报告、制品、maps、原始日志和生成的诊断脚本全部保持 ignored `out/` / `.cache/`；`toolchains/evidence` tracked 文件为 0。
+
 ## CI 与后续上下文
 
 新增 JSON/YAML `.github/workflows/m0.yml`：Ubuntu build job 先运行本地 `make check`，显式从锁定官方 URL 获取原 ZIP，逐 SHA/长度校验，再用共享 input fetch 与 `make build-ape`，失败也上传 `out/m0/` 中原始制品及证据。token 仅从 GH_TOKEN 环境经 curl stdin 传入，不在 argv/报告中；下载失败/归档过期/鉴权失败不回退滚动通道，不改锁。新的 `build_ape.py check-ci` 同步进入 `make check-ci`，静态拒绝其他 job 再编译。此票未声称远程 workflow 已运行；06 接入同摘要跨宿主消费矩阵，SDK 验证只在实际实现对应 SDK 后声明。
 
-07/08 的最小复用指针：`scripts/build_ape.py` 的 `verify_inputs(..., source=False)`、`run`、`identity`、`headers`、`audit`，以及 `build` 的每对象编译/双CPU map收集循环。可由独立探针脚本导入并生成独立 artifact 身份，不需要同时改动本票构建文件。它们是构建证据工具，不构成稳定产品SDK。
+07/08 的最小复用指针：先调用 `verify_inputs(..., source=False)` 得到原输入，再用 `native_toolchain(args, report, directory, original)` 得到派生编译目录；不要直接执行原缓存 MZ helper。也可通过公共 `prepare-toolchain` CLI 的 `native_toolchain.tree` 获取目录。`run`、`identity`、`headers`、`audit` 和 `build` 的每对象编译/双 CPU map 收集循环可供独立探针脚本复用并生成自己的 artifact 身份，不需同时改本票构建文件。构建后需复核原输入及 `native_toolchain.recheck`。这些是构建证据工具，不构成稳定产品 SDK。
+
+本地代码可合入，ticket 05 仍保持 `claimed`，等待真实 Ubuntu CI 验证 GH_TOKEN 跨仓库固定归档获取、共享配方构建及原字节上传；不把本地 helper 检查代替远程获取验收。完整 M0 / 跨宿主 / SDK 支持声明仍由后续任务负责。

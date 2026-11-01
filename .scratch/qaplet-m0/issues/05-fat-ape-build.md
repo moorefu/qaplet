@@ -60,3 +60,5 @@ Hello 与 eval 产物、build-info、源码/工具链/补丁身份、编译日�
 2026-11-01：ticket 05 implementer 已领取；分支 `codex/m0-05-fat-ape`，基于 integration `cf0d125`。按已确认的 CLI / 原生行为 / evidence seam 执行 TDD。
 
 2026-11-01：本地实现完成；最终 Ubuntu 构建使用主仓库 `.cache/{quickjs,toolchains/cosmocc,build}`，两个 fat APE 和五项实际运行/错误路径通过，迁移前后字节一致。完整身份、headers/双 CPU maps、符号/PE 导入与原始日志见[BOOT-04A 验收记录](../fat-ape-build-validation.md)。`make build-ape` 和独立 `m0.yml` 共用配方，测试 job 再编译由静态合同拒绝。保持 claimed，等待 integration 实际 Ubuntu CI 完成锁定原归档获取、构建与原字节 artifact 上传后由 coordinator 关闭；本地成功不冒充 CI 成功。
+
+2026-11-01：WSLInterop 误将原工具链 MZ helper 启动为 Windows 的错误已由独立进程/路径对照证明。消费层现由锁定官方转换工具建立独立 Linux ELF 视图，62 个 helper 和 GNU 内部程序均覆盖，原缓存与锁不变，派生结果与完整 body 独立校验。同一启用 WSLInterop 的 invocation 原 driver 3/3 失败、派生 driver 3/3 成功，派生 route 无 `/init` / Windows helper。最终 fat 产品 SHA 不变、真正 invalid-flag 路径和 Ubuntu `make check`（65 / 0 fail）通过。保持 claimed，CI 获取/构建/上传的实际结果仍待 coordinator 核验。

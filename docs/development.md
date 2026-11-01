@@ -139,9 +139,13 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 默认工作目录为仓库 `.cache/build/<report-id>/`，worktree 可用 `APE_BUILD_DIR` 指向主仓库 `.cache/build/`。该目录保留对象、失败现场和临时文件；输入目录不写入，不通过符号链接将缓存转移到仓库外。实际 DrvFS 权限/工具行为以迁移后的验证结果为准。`cosmocc` 本身不支持含空格的参数路径，构建在编译前检查这一限制。默认每个 compile/link 上限 300 秒，单次执行/审计 30 秒；CLI 可显式调整。超时终止进程组并保留日志。
 
+实际诊断证明：WSLInterop 的 `MZ` 注册会把 Nightly 的 APE helper 送到 `/init` / Windows，Linux `/mnt/d/...` 路径因而失败；原生 Windows 错误退出实测 256，bridge 观测 0，与 8 位截断一致。构建不依赖这项注册的偶然存在与否，而在已校验原缓存之外，使用官方 `assimilate -e -x -o` 创建独立 Linux ELF 工具视图。视图位于工具链 cache root 下 `official-assimilate-linux-x86_64-v1/<archive-sha>/tree`；全部 62 个可执行 MZ 程序（含 `libexec/gcc` 内部程序）被转换，shell driver 复制为相同字节，数据/库和原 archive links 保持安全的目录相对查找。原归档、原 tree、锁、libc 来源声明均不改动。
+
+`native_toolchain` 单列派生原始/结果 SHA、官方转换命令和 provenance receipt，不能把派生 helper 当成官方原 ZIP 字节。缓存复用仍从原程序内编码的 x86_64 ELF64 header（Linux OSABI 0）和完整未变 body 独立计算预期 SHA，重新验证输出、只读文件和严格 links/layout；receipt 不作为完整性权威。构建后再检查原输入及派生视图。没有 seeded fallback、静默重试或全局 binfmt 改动；正常 native view 不需要自行解包 loader。`prepare-toolchain` CLI 可独立预备视图，仍完全离线。
+
 `scripts/build_ape.py` 的 `build` / `inspect` / `check-ci` 使用独立的 `ape-build` v1 报告，BOOT-01 的 `validate-report` 不验证此合同。报告记录 source/toolchain lock 和实际内容身份、完整 argv/cwd/时间/原始日志、所用 flags、原版 QuickJS C 文件顺序、Temporal/Intl 关闭状态、APE 资源顺序及实际 BUILDLOG、两种 CPU 的 ELF header/LOAD 边界和片段摘要、原制品/sidecar/map 摘要、链接符号与 PE 导入检查、本地架构/页大小及 eval 错误路径。`m0_core_status` 保持 `not_run`，libc 源码映射保留输入锁的 `unproven`；后续门禁仍须消费完整矩阵证据。
 
-生成文件为 `artifacts/{hello,quickjs-eval}.com`、`.com.dbg`、`.aarch64.elf`、`.{x86_64,aarch64}.map` 和 `.build-commands.log`。Hello 输出包含 `probe`、编译执行架构和 `sysconf` 页大小的 JSON；eval 的 `--facts` 输出同样事实，默认求值 `6 * 7` 输出 `42`，一个参数作为 JS 表达式；异常和语法错误向 stderr 写出异常并退出 `1`。两探针通过锁定的原生 ELF APE loader 运行；WSLInterop/binding 状态记录在 build-info，不修改全局注册。
+生成文件为 `artifacts/{hello,quickjs-eval}.com`、`.com.dbg`、`.aarch64.elf`、`.{x86_64,aarch64}.map` 和 `.build-commands.log`。Hello 输出包含 `probe`、编译执行架构和 `sysconf` 页大小的 JSON；eval 的 `--facts` 输出同样事实，默认求值 `6 * 7` 输出 `42`，一个参数作为 JS 表达式；异常和语法错误向 stderr 写出异常，Ubuntu 实测退出 `1`。跨宿主应断言错误语义及非零状态，并记录各宿主实际值（Windows 预检观测 256）。两探针通过锁定的原生 ELF APE loader 运行；WSLInterop/binding 状态记录在 build-info，不修改全局注册。
 
 原版最小引擎使用 `quickjs.c dtoa.c libregexp.c libunicode.c cutils.c`，`-Os -fwrapv -D_GNU_SOURCE` 和 VERSION 中的 `CONFIG_VERSION`；不定义 `CONFIG_TEMPORAL_INTL`，不启用 LTO，无上游补丁。自有探针是 M0 验证程序，不是 Runtime/Embed SDK。所有服务专属导入（SCM / Job Object 等）均由两个 CPU 的符号、map 和最终 PE imports 拒绝；常规 libc 进程/线程能力可出现。
 

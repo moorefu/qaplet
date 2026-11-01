@@ -39,7 +39,9 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/inpu
 make build-ape OUT=out/m0
 ```
 
-`build-ape` 完全离线，先后校验 `.cache/quickjs/` 和 `.cache/toolchains/cosmocc/`，在 `.cache/build/<report-id>/` 生成 `hello.com` / `quickjs-eval.com`，将原始字节、两种 CPU 的 ELF sidecar、link map、真实底层命令日志和 `build-info.json` 保存到 `OUT`。输出目录须为空或不存在。QuickJS 只验证 create/eval/destroy；Temporal/Intl 显式不启用，补丁清单为空。默认表达式输出 `42`，单个表达式参数可验证异常退出 `1`；`--facts` 输出实际架构与页大小。CPU slice 存在不代表 ARM64 已运行。
+`build-ape` 完全离线，先后校验 `.cache/quickjs/` 和 `.cache/toolchains/cosmocc/`，在 `.cache/build/<report-id>/` 生成 `hello.com` / `quickjs-eval.com`，将原始字节、两种 CPU 的 ELF sidecar、link map、真实底层命令日志和 `build-info.json` 保存到 `OUT`。输出目录须为空或不存在。QuickJS 只验证 create/eval/destroy；Temporal/Intl 显式不启用，补丁清单为空。默认表达式输出 `42`，Ubuntu 异常退出为 `1`，其他宿主保留实际非零状态；`--facts` 输出实际架构与页大小。CPU slice 存在不代表 ARM64 已运行。
+
+构建使用由锁定官方 `assimilate -e -x` 从原工具副本派生的 Linux ELF 工具视图，位于 `.cache/toolchains/cosmocc/official-assimilate-linux-x86_64-v1/<archive-sha>/tree`。它覆盖全部可执行 MZ helper 和 GNU 内部程序，防止 WSLInterop 将编译器 helper 当成 Windows 程序运行；不修改全局 WSL/binfmt 配置。原归档、原缓存与锁保持不变，派生工具身份单列于 `native_toolchain`，每次从原始 header/完整 body 独立重算预期摘要，不能用旁边的可写 manifest 代替验证。最终交付仍是 fat APE，实际字节与原构建一致。可用 `python3 scripts/build_ape.py prepare-toolchain --report out/native-toolchain.json` 单独预备并验证此视图。
 
 `QUICKJS_CACHE`、`TOOLCHAIN_CACHE`、`APE_BUILD_DIR` 可指向当前主仓库 `.cache/` 下的缓存和构建根目录（例如 worktree 共享主仓库输入）。复跑使用新的 `OUT`。独立检查已有制品时运行 `python3 scripts/build_ape.py inspect --artifact out/m0/artifacts/hello.com --expected-sha256 <build-info中的摘要> --report out/inspect.json`；它检查 fat headers、两个 sidecar、link map、链接符号和最终 PE 导入边界。完整合同的真实构建用例通过 `QAPLET_TEST_SOURCE_CACHE=/repo/.cache/quickjs make check` 显式启用，跨 worktree 可另设 `QAPLET_TEST_TOOLCHAIN_CACHE` 和 `QAPLET_TEST_BUILD_DIR` 指向主仓库 `.cache/`。
 
