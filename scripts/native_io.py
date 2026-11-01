@@ -11,6 +11,8 @@ import platform
 import shutil
 import sys
 import uuid
+import ape_helpers
+from build_ape import publish_ape
 import zipfile
 
 from build_ape import (BuildError, audit, identity, native_toolchain, run, verify_inputs,
@@ -107,17 +109,9 @@ def build(args, report, directory):
         args.compile_timeout, work, environment)
     link_portable(args, report, directory, tree, helpers, "native-io", [work / "native-io.o"], work / "native-io.com",
                   work, environment, libraries=("-lpthread",))
-    for suffix in (".com", ".com.dbg", ".aarch64.elf"):
-        shutil.copyfile(work / ("native-io" + suffix), output / ("native-io" + suffix))
-    (output / "native-io.com").chmod(0o755)
-    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
+    publish_ape(work, output, "native-io", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
     append_resource(output / "native-io.com")
-    for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
-        maps = list((work / "tmp").glob(pattern))
-        if len(maps) != 1:
-            raise BuildError("Expected exactly one " + arch + " link map")
-        shutil.move(str(maps[0]), output / ("native-io." + arch + ".map"))
     artifact = audit(args, report, directory, tree, "native-io", output)
     artifact["build_commands"] = identity(output / "native-io.build-commands.log")
     report["artifacts"].append(artifact)

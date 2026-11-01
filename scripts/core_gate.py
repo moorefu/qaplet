@@ -42,6 +42,50 @@ def same(left, right):
     return all(left.get(key) == right.get(key) for key in ("sha256", "size_bytes"))
 
 
+def validate_recipe_comparison(recipe, repository=ROOT, previous=None):
+    """Accept exact current inputs or the narrowly proven historical CI-only edit."""
+    inventories = []
+    for field in ("tested", "current"):
+        entries = recipe[field + "_recipe_inputs"]
+        require(digest(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()) ==
+                recipe[field + "_recipe_inventory_sha256"], "Recipe comparison fingerprint mismatch")
+        builders = [normalized(entry["path"]) for entry in entries
+                    if normalized(entry["path"]).endswith("/scripts/build_ape.py")]
+        require(len(builders) == 1, "Recipe inventory requires exactly one builder")
+        source_root = builders[0].removesuffix("/scripts/build_ape.py")
+        inventory = {}
+        for entry in entries:
+            original = normalized(entry["path"])
+            require(original.startswith(source_root + "/"), "Recipe input escaped measured source root")
+            relative = original[len(source_root) + 1:]
+            require(relative not in inventory, "Duplicate recipe input")
+            inventory[relative] = entry
+            if field == "current":
+                path = (repository / relative).resolve()
+                require(path.is_relative_to(repository.resolve()), "Current recipe input escaped repository")
+                data = path.read_bytes()
+                require(same(entry, {"sha256": digest(data), "size_bytes": len(data)}),
+                        "Current recipe input differs from actual repository: " + original)
+        inventories.append(inventory)
+    tested, current = inventories
+    require(tested.keys() == current.keys(), "Recipe comparison input closure differs")
+    changed = [{"tested": tested[name], "current": entry} for name, entry in current.items()
+               if not same(tested[name], entry)]
+    require(recipe["changed_inputs"] == changed, "Recipe comparison changed inputs do not match inventories")
+    if not changed:
+        return "identical"
+    require(len(changed) == 1 and changed[0] == {"tested": tested["scripts/build_ape.py"], "current": current["scripts/build_ape.py"]},
+            "Recipe comparison changes producer semantics")
+    require(previous is not None and same(changed[0]["tested"], {"sha256": digest(previous), "size_bytes": len(previous)}),
+            "Tested builder snapshot differs from executed recipe")
+    trees = [ast.parse(raw) for raw in (previous, (repository / "scripts/build_ape.py").read_bytes())]
+    for tree in trees:
+        tree.body = [node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != "check_ci"]
+    require(ast.dump(trees[0], include_attributes=False) == ast.dump(trees[1], include_attributes=False),
+            "Offline/current builder executable semantics changed")
+    return "check-ci-only"
+
+
 def stamp(value):
     result = datetime.fromisoformat(value.replace("Z", "+00:00"))
     require(result.tzinfo is not None, "Evidence timestamps require a timezone")
@@ -788,32 +832,19 @@ class Gate:
         require(item["recipe_inputs"] == item["recipe_inputs_after"], "Recipe changed during disconnected execution")
         recipe = self.evidence.json(self.manifest["offline_recipe_comparison"])
         require(recipe["status"] == "pass" and same(recipe["disconnected_report"], self.identity(reference)) and recipe["tested_recipe_inputs"] == item["recipe_inputs"], "Offline recipe receipt not bound to actual run")
-        for field in ("tested", "current"):
-            require(digest(json.dumps(recipe[field + "_recipe_inputs"], sort_keys=True, separators=(",", ":")).encode()) == recipe[field + "_recipe_inventory_sha256"], "Recipe comparison fingerprint mismatch")
-        current_root = normalized(recipe["changed_inputs"][0]["current"]["path"]).rsplit("/scripts/build_ape.py", 1)[0]
-        for entry in recipe["current_recipe_inputs"]:
-            original = normalized(entry["path"])
-            require(original.startswith(current_root + "/"), "Current recipe input escaped measured source root")
-            path = (ROOT / original[len(current_root) + 1:]).resolve()
-            require(path.is_relative_to(ROOT), "Current recipe input escaped repository")
-            data = path.read_bytes()
-            require(same(entry, {"sha256": digest(data), "size_bytes": len(data)}), "Current recipe input differs from actual repository: " + original)
         self.evidence.read(recipe["source_diff"])
-        require(len(recipe["changed_inputs"]) == 1 and recipe["changed_inputs"][0]["tested"]["path"].endswith("/scripts/build_ape.py"), "Recipe comparison changes producer semantics")
-        tested = self.evidence.resolve(self.manifest["offline_recipe_comparison"]).parent / "builder-tested.py"
-        previous = self.evidence.read(str(tested))
-        require(digest(previous) == recipe["changed_inputs"][0]["tested"]["sha256"], "Tested builder snapshot differs from executed recipe")
-        current = (ROOT / "scripts/build_ape.py").read_bytes()
-        require(digest(current) == recipe["changed_inputs"][0]["current"]["sha256"], "Current builder differs from measured comparison")
-        trees = [ast.parse(raw) for raw in (previous, current)]
-        for tree in trees:
-            tree.body = [node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != "check_ci"]
-        require(ast.dump(trees[0], include_attributes=False) == ast.dump(trees[1], include_attributes=False), "Offline/current builder executable semantics changed")
+        previous = None
+        if recipe["changed_inputs"]:
+            tested = self.evidence.resolve(self.manifest["offline_recipe_comparison"]).parent / "builder-tested.py"
+            previous = self.evidence.read(str(tested))
+        recipe_scope = validate_recipe_comparison(recipe, previous=previous)
         self.output["offline"] = {"status": "pass", "report_id": item["report_id"], "report": reference,
             "source": item["source"], "toolchain": item["toolchain"], "host": item["host"], "ci": None,
             "cases": item["cases"], "builds": item["builds"], "producer_reports": item["producer_reports"], "network": net, "binary_comparisons": item["comparisons"],
             "helper_comparisons": item["helper_comparisons"], "cache_inventory": inventory, "recipe_comparison": recipe,
-            "scope": "Actual pair rebuilt the selected Hello/eval and fixed inputs. Current raw recipe fingerprint was not rebuilt; only check_ci AST differs. Independent CI helper identities remain distinct."}
+            "scope": ("Actual pair rebuilt the current recipe and fixed inputs. " if recipe_scope == "identical" else
+                      "Actual pair rebuilt the selected Hello/eval and fixed inputs. Current raw recipe fingerprint was not rebuilt; only check_ci AST differs. ") +
+                     "Independent CI helper identities remain distinct."}
 
 
 def evaluate(input_manifest, guest_report=None):
@@ -886,7 +917,7 @@ def main():
     args = parser.parse_args()
     if (args.operation == "validate-guest") != bool(args.guest_report):
         parser.error("validate-guest requires --guest-report; evaluate does not accept it")
-    report = evaluate(args.input_manifest, args.guest_report)
+    report = evaluate(args.input_manifest, args.guest_report.resolve() if args.guest_report else None)
     write_json(args.report, report)
     print(json.dumps({"status": report["status"], "core": report["core"]["status"], "report": str(args.report)}))
     return 0 if report["status"] == "pass" else 1

@@ -40,5 +40,9 @@ overflow and is not this recipe. Actual sidecar and final fat LOADs must pass
 The root ISC license is preserved in `LICENSE`. HACL source files retain their
 original MIT grants and notices; the HACL notice unit remains linked into the
 host packer. Producer distributions include source metadata and license text.
+All five independent producers (Hello/eval, native I/O, pages64k, SCM and Job)
+publish `ape-helper-notices/{LICENSE,source.lock.json,HACL-LICENSE.txt}` beside
+their loader. The shared publication function also requires one map per CPU;
+each producer retains its own C recipe, audit and report.
 The source research and real failure/regression evidence are recorded in
 [the M0 notes](../../.scratch/qaplet-m0/arm64-64k-validation.md).

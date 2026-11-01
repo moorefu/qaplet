@@ -230,6 +230,8 @@ sudo python3 scripts/offline_integrity.py run \
 
 root 仅创建独立 `unshare --net` namespace，`setpriv` 将实际探针和构建降到给定非零 UID/GID。报告记录父/子 namespace、实际 UID、`socket.if_nameindex()`、路由和 literal `203.0.113.1:443` 的 `ENETUNREACH`；共享 sysfs 的网卡目录不作为隔离证明。不更改宿主网络、WSL/binfmt 或 mount。`preflight` 可单独测此环境，成功不代表构建通过。
 
+setup 只将本次新建的 evidence UUID 目录交给目标 UID/GID（0750），供降权 worker 写入子报告；不递归修改仓库、缓存或已有报告目录。调用者提供的报告祖先目录须允许目标身份遍历。真实 POSIX `/tmp` 权限 fixture 与 DrvFS 构建缓存分开验证。
+
 `run` 在两个全新 `.cache/build/offline/<id>/{first,second}/` 根目录运行实际统一 producer；每次命令有 1200 秒上限，内部 compile/link 另有已有时限。`strace -f` 单独记录 build 的网络/exec 系统调用；setup 的预期被拒连接位于 trace 之外，build 出现任何 IPv4/IPv6 connect/send 尝试都会失败，即使内核已拒绝。没有安装工具、下载、更新或修复 fallback。
 
 精确 before/after inventory 逐文件保存类型、大小、SHA-256、权限和 link target，并拒绝缓存外重定向。它覆盖所选 QuickJS、原 Nightly archive/tree、完整 native 派生视图、锁定 loader/packer 源码和独立启动 helper 的 Zig archive/tree；build 中间件、复制负向 fixture、HOME/XDG/TMP 全在同一物理 `.cache/`。Zig 的可变 global cache 不作为锁定输入。两次 `.com`、`.com.dbg`、`.aarch64.elf` 共六个交付二进制逐字节比较；差异保存 offset/长度/SHA 并失败，不能用解释文字恢复通过。map/命令日志保留实际不同路径。此票不重构或声明单独 macOS ARM64 helper 可复现。
@@ -240,11 +242,13 @@ root 仅创建独立 `unshare --net` namespace，`setpriv` 将实际探针和构
 
 `python scripts/core_gate.py evaluate --input-manifest FILE --report FILE` 不下载、不编译、不重跑探针、不安装服务。manifest v1 必须使用 `profile: "full"`，显式给出三类 `producers`（startup/io/pages64k）、`startup_reports` / `io_reports` / `pages64k_reports` 数组、`offline_report` 和 `offline_recipe_comparison`。manifest 相对路径以其父目录解释；报告原路径不重写。
 
+直接 CLI 参数 `--input-manifest`、`--report` 和 `--guest-report` 的相对路径均以调用者当前工作目录解释；manifest 内字段仍以上述 manifest 父目录解释。
+
 `path_mappings` 为 `{source, root}` 数组，表示原 POSIX/Windows 前缀和当前物理目录；使用最长前缀，拒绝重复前缀、`..`、ZIP 绝对路径/symlink、重复 member 和越界。`transports` 为 `{id, name, root, archive: {path, sha256, size_bytes}}` 数组；重新比对整个 ZIP 摘要/长度、每项 CRC 及其解包字节。索引记录 original/resolved path 和新测 SHA，没有 basename 搜索或缺日志 fallback。`svc_reports` 是可选独立状态指针；SCM/Job 缺项或失败只改变 `svc`。
 
 gate 从既有权威 case catalog 检查七项 startup、20/21 项 I/O、12 项 deep，按实际 OS/CPU/执行架构/页大小/mode 重算六目标。native Linux ARM64 必须先有实测，QEMU 仅补未覆盖的 4K/64K。完整 serial token、命令参数/时间/退出/deadline、原始字节、before/after payload、kernel/config/rootfs/QEMU 身份和 cleanup 均有对应检查；native Windows 控制台消费独立 console-results.ndjson。
 
-同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。当前 recipe 对比保留测试/当前两套原始 fingerprint，仅 `check_ci` AST 差异不冒称额外断网执行。
+同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。recipe 对比保留测试/当前两套原始 fingerprint：输入闭包和实际当前字节相同时接受 `changed_inputs: []`；非空差异仅接受原有 `build_ape.py` 的 `check_ci` AST 证明，不冒称该差异后的配方已额外断网执行。声明的差异必须与两份 inventory 精确一致。
 
 完整实际 manifest、通过报告、红绿及负向回归见 [10 验收](../.scratch/qaplet-m0/core-evidence-gate-validation.md)。标准 `make check` 不自动寻找历史 `out/`；真实 consumer 回归须显式设置 `QAPLET_GATE_MANIFEST`。供应/build 配方不因新增 consumer 而改变。
 

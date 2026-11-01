@@ -10,6 +10,8 @@ import platform
 import shutil
 import sys
 import uuid
+import ape_helpers
+from build_ape import publish_ape
 import zipfile
 
 from build_ape import (BuildError, audit, identity, link_portable, native_toolchain,
@@ -58,15 +60,7 @@ def build(args, report, directory):
         info.external_attr = 0o100444 << 16
         archive.writestr(info, resource)
     report["build"]["resource"]["sha256"] = hashlib.sha256(resource).hexdigest()
-    for suffix in (".com", ".com.dbg", ".aarch64.elf"):
-        shutil.copyfile(work / ("pages64k" + suffix), output / ("pages64k" + suffix))
-    (output / "pages64k.com").chmod(0o755)
-    for architecture, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
-        maps = list((work / "tmp").glob(pattern))
-        if len(maps) != 1:
-            raise BuildError("Expected one CPU map: " + architecture)
-        shutil.copyfile(maps[0], output / ("pages64k." + architecture + ".map"))
-    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
+    publish_ape(work, output, "pages64k", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     report["loader"] = identity(output / "ape-aarch64.elf")
     artifact = audit(args, report, directory, tree, "pages64k", output)
     artifact["build_commands"] = identity(output / "pages64k.build-commands.log")

@@ -69,3 +69,9 @@ SVC 的 SCM/Job 状态按独立 capability 和报告指针记录；缺失为 not
 公共 `validate-guest` 入口对这份真实4K记录先重现 `KeyError: image`，继而重现 `Guest lacks selected Core payload`，再修正后pass；另一个red/green验证4K独立检查不需要unused deep producer。它只签发guest scope，完整Core保持not_run。按页选择的catalog和纯调度模型覆盖 native64K+4Kguest、native16K+两guest，仍拒绝QEMU替换已覆盖native页；没有伪造native64K或native16K运行。完整Core仍消费原实际1129的native4K+65536guest矩阵。
 
 新负向副本覆盖4K错误kernel/config/compressed摘要、4K/64K不符、Image page flag、emulated冒充native、qemu-user、缺命令、缺serial。最终public consumer 26/26、Ubuntu `make check` 142 tests / 0 failures / 46 explicit skips；实际4K scoped validator与现有完整门禁在Windows/Ubuntu均pass。新完整报告为 `core-gate-corrected.json` / `core-gate-linux-corrected.json`，175 probes与618 evidence items；原19/19、135/43与red记录不删除。4K原始guest报告SHA `1070a35bbe6e965a42f0d0f2613c8e95c8afb1dc5755669db1540d4fa947dad7`；scope结果在 `guest4096/validated-{windows,linux}.json`。最终日志 `out/implement-spec/10/out/core-tests-corrected-final.log`、`check-corrected-final.{stdout,stderr}.log`，副本亦归档在 `guest4096/validation/`。
+
+## 全量双轴审查后的当前配方 proof
+
+2026-11-01 的单一 fresh implementer 修复独立 producer notices/publication、真实 POSIX 降权 worker evidence 写权限、零配方差异 receipt 和直接 guest CLI cwd 路径。重新运行了当前固定配方的两个实际 disconnected builds，16/16 cases、6 binary / 2 helper comparisons、14 refusals、21,180-file cache before/after 全部 pass，所有 build/refusal strace 的 Internet attempts 为 0。新 recipe inventory `0c661f4bf650da1a0371ad3c06abcad916e018195e77d71a935b9009b005a19b`、真实 `changed_inputs: []`，不修改原历史 09/10 proof。
+
+新 Windows / Ubuntu full Core 均 pass，175 cases / 617 evidence items；使用同一 canonical CI1129 实际矩阵与新 offline proof，独立 SVC 仍不阻断 Core。`out/m0-integration/core-gate/inputs{,-linux}.json` 已转向该证明，旧 manifests 逐字节保存在同目录 `retained-before-final-fixes/`，旧完整 reports 不覆盖。完整摘要、精确 hashes、red/green 与五 producer 实际输出见[最终审查修复记录](final-review-validation.md)。直接 guest CLI 相对路径的 actual 4K consumer 仍只签发 guest scope，不新增 guest 执行成绩。

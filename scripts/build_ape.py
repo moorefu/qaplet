@@ -217,14 +217,6 @@ def build(args, report, directory):
     if any(" " in str(path) for path in (tree, source, work)):
         raise BuildError("Locked cosmocc does not support spaces in build/input paths")
     output.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
-    report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
-    notices = output / "ape-helper-notices"
-    notices.mkdir()
-    for filename in ("LICENSE", "source.lock.json"):
-        shutil.copyfile(ROOT / "third_party/ape-helpers" / filename, notices / filename)
-    source_root = ape_helpers.source_cache(args.helper_source_cache.resolve())
-    (notices / "HACL-LICENSE.txt").write_text("\n".join((source_root / "third_party/haclstar/blake2b.c").read_text().splitlines()[:28]) + "\n")
     (work / "tmp").mkdir()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC")
     common = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
@@ -268,14 +260,8 @@ def build(args, report, directory):
             if sha256(fallback) != sha256(tree / "bin/ape-x86_64.elf"):
                 raise BuildError("Self-extracted APE loader differs from locked native loader")
             report["ape_fallback_cache"] = identity(fallback)
-        for suffix in (".com", ".com.dbg", ".aarch64.elf"):
-            shutil.copyfile(work / (name + suffix), output / (name + suffix))
-        (output / (name + ".com")).chmod(0o755)
-        for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
-            maps = list((work / "tmp").glob(pattern))
-            if len(maps) != 1:
-                raise BuildError("Expected one " + arch + " map; observed " + str(maps))
-            shutil.move(str(maps[0]), output / (name + "." + arch + ".map"))
+        publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
+        report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
         artifact = audit(args, report, directory, tree, name, output)
         artifact["build_commands"] = identity(log)
         report["artifacts"].append(artifact)
@@ -291,6 +277,29 @@ def build(args, report, directory):
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
                              read_json(ROOT / "toolchains/cosmocc.lock.json"))
     report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
+
+
+def publish_ape(work, output, name, helpers, helper_source):
+    """Publish one concrete fat APE, its two CPU maps and helper notices."""
+    maps = []
+    for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
+        selected = list((work / "tmp").glob(pattern))
+        if len(selected) != 1:
+            raise BuildError("Expected exactly one " + arch + " link map; observed " + str(selected))
+        maps.append((selected[0], output / (name + "." + arch + ".map")))
+    for suffix in (".com", ".com.dbg", ".aarch64.elf"):
+        shutil.copyfile(work / (name + suffix), output / (name + suffix))
+    (output / (name + ".com")).chmod(0o755)
+    for source, target in maps:
+        shutil.move(str(source), target)
+    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
+    notices = output / "ape-helper-notices"
+    notices.mkdir(exist_ok=True)
+    for filename in ("LICENSE", "source.lock.json"):
+        shutil.copyfile(ROOT / "third_party/ape-helpers" / filename, notices / filename)
+    (notices / "HACL-LICENSE.txt").write_text("\n".join(
+        (helper_source / "third_party/haclstar/blake2b.c").read_text().splitlines()[:28]) + "\n")
+    return [identity(target) for _, target in maps]
 
 
 def prepare_portable_helpers(args, report, directory, tree):
