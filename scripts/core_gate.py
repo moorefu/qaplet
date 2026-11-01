@@ -14,7 +14,7 @@ import uuid
 import zipfile
 
 from build_ape import BuildError, FORBIDDEN, headers
-from input_lock import component, attach, consume_identity, check_loader_bundle
+from input_lock import component, attach, consume_identity, check_loader_bundle, check_portable_helper
 from evidence import read_json
 from foundation import ROOT, decode, now
 from native_io import REQUIRED as IO_REQUIRED, matches_contract
@@ -365,12 +365,8 @@ class Gate:
             require(item["source"]["patches"] == read_json(ROOT / "third_party/quickjs/patches.json")["patches"], "Ordered QuickJS overlays differ")
             require(item["source"]["sha256"] == lock["source"]["sha256"] and item["source"]["clean"] is True, "QuickJS source content differs from locked patched tree")
         portable = item["portable_helpers"]
-        require(portable["source"]["lock"]["sha256"] == digest((ROOT / "third_party/ape-helpers/source.lock.json").read_bytes()) and
-                portable["source"]["patch_manifest"]["sha256"] == digest((ROOT / "third_party/ape-helpers/patches.json").read_bytes()), "Helper source/patch identity mismatch")
-        require(portable["recipe"]["sha256"] == digest((ROOT / "scripts/ape_helpers.py").read_bytes()), "Helper recipe identity mismatch")
+        check_portable_helper(portable, self.input_lock)
         source_lock = component("ape_helpers")
-        require(portable["source"]["commit"] == source_lock["commit"] and portable["source"]["git_tree"] == source_lock["git_tree"] and
-                portable["source"]["patches"] == read_json(ROOT / "third_party/ape-helpers/patches.json")["patches"], "Helper source provenance/overlay mismatch")
         locked_files = source_lock["files"]
         require(len(portable["source"]["files"]) == len(locked_files) and all(
             len([entry for entry in portable["source"]["files"] if normalized(entry["path"]).endswith("/" + expected["path"]) and same(entry, expected)]) == 1

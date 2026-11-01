@@ -16,7 +16,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, identity
-from input_lock import component, attach
+from input_lock import component, attach, consume_identity
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now
 from nightly_toolchain import write_json
@@ -237,6 +237,7 @@ def launch(args, report, directory):
 def compare(first, second, report):
     producers = [read_json(path) for path in (first, second)]
     for producer in producers:
+        consume_identity(producer, report)
         if (producer.get("report_kind") != "ape-build" or producer.get("status") != "pass"
                 or [a["name"] for a in producer["artifacts"]] != ["hello", "quickjs-eval"]):
             raise BuildError("Two successful complete APE producer reports are required")

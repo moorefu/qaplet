@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from input_fixtures import current_input_identity
 import os
 import shutil
 
@@ -71,6 +73,7 @@ class OfflineIntegrityContract(unittest.TestCase):
                     # the comparison operation; calculate them for this fixture.
                     artifacts[-1]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
                 (directory / "build.json").write_text(json.dumps({"status": "pass", "report_kind": "ape-build",
+                    "input_lock": current_input_identity(),
                     "source": {"sha256": "source"}, "toolchain_lock": {"sha256": "lock"},
                     "build_directory": str(directory / "work"), "artifacts": artifacts}))
             argv = [sys.executable, str(CLI), "compare", "--first-build", str(work / "first/build.json"),
@@ -87,6 +90,28 @@ class OfflineIntegrityContract(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             self.assertIn("bytes differ", report["reason"])
             self.assertTrue(any(item["first_difference_offset"] == 0 for item in report["comparisons"]))
+
+    def test_compare_refuses_unidentified_or_conflicting_producers_before_artifact_use(self):
+        with tempfile.TemporaryDirectory(prefix="offline-input-identity-") as temp:
+            work = Path(temp)
+            current = current_input_identity()
+            first = {"status": "pass", "report_kind": "ape-build", "input_lock": current,
+                     "artifacts": [{"name": "hello"}, {"name": "quickjs-eval"}]}
+            (work / "first.json").write_text(json.dumps(first))
+            for identity in (None, dict(current, sha256="1234567890abcdef" * 4), dict(current, lock_state="selected_pending_validation")):
+                second = dict(first)
+                if identity is None:
+                    second.pop("input_lock")
+                else:
+                    second["input_lock"] = identity
+                (work / "second.json").write_text(json.dumps(second))
+                result = subprocess.run([sys.executable, str(CLI), "compare", "--first-build", str(work / "first.json"),
+                                         "--second-build", str(work / "second.json"), "--report", str(work / "refusal.json")],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                actual = json.loads((work / "refusal.json").read_text())
+                self.assertIn("unified", actual["reason"])
+                self.assertEqual(actual["commands"], [])
 
     @unittest.skipUnless(sys.platform == "linux", "POSIX cache-link contract")
     def test_inventory_refuses_cache_bytes_outside_the_physical_cache_root(self):
