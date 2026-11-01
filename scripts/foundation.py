@@ -38,14 +38,14 @@ def decode(data):
     return data.decode("utf-16" if b"\x00" in data[:100] else "utf-8", errors="replace")
 
 
-def command(argv, directory, label, timeout=30):
+def command(argv, directory, label, timeout=30, *, cwd=ROOT, env=None):
     started = now()
     stdout_log = directory / (label + ".stdout.log")
     stderr_log = directory / (label + ".stderr.log")
     stdout, stderr, exit_code, timed_out = b"", b"", None, False
     try:
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-        with subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options) as proc:
+        with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options) as proc:
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -66,7 +66,7 @@ def command(argv, directory, label, timeout=30):
     stdout_log.write_bytes(stdout)
     stderr_log.write_bytes(stderr)
     return {
-        "argv": [str(arg) for arg in argv], "cwd": str(ROOT),
+        "argv": [str(arg) for arg in argv], "cwd": str(cwd),
         "started_at": started, "finished_at": now(),
         "exit_code": exit_code, "timeout_seconds": timeout, "timed_out": timed_out,
         "stdout_log": str(stdout_log), "stderr_log": str(stderr_log),

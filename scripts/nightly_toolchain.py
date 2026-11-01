@@ -152,20 +152,32 @@ def validate_links(tree):
             raise ValueError("Dangling/cyclic/escaping cache symlink: " + str(path)) from error
 
 
-def manifest(tree):
+def manifest(tree, executable_modes=None):
     validate_links(tree)
     entries = []
+    root = tree.resolve()
+
+    def executable(path):
+        if executable_modes is None:
+            return bool(path.stat().st_mode & 0o111)
+        # On measured DrvFS without metadata, archive modes remain the source
+        # of execute-bit identity. Link identity follows its validated target.
+        if not path.is_symlink():
+            return executable_modes[path.relative_to(tree).as_posix()]
+        target = path.resolve()
+        return True if target.is_dir() else executable_modes[target.relative_to(root).as_posix()]
+
     for path in sorted(tree.rglob("*")):
         if path.is_symlink():
             target = os.readlink(path)
             entries.append({"path": path.relative_to(tree).as_posix(), "kind": "symlink", "target": target,
                             "sha256": hashlib.sha256(target.encode("utf-8")).hexdigest(),
                             "size_bytes": len(target.encode("utf-8")),
-                            "executable": bool(path.stat().st_mode & 0o111)})
+                            "executable": executable(path)})
         elif path.is_file():
             entries.append({"path": path.relative_to(tree).as_posix(), "kind": "file", "sha256": sha256(path),
                             "size_bytes": path.stat().st_size,
-                            "executable": bool(path.stat().st_mode & 0o111)})
+                            "executable": executable(path)})
         elif not path.is_dir():
             raise ValueError("Unexpected special file in extracted cache")
     return entries
@@ -208,10 +220,15 @@ def measure_tools(tree, directory, report, timeout):
 
 
 def extract(archive, tree):
+    # Canonicalize the extraction parent too (macOS /var aliases /private/var).
+    # Compare link destinations and the allowed root in the same namespace.
+    tree = tree.resolve()
     with zipfile.ZipFile(archive) as bundle:
         items = bundle.infolist()
         seen, links = set(), {}
         for item in items:
+            if item.flag_bits & 1:
+                raise ValueError("Encrypted archive member is unsupported: " + item.filename)
             mode = item.external_attr >> 16
             name = item.filename.rstrip("/")
             if (not safe_name(item.filename) or name in seen
@@ -258,6 +275,77 @@ def freeze(cache):
     cache.chmod(0o555)
 
 
+def mounted_filesystem(path):
+    mounted = []
+    try:
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            left, right = line.split(" - ", 1)
+            mount = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), left.split()[4])
+            fields = right.split()
+            if path.resolve().is_relative_to(Path(mount)):
+                mounted.append((mount, fields[0], "aname=drvfs" in fields[2]))
+    except OSError:
+        return None
+    if not mounted:
+        return None
+    mount, kind, drvfs = max(mounted, key=lambda item: len(item[0]))
+    return {"mount_point": mount, "type": kind, "drvfs": kind == "9p" and drvfs}
+
+
+def filesystem_permissions(cache_root, report):
+    if "filesystem_permissions" in report:
+        return report["filesystem_permissions"]
+    permissions = {"policy": "posix-mode-v1", "file_execute_bits_enforced": True,
+                   "directory_readonly_enforced": True, "regular_file_readonly_enforced": True,
+                   "limits": []}
+    report["filesystem_permissions"] = permissions
+    if os.name == "nt":
+        permissions.update(policy="windows-native-v1", file_execute_bits_enforced=False,
+                           directory_readonly_enforced=False, regular_file_readonly_enforced=False,
+                           limits=["Native Windows does not expose the POSIX mode checks; tool execution is still required"])
+        return permissions
+    # Only recognized DrvFS may use a measured mode-representation policy.
+    # Other POSIX filesystems retain all existing strict mode checks.
+    filesystem = mounted_filesystem(cache_root)
+    permissions["filesystem"] = filesystem
+    if not filesystem or not filesystem["drvfs"]:
+        return permissions
+    with tempfile.TemporaryDirectory(prefix=".permission-probe-", dir=cache_root) as scratch:
+        probe = Path(scratch) / "file"
+        directory = Path(scratch) / "directory"
+        probe.write_bytes(b"Qaplet filesystem mode probe\n")
+        directory.mkdir()
+        modes = []
+        try:
+            for path, requested in ((probe, 0o755), (probe, 0o555), (probe, 0o444), (directory, 0o555)):
+                path.chmod(requested)
+                modes.append({"kind": "directory" if path == directory else "file",
+                              "requested": oct(requested), "actual": oct(stat.S_IMODE(path.stat().st_mode))})
+            file_mode, directory_mode = probe.stat().st_mode, directory.stat().st_mode
+        finally:
+            probe.chmod(0o644)
+            directory.chmod(0o755)
+    permissions["chmod_probe"] = modes
+    permissions["file_execute_bits_enforced"] = not bool(file_mode & 0o111)
+    permissions["directory_readonly_enforced"] = not bool(directory_mode & 0o222)
+    permissions["regular_file_readonly_enforced"] = not bool(file_mode & 0o222)
+    if not permissions["regular_file_readonly_enforced"]:
+        raise Unavailable("DrvFS cannot enforce regular-file no-write; cache verification is blocked")
+    if not permissions["file_execute_bits_enforced"] or not permissions["directory_readonly_enforced"]:
+        permissions["policy"] = "drvfs-no-metadata-v1"
+        if not permissions["file_execute_bits_enforced"]:
+            permissions["limits"].append("File execute bits use original ZIP metadata because this mount cannot represent them")
+        if not permissions["directory_readonly_enforced"]:
+            permissions["limits"].append("Directory no-write is not representable; full entry/content/link verification remains enforced")
+    return permissions
+
+
+def archive_executable_modes(archive):
+    with zipfile.ZipFile(archive) as bundle:
+        return {item.filename: bool(item.external_attr >> 16 & 0o111) for item in bundle.infolist()
+                if not item.is_dir() and not stat.S_ISLNK(item.external_attr >> 16)}
+
+
 def check_space(args, report, minimum):
     paths = [ROOT, args.cache_dir] + ([args.backing_dir] if args.backing_dir else [])
     measurements = [{"path": str(path.resolve()), "free_bytes": shutil.disk_usage(path).free,
@@ -292,6 +380,37 @@ def download(args, report, directory, archive):
             "note": "Fetched over authenticated HTTPS; digest is locally measured, not an upstream signature"}
 
 
+def official_download_argv(argv):
+    # Accept the published download command grammar, including the older form
+    # before --disable was added. Never interpret curl's abbreviations/clusters:
+    # an unknown option, repeated option or extra URL is not trusted evidence.
+    if (not isinstance(argv, list) or not all(isinstance(arg, str) for arg in argv)
+            or len(argv) < 2 or argv[0] not in {"curl", "curl.exe"} or argv[-1] != NIGHTLY_URL):
+        return False
+    flags = {"--fail", "--location", "--silent", "--show-error"}
+    parameters = {"--proto", "--proto-redir", "--connect-timeout", "--max-time", "--output"}
+    seen = set()
+    index = 2 if argv[1] == "--disable" else 1
+    while index < len(argv) - 1:
+        option = argv[index]
+        if option in seen or option not in flags | parameters:
+            return False
+        seen.add(option)
+        index += 1
+        if option in parameters:
+            if index >= len(argv) - 1:
+                return False
+            value = argv[index]
+            index += 1
+            if option in {"--proto", "--proto-redir"} and value != "=https":
+                return False
+            if option in {"--connect-timeout", "--max-time"} and not re.fullmatch(r"[1-9][0-9]*", value):
+                return False
+            if option == "--output" and (not value or "\x00" in value):
+                return False
+    return seen == flags | parameters
+
+
 def import_receipt(args, identity):
     try:
         receipt = read_json(args.acquisition_report)
@@ -324,14 +443,7 @@ def import_receipt(args, identity):
         successful = []
         for item in receipt["commands"]:
             argv = item["argv"]
-            if (not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv)
-                    or argv[0] not in {"curl", "curl.exe"} or argv[-1] != NIGHTLY_URL):
-                continue
-            if any(arg in {"--insecure", "--proxy-insecure", "--config"} or
-                   (arg.startswith("-") and not arg.startswith("--") and any(option in arg[1:] for option in "kK")) for arg in argv):
-                continue
-            if not all(argv.count(option) == 1 and argv.index(option) + 1 < len(argv)
-                       and argv[argv.index(option) + 1] == "=https" for option in ("--proto", "--proto-redir")):
+            if not official_download_argv(argv):
                 continue
             successful.append(type(item["exit_code"]) is int and item["exit_code"] == 0 and item["timed_out"] is False)
         if not any(successful):
@@ -356,7 +468,9 @@ def acquire(args, report, directory):
         validate_lock(read_json(args.lock))
         report["previous_lock_sha256"] = sha256(args.lock)
     official_input = not args.archive or args.acquisition_report or (locked and locked["source"]["kind"] == "official-nightly")
-    if official_input and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None:
+    filesystem = mounted_filesystem(args.cache_dir)
+    if (official_input and "wsl" in report["host"]["kernel"].lower() and args.backing_dir is None
+            and not (filesystem and filesystem["drvfs"])):
         raise Unavailable("WSL download requires explicit --backing-dir for the VHD physical volume (for this machine /mnt/c)")
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     check_space(args, report, args.min_free_bytes)
@@ -382,9 +496,14 @@ def acquire(args, report, directory):
         tree.mkdir()
         extract(archive, tree)
         extraction = {"execute_bit_policy": "archive-unix-modes-v1", "normalized_executable_paths": []}
+        permissions = filesystem_permissions(args.cache_dir, report)
+        modes = archive_executable_modes(archive) if not permissions["file_execute_bits_enforced"] else None
+        files = manifest(tree, modes)
+        if any(not next((entry["executable"] for entry in files if entry["path"] == tool), False) for tool in TOOLS):
+            raise ValueError("Required compiler is missing or not executable in archive metadata")
         tools = measure_tools(tree, directory, report, args.timeout)
         lock = {"schema_version": 1, "kind": "cosmocc-nightly", "source": source, "archive": identity,
-                "tools": tools, "files": manifest(tree), "source_head": None, "extraction": extraction,
+                "tools": tools, "files": files, "source_head": None, "extraction": extraction,
                 "libc_source": {"status": "unproven", "commit": None,
                     "reason": "No verified mapping from this Nightly archive to a Cosmopolitan source commit"}}
         if locked:
@@ -395,16 +514,17 @@ def acquire(args, report, directory):
         validate_lock(lock)
         destination = args.cache_dir / identity["sha256"]
         if destination.exists():
-            check_cache(lock, destination)
+            check_cache(lock, destination, report)
         else:
             os.rename(candidate, destination)
             freeze(destination)
+            check_cache(lock, destination, report)
         if not locked:
             write_json(args.lock, lock)
         return lock, destination / "tree"
 
 
-def check_cache(lock, cache):
+def check_cache(lock, cache, report):
     archive = cache / "archive.zip"
     tree = cache / "tree"
     if cache.is_symlink() or archive.is_symlink() or tree.is_symlink():
@@ -413,9 +533,12 @@ def check_cache(lock, cache):
         raise Unavailable("Locked cache is missing; no implicit download is allowed")
     if archive.stat().st_size != lock["archive"]["size_bytes"] or sha256(archive) != lock["archive"]["sha256"]:
         raise ValueError("Locked archive length/SHA-256 mismatch")
-    if manifest(tree) != lock["files"]:
+    permissions = filesystem_permissions(cache.parent, report)
+    modes = archive_executable_modes(archive) if not permissions["file_execute_bits_enforced"] else None
+    if manifest(tree, modes) != lock["files"]:
         raise ValueError("Extracted cache manifest mismatch")
-    if os.name != "nt" and any(path.stat().st_mode & 0o222 for path in [cache, archive, tree, *tree.rglob("*")] if not path.is_symlink()):
+    if os.name != "nt" and any(path.stat().st_mode & 0o222 for path in [cache, archive, tree, *tree.rglob("*")]
+                              if not path.is_symlink() and (not path.is_dir() or permissions["directory_readonly_enforced"])):
         raise ValueError("Locked cache must remain read-only; writable content is refused")
 
 
@@ -427,7 +550,7 @@ def resolve(args, report, directory):
     if lock["source"]["kind"] != "official-nightly" and not args.allow_local_import:
         raise ValueError("Local-import lock is not official Nightly; fixture use requires --allow-local-import")
     cache = args.cache_dir / lock["archive"]["sha256"]
-    check_cache(lock, cache)
+    check_cache(lock, cache, report)
     measured = measure_tools(cache / "tree", directory, report, args.timeout)
     if measured != lock["tools"]:
         raise ValueError("Compiler identity/version differs from locked measurements")
@@ -438,7 +561,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("download", "fetch", "bump", "verify", "path"))
     parser.add_argument("--lock", type=Path, default=ROOT / "toolchains/cosmocc.lock.json")
-    parser.add_argument("--cache-dir", type=Path, default=Path.home() / ".cache/qaplet/toolchains/cosmocc")
+    parser.add_argument("--cache-dir", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--report", type=Path, default=ROOT / "out/nightly-toolchain.json")
     parser.add_argument("--archive", type=Path, help="explicit local ZIP import; cannot authenticate official origin")
     parser.add_argument("--acquisition-report", type=Path, help="successful official download receipt, rechecked against imported bytes")
