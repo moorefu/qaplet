@@ -4,7 +4,7 @@
 
 **Blocked by:** [03 · QuickJS 源码锁与来源记录](03-quickjs-source-lock.md)、[04 · Nightly 工具链锁与离线缓存](04-nightly-toolchain-lock.md)、[05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 完整且已验证的源码、工具链与资源缓存；可验证禁止联网的构建运行条件。
 
@@ -56,4 +56,6 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01：`codex/m0-09-offline-integrity` / `out/implement-spec/09` 从 integration `ab254628` 开始，已核验 ancestry。沿用已确认的 CLI、真实 OS 与结构化 evidence seams；最终断网双构建等待 07 的统一 64K producer 合入。
+
+实现了隔离 namespace / UID、精确缓存 inventory、strace 审计、字节比较和复制负向入口；实际 preflight、10 个 before-use 拒绝、隐式网络 negative 与 Ubuntu `make check` 已通过。最终两个真实构建及新 helper source 拒绝仍待 07 producer 合入，状态保持 claimed。续作与原始证据指针见[验收记录](../offline-integrity-validation.md)。
