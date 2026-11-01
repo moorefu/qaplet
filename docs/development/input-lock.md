@@ -8,8 +8,9 @@ ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 已选择目标
 `2833510432045f72915919cef680ba59e5153b16`、Tree
 `b2763aa1a9395672adc131322f17d7fad7383053`，VERSION/许可和有序 overlay
 保持不变；原始与 patched 源码摘要各自更新，旧 source manifest 保存于
-`third_party/quickjs/history/`。当前为 `selected_pending_validation`，任务 03
-完成 ESM/Promise 前不晋级普通构建；02 的受控成绩不继承旧跨宿主覆盖。
+`third_party/quickjs/history/`。任务 03 的 Ubuntu ESM/Promise 微型 Host 和受控 APE
+通过后，新配方晋级 `pinned`，重新执行普通 producer；02 的受控成绩保留其原输入身份，
+不继承旧跨宿主覆盖。实际状态转换与范围见[03 验收](../../.scratch/qaplet-v15-alignment/esm-promise-validation.md)。
 `docs/plans/qaplet-toolchain-lock-selected.json` 仍是有未知字段的选型样例，不是可构建锁。
 显式候选也必须直接位于某个仓库的 `toolchains/`；解析器和报告防覆盖校验共用物理根目录判定。
 
@@ -73,8 +74,8 @@ consumer 拒绝 selected。源码和 Nightly CLI 的显式 `fetch` 以及 `verif
 及构建前后身份，只为候选产生标记清楚的真实探针制品。startup 的同名选项允许执行、导出和
 只读导入该候选的 guest 证据；Linux ARM64 guest 导出同时验证 producer 中的独立源、patch
 及 helper 配方，再比较分发 loader 字节。普通消费者拒绝 controlled 报告；受控模式不能签发
-matrix/page-gaps 或完整 Core 成绩。普通 `make check` 的输入 gate 在此阶段拒绝 selected，
-完成 03 后须对晋级后的实际身份重新执行适用回归。
+matrix/page-gaps 或完整 Core 成绩。普通 `make check` 的输入 gate 拒绝 selected。
+03 已在受控探针通过后晋级，并使用新的 pinned 锁身份重新构建和执行适用回归；候选原报告不重标。
 
 源码 `select --commit <exact>` 仅生成隔离的新 source candidate，不解析 moving master；
 `fetch --mirror <physical-local-git-repository>` 从已缓存 Git 对象离线重新物化，仍对比锁定的

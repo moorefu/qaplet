@@ -10,7 +10,7 @@ import stat
 import sys
 import uuid
 
-from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
+from build_ape import BuildError, M0A_CASES, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
 from input_lock import component, consume_identity, check_loader_bundle, check_portable_helper, consumption_purpose
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
@@ -23,8 +23,11 @@ CASES = (("hello.facts", "hello", [], "facts"),
          ("quickjs-eval.pointer-roundtrip", "quickjs-eval", ["--pointer-check"], "pointer-roundtrip"),
          ("quickjs-eval.objects-lifecycle", "quickjs-eval", [OBJECT_LIFECYCLE_EXPRESSION], "objects-lifecycle"),
          ("quickjs-eval.exception", "quickjs-eval", ["throw new Error('m0-probe')"], "Error: m0-probe"),
-         ("quickjs-eval.syntax-error", "quickjs-eval", ["("], "SyntaxError:"))
+         ("quickjs-eval.syntax-error", "quickjs-eval", ["("], "SyntaxError:")) + tuple(
+             ("quickjs-eval." + suffix, "quickjs-eval", arguments, error or suffix)
+             for suffix, arguments, _, error in M0A_CASES)
 EXPECTED_STDOUT = {"value": "42\n", "pointer-roundtrip": "JSValue pointer round-trip: pass\n", "objects-lifecycle": "9990000\n"}
+EXPECTED_STDOUT.update({suffix: output for suffix, _, output, error in M0A_CASES if not error})
 
 
 def ci_facts():
@@ -126,7 +129,7 @@ def evaluate_case(case_id, name, kind, host, record, output, errors, artifact):
         passed = passed and output == EXPECTED_STDOUT[kind] and not errors
     else:
         expected = {"exit_code": "nonzero", "stderr_contains": kind}
-        passed = record["exit_code"] is not None and record["exit_code"] != 0 and not record["timed_out"] and kind in errors
+        passed = record["exit_code"] is not None and record["exit_code"] != 0 and not record["timed_out"] and not output and kind in errors
     return {"case_id": case_id, "status": "pass" if passed else "fail", "reason": "Actual process output/status compared with contract",
             "started_at": record["started_at"], "finished_at": record["finished_at"], "expected": expected,
             "actual": actual, "artifact": artifact, "commands": [record]}
@@ -165,7 +168,7 @@ def native_run(args, report, directory, artifacts):
         if report["loader"]["sha256_after"] != report["loader"]["sha256"]:
             raise BuildError("Native loader bytes changed during execution")
     report.update(status="pass" if all(case["status"] == "pass" for case in report["cases"]) else "fail",
-                  reason="Seven real startup/eval cases recorded; full six-host coverage requires matrix validation")
+                  reason="17 real startup/eval/ESM/jobs cases recorded; full six-host coverage requires matrix validation")
 
 
 TARGETS = (("linux-x86_64", "Linux", "x86_64", None), ("windows-x86_64", "Windows", "x86_64", None),
@@ -207,7 +210,7 @@ def validate_startup(item, artifacts):
     if item["status"] == "pass":
         cases = {case["case_id"]: case for case in item["cases"]}
         if len(item["cases"]) != len(CASES) or set(cases) != {entry[0] for entry in CASES}:
-            raise BuildError("Passing startup report must contain exactly seven required cases")
+            raise BuildError("Passing startup report must contain exactly the required startup/eval/ESM/jobs cases")
         for case_id, name, arguments, kind in CASES:
             case = cases[case_id]
             if case["status"] != "pass" or len(case["commands"]) != 1:
@@ -247,7 +250,7 @@ def matrix(args, report, artifacts):
         elif item["status"] != "pass" and slot["status"] != "fail":
             slot.update(status="blocked", reason=item["reason"])
         elif all(entry["status"] == "pass" for entry in slot["reports"]):
-            slot.update(status="pass", reason="Seven actual cases on unchanged producer bytes")
+            slot.update(status="pass", reason="17 actual startup/eval/ESM/jobs cases on unchanged producer bytes")
     statuses = [entry["status"] for entry in coverage.values()] + [entry["status"] for entry in report["additional_reports"]]
     report.update(status="fail" if "fail" in statuses else "pass" if all(value == "pass" for value in statuses) else "blocked",
                   reason="Six required measured targets, including failures and missing reports, retained")

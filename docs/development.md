@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已接入目标 QuickJS 候选；任务 02 的受控 eval/ARM64 探针与任务 03 的 ESM/Promise 共同决定晋级。普通构建在候选阶段仍拒绝，计划样例不作为当前构建输入。实际状态见[对齐任务](../.scratch/qaplet-v15-alignment/README.md)。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已在任务 02 的精确源码/ARM64 与任务 03 的 Ubuntu ESM/Promise 探针通过后晋级 `pinned`；计划样例不作为当前构建输入。微型 Host 允许进入正式 M1，跨宿主与 ABI 回归、分级 CI 和发布镜像仍分别由 04/05/06 验收。实际状态见[对齐任务](../.scratch/qaplet-v15-alignment/README.md)。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
