@@ -11,10 +11,13 @@
   "schema_version": 1,
   "profile": "m0-evidence",
   "input_manifest": "inputs.json",
+  "guest_manifest": "local-4k-inputs.json",
   "guest_report": "guest4096/guest.json",
   "publication_inputs": "publications.json"
 }
 ```
+
+可选 `guest_manifest` 为实际 4K guest 选择其原 producer 与传输证据，并通过 `QAPLET_GATE_4K_MANIFEST` 传给既有 4K 回归；省略时沿用 `input_manifest`，兼容同一 bundle。它不替代必需的完整 Core manifest、4K guest 或五 producer publication selection。Full CI 与本地 4K 可分别使用真实的 CI/本地身份，不能改写或模拟 CI 字段让不同 producer 混用。
 
 入口先检查三个必需文件、五种 producer 分发声明、实际完整 Core 和4K guest，再执行已有 Core/4K/publication/recipe consumer regressions。本 profile 每项测试都必需：缺数据、失败、error、skip或未完成均非通过。普通 `make check` 的平台/显式数据 skips 保留原含义。`--preflight-only` 只签发 evidence-preflight，明确没有执行 mutation regressions。
 

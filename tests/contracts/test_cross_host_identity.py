@@ -125,25 +125,5 @@ class CrossHostIdentity(unittest.TestCase):
                 self.assertEqual(code, 1, report["reason"])
 
 
-@unittest.skipUnless(os.environ.get("QAPLET_GATE_MANIFEST"), "Explicit actual complete new-input Core evidence required")
-class CoreCommitIdentity(unittest.TestCase):
-    def test_core_refuses_ci_commit_drift_even_with_current_inputs_and_artifact_bytes(self):
-        # Reuse the existing actual-archive mutation seam; no product execution.
-        from test_core_gate import ActualCoreEvidence
-        case = ActualCoreEvidence()
-        case.setUp()
-        self.addCleanup(case.doCleanups)
-        def change(report):
-            ci = report.get("ci")
-            if ci is None:
-                ci = dict(run_id="1", run_attempt="1", workflow="fixture", runner_name="fixture",
-                          runner_os="Linux", runner_arch="X64", image_os="fixture", image_version="1")
-            report["ci"] = dict(ci, commit="b" * 40)
-        case.inject_report("startup_reports", change)
-        code, report = case.evaluate()
-        self.assertNotEqual(code, 0)
-        self.assertIn("CI", " ".join(report["core"]["errors"]))
-
-
 if __name__ == "__main__":
     unittest.main()

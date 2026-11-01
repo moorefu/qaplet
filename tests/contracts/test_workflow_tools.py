@@ -80,6 +80,23 @@ class ReviewPacketCLI(unittest.TestCase):
 
 
 class StrictEvidenceCLI(unittest.TestCase):
+    def test_explicit_4k_manifest_must_exist_instead_of_silently_using_full_core_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name in ("full.json", "guest.json", "publications.json"):
+                (directory / name).write_text("{}", encoding="utf-8")
+            config = directory / "selection.json"
+            config.write_text(json.dumps({"schema_version": 1, "profile": "m0-evidence",
+                "input_manifest": "full.json", "guest_manifest": "missing-4k.json", "guest_report": "guest.json",
+                "publication_inputs": "publications.json"}), encoding="utf-8")
+            output = directory / "result.json"
+            process = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/check_evidence.py"),
+                "--config", config, "--report", output], capture_output=True, text=True, timeout=15)
+            result = json.loads(output.read_text())
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("missing-4k.json", result["reason"])
+            self.assertNotIn("tests", result)
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX blocking-input progress fixture")
     def test_running_report_exposes_progress_before_input_finishes(self):
         with tempfile.TemporaryDirectory() as temporary:
