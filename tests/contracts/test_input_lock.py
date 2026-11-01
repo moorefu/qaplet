@@ -1,6 +1,7 @@
 """Unified input selection through the public CLI, using copied metadata only."""
 import json
 import copy
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -219,6 +220,48 @@ class InputLockContract(unittest.TestCase):
             self.assertIn("symlink", actual["reason"])
             self.assertFalse(output.exists())
             self.assertEqual((repo / "toolchains/qaplet.lock.json").read_bytes(), before)
+
+    def test_report_cannot_overwrite_an_explicit_source_cache_outside_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-external-cache-") as temp:
+            work = Path(temp)
+            repo, cache = work / "repo", work / "external-cache"
+            self.copied_repo(repo)
+            target = cache / "pin/source/VERSION"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"2026-06-04\n")
+            result = subprocess.run([sys.executable, str(repo / "scripts/input_lock.py"), "migrate",
+                                     "--source-cache", str(cache), "--output", str(repo / "toolchains/qaplet.lock.json"),
+                                     "--report", str(target)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(target.read_bytes(), b"2026-06-04\n")
+            self.assertFalse(json.loads(result.stdout)["report_written"])
+
+    def test_missing_version_becomes_a_fresh_supplier_cli_failure(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-missing-version-") as temp:
+            repo = Path(temp)
+            self.copied_repo(repo)
+            source_path, unified_path = repo / "third_party/quickjs/source.lock.json", repo / "toolchains/qaplet.lock.json"
+            source, unified = json.loads(source_path.read_text()), json.loads(unified_path.read_text())
+            source["upstream"]["files"] = [entry for entry in source["upstream"]["files"] if entry["path"] != "VERSION"]
+            source["upstream"]["sha256"] = hashlib.sha256(json.dumps(source["upstream"]["files"],
+                sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            raw = json.dumps(source).encode()
+            source_path.write_bytes(raw)
+            unified["manifests"]["quickjs"].update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
+            unified["selection"]["quickjs"]["upstream_sha256"] = source["upstream"]["sha256"]
+            unified_path.write_text(json.dumps(unified))
+            report = repo / "out/refusal.json"
+            report.parent.mkdir()
+            for script in ("quickjs_source.py", "nightly_toolchain.py", "build_ape.py"):
+                report.write_text('{"status":"pass","old_report":true}')
+                operation = "build" if script == "build_ape.py" else "verify"
+                result = subprocess.run([sys.executable, str(repo / "scripts" / script), operation,
+                                         "--report", str(report)], capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                actual = json.loads(report.read_text())
+                self.assertEqual(actual["status"], "fail", result.stderr)
+                self.assertIn("VERSION", actual["reason"])
+                self.assertEqual(actual["commands"], [])
 
 
 if __name__ == "__main__":

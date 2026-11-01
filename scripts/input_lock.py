@@ -48,6 +48,21 @@ def exact_hash(value, width=64):
         raise ValueError("Missing, malformed or placeholder input digest/object ID")
 
 
+def selected_inputs(components, tree, version):
+    q, n, h, s = (components[key] for key in MANIFESTS)
+    return {
+        "quickjs": {"repository": q["repository"], "commit": q["commit"], "git_tree_oid": tree,
+                    "version_file": version, "upstream_sha256": q["upstream"]["sha256"],
+                    "source_sha256": q["source"]["sha256"], "patchset_sha256": q["patch_manifest_sha256"]},
+        "cosmocc": {"archive": n["archive"], "component_manifest_sha256": sha(canonical(n["files"])),
+                    "run": n["source"]["github"], "libc_source": n["libc_source"], "signed_attestation": False},
+        "ape_helpers": {"commit": h["commit"], "git_tree_oid": h["git_tree"],
+                        "component_manifest_sha256": sha(canonical(h["files"])),
+                        "nightly_archive_sha256": h["toolchain_archive_sha256"]},
+        "startup_loaders": {"zig": s["zig"], "source": s["source"], "recipe": s["recipe"]},
+        "native_toolchain_recipe": "official-assimilate-linux-x86_64-v1"}
+
+
 def bound_file(root, entry):
     name = entry["path"]
     path = PurePosixPath(name)
@@ -112,32 +127,20 @@ class InputLock:
         selection = value["selection"]
         quickjs = selection["quickjs"]
         exact_hash(quickjs["git_tree_oid"], 40)
-        expected = {"repository": q["repository"], "commit": q["commit"],
-                    "git_tree_oid": quickjs["git_tree_oid"], "version_file": quickjs["version_file"],
-                    "upstream_sha256": q["upstream"]["sha256"], "source_sha256": q["source"]["sha256"],
-                    "patchset_sha256": q["patch_manifest_sha256"]}
-        if quickjs != expected:
-            raise ValueError("QuickJS Commit/Tree/content/patch selection conflicts with bound manifest")
+        expected = selected_inputs(components, quickjs["git_tree_oid"], quickjs["version_file"])
+        for key, entry in expected.items():
+            if selection[key] != entry:
+                raise ValueError(key + " selection conflicts with bound component manifest")
         exact_hash(quickjs["commit"], 40)
-        version = next(entry for entry in q["upstream"]["files"] if entry["path"] == "VERSION")
+        version = next((entry for entry in q["upstream"]["files"] if entry["path"] == "VERSION"), None)
+        if version is None:
+            raise ValueError("QuickJS upstream VERSION entry is missing")
         if sha((quickjs["version_file"] + "\n").encode()) != version["sha256"]:
             raise ValueError("QuickJS VERSION conflicts with source manifest")
-        if selection["cosmocc"] != {"archive": n["archive"], "component_manifest_sha256": sha(canonical(n["files"])),
-                                    "run": n["source"]["github"], "libc_source": n["libc_source"],
-                                    "signed_attestation": False}:
-            raise ValueError("Original ZIP, component manifest or Run provenance conflict")
-        if selection["ape_helpers"] != {"commit": h["commit"], "git_tree_oid": h["git_tree"],
-                                        "component_manifest_sha256": sha(canonical(h["files"])),
-                                        "nightly_archive_sha256": h["toolchain_archive_sha256"]}:
-            raise ValueError("Independent helper identity conflict")
         exact_hash(h["commit"], 40)
         exact_hash(h["git_tree"], 40)
         if h["toolchain_archive_sha256"] != n["archive"]["sha256"] or s["source"]["nightly_archive_sha256"] != n["archive"]["sha256"]:
             raise ValueError("Helper provider archive conflict")
-        if selection["startup_loaders"] != {"zig": s["zig"], "source": s["source"], "recipe": s["recipe"]}:
-            raise ValueError("Startup helper tool/source/recipe conflict")
-        if selection["native_toolchain_recipe"] != "official-assimilate-linux-x86_64-v1":
-            raise ValueError("Unknown derived native tool recipe")
         required = set()
         for key, parent in (("quickjs", "third_party/quickjs"), ("ape_helpers", "third_party/ape-helpers")):
             patches = read_json(self.root / parent / "patches.json")
@@ -231,7 +234,7 @@ def migrate(source_cache, root=ROOT, report=None, directory=None):
     """Map existing metadata and a verified source cache; never promote a candidate."""
     from quickjs_source import manifest, validate_lock
     manifests = {key: read_json(root / name) for key, name in MANIFESTS.items()}
-    q, n, h, s = (manifests[key] for key in MANIFESTS)
+    q = manifests["quickjs"]
     validate_lock(q)
     source = source_cache / (q["commit"] + "-" + q["patch_manifest_sha256"][:16]) / "source"
     if manifest(source) != q["source"]:
@@ -258,18 +261,7 @@ def migrate(source_cache, root=ROOT, report=None, directory=None):
         "manifests": {key: file_identity(root / name, name) for key, name in MANIFESTS.items()},
         "metadata": [file_identity(root / name, name) for name in sorted(metadata)],
         "recipes": [file_identity(root / name, name) for name in sorted(RECIPE_PATHS)],
-        "selection": {
-            "quickjs": {"repository": q["repository"], "commit": commit, "git_tree_oid": tree,
-                        "version_file": (source / "VERSION").read_text().strip(),
-                        "upstream_sha256": q["upstream"]["sha256"], "source_sha256": q["source"]["sha256"],
-                        "patchset_sha256": q["patch_manifest_sha256"]},
-            "cosmocc": {"archive": n["archive"], "component_manifest_sha256": sha(canonical(n["files"])),
-                        "run": n["source"]["github"], "libc_source": n["libc_source"], "signed_attestation": False},
-            "ape_helpers": {"commit": h["commit"], "git_tree_oid": h["git_tree"],
-                            "component_manifest_sha256": sha(canonical(h["files"])),
-                            "nightly_archive_sha256": h["toolchain_archive_sha256"]},
-            "startup_loaders": {"zig": s["zig"], "source": s["source"], "recipe": s["recipe"]},
-            "native_toolchain_recipe": "official-assimilate-linux-x86_64-v1"},
+        "selection": selected_inputs(manifests, tree, (source / "VERSION").read_text().strip()),
         "policy": {"network_during_build": False, "allow_rolling_nightly_fallback": False,
                    "preserve_original_artifact_zip": True},
         "archive_retention": {"status": "pending", "release_ready": False, "task": "06-original-archive-retention"},
@@ -281,6 +273,8 @@ def report_path(args):
     target = args.report.absolute()
     if target.resolve() != target or target in (args.lock.absolute(), args.output.absolute() if args.output else None):
         raise ValueError("Report path aliases an input/output or redirects through links")
+    if target.is_relative_to(args.source_cache.resolve()):
+        raise ValueError("Report path overlaps the explicitly selected source cache")
     roots = {ROOT}
     if args.lock.parent.name == "toolchains":
         roots.add(args.lock.absolute().parent.parent)
