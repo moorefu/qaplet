@@ -109,7 +109,8 @@ class ActualCoreEvidence(unittest.TestCase):
         recipe["disconnected_report"] = {"path": str(copied), "sha256": hashlib.sha256(copied.read_bytes()).hexdigest(), "size_bytes": copied.stat().st_size}
         copied_recipe = self.directory / "recipe.json"
         copied_recipe.write_text(json.dumps(recipe), encoding="utf-8")
-        shutil.copyfile(recipe_path.parent / "builder-tested.py", self.directory / "builder-tested.py")
+        if recipe["changed_inputs"]:
+            shutil.copyfile(recipe_path.parent / "builder-tested.py", self.directory / "builder-tested.py")
         self.manifest.update(offline_report=str(copied), offline_recipe_comparison=str(copied_recipe))
 
     def test_offline_comparisons_must_reference_the_two_actual_producers(self):
