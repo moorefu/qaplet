@@ -194,6 +194,23 @@ def build(args, report, directory, lock):
         shutil.copyfile(original / "bin" / name, path)
         path.chmod(0o555)
         report["helpers"].append({"os": system, "arch": arch, "file": name, **identity(path), "origin": "unchanged official Nightly loader"})
+    if args.producer_report:
+        producer = read_json(args.producer_report)
+        if producer.get("status") != "pass" or producer.get("report_kind") != "ape-build":
+            raise BuildError("A passing portable producer report is required for the ARM64 loader override")
+        supplied = producer["portable_helpers"]["loader"]
+        source_path = Path(supplied["path"])
+        if sha256(source_path) != supplied["sha256"] or source_path.stat().st_size != supplied["size_bytes"]:
+            raise BuildError("Source-built ARM64 loader differs from producer")
+        from ape_helpers import loads
+        inspection = loads(source_path.read_bytes(), require_arm64=True)
+        path = output / "ape-aarch64.elf"
+        path.chmod(0o755)
+        shutil.copyfile(source_path, path)
+        path.chmod(0o555)
+        entry = next(item for item in report["helpers"] if item["os"] == "Linux" and item["arch"] == "aarch64")
+        entry.update(**identity(path), origin="Independently source-built 64K Linux loader from portable producer",
+                     source=producer["portable_helpers"]["source"], build=producer["portable_helpers"], inspection=inspection)
     helper.chmod(0o555)
     report["helpers"].append({"os": "Darwin", "arch": "aarch64", "file": helper.name, **identity(helper),
                               "origin": "Ubuntu Zig cross-build of unchanged locked ape-m1.c", "inspection": macho_facts(helper)})
@@ -214,6 +231,7 @@ def main():
     parser.add_argument("--lock", type=Path, default=ROOT / "toolchains/startup-loaders.lock.json")
     parser.add_argument("--zig-cache", type=Path, default=ROOT / ".cache/tools/zig/0.15.2")
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
+    parser.add_argument("--producer-report", type=Path, help="Portable producer supplying the separately source-built 64K Linux ARM64 loader")
     parser.add_argument("--build-dir", type=Path, default=ROOT / ".cache/build/startup-loaders")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "out/m0/loaders")
     parser.add_argument("--report", type=Path, default=ROOT / "out/m0/loaders/helpers.json")

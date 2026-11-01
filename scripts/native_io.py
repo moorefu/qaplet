@@ -12,7 +12,8 @@ import sys
 import uuid
 import zipfile
 
-from build_ape import BuildError, audit, identity, native_toolchain, run, verify_inputs
+from build_ape import (BuildError, audit, identity, native_toolchain, run, verify_inputs,
+                       prepare_portable_helpers, link_portable)
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from native_toolchain import recheck
@@ -63,6 +64,7 @@ def build(args, report, directory):
         raise BuildError("Native I/O artifacts are built on Ubuntu only", "blocked")
     original = verify_inputs(args, report, directory, source=False)
     tree = native_toolchain(args, report, directory, original)
+    helpers = prepare_portable_helpers(args, report, directory, tree)
     output = args.output_dir.resolve()
     if output.exists() and any(output.iterdir()):
         raise BuildError("Output directory must be empty; choose a new run")
@@ -74,7 +76,7 @@ def build(args, report, directory):
     output.mkdir(parents=True, exist_ok=True)
     source = ROOT / "tests/native/native_io.c"
     recipe_files = [source, *(ROOT / "scripts" / name for name in
-        ("native_io.py", "native_io_terminal.py", "build_ape.py", "native_toolchain.py", "foundation.py", "evidence.py", "nightly_toolchain.py"))]
+        ("native_io.py", "native_io_terminal.py", "build_ape.py", "ape_helpers.py", "native_toolchain.py", "foundation.py", "evidence.py", "nightly_toolchain.py"))]
     files = [identity(p) for p in recipe_files]
     git = shutil.which("git")
     commit = None
@@ -92,6 +94,7 @@ def build(args, report, directory):
     shutil.copyfile(source, own)
     flags = ["-Os", "-D_GNU_SOURCE", "-ffile-prefix-map=" + str(work) + "=build", *args.cflag]
     report["build"] = {"flags": flags, "recipe_files": files,
+                       "portable_helpers_sha256": helpers["sha256"],
                        "toolchain_lock_sha256": report["toolchain_lock"]["sha256"],
                        "native_helpers_sha256": report["native_toolchain"]["helper_set_sha256"],
                        "resource_order": ["ape-x86_64.elf", "ape-aarch64.elf", "ape-m1.c", "x86_64 ELF", "aarch64 ELF"],
@@ -101,11 +104,13 @@ def build(args, report, directory):
     report["build"]["sha256"] = hashlib.sha256(json.dumps(report["build"], sort_keys=True).encode()).hexdigest()
     run(report, directory, "native-io-compile", [tree / "bin/cosmocc", *flags, "-c", own, "-o", work / "native-io.o"],
         args.compile_timeout, work, environment)
-    run(report, directory, "native-io-link", [tree / "bin/cosmocc", "-Os", "-Wl,-Map=%.map", work / "native-io.o",
-                                            "-lpthread", "-o", work / "native-io.com"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "native-io", [work / "native-io.o"], work / "native-io.com",
+                  work, environment, libraries=("-lpthread",))
     for suffix in (".com", ".com.dbg", ".aarch64.elf"):
         shutil.copyfile(work / ("native-io" + suffix), output / ("native-io" + suffix))
     (output / "native-io.com").chmod(0o755)
+    shutil.copyfile(helpers["loader"]["path"], output / "ape-aarch64.elf")
+    report["distributed_helpers"] = [identity(output / "ape-aarch64.elf")]
     append_resource(output / "native-io.com")
     for arch, pattern in (("x86_64", "*.com.dbg.map"), ("aarch64", "*.aarch64.elf.map")):
         maps = list((work / "tmp").glob(pattern))
@@ -253,6 +258,7 @@ def main():
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--build-report", type=Path)
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
+    parser.add_argument("--helper-source-cache", type=Path, default=ROOT / ".cache/sources/ape-loader")
     parser.add_argument("--build-dir", type=Path, default=ROOT / ".cache/build")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "out/native-io/artifacts")
     parser.add_argument("--loader", type=Path)

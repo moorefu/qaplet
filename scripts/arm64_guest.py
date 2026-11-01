@@ -141,7 +141,7 @@ def manifest(args):
     paths = set()
     for item in data["files"]:
         target = PurePosixPath(item["guest_path"])
-        if not target.is_absolute() or target.parts[:2] != ("/", "payload") or ".." in target.parts or str(target) in paths:
+        if not target.is_absolute() or target.parts[:2] != ("/", "payload") or ".." in target.parts or str(target) in paths or any(char in item["guest_path"] for char in "\\\r\n\0"):
             raise BuildError("Payload paths must be unique safe absolute /payload paths")
         paths.add(str(target))
         path = Path(item["path"]).resolve()
@@ -161,6 +161,9 @@ def manifest(args):
             raise BuildError("Command requires string argv and a supplied executable")
         if type(item.get("expected_exit_code")) is not int or not 0 <= item["expected_exit_code"] <= 255:
             raise BuildError("Command expected_exit_code must be 0..255")
+        for key in ("expected_stdout", "expected_stderr", "stderr_contains"):
+            if key in item and not isinstance(item[key], str):
+                raise BuildError("Optional output assertions must be strings")
     return data
 
 
@@ -213,6 +216,11 @@ def init_script(data, token, timeout):
               'test "$(/usr/bin/getconf PAGESIZE)" = ' + str(data["page_size"]) + ' || /bin/busybox poweroff -f']
     for index, item in enumerate(data["commands"]):
         prefix = "CASE " + item["case_id"]
+        # Every shell/header control must extract its own embedded loader;
+        # a previous successful payload may not mask another payload's bytes.
+        temporary = "/tmp/command-" + item["case_id"]
+        lines += ["/bin/busybox mkdir -p " + shlex.quote(temporary), "export TMPDIR=" + shlex.quote(temporary),
+                  "export HOME=" + shlex.quote(temporary)]
         emit(prefix + " START", '"$(/bin/busybox date -u +%Y-%m-%dT%H:%M:%SZ)"')
         lines.append("/bin/busybox timeout -s KILL " + str(timeout) + " " + shlex.join(item["argv"]) + " >/tmp/stdout 2>/tmp/stderr")
         lines.append("rc=$?")
@@ -244,6 +252,8 @@ def execute(args, report, directory):
     (directory / "init").write_bytes(files["init"][1])
     report["qemu"]["rootfs"] = identity(initrd)
     report["qemu"]["init"] = identity(directory / "init")
+    if not shutil.which(args.qemu):
+        raise BuildError("Full-system qemu-system-aarch64 executable is missing", "blocked")
     _, version, _ = run(report, directory, "qemu-version", [args.qemu, "--version"], 10)
     found = re.search(r"QEMU emulator version (\d+\.\d+\.\d+)", version)
     if not found or found[1] != lock["qemu"]["version"]:
@@ -271,7 +281,7 @@ def execute(args, report, directory):
                 raise BuildError("Duplicate guest fact")
             facts[key] = int(content) if key in ("page_size", "page_size_alias", "smaps_kib") else content
         elif kind in ("HASH", "HASH_AFTER"):
-            key, content = value.split(" ", 1)
+            key, content = value.rsplit(" ", 1)
             destination = hashes if kind == "HASH" else hashes_after
             if key in destination:
                 raise BuildError("Duplicate guest payload hash")
@@ -304,10 +314,15 @@ def execute(args, report, directory):
         err.write_bytes(stderr)
         code = int(raw["EXIT"])
         passed = code == item["expected_exit_code"] and code != 137
+        text_out, text_err = stdout.decode("utf-8", "replace"), stderr.decode("utf-8", "replace")
+        passed = passed and ("expected_stdout" not in item or text_out == item["expected_stdout"])
+        passed = passed and ("expected_stderr" not in item or text_err == item["expected_stderr"])
+        passed = passed and ("stderr_contains" not in item or item["stderr_contains"] in text_err)
         report["cases"].append({"case_id": item["case_id"], "status": "pass" if passed else "fail", "argv": item["argv"],
             "started_at": raw["START"], "finished_at": raw["END"], "timeout_seconds": args.command_timeout,
-            "expected": {"exit_code": item["expected_exit_code"]}, "exit_code": code,
-            "actual": {"stdout": stdout.decode("utf-8", "replace"), "stderr": stderr.decode("utf-8", "replace"), "exit_code": code},
+            "guest_temporary_directory": "/tmp/command-" + item["case_id"],
+            "expected": {key: value for key, value in item.items() if key.startswith("expected_") or key == "stderr_contains"}, "exit_code": code,
+            "actual": {"stdout": text_out, "stderr": text_err, "exit_code": code},
             "stdout_log": identity(out), "stderr_log": identity(err), "serial_log": report["qemu"]["serial_log"],
             "reason": "Actual full-system guest command and returned raw bytes"})
     # A successful shell fragment cannot turn a kernel timeout/panic into green.

@@ -1,6 +1,8 @@
 *.py text eol=lf
 *.c text eol=lf
 *.json text eol=lf
+*.patch text eol=lf
+third_party/ape-helpers/LICENSE text eol=lf
 *.yml text eol=lf
 Makefile text eol=lf
 .gitignore text eol=lf

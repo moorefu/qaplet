@@ -134,14 +134,61 @@ def verify_guest(args, report):
     expected = {"pages64k." + case for case in REQUIRED}
     if len(rows) != len(expected) or {row["case_id"] for row in rows} != expected or any(row["status"] != "pass" or row["actual"] != row["expected"] for row in rows):
         raise BuildError("Missing, duplicate or failing required native deep cases")
+    for row in rows:
+        row.update(started_at=suite["started_at"], finished_at=suite["finished_at"], timeout_seconds=suite["timeout_seconds"],
+                   exit_code=suite["actual"]["exit_code"], artifact={key: producer["artifacts"][0][key] for key in ("path", "sha256", "size_bytes")},
+                   reason="Actual independent C assertion within the recorded guest suite interval", argv=suite["argv"],
+                   stdout_log=suite["stdout_log"], stderr_log=suite["stderr_log"])
     report.update(cases=rows, guest=guest["guest"], qemu=guest["qemu"], cleanup=guest["cleanup"],
         producer=identity(args.input_report), guest_report=identity(args.guest_report), artifact=producer["artifacts"][0],
         build=producer["build"], toolchain=producer["toolchain"], portable_helpers=producer["portable_helpers"])
 
 
+def run_native(args, report, directory):
+    host = report["host"]
+    if host["os"] != "Linux" or host["execution_arch"] != "aarch64" or host["execution_mode"] != "native" or host["page_size"] != 65536:
+        raise BuildError("Actual native Linux/AArch64/65536 host required; use full-system guest for a missing page configuration", "blocked")
+    producer = read_json(args.input_report)
+    if producer.get("status") != "pass" or producer.get("report_kind") != "pages64k-build":
+        raise BuildError("Passing independent probe producer required")
+    artifact = args.artifact.resolve()
+    loader = args.loader.resolve()
+    for path, item in ((artifact, producer["artifacts"][0]), (loader, producer["loader"])):
+        if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+            raise BuildError("Distributed native probe/helper identity differs from producer")
+        path.chmod(path.stat().st_mode | 0o111)
+    executions = []
+    shell_cache = directory / "shell-cache"
+    shell_cache.mkdir()
+    environment = dict(os.environ, TMPDIR=str(shell_cache), HOME=str(shell_cache))
+    for name, argv in (("facts", [loader, artifact, "--facts"]), ("suite", [loader, artifact, "--suite"]),
+                       ("shell-header", ["/bin/sh", artifact, "--facts"])):
+        executed, output, errors = run(report, directory, "native-" + name, argv, args.timeout, environment=environment, expected=None)
+        if executed["exit_code"] != 0 or executed["timed_out"] or errors:
+            raise BuildError("Actual native 64K probe failed: " + name)
+        executions.append({"case_id": "pages64k." + name, "command": executed, "stdout": output})
+        if name == "suite":
+            rows = [json.loads(line) for line in output.splitlines()]
+            required = {"pages64k." + case for case in REQUIRED}
+            if len(rows) != len(required) or {row["case_id"] for row in rows} != required or any(row["status"] != "pass" or row["actual"] != row["expected"] for row in rows):
+                raise BuildError("Missing or failing required native deep cases")
+            for row in rows:
+                row.update(started_at=executed["started_at"], finished_at=executed["finished_at"], timeout_seconds=args.timeout,
+                           exit_code=executed["exit_code"], artifact=identity(artifact), commands=[executed],
+                           reason="Actual independent C assertion within the recorded native suite interval")
+            report["cases"] = rows
+        elif json.loads(output) != {"probe": "pages64k", "arch": "aarch64", "page_size": 65536}:
+            raise BuildError("Native C sysconf/architecture differs from measured host")
+    if sha256(artifact) != producer["artifacts"][0]["sha256"] or sha256(loader) != producer["loader"]["sha256"]:
+        raise BuildError("Native artifact/helper bytes changed")
+    report.update(executions=executions, artifact=identity(artifact), loader=identity(loader), producer=identity(args.input_report),
+                  build=producer["build"], toolchain=producer["toolchain"], portable_helpers=producer["portable_helpers"],
+                  cleanup={"probe_exited": True, "filesystem_fixture": "Probe independently checks removal", "host_global_changes": False})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "guest-manifest", "verify-guest"))
+    parser.add_argument("operation", choices=("build", "guest-manifest", "verify-guest", "run-native"))
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--helper-source-cache", type=Path, default=ROOT / ".cache/sources/ape-loader")
     parser.add_argument("--guest-cache", type=Path, default=ROOT / ".cache/guests")
@@ -150,6 +197,8 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--input-report", type=Path)
     parser.add_argument("--guest-report", type=Path)
+    parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--loader", type=Path)
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--compile-timeout", type=int, default=300)
     args = parser.parse_args()
@@ -164,6 +213,8 @@ def main():
             build(args, report, directory)
         elif args.operation == "guest-manifest":
             guest_manifest(args, report)
+        elif args.operation == "run-native":
+            run_native(args, report, directory)
         else:
             verify_guest(args, report)
         report.update(status="pass", reason="Independent 64K probe " + args.operation + " completed; hardware/performance not claimed")

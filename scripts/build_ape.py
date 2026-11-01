@@ -22,6 +22,10 @@ from nightly_toolchain import write_json
 import ape_helpers
 
 SOURCES = ("quickjs.c", "dtoa.c", "libregexp.c", "libunicode.c", "cutils.c")
+OBJECT_LIFECYCLE_EXPRESSION = ('(() => { let total=0; for(let round=0;round<20;round++){ '
+    'const a=Array.from({length:1000},(_,i)=>({n:i,s:"value"+i})); '
+    'const m=new Map(a.map(o=>[o.s,o])); '
+    'total += Array.from(m.values()).reduce((s,o)=>s+o.n,0); } return total; })()')
 FORBIDDEN = re.compile(r"\b(?:__imp_)?(?:OpenSCManager[AW]?|CreateService[AW]?|OpenService[AW]?|"
                        r"StartService[AW]?|StartServiceCtrlDispatcher[AW]?|RegisterServiceCtrlHandler(?:Ex)?[AW]?|"
                        r"SetServiceStatus|ControlService(?:Ex)?[AW]?|DeleteService|ChangeServiceConfig\w*|"
@@ -280,6 +284,8 @@ def build(args, report, directory):
             native_case(args, report, directory, tree, artifact, "value", [], expected_output="42\n")
             native_case(args, report, directory, tree, artifact, "exception", ["throw new Error('m0-probe')"], 1, error="Error: m0-probe")
             native_case(args, report, directory, tree, artifact, "syntax-error", ["("], 1, error="SyntaxError:")
+            native_case(args, report, directory, tree, artifact, "pointer-roundtrip", ["--pointer-check"], expected_output="JSValue pointer round-trip: pass\n")
+            native_case(args, report, directory, tree, artifact, "objects-lifecycle", [OBJECT_LIFECYCLE_EXPRESSION], expected_output="9990000\n")
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),

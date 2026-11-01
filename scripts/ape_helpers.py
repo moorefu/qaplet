@@ -37,14 +37,22 @@ def source_cache(root):
 def verify_source(cache):
     from build_ape import BuildError
     lock = read_json(LOCK)
+    if not cache.is_dir():
+        raise BuildError("Locked APE helper source cache is missing", "blocked")
+    if cache.resolve() != cache.absolute():
+        raise BuildError("Helper source cache must be physical and cannot redirect through links")
     overlay = read_json(LOCK.parent / "patches.json")
     if overlay.get("schema_version") != 1 or len(overlay.get("patches", [])) != 1:
         raise BuildError("Expected one ordered reviewed packer patch")
     for entry in overlay["patches"]:
+        if not (cache / entry["source"]).is_file():
+            raise BuildError("Missing locked APE helper source: " + entry["source"], "blocked")
         if sha256(LOCK.parent / entry["path"]) != entry["sha256"] or sha256(cache / entry["source"]) != entry["source_sha256"]:
             raise BuildError("Ordered packer overlay identity differs from manifest")
     for entry in lock["files"]:
         path = cache / entry["path"]
+        if path.is_symlink() or path.parent.resolve() != path.parent.absolute():
+            raise BuildError("Helper source cache entry redirects through links")
         if not path.is_file():
             raise BuildError("Missing locked APE helper source: " + str(path), "blocked")
         content = path.read_bytes()
