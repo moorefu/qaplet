@@ -155,7 +155,7 @@
         {
           "name": "Execute disconnected pair and supplier refusals",
           "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
-          "run": "sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/m0/offline/offline-integrity.json"
+          "run": "mkdir -p out/m0/offline\nsudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/m0/offline/offline-integrity.json"
         },
         {
           "name": "Seal current offline recipe and helper bytes for transport",
