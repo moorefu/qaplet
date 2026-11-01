@@ -20,6 +20,12 @@ class M0AHostContract(unittest.TestCase):
         launcher = producer["build"]["launcher"]["path"]
         return subprocess.run([launcher, artifact["path"], mode], capture_output=True, text=True, timeout=5)
 
+    def assert_host_failure(self, mode, error):
+        actual = self.invoke(mode)
+        self.assertNotEqual(actual.returncode, 0)
+        self.assertEqual(actual.stdout, "")
+        self.assertIn(error, actual.stderr)
+
     def test_esm_export_is_observed_from_the_module_namespace(self):
         actual = self.invoke("--esm-export")
         self.assertEqual((actual.returncode, actual.stdout, actual.stderr), (0, "42\n", ""))
@@ -33,10 +39,7 @@ class M0AHostContract(unittest.TestCase):
                             ("--esm-syntax", "SyntaxError:"),
                             ("--esm-exception", "Error: m0-module-eval")):
             with self.subTest(mode=mode):
-                actual = self.invoke(mode)
-                self.assertNotEqual(actual.returncode, 0)
-                self.assertEqual(actual.stdout, "")
-                self.assertIn(error, actual.stderr)
+                self.assert_host_failure(mode, error)
 
     def test_pending_promise_jobs_complete_before_the_export_is_read(self):
         actual = self.invoke("--jobs-complete")
@@ -46,19 +49,13 @@ class M0AHostContract(unittest.TestCase):
         for mode, error in (("--jobs-exception", "InternalError: m0-job-exception"),
                             ("--jobs-rejection", "Error: m0-job-rejection")):
             with self.subTest(mode=mode):
-                actual = self.invoke(mode)
-                self.assertNotEqual(actual.returncode, 0)
-                self.assertEqual(actual.stdout, "")
-                self.assertIn(error, actual.stderr)
+                self.assert_host_failure(mode, error)
 
     def test_unfinished_and_endlessly_queued_jobs_are_bounded_failures(self):
         for mode, error in (("--jobs-unfinished", "m0 Promise unfinished"),
                             ("--jobs-budget", "m0 job budget exceeded")):
             with self.subTest(mode=mode):
-                actual = self.invoke(mode)
-                self.assertNotEqual(actual.returncode, 0)
-                self.assertEqual(actual.stdout, "")
-                self.assertIn(error, actual.stderr)
+                self.assert_host_failure(mode, error)
 
     @unittest.skipUnless(os.environ.get("QAPLET_M0A_BUILD"), "Actual APE producer required")
     def test_producer_records_esm_and_job_execution_evidence(self):

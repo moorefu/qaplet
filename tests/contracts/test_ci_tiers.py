@@ -87,7 +87,7 @@ class CITiersContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-contract-") as temp:
             work = Path(temp)
             original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
-            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal", "skip_core_consumer", "missing_runner_parent"):
+            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "missing_native", "duplicate_native", "skip_seal", "skip_core_consumer", "missing_runner_parent"):
                 value = json.loads(json.dumps(original))
                 if mutation == "missing_core":
                     del value["jobs"]["full-core"]
@@ -99,6 +99,11 @@ class CITiersContract(unittest.TestCase):
                     next(step for step in value["jobs"]["arm64-page-gaps"]["steps"] if "scripts/arm64_guest.py run" in step.get("run", ""))["continue-on-error"] = True
                 elif mutation == "empty_native":
                     value["jobs"]["native-startup"]["strategy"]["matrix"]["include"] = []
+                elif mutation == "missing_native":
+                    value["jobs"]["native-startup"]["strategy"]["matrix"]["include"].pop()
+                elif mutation == "duplicate_native":
+                    rows = value["jobs"]["native-startup"]["strategy"]["matrix"]["include"]
+                    rows[-1] = rows[0]
                 elif mutation == "skip_seal":
                     next(step for step in value["jobs"]["build"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
                 elif mutation == "skip_core_consumer":
@@ -111,6 +116,23 @@ class CITiersContract(unittest.TestCase):
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
                     "--report", str(work / "check.json")], capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode, 1, mutation + ": " + result.stdout + result.stderr)
+
+    def test_native_catalog_schedules_each_required_os_and_architecture_once(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-native-catalog-") as temp:
+            work = Path(temp)
+            event, report = work / "event.json", work / "plan.json"
+            event.write_text("{}")
+            result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", "push",
+                "--event-json", str(event),
+                "--report", str(report)], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = json.loads(report.read_text())["native_matrix"]["include"]
+            self.assertEqual(len(rows), 5)
+            self.assertEqual({(row["runner"], row["os"], row["arch"]) for row in rows}, {
+                ("ubuntu-24.04", "Linux", "x86_64"), ("windows-2022", "Windows", "x86_64"),
+                ("macos-15-intel", "Darwin", "x86_64"), ("macos-15", "Darwin", "aarch64"),
+                ("ubuntu-24.04-arm", "Linux", "aarch64"),
+            })
 
     def test_replay_catalog_and_cache_trust_are_explicit(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-replay-") as temp:
