@@ -1,6 +1,25 @@
 # BOOT-04B startup evidence and adaptive ARM64 page coverage
 
-2026-11-01: ticket 06 remains **claimed**. This baseline adds executable native validation and five CI jobs; it does not complete the six-target startup matrix. It started at integration `dc5c0c3` in branch `codex/m0-06-cross-host`, with public CLI / actual OS / evidence seams confirmed by the parent spec.
+## Current complete matrix (2026-11-01)
+
+Ticket 06 is **resolved** after [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261), commit `1129cd82059c3a8ea62515196516342205c96b82`, completed/success. All six targets ran the seven required cases on the final Hello/eval bytes. Subsequent sections preserve historical checkpoints and failures.
+
+| Target | Actual page bytes | Execution | Startup cases | Independent I/O cases |
+| --- | --- | --- | --- | --- |
+| Linux x86_64 | 4096 | native | 7 pass | 20 pass |
+| Windows x86_64 | 4096 | native | 7 pass | 21 pass |
+| macOS x86_64 | 4096 | native | 7 pass | 20 pass |
+| macOS ARM64 | 16384 | native | 7 pass | 20 pass |
+| Linux ARM64 | 4096 | native | 7 pass | 20 pass |
+| Linux ARM64 | 65536 | emulated-system / full-system TCG | 7 pass | 20 pass |
+
+Hello SHA is `467f8889db7a671cd238a7cc56df933951fea686c7c524480f4112870da3695d` (754446 bytes); eval SHA is `426a7b05367fc6fd8d4831eebb2439782b3b66141af115094cc1efa766b05cd4` (2273408 bytes), matching final local/offline builds. Native ARM64 measured 4096, selecting only the 65536 guest. Mac ARM64 was native. The guest independently measured AArch64/Linux `6.8.0-147-generic-64k` and three 64K page observations, using QEMU 6.2.0 / TCG / `virt-6.2,gic-version=3` / cortex-a72. All 12 independent deep cases passed; the six-target startup matrix is pass.
+
+All 14 original ZIPs were downloaded to main `.cache/downloads/ci/`, checked against API size/SHA-256 and every ZIP CRC, and extracted beneath `out/m0-integration/ci-m0-1129/`. `verification.json` indexes 688 files / 15290538 archive bytes; `acceptance.json` records the targets, producer identities, 438 unique raw command log paths and guest serial SHA verification. Artifact names retain the full commit suffix; original reports retain actual CI source paths/run/image. Complete Core aggregation remains task 10.
+
+## Initial checkpoint
+
+The baseline started at integration `dc5c0c3` in branch `codex/m0-06-cross-host`, with public CLI / actual OS / evidence seams confirmed by the parent spec.
 
 ## Implemented and measured
 

@@ -84,19 +84,23 @@ def refusal_cases(args, report, directory):
         raise BuildError("Refusal fixtures require a physical repository cache root")
     source_lock = read_json(ROOT / "third_party/quickjs/source.lock.json")
     nightly = read_json(ROOT / "toolchains/cosmocc.lock.json")
+    helpers = read_json(ROOT / "third_party/ape-helpers/source.lock.json")
     source_name = source_lock["commit"] + "-" + source_lock["patch_manifest_sha256"][:16]
     source = root / "quickjs" / source_name / "source"
     archive = root / "toolchains/cosmocc" / nightly["archive"]["sha256"] / "archive.zip"
-    if not source.is_dir() or not archive.is_file():
-        raise BuildError("Complete locked source and original archive are required before copying refusal fixtures", "blocked")
+    helper_source = root / "sources/ape-loader" / helpers["commit"]
+    if not source.is_dir() or not archive.is_file() or not helper_source.is_dir():
+        raise BuildError("Complete locked source, helper source and original archive are required before copying refusal fixtures", "blocked")
     report["refusal_input_locks"] = [identity(ROOT / name) for name in (
-        "third_party/quickjs/source.lock.json", "third_party/quickjs/patches.json", "toolchains/cosmocc.lock.json")]
+        "third_party/quickjs/source.lock.json", "third_party/quickjs/patches.json", "toolchains/cosmocc.lock.json",
+        "third_party/ape-helpers/source.lock.json", "third_party/ape-helpers/patches.json")]
     fixtures = root / "validation/offline" / report["report_id"] / "refusals"
     fixtures.mkdir(parents=True)
     report["refusal_fixture_root"] = str(fixtures)
     for name in ("missing-source", "changed-source", "changed-patch", "unlocked-head",
                  "missing-archive", "corrupt-archive", "missing-toolchain-files", "placeholder-digest",
-                 "conflicting-provenance", "missing-zig"):
+                 "conflicting-provenance", "missing-zig", "missing-helper-source", "missing-helper-loader",
+                 "changed-helper-loader", "changed-helper-packer"):
         case_dir = fixtures / name
         case_dir.mkdir()
         target = directory / (name + ".json")
@@ -127,6 +131,23 @@ def refusal_cases(args, report, directory):
         elif name == "missing-zig":
             argv = [sys.executable, str(ROOT / "scripts/startup_loaders.py"), "verify", "--zig-cache", str(case_dir / "absent"), "--report", str(target)]
             expectation = (2, "missing")
+        elif "helper" in name:
+            cache = case_dir / "cache"
+            argv = [sys.executable, str(ROOT / "scripts/ape_helpers.py"), "verify", "--cache", str(cache), "--report", str(target)]
+            if name == "missing-helper-source":
+                expectation = (2, "source cache is missing")
+            else:
+                copied = cache / helpers["commit"]
+                shutil.copytree(helper_source, copied, symlinks=True)
+                path = copied / ("tool/build/apelink.c" if name == "changed-helper-packer" else "ape/loader.c")
+                path.chmod(0o600)
+                if name == "missing-helper-loader":
+                    path.unlink()
+                    expectation = (2, "Missing locked APE helper source")
+                else:
+                    with path.open("ab") as stream:
+                        stream.write(b"\n/* refusal fixture */\n")
+                    expectation = (1, "overlay identity differs" if name == "changed-helper-packer" else "source identity mismatch")
         else:
             lock = json.loads(json.dumps(nightly))
             cache = case_dir / "cache"
@@ -287,11 +308,18 @@ def rebuild(args, report, directory):
                 root / "sources/ape-loader" / helpers["commit"],
                 root / "tools/zig/0.15.2" / startup["zig"]["archive"],
                 root / "tools/zig/0.15.2" / startup["zig"]["tree"], *args.input]
-    report["recipe_inputs"] = [identity(ROOT / path) for path in (
+    recipe_paths = [ROOT / path for path in (
         "third_party/quickjs/source.lock.json", "third_party/quickjs/patches.json",
         "toolchains/cosmocc.lock.json", "toolchains/cosmocc.acquisition.json",
-        "third_party/ape-helpers/source.lock.json", "toolchains/startup-loaders.lock.json",
-        "scripts/offline_integrity.py", "scripts/build_ape.py", "scripts/ape_helpers.py")]
+        "third_party/ape-helpers/source.lock.json", "third_party/ape-helpers/patches.json",
+        "third_party/ape-helpers/LICENSE", "toolchains/startup-loaders.lock.json",
+        "Makefile", "scripts/offline_integrity.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+        "scripts/native_toolchain.py", "scripts/quickjs_source.py", "scripts/nightly_toolchain.py",
+        "scripts/startup_loaders.py", "scripts/foundation.py", "scripts/evidence.py",
+        "tests/native/ape_hello.c", "tests/native/quickjs_eval.c")]
+    for parent in ("third_party/quickjs", "third_party/ape-helpers"):
+        recipe_paths.extend(ROOT / parent / entry["path"] for entry in read_json(ROOT / parent / "patches.json")["patches"])
+    report["recipe_inputs"] = [identity(path) for path in recipe_paths]
     report["startup_helper_scope"] = "Pinned Zig archive/tree inventoried and missing Zig refused; standalone macOS ARM64 helper is not rebuilt or claimed reproducible by this Core APE comparison"
     before = inventory(root, selected)
     before_path = directory / "cache-before.json"
@@ -327,6 +355,15 @@ def rebuild(args, report, directory):
         paths.append(target)
     compare(*paths, report)
     first = read_json(paths[0])
+    second = read_json(paths[1])
+    report["helper_comparisons"] = []
+    for name in ("loader", "packer"):
+        inputs = [Path(producer["portable_helpers"][name]["path"]) for producer in (first, second)]
+        equal = inputs[0].read_bytes() == inputs[1].read_bytes()
+        report["helper_comparisons"].append({"name": name, "first": identity(inputs[0]), "second": identity(inputs[1]),
+                                             "status": "pass" if equal else "fail"})
+        if not equal:
+            raise BuildError("Source-built helper bytes differ: " + name)
     report.update(source=first["source"], toolchain=first["toolchain"], artifacts=first["artifacts"],
                   build={"producer_reports": [identity(path) for path in paths], "recipe_inputs": report["recipe_inputs"]})
     refusal_cases(args, report, directory)
@@ -337,6 +374,9 @@ def rebuild(args, report, directory):
     report["cache_inventory"]["unchanged"] = before["entries"] == after["entries"]
     if not report["cache_inventory"]["unchanged"]:
         raise BuildError("Accepted cached inputs changed during disconnected validation")
+    report["recipe_inputs_after"] = [identity(path) for path in recipe_paths]
+    if report["recipe_inputs"] != report["recipe_inputs_after"]:
+        raise BuildError("Producer recipe or locked metadata changed during disconnected validation")
     report.update(status="pass", reason="Two independent disconnected real builds have identical six binary files; all copied input corruptions refused before executable use; accepted caches unchanged")
 
 

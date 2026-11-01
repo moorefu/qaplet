@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** claimed
+**Status:** resolved
 
 **Execution prerequisites:** 本地Windows/WSL/QEMU先探索，CI对应原生runner与缺失ARM64页配置的QEMU guest回归，区分native/emulated-system；TTY/PTY/ConPTY由fixture创建，无人值守runner缺少的交互设施显式记录。
 
@@ -26,11 +26,11 @@ native socket/pipe/process/TTY探针、宿主适配runner、行为基线矩阵�
 
 ## Acceptance criteria
 
-- [ ] 各类句柄/OS明确区分通过、受验证的限制、测试失败和未测；受验证限制有实际行为依据。
-- [ ] socket、pipe、TTY与进程至少覆盖成功、EOF/关闭和错误退出；有timeout防止探针无限挂住。
-- [ ] 进程路径/参数不借隐式shell规避问题，记录Unicode/空格路径结果。
-- [ ] 探针恢复终端、关闭fd/socket、回收受控子进程；未接入的必需宿主保持待验。
-- [ ] 矩阵为M2提供事实，不提前声明Node API或事件循环已实现。
+- [x] 各类句柄/OS明确区分通过、受验证的限制、测试失败和未测；受验证限制有实际行为依据。
+- [x] socket、pipe、TTY与进程至少覆盖成功、EOF/关闭和错误退出；有timeout防止探针无限挂住。
+- [x] 进程路径/参数不借隐式shell规避问题，记录Unicode/空格路径结果。
+- [x] 探针恢复终端、关闭fd/socket、回收受控子进程；未接入的必需宿主保持待验。
+- [x] 矩阵为M2提供事实，不提前声明Node API或事件循环已实现。
 
 ## Tests
 
@@ -54,6 +54,10 @@ EPIPE/半关闭、无效句柄、阻塞超时、子进程异常退出、TTY设�
 
 - [M0 执行规格](../spec.md)
 - [任务索引、资源前置与里程碑](../README.md)
+
+## Answer
+
+2026-11-01：真实 [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261) completed/success；Ubuntu 的独立 native-io producer 为 982754 字节、SHA `462a846fc6b9e2aa36a3587a5fc221dd464388ee63e457068b3432344798ef3e`。五个 native consumer 和真实 AArch64/65536 完整 guest 均消费该身份：Windows 21 项，其余各 20 项全部通过，包含受控终端、Unicode/空格进程、超时和资源清理。实际 OS/架构/页配置、原始返回值、已验证限制和 cleanup 保留在[验收记录](../native-io-validation.md)及原 CI artifacts；完整 Core 仍由 10 聚合，不声明 M2/Node 已实现。
 
 ## Comments
 

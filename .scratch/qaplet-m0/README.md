@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved / BOOT-06-resolved / BOOT-05A-resolved / BOOT-05B-resolved
+**Status:** implementation-in-progress / tickets-01-through-09-resolved / ticket-10-ready / ticket-11-resolved / ticket-12-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -112,3 +112,5 @@ post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM wo
 | M10 | Runtime/SDK与Service App分别按已声明范围判定发布 |
 
 详细内容继续引用总体计划；只有依赖事实就绪、即将实施的阶段再细化。
+
+2026-11-01：09 已完成最终 producer 的两个真实断网 Ubuntu builds，六个二进制与额外 loader/packer 字节相同；14 个副本输入拒绝和精确 cache before/after inventory 通过。合入 `1129cd8` 后的 `make check` 107 tests / 0 failures / 15 explicit skips。测试 recipe 与随后 CI-only checker 变化的 raw fingerprint 分别保留，不宣称新 fingerprint 已重构。09 resolved，Core 完整门禁仍由 10 判定；见[断网最终验收](offline-integrity-validation.md)。

@@ -1,6 +1,14 @@
 # BOOT-07：Windows / Unix 原生 I/O 基线
 
-2026-11-01，`codex/m0-08-native-io` / `out/implement-spec/08` 实施，开工基于 integration `dc5c0c3`，已核验 ancestry；交付前合入最新 integration。状态保持 **claimed**：原生本地基线与本地 ARM64 64K guest 已有实测，完整 native CI 与剩余页组合尚待验收；M0 Core 保持 `not_run`。这些探针不实现 Node、Reactor、Runtime 或 Embed SDK。
+## 当前结论（2026-11-01）
+
+08 已 **resolved**。集成 `1129cd82059c3a8ea62515196516342205c96b82` 的 [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261) completed/success。Ubuntu 独立 producer 为 982754 字节，SHA `462a846fc6b9e2aa36a3587a5fc221dd464388ee63e457068b3432344798ef3e`；该批相同字节在五个 native 宿主和完整系统 Linux ARM64/65536 guest 全部通过。Windows 21 项，其余各 20 项；实际值、受控终端/Unicode 进程/超时清理和 OS 限制由原始报告保留，页配置及执行方式详见[六目标表](cross-host-startup-validation.md)。
+
+原 ZIP 的服务端摘要/长度、CRC、独立 producer 字节与日志路径均已复核，证据位于 `out/m0-integration/ci-m0-1129/`。各 `m0-io-<runner>-<commit>/io.json` 记录 native 宿主；`m0-page-gap-65536-<commit>/io.json` 记录完整 guest；producer 位于 `m0-build-<commit>/io/build-info.json`。同轮独立 deep probe 身份为 `c80197784669f748cff263cf364d8ae49f4b6eae8f53c3df3f84389ae05cf16e`，12 项通过。本轮采用这些 CI producer 身份，下文保留历史构建与失败。完整 Core 仍由 10 聚合，不声明 Node、Reactor、Runtime 或 Embed SDK 已实现。
+
+## 初始实施上下文
+
+`codex/m0-08-native-io` / `out/implement-spec/08` 开工基于 integration `dc5c0c3`，已核验 ancestry；交付前合入最新 integration。
 
 ## 公共接口与身份
 

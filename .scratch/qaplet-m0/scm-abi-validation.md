@@ -66,7 +66,7 @@ Windows supervisor 在验证分发 SHA/长度后生成 `qaplet-m0-scm-<UUID>` �
 
 正常 worker 在 OS RUNNING 查询后保留精确 process handle，并记录 PID、creation FILETIME、image、服务 UUID 和 artifact SHA。停止后通过同一 kernel process object 等待退出。恢复 worker 在任何强制终止前重新核对 UUID 服务的完整配置，以及原来记录的 process creation time 和 image；PID 复用只证明原进程已经退出，不能触及复用该 PID 的进程。没有把宿主进程或现有服务当作清理对象。
 
-`cleanup --plan <fixture-plan.json>` 是独立恢复入口。CI 的 Windows job 使用 `always()` 调用它并上传原始证据；producer 是单独的 Ubuntu job，Windows job 不编译。`check-ci` 合同检查此编排。该独立 workflow 已交付，尚无本轮远程 runner 结果，不将 workflow 文件存在算作 CI 验收通过。
+`cleanup --plan <fixture-plan.json>` 是独立恢复入口。CI 的 Windows job 使用 `always()` 调用它并上传原始证据；producer 是单独的 Ubuntu job，Windows job 不编译。`check-ci` 合同检查此编排；下节另有真实远程执行证据。
 
 ## TDD 与当前能力状态
 
@@ -89,3 +89,22 @@ API 合同依据：[CreateServiceW](https://learn.microsoft.com/en-us/windows/wi
 实施提交 `1109264` 后，已把 integration `8fb7c39` 合入本实施分支（merge `4f90c03`），包含 06 的 adaptive startup 和 editor watcher 修复。随后 Ubuntu 直接 `wsl --cd <worktree> -- make check OUT=out/scm-final-check-2` 返回 0：运行 107 项合同测试，其中 23 项显式实际输入/guest/宿主 opt-in 测试按其条件 skipped，其余 84 项通过，bootstrap C compile/run 通过；五项 SCM 合同全部通过。原始完整输出在 `out/scm-final-check-2/make-check.log`，静态/基础报告在同目录。此前一次 `make check` 的内部检查已通过，但外层 bash exit-code 引用错误返回非零；该输出也保留，没有把包装器失败隐藏为通过。独立 SCM 真实 Ubuntu/Windows 证据在上文另列，不用这些 skipped 的其他任务测试代替。
 
 为后续清理实施 worktree 保留原始字节，全部本票 `out/` 输出（包括初次编译失败、普通权限 blocked、管理员成功、两次检查输出和 UAC 审核输入）已复制到主工作区 `out/m0-integration/svc-scm-11-verified/`，227 个文件 / 18547822 字节。`export-manifest.json` 为每个相对文件记录 SHA-256 与长度，复制后逐文件复核。原始报告仍保留当时实际执行的 worktree/Linux 路径；移动后按该 export 根和相对路径定位原始日志。UAC entry 只是历史审核证据，不是可重复执行的安装命令；新运行生成新 UUID/新 evidence。中间构建仍在主工作区 `.cache/build/`，没有把输入缓存或原始 evidence 纳入 Git。
+
+## 真实 CI（2026-11-01）
+
+集成提交 `1129cd82059c3a8ea62515196516342205c96b82` 的独立
+[SCM run 41271366311](https://github.com/moorefu/qaplet/actions/runs/41271366311)
+已 completed/success：Ubuntu producer 与 Windows consumer 均通过。实际制品
+755423 字节，SHA `f0c4c88e253cab7266e4de4bffdbe8a3aa767b65b59a2aba93e07377e949d0f3`，
+与本地产物完全一致。Windows 实测 x86_64/native/4096、kernel `10.0.20348`，
+runner image `win22` / `20261026.347.1`，管理员 token 为 true。
+
+实际唯一服务 `qaplet-m0-scm-22bcda6b726a4ba7845c3b10c47a3f02` 完成生命周期，
+callback mask 30、first_error 0、JS calls 0，重复 stop 1062。
+所有 service/process/handle cleanup 断言为 true，CI `always()` 独立 cleanup 也为 pass。
+已取回两个原 ZIP、验证服务端长度/SHA-256、全部 ZIP CRC，以及 192 个唯一原始
+命令日志路径。producer artifact ID `13069691115`，Windows artifact ID
+`13069426617`；归档保存在主 `.cache/downloads/ci/`，解包证据位于
+[`ci11/`](../../out/m0-integration/ci11/)，传输及语义复核分别为
+`verification.json` 与 `acceptance.json`。原始失败和本机成功证据仍保留，CI 成功
+不覆盖普通权限 error 5 的限制。

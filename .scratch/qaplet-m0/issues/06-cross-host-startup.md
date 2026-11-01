@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** claimed
+**Status:** resolved
 
 **Execution prerequisites:** 本地WSL/Windows与本地完整系统QEMU先探索；CI采用对应原生runner，ARM64 runner先测页大小，再仅补缺失ARM64页配置的QEMU guest。kernel/rootfs需锁定，当前无运行证据。
 
@@ -26,10 +26,10 @@
 
 ## Acceptance criteria
 
-- [ ] 六类宿主都有实际执行报告，每个制品跨宿主 SHA-256 恒等；Hello 和 eval 分别维持自身身份。
-- [ ] macOS ARM64以native执行；Linux ARM64优先原生runner并实测页大小，缺失的4K/64K组合再由完整QEMU补充，报告native/emulated-system。
-- [ ] 结果注明OS/kernel、页大小、host/guest架构、execution_mode、QEMU/TCG/machine/CPU和guest镜像摘要、runner image/run身份、命令与退出码；QEMU专属字段仅在guest必填，原生结果注明not_applicable；文件重命名不能改变内容身份。
-- [ ] 主机或权限未就绪时允许逐宿主采集，但整张任务保持未完成；缺失/失败不得被 skip 成通过。
+- [x] 六类宿主都有实际执行报告，每个制品跨宿主 SHA-256 恒等；Hello 和 eval 分别维持自身身份。
+- [x] macOS ARM64以native执行；Linux ARM64优先原生runner并实测页大小，缺失的4K/64K组合再由完整QEMU补充，报告native/emulated-system。
+- [x] 结果注明OS/kernel、页大小、host/guest架构、execution_mode、QEMU/TCG/machine/CPU和guest镜像摘要、runner image/run身份、命令与退出码；QEMU专属字段仅在guest必填，原生结果注明not_applicable；文件重命名不能改变内容身份。
+- [x] 主机或权限未就绪时允许逐宿主采集，但整张任务保持未完成；缺失/失败不得被 skip 成通过。
 
 ## Tests
 
@@ -53,6 +53,10 @@
 
 - [M0 执行规格](../spec.md)
 - [任务索引、资源前置与里程碑](../README.md)
+
+## Answer
+
+2026-11-01：集成 `1129cd8` 的真实 [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261) 已 completed/success。五个 native 与一个完整系统 65536 字节页 TCG guest 各自通过七项启动；native ARM64 实测 4096，因此只补 65536。Mac ARM64 为 native/16384。两个 producer 摘要与最终本地 Hello/eval 相同，所有目标分发前后恒等。14 个原 ZIP 的服务端长度/SHA/CRC、438 个唯一原始命令日志路径和 guest 串口摘要已独立复核，六目标 matrix 全 pass；详见[当前验收](../cross-host-startup-validation.md)。本票 resolved，完整 Core 仍由 10 聚合。
 
 ## Comments
 
