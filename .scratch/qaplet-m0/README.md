@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved
+**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved / BOOT-02-resolved / BOOT-03-resolved / BOOT-04A-resolved / BOOT-06-resolved
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -81,6 +81,11 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。
 
 BOOT-01/ENV-01 命令、schema 和环境验收已实现；产品 probe 和完整 Core 门禁仍待对应任务。具体锁值、下载摘要、主机结果和产品能力必须来自实施测量，不在规划中填造。
+
+07 的实际 Linux/AArch64/65536 完整 guest、12 项独立深度合同、source-built loader/
+packer 修正和 ARM64 full-pointer QuickJS overlay 已完成，见[64K 记录](arm64-64k-validation.md)。
+所有新 APE 有各自摘要；06/08/10 必须消费这些新身份重新验证，旧 16K/旧 QuickJS
+成功或失败均只属于历史记录。完整 Core 仍由 10 的矩阵门禁判定。
 
 ## 后续里程碑（本轮不生成详细spec或任务）
 

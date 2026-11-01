@@ -22,6 +22,7 @@ from build_ape import BuildError, identity, run
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
+from startup import ci_facts
 
 LOCK = ROOT / "guests/arm64.lock.json"
 
@@ -76,7 +77,7 @@ def fetch(args, report, directory):
         if destination.exists():
             checked(destination, item)
             continue
-        url = item.get("url") or "https://ports.ubuntu.com/ubuntu-ports/" + item["archive_path"]
+        url = item.get("url") or lock["archive_base_url"] + item["archive_path"]
         part = destination.with_suffix(destination.suffix + ".part-" + report["report_id"])
         try:
             run(report, directory, "fetch-" + name, ["curl", "--fail", "--show-error", "--location", "--proto", "=https",
@@ -132,8 +133,8 @@ def prepare(args, report, directory, lock, profile, selected):
     return image, files
 
 
-def manifest(args):
-    data = read_json(args.manifest)
+def manifest(args, path=None):
+    data = read_json(path or args.manifest)
     if data.get("schema_version") != 1 or data.get("page_size") != args.page_size:
         raise BuildError("Manifest version/page size mismatch")
     if not isinstance(data.get("files"), list) or not data["files"] or not isinstance(data.get("commands"), list) or not data["commands"]:
@@ -165,6 +166,30 @@ def manifest(args):
             if key in item and not isinstance(item[key], str):
                 raise BuildError("Optional output assertions must be strings")
     return data
+
+
+def merge_manifests(args, report):
+    output = args.manifest.resolve()
+    files, commands, sources = {}, {}, []
+    for path in args.input_manifest:
+        if path.resolve() == output:
+            raise BuildError("Combined manifest may not overwrite an input manifest")
+        data = manifest(args, path)
+        sources.append(identity(path))
+        for item in data["files"]:
+            key = item["guest_path"]
+            if key in files and (files[key]["sha256"], files[key]["size_bytes"]) != (item["sha256"], item["size_bytes"]):
+                raise BuildError("Conflicting guest payload bytes: " + key)
+            files.setdefault(key, item)
+        for item in data["commands"]:
+            if item["case_id"] in commands:
+                raise BuildError("Duplicate guest command case ID: " + item["case_id"])
+            commands[item["case_id"]] = item
+    combined = {"schema_version": 1, "page_size": args.page_size, "files": list(files.values()),
+                "commands": list(commands.values()), "input_manifests": sources}
+    write_json(output, combined)
+    report.update(manifest=identity(output), input_manifests=sources,
+                  payload_count=len(files), command_count=len(commands))
 
 
 def cpio(files):
@@ -221,6 +246,7 @@ def init_script(data, token, timeout):
         temporary = "/tmp/command-" + item["case_id"]
         lines += ["/bin/busybox mkdir -p " + shlex.quote(temporary), "export TMPDIR=" + shlex.quote(temporary),
                   "export HOME=" + shlex.quote(temporary)]
+        emit(prefix + " CWD", '"$(/bin/busybox pwd)"')
         emit(prefix + " START", '"$(/bin/busybox date -u +%Y-%m-%dT%H:%M:%SZ)"')
         lines.append("/bin/busybox timeout -s KILL " + str(timeout) + " " + shlex.join(item["argv"]) + " >/tmp/stdout 2>/tmp/stderr")
         lines.append("rc=$?")
@@ -271,6 +297,8 @@ def execute(args, report, directory):
                          "ram_only": True, "disks": [], "network": "none", "host_global_changes": False}
     report["qemu"]["serial_log"] = identity(Path(executed["stdout_log"]))
     report["qemu"]["stderr_log"] = identity(Path(executed["stderr_log"]))
+    if executed["timed_out"]:
+        raise BuildError("Full-system guest deadline exceeded; QEMU process group terminated and raw serial retained")
     rows = [line.rstrip("\r").split(" ", 2)[1:] for line in serial.splitlines() if line.startswith(token + " ")]
     facts, hashes, hashes_after, records = {}, {}, {}, {}
     done = 0
@@ -304,7 +332,7 @@ def execute(args, report, directory):
         raise BuildError("Guest payload bytes changed during execution")
     for item in data["commands"]:
         raw = records.get(item["case_id"], {})
-        if set(raw) != {"START", "END", "EXIT", "STDOUT", "STDERR"}:
+        if set(raw) != {"CWD", "START", "END", "EXIT", "STDOUT", "STDERR"}:
             raise BuildError("Missing complete guest execution: " + item["case_id"])
         stdout = base64.b64decode(raw["STDOUT"], validate=True)
         stderr = base64.b64decode(raw["STDERR"], validate=True)
@@ -319,6 +347,7 @@ def execute(args, report, directory):
         passed = passed and ("expected_stderr" not in item or text_err == item["expected_stderr"])
         passed = passed and ("stderr_contains" not in item or item["stderr_contains"] in text_err)
         report["cases"].append({"case_id": item["case_id"], "status": "pass" if passed else "fail", "argv": item["argv"],
+            "cwd": raw["CWD"],
             "started_at": raw["START"], "finished_at": raw["END"], "timeout_seconds": args.command_timeout,
             "guest_temporary_directory": "/tmp/command-" + item["case_id"],
             "expected": {key: value for key, value in item.items() if key.startswith("expected_") or key == "stderr_contains"}, "exit_code": code,
@@ -337,10 +366,11 @@ def execute(args, report, directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("verify", "fetch", "run"))
+    parser.add_argument("operation", choices=("verify", "fetch", "prepare", "merge-manifests", "run"))
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/guests")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--input-manifest", type=Path, action="append", default=[])
     parser.add_argument("--page-size", type=int, choices=(4096, 65536), default=65536)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--keyring", type=Path, default=Path("/usr/share/keyrings/ubuntu-archive-keyring.gpg"))
@@ -349,18 +379,28 @@ def main():
     args = parser.parse_args()
     if args.operation == "run" and not args.manifest:
         parser.error("run requires --manifest")
+    if args.operation == "merge-manifests" and (not args.manifest or not args.input_manifest):
+        parser.error("merge-manifests requires --input-manifest and output --manifest")
+    if args.manifest and args.manifest.resolve() == args.report.resolve():
+        parser.error("manifest and report paths must be distinct")
     if not 1 <= args.timeout <= 900 or not 1 <= args.command_timeout <= 60:
         parser.error("timeout must be 1..900 and command-timeout 1..60")
     args.cache, args.report = args.cache.resolve(), args.report.resolve()
     directory = args.report.parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
-    report = {"schema_version": 1, "report_kind": "arm64-guest", "report_id": directory.name, "started_at": now(),
+    report = {"schema_version": 1, "report_kind": "arm64-guest" if args.operation == "run" else "arm64-guest-inputs", "report_id": directory.name, "started_at": now(),
               "finished_at": None, "status": "not_run", "reason": "", "host": host_facts(), "guest": None, "qemu": None,
               "cases": [], "commands": [], "files": [], "inputs": [], "cleanup": None,
+              "ci": ci_facts(),
               "source": {"runner": identity(Path(__file__)), "lock": identity(LOCK)}}
     try:
         if args.operation == "run":
             execute(args, report, directory)
+        elif args.operation == "merge-manifests":
+            merge_manifests(args, report)
+        elif args.operation == "prepare":
+            lock, profile, selected = verify(args, report, directory)
+            prepare(args, report, directory, lock, profile, selected)
         elif args.operation == "fetch":
             fetch(args, report, directory)
         else:

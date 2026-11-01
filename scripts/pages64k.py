@@ -202,6 +202,14 @@ def main():
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--compile-timeout", type=int, default=300)
     args = parser.parse_args()
+    if args.operation != "build" and not args.input_report:
+        parser.error("non-build operations require --input-report")
+    if args.operation == "verify-guest" and not args.guest_report:
+        parser.error("verify-guest requires --guest-report")
+    if args.operation == "run-native" and (not args.artifact or not args.loader):
+        parser.error("run-native requires --artifact and --loader")
+    if not 1 <= args.timeout <= 300 or not 1 <= args.compile_timeout <= 900:
+        parser.error("timeout must be 1..300 and compile-timeout 1..900")
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
     report = {"schema_version": 1, "report_kind": "pages64k-" + ("build" if args.operation == "build" else "validation"),

@@ -1,17 +1,20 @@
 {
   "schema_version": 1,
+  "archive_base_url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/",
+  "original_archive_base_url": "https://ports.ubuntu.com/ubuntu-ports/",
+  "snapshot_id": "20261031T234300Z",
   "provenance": "Ubuntu noble-updates signed InRelease -> main/binary-arm64/Packages.xz -> exact arm64 Debian packages; independently verified 2026-10-31",
   "signer_fingerprint": "F6ECB3762474EDA9D21B7022871920D1991BC93C",
   "metadata": {
     "noble-updates-InRelease": {
       "size_bytes": 126125,
       "sha256": "8eb1e59e1d6bea248c204a9d43920aef4263891fa47e4881695a384ef46b0c79",
-      "url": "https://ports.ubuntu.com/ubuntu-ports/dists/noble-updates/InRelease"
+      "url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/dists/noble-updates/InRelease"
     },
     "noble-updates-main-arm64-Packages.xz": {
       "size_bytes": 1461744,
       "sha256": "080189be0ca7d2d305d5fb0a5db5f988177e339055d974a934000e1627cbb711",
-      "url": "https://ports.ubuntu.com/ubuntu-ports/dists/noble-updates/main/binary-arm64/Packages.xz"
+      "url": "https://snapshot.ubuntu.com/ubuntu/20261031T234300Z/dists/noble-updates/main/binary-arm64/Packages.xz"
     }
   },
   "packages": {
