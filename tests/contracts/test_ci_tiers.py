@@ -11,6 +11,45 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    def test_full_manifest_refuses_empty_or_other_commit_collections(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-full-manifest-") as temp:
+            work = Path(temp)
+            source, report = work / "collection.json", work / "result.json"
+            source.write_text(json.dumps({"status": "pass", "artifacts": []}))
+            result = subprocess.run([sys.executable, str(CLI), "manifest", "--collection-report", str(source),
+                "--commit", "1234567890abcdef1234567890abcdef12345678", "--report", str(report)], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("nonempty", json.loads(report.read_text())["reason"])
+            source.write_text(json.dumps({"status": "pass", "artifacts": [{"id": 17, "name": "m0-build-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}))
+            result = subprocess.run([sys.executable, str(CLI), "manifest", "--collection-report", str(source),
+                "--commit", "1234567890abcdef1234567890abcdef12345678", "--report", str(report)], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("another commit", json.loads(report.read_text())["reason"])
+
+    def test_required_full_jobs_and_probes_cannot_be_skipped_or_tolerated(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-full-contract-") as temp:
+            work = Path(temp)
+            original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal"):
+                value = json.loads(json.dumps(original))
+                if mutation == "missing_core":
+                    del value["jobs"]["full-core"]
+                elif mutation == "disabled_build":
+                    value["jobs"]["build"]["if"] = "${{ false }}"
+                elif mutation == "skipped_compile":
+                    next(step for step in value["jobs"]["build"]["steps"] if step.get("run") == "make build-ape OUT=out/m0")["if"] = "${{ false }}"
+                elif mutation == "tolerated_probe":
+                    next(step for step in value["jobs"]["arm64-page-gaps"]["steps"] if "scripts/arm64_guest.py run" in step.get("run", ""))["continue-on-error"] = True
+                elif mutation == "empty_native":
+                    value["jobs"]["native-startup"]["strategy"]["matrix"]["include"] = []
+                else:
+                    next(step for step in value["jobs"]["build"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
+                path = work / "workflow.json"
+                path.write_text(json.dumps(value))
+                result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
+                    "--report", str(work / "check.json")], capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 1, mutation + ": " + result.stdout + result.stderr)
+
     def test_replay_catalog_and_cache_trust_are_explicit(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-replay-") as temp:
             work = Path(temp)
