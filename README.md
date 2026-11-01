@@ -2,7 +2,7 @@
 
 可移植 JavaScript 应用运行时与应用交付平台。当前 M0 已有工程/环境验收、固定 QuickJS 与官方 Nightly 输入，以及 Hello / 最小 QuickJS eval fat APE 构建和本地 Linux x64 执行证据。正式 Runtime、SDK、完整跨宿主矩阵及 Core 门禁仍待后续任务。
 
-本地开发需要 Python 3.10+、GNU Make，以及可执行的 GCC 或 Clang 系统 C 编译器。无需安装 Python 包；这些仅是开发依赖。
+Ubuntu 本地构建需要 Python 3.10+、GNU Make，以及可执行的 GCC 或 Clang 系统 C 编译器。无需安装 Python 包；其他平台使用已生成制品的验证入口。
 
 ```sh
 make check              # 提交前：静态 CI 检查、合同测试和真实 C bootstrap
@@ -13,10 +13,10 @@ make test               # 命令、报告和负向路径合同测试
 make check-ci           # 本地 CI 语法和编排合同检查，不触发远程运行
 ```
 
-Windows 若没有 `make` 别名，可使用现有 `gmake`，或显式运行 `C:\msys64\usr\bin\make.exe`。示例：
+Windows 可用现有 `gmake` 或 `C:\msys64\usr\bin\make.exe` 做静态检查和环境盘点；构建与包含编译的合同回归进入 Ubuntu。示例：
 
 ```powershell
-& 'C:\msys64\usr\bin\make.exe' test-bootstrap
+& 'C:\msys64\usr\bin\make.exe' check-ci
 & 'C:\msys64\usr\bin\make.exe' doctor WSL='C:\Program Files\WSL\wsl.exe'
 ```
 
