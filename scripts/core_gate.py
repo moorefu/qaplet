@@ -14,6 +14,7 @@ import uuid
 import zipfile
 
 from build_ape import BuildError, FORBIDDEN, headers
+from input_lock import component, attach
 from evidence import read_json
 from foundation import ROOT, decode, now
 from native_io import REQUIRED as IO_REQUIRED, matches_contract
@@ -244,7 +245,8 @@ class Gate:
         self.native_arm = {"startup": set(), "io": set()}
         self.guest_arm = {"startup": set(), "io": set()}
         self.notice_symbols = set()
-        self.nightly = read_json(ROOT / "toolchains/cosmocc.lock.json")
+        self.input_lock = attach(report)
+        self.nightly = component("cosmocc")
 
     def ci(self, item, host=None, inherited=None):
         ci = item.get("ci") or inherited
@@ -274,6 +276,8 @@ class Gate:
         return {"sha256": digest(raw), "size_bytes": len(raw)}
 
     def toolchain(self, item):
+        if "input_lock" in item:
+            require(item["input_lock"] == self.input_lock.identity(), "Producer unified input lock mismatch")
         toolchain = item["toolchain"]
         require(toolchain["archive"] == self.nightly["archive"], "Nightly archive differs from current immutable lock")
         require(item["toolchain_lock"]["sha256"] == digest((ROOT / "toolchains/cosmocc.lock.json").read_bytes()), "Toolchain lock identity mismatch")
@@ -355,7 +359,7 @@ class Gate:
         if family == "startup":
             require(all(self.evidence.json(inputs[key])["source"] == item["source"] for key in ("before-source", "after-source")), "Producer source identity differs from actual input verification")
         if family == "startup":
-            lock = read_json(ROOT / "third_party/quickjs/source.lock.json")
+            lock = component("quickjs")
             require(item["source"]["commit"] == lock["commit"] and item["source"]["lock_sha256"] == digest((ROOT / "third_party/quickjs/source.lock.json").read_bytes()), "QuickJS source lock mismatch")
             require(item["source"]["patches"] == read_json(ROOT / "third_party/quickjs/patches.json")["patches"], "Ordered QuickJS overlays differ")
             require(item["source"]["sha256"] == lock["source"]["sha256"] and item["source"]["clean"] is True, "QuickJS source content differs from locked patched tree")
@@ -363,7 +367,7 @@ class Gate:
         require(portable["source"]["lock"]["sha256"] == digest((ROOT / "third_party/ape-helpers/source.lock.json").read_bytes()) and
                 portable["source"]["patch_manifest"]["sha256"] == digest((ROOT / "third_party/ape-helpers/patches.json").read_bytes()), "Helper source/patch identity mismatch")
         require(portable["recipe"]["sha256"] == digest((ROOT / "scripts/ape_helpers.py").read_bytes()), "Helper recipe identity mismatch")
-        source_lock = read_json(ROOT / "third_party/ape-helpers/source.lock.json")
+        source_lock = component("ape_helpers")
         require(portable["source"]["commit"] == source_lock["commit"] and portable["source"]["git_tree"] == source_lock["git_tree"] and
                 portable["source"]["patches"] == read_json(ROOT / "third_party/ape-helpers/patches.json")["patches"], "Helper source provenance/overlay mismatch")
         locked_files = source_lock["files"]
@@ -715,10 +719,10 @@ class Gate:
                                     for family, item in self.producers.items()}
 
     def dependencies(self, producer_root):
-        quickjs = read_json(ROOT / "third_party/quickjs/source.lock.json")
+        quickjs = component("quickjs")
         quickjs_license = (ROOT / "third_party/quickjs/LICENSE").read_bytes()
         require(digest(quickjs_license) == quickjs["license"]["sha256"], "QuickJS original license identity mismatch")
-        helper_lock = read_json(ROOT / "third_party/ape-helpers/source.lock.json")
+        helper_lock = component("ape_helpers")
         notices = producer_root / "artifacts/ape-helper-notices"
         for name in ("LICENSE", "source.lock.json", "HACL-LICENSE.txt"):
             self.evidence.read(str(notices / name))
@@ -742,7 +746,7 @@ class Gate:
                                  "delivered_notices": [str(notices / name) for name in ("LICENSE", "source.lock.json", "HACL-LICENSE.txt")],
                                  "per_build_identities": {family: {key: producer["portable_helpers"][key] for key in ("loader", "packer", "recipe", "patched_source")}
                                                           for family, producer in self.producers.items()}},
-            "startup_helper_build_tools": {"role": "Build-only Zig and separate Apple Silicon native loader", "lock": read_json(ROOT / "toolchains/startup-loaders.lock.json")},
+            "startup_helper_build_tools": {"role": "Build-only Zig and separate Apple Silicon native loader", "lock": component("startup_loaders")},
             "guest_validation": {"role": "Validation inputs/tools, separate from shipped Core", "lock_sha256": digest((ROOT / "guests/arm64.lock.json").read_bytes()),
                                  "packages": validation["packages"], "qemu": [guest["qemu"] for guest in self.guests.values()]},
             "network_tls": {"backend": "unknown", "version": "unknown", "cve_applicability": "unverified",

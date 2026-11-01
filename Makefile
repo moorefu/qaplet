@@ -37,6 +37,7 @@ test:
 	"$(PYTHON)" -m unittest discover -s tests/contracts -v
 
 check-ci:
+	"$(PYTHON)" scripts/input_lock.py audit --report "$(OUT)/input-lock.json"
 	"$(PYTHON)" scripts/foundation.py check-ci --report "$(OUT)/check-ci.json"
 	"$(PYTHON)" scripts/build_ape.py check-ci --report "$(OUT)/check-m0-ci.json"
 

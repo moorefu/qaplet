@@ -14,6 +14,7 @@ import sys
 import uuid
 
 from foundation import command, host_facts
+from input_lock import attach, fixture_only
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -283,6 +284,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("verify", "fetch", "bump"))
     parser.add_argument("--lock", type=Path, default=ROOT / "third_party/quickjs/source.lock.json")
+    parser.add_argument("--fixture-lock", action="store_true", help="isolated historical supply tests only; no production build claim")
+    parser.add_argument("--controlled-probe", action="store_true", help="verify candidate inputs only; never authorizes ordinary builds")
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/quickjs")
     parser.add_argument("--report", type=Path, default=ROOT / "out/quickjs-source.json")
     parser.add_argument("--repository", default=OFFICIAL)
@@ -301,14 +304,33 @@ def main():
     evidence.mkdir(parents=True, exist_ok=True)
     report["evidence_directory"] = str(evidence)
     try:
+        locked = None
+        if args.fixture_lock:
+            fixture_only(args.lock, ROOT / "third_party/quickjs/source.lock.json")
+            report["fixture_only"] = True
+        else:
+            locked = attach(report, "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build")
+            report["controlled_probe"] = args.controlled_probe
+            locked.component("quickjs", args.lock)
+            if args.operation == "bump":
+                raise ValueError("Production bump must update a reviewed unified v3 candidate; moving master is forbidden")
         if args.operation == "bump":
             report["source"] = bump(args, report)
         elif args.lock.is_file():
-            lock = json.loads(args.lock.read_text(encoding="utf-8"))
+            lock = locked.component("quickjs", args.lock) if locked else json.loads(args.lock.read_text(encoding="utf-8"))
             validate_lock(lock)
             report["source"] = fetch(args, report, lock) if args.operation == "fetch" else verify(args, lock)
         else:
             raise SourceError("Source lock is missing", "blocked")
+        if locked:
+            source = Path(report["source"]["path"])
+            tree = run(report, ["git", "-C", str(source), "rev-parse", "HEAD^{tree}"], GIT_CWD, args.timeout).decode().strip()
+            if tree != locked.value["selection"]["quickjs"]["git_tree_oid"]:
+                raise ValueError("QuickJS Git Tree differs from unified v3 selection")
+            if (source / "VERSION").read_text().strip() != locked.value["selection"]["quickjs"]["version_file"]:
+                raise ValueError("QuickJS VERSION differs from unified v3 selection")
+            report["source"]["git_tree_oid"] = tree
+            report["source"]["version_file"] = locked.value["selection"]["quickjs"]["version_file"]
         report.update(status="pass", reason="Locked QuickJS source verified; no compilation or runtime claim")
     except SourceError as error:
         report.update(status=error.status, reason=str(error))

@@ -17,6 +17,7 @@ import sys
 import uuid
 
 from foundation import ROOT, host_facts, now, sha256
+from input_lock import component, attach
 from evidence import read_json
 from nightly_toolchain import write_json
 
@@ -30,13 +31,13 @@ def identity(path):
     return {"path": str(path.resolve()), "sha256": sha256(path), "size_bytes": path.stat().st_size}
 
 
-def source_cache(root):
-    return root / read_json(LOCK)["commit"]
+def source_cache(root, purpose="build"):
+    return root / component("ape_helpers", purpose=purpose)["commit"]
 
 
-def verify_source(cache):
+def verify_source(cache, purpose="build"):
     from build_ape import BuildError
-    lock = read_json(LOCK)
+    lock = component("ape_helpers", purpose=purpose)
     if not cache.is_dir():
         raise BuildError("Locked APE helper source cache is missing", "blocked")
     if cache.resolve() != cache.absolute():
@@ -159,7 +160,7 @@ def prepare(args, report, directory, tree, run):
               "patched_source": identity(patched / "tool/build/apelink.c"), "effective_headers": list(unique.values()),
               "recipe": identity(Path(__file__)), "build_directory": str(work),
               "loader_postprocessing": "Raw Linux OSABI0 ld/objcopy; upstream FreeBSD fixup deliberately omitted",
-              "toolchain_archive_sha256": read_json(ROOT / "toolchains/cosmocc.lock.json")["archive"]["sha256"]}
+              "toolchain_archive_sha256": component("cosmocc")["archive"]["sha256"]}
     result["sha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     report["portable_helpers"] = result
     verify_source(cache)
@@ -168,8 +169,8 @@ def prepare(args, report, directory, tree, run):
 
 def fetch(args, report, directory, run):
     from build_ape import BuildError
-    cache = source_cache(args.cache.resolve())
-    for entry in read_json(LOCK)["files"]:
+    cache = source_cache(args.cache.resolve(), "fetch")
+    for entry in component("ape_helpers", purpose="fetch")["files"]:
         destination = cache / entry["path"]
         if destination.exists():
             if sha256(destination) != entry["sha256"]:
@@ -184,7 +185,7 @@ def fetch(args, report, directory, run):
             part.replace(destination)
         finally:
             part.unlink(missing_ok=True)
-    report["source"] = verify_source(cache)
+    report["source"] = verify_source(cache, "fetch")
 
 
 def main():
@@ -199,6 +200,7 @@ def main():
     directory.mkdir(parents=True)
     report = {"schema_version": 1, "report_kind": "ape-helper-input", "report_id": directory.name, "started_at": now(), "commands": [], "source": None, "status": "not_run", "host": host_facts()}
     try:
+        attach(report, "fetch" if args.operation == "fetch" else "build")
         if args.operation == "check-loads":
             if not args.artifact:
                 raise BuildError("check-loads requires --artifact")

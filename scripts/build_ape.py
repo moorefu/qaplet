@@ -14,6 +14,7 @@ import struct
 import sys
 import uuid
 
+from input_lock import component, attach
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from native_toolchain import prepare as prepare_native_toolchain
@@ -55,12 +56,18 @@ def run(report, directory, label, argv, timeout, cwd=ROOT, environment=None, exp
 
 
 def verify_inputs(args, report, directory, source=True, stage="before"):
+    current = attach({})
+    previous = report.setdefault("input_lock", current.identity())
+    if previous != current.identity():
+        raise BuildError("Unified input lock changed during build")
     if source:
         target = directory / (stage + "-quickjs-source.json")
         executed, _, _ = run(report, directory, stage + "-source-verify",
                              [sys.executable, ROOT / "scripts/quickjs_source.py", "verify", "--cache",
                               args.source_cache, "--report", target], 120, expected=None)
         checked = read_json(target)
+        if checked.get("input_lock") != previous:
+            raise BuildError("Source consumer resolved different unified inputs")
         report["input_reports"][stage + "-source"] = identity(target)
         if executed["exit_code"] != 0 or checked["status"] != "pass":
             raise BuildError("Source verification: " + checked["reason"], checked["status"])
@@ -70,10 +77,12 @@ def verify_inputs(args, report, directory, source=True, stage="before"):
                          [sys.executable, ROOT / "scripts/nightly_toolchain.py", "verify", "--cache-dir",
                           args.toolchain_cache, "--report", target], 300, expected=None)
     checked = read_json(target)
+    if checked.get("input_lock") != previous:
+        raise BuildError("Toolchain consumer resolved different unified inputs")
     report["input_reports"][stage + "-toolchain"] = identity(target)
     if executed["exit_code"] != 0 or checked["status"] != "pass":
         raise BuildError("Toolchain verification: " + checked["reason"], checked["status"])
-    lock = read_json(ROOT / "toolchains/cosmocc.lock.json")
+    lock = component("cosmocc")
     report["toolchain"] = {key: checked["toolchain"][key] for key in
                            ("archive", "source", "tools", "libc_source", "source_head")}
     report["toolchain_lock"] = identity(ROOT / "toolchains/cosmocc.lock.json")
@@ -222,13 +231,14 @@ def build(args, report, directory):
     common = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
               "-I" + str(source), "-ffile-prefix-map=" + str(source) + "=quickjs",
               "-ffile-prefix-map=" + str(work) + "=build", *args.cflag]
-    recipe_files = [ROOT / name for name in ("Makefile", "scripts/build_ape.py", "scripts/native_toolchain.py",
+    recipe_files = [ROOT / name for name in ("toolchains/qaplet.lock.json", "scripts/input_lock.py",
+                    "Makefile", "scripts/build_ape.py", "scripts/native_toolchain.py",
                     "scripts/foundation.py", "scripts/evidence.py", "scripts/nightly_toolchain.py", "scripts/quickjs_source.py",
                     "tests/native/ape_hello.c", "tests/native/quickjs_eval.c")]
     report["build"] = {"flags": common, "quickjs_sources": list(SOURCES), "temporal_intl": "disabled (CONFIG_TEMPORAL_INTL undefined)",
                        "lto": False, "resource_order": ["ape-x86_64.elf", "ape-aarch64.elf", "ape-m1.c", "x86_64 ELF", "aarch64 ELF"],
                        "recipe_files": [identity(path) for path in recipe_files], "source_date_epoch": 0,
-                       "launcher": identity(tree / "bin/ape-x86_64.elf"), "libc_source": read_json(ROOT / "toolchains/cosmocc.lock.json")["libc_source"]}
+                       "launcher": identity(tree / "bin/ape-x86_64.elf"), "libc_source": component("cosmocc")["libc_source"]}
     report["build"]["environment"] = {key: environment[key] for key in
                                        ("PATH", "HOME", "TMPDIR", "SOURCE_DATE_EPOCH", "LC_ALL", "TZ") if key in environment}
     report["build"]["path_ape"] = shutil.which("ape", path=environment.get("PATH"))
@@ -275,7 +285,7 @@ def build(args, report, directory):
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
-                             read_json(ROOT / "toolchains/cosmocc.lock.json"))
+                             component("cosmocc"))
     report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
 
 
@@ -339,7 +349,7 @@ def native_toolchain(args, report, directory, original):
     if distribution.get("ID") != "ubuntu":
         raise BuildError("Native helper derivation requires Ubuntu", "blocked")
     return prepare_native_toolchain(original, args.toolchain_cache.resolve(),
-                                    read_json(ROOT / "toolchains/cosmocc.lock.json"), report, directory, run,
+                                    component("cosmocc"), report, directory, run,
                                     args.compile_timeout)
 
 

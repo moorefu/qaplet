@@ -17,6 +17,7 @@ import zipfile
 
 from build_ape import (BuildError, audit, identity, native_toolchain, run, verify_inputs,
                        prepare_portable_helpers, link_portable)
+from input_lock import component, consume_identity
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from native_toolchain import recheck
@@ -116,7 +117,7 @@ def build(args, report, directory):
     artifact["build_commands"] = identity(output / "native-io.build-commands.log")
     report["artifacts"].append(artifact)
     verify_inputs(args, report, directory, source=False, stage="after")
-    recheck(report["native_toolchain"], original, read_json(ROOT / "toolchains/cosmocc.lock.json"))
+    recheck(report["native_toolchain"], original, component("cosmocc"))
     report.update(status="pass", reason="Independent native I/O fat APE built and audited on Ubuntu; run evidence is separate")
 
 
@@ -124,6 +125,7 @@ def producer_inputs(args, report):
     if not args.artifact or not args.artifact.is_file() or not args.build_report or not args.build_report.is_file():
         raise BuildError("Supplied artifact and producer build report are required; no compilation on validation hosts", "blocked")
     producer = read_json(args.build_report)
+    consume_identity(producer, report)
     if not isinstance(producer, dict) or producer.get("report_kind") != "native-io" or producer.get("status") != "pass":
         raise BuildError("Invalid or nonpassing native I/O producer report")
     artifacts = [a for a in producer["artifacts"] if a["name"] == "native-io"]
@@ -160,7 +162,7 @@ def consume(args, report, directory):
         if args.loader:
             suffix = "elf" if report["host"]["os"] == "Linux" else "macho"
             expected_path = "bin/ape-" + report["host"]["execution_arch"] + "." + suffix
-            locked = [f for f in read_json(ROOT / "toolchains/cosmocc.lock.json")["files"] if f["path"] == expected_path]
+            locked = [f for f in component("cosmocc")["files"] if f["path"] == expected_path]
             if len(locked) != 1 or sha256(loader) != locked[0]["sha256"]:
                 raise BuildError("Explicit loader differs from the official Nightly identity; use a supplied helpers.json bundle for derived loaders")
             loader.chmod(loader.stat().st_mode | 0o111)
@@ -384,7 +386,7 @@ def guest_manifest(args, report):
     loader = identity(args.loader)
     expected_loader = producer.get("portable_helpers", {}).get("loader", {}).get("sha256")
     if not expected_loader:
-        entries = [item for item in read_json(ROOT / "toolchains/cosmocc.lock.json")["files"] if item["path"] == "bin/ape-aarch64.elf"]
+        entries = [item for item in component("cosmocc")["files"] if item["path"] == "bin/ape-aarch64.elf"]
         expected_loader = entries[0]["sha256"] if len(entries) == 1 else None
     if loader["sha256"] != expected_loader:
         raise BuildError("Guest loader SHA-256 differs from producer's supplied/locked ARM64 helper")

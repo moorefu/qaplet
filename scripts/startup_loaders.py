@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 
 from build_ape import BuildError, identity, run
+from input_lock import component, attach
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -157,7 +158,7 @@ def build(args, report, directory, lock):
     if platform.system() != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu" or report["host"]["execution_arch"] != "x86_64":
         raise BuildError("Loader builds require Ubuntu x86_64; other hosts only validate supplied bytes", "blocked")
     tree = verify_tree(args, lock, archive)
-    nightly = read_json(ROOT / "toolchains/cosmocc.lock.json")
+    nightly = component("cosmocc")
     if nightly["archive"]["sha256"] != lock["source"]["nightly_archive_sha256"]:
         raise BuildError("Loader source Nightly archive differs from lock")
     original = args.toolchain_cache.resolve() / nightly["archive"]["sha256"] / "tree"
@@ -243,7 +244,7 @@ def main():
               "status": "not_run", "reason": "", "started_at": now(), "finished_at": None,
               "host": host_facts(), "ci": ci_facts(), "helpers": [], "commands": [], "source": None, "toolchain": None, "build": None}
     try:
-        lock = read_json(args.lock)
+        lock = attach(report, "fetch" if args.operation == "fetch" else "build").component("startup_loaders", args.lock)
         if args.operation == "fetch":
             fetch(args, report, directory, lock)
         elif args.operation == "verify":

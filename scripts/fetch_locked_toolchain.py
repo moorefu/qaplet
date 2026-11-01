@@ -15,6 +15,7 @@ import subprocess
 import sys
 import uuid
 
+from input_lock import attach
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import validate_lock, write_json
@@ -43,7 +44,7 @@ def main():
             "runner_name": "RUNNER_NAME", "image_os": "ImageOS", "image_version": "ImageVersion"}.items()}
     partial = args.archive.with_name(args.archive.name + "." + directory.name + ".partial")
     try:
-        lock = read_json(args.lock)
+        lock = attach(report, "fetch").component("cosmocc", args.lock)
         validate_lock(lock)
         report["lock_sha256"] = sha256(args.lock)
         if lock["source"].get("provider") != "github-actions":

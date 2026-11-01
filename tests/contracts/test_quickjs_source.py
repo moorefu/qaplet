@@ -30,7 +30,7 @@ class QuickJSSourceContract(unittest.TestCase):
 
     def run_cli(self, operation, *options, env=None, cache=None):
         result = subprocess.run(
-            [sys.executable, str(CLI), operation, "--lock", str(self.lock),
+            [sys.executable, str(CLI), operation, "--fixture-lock", "--lock", str(self.lock),
              "--cache", str(cache or self.cache), "--report", str(self.report), *options],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=40,
         )

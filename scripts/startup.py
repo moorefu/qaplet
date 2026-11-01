@@ -11,6 +11,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
+from input_lock import component, consume_identity
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -76,7 +77,7 @@ def select_loader(args, report):
         # Exact official loader identities are already in the committed Nightly lock.
         suffix = "elf" if host["os"] == "Linux" else "macho"
         name = "ape-" + host["execution_arch"] + "." + suffix
-        locked = read_json(ROOT / "toolchains/cosmocc.lock.json")
+        locked = component("cosmocc")
         entries = [{"file": name, **entry, "origin": "official Nightly lock"} for entry in locked["files"] if entry["path"] == "bin/" + name]
     if len(entries) != 1:
         raise BuildError("Exactly one native loader matching actual OS/architecture required", "blocked")
@@ -309,6 +310,7 @@ def import_guest(args, report, artifacts):
             raise BuildError("Guest startup artifact differs from selected producer: " + name)
         artifact["sha256_after"] = after[path]
     producer = read_json(args.build_report)
+    consume_identity(producer, report)
     expected_loader = producer["portable_helpers"]["loader"]
     guest_loader = "/payload/ape-aarch64.elf"
     if before.get(guest_loader) != expected_loader["sha256"] or payloads[guest_loader]["size_bytes"] != expected_loader["size_bytes"]:
@@ -394,6 +396,7 @@ def page_gaps(args, report):
 
 def producer_inputs(args, report):
     producer = read_json(args.build_report)
+    consume_identity(producer, report)
     if producer.get("report_kind") != "ape-build" or producer.get("schema_version") != 1 or producer.get("status") != "pass":
         raise BuildError("A successful ape-build v1 producer report is required")
     report["producer_report"] = identity(args.build_report)

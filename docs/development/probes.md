@@ -1,5 +1,7 @@
 # 固定输入与产品探针
 
+当前输入版本由[统一 v3 锁](input-lock.md)决定。下文的 source/Nightly/helper 分锁是被该入口精确摘要绑定的组件清单；生产 `bump`/rolling `download` 已禁用，显式更新先生成并验证 v3 候选。
+
 共享执行脚本位于 `scripts/`，系统 C 冒烟位于 `tests/native/`，命令合同测试位于 `tests/contracts/`；没有创建未实现的 Runtime、SDK 或应用目录占位。
 
 M0-SVC 的应用私有原生 SCM 探针现位于 `apps/svc/probes/`；该目录不是正式 Runtime/SDK 或 qaplet-svc 实现。`scripts/svc_scm.py build` 只在 Ubuntu 构建独立制品，`run --input-report <producer> --artifact <same-bytes>` 在 Windows 验证 SCM 生命周期，在 Linux 另需显式 `--loader <distributed-loader>` 验证普通/SCM 拒绝入口。`cleanup --plan <fixture-plan>` 是独立恢复入口，`check-ci` 检查独立 `.github/workflows/svc-scm.yml` 的 Ubuntu 构建、Windows 消费及 always 清理/保留合同。Windows driver 不自动提权；普通权限不足保留 blocked，当前开发宿主的真实临时服务操作依据用户本轮明确授权并经过必要 OS UAC。详细输入、时限、精确清理范围及实际本地结果见[SCM 记录](../../.scratch/qaplet-m0/scm-abi-validation.md)。

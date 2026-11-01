@@ -16,6 +16,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, identity
+from input_lock import component, attach
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now
 from nightly_toolchain import write_json
@@ -79,12 +80,13 @@ def network_trace(trace):
 
 
 def refusal_cases(args, report, directory):
+    attach(report)
     root = args.cache_root.resolve()
     if args.cache_root.absolute() != root:
         raise BuildError("Refusal fixtures require a physical repository cache root")
-    source_lock = read_json(ROOT / "third_party/quickjs/source.lock.json")
-    nightly = read_json(ROOT / "toolchains/cosmocc.lock.json")
-    helpers = read_json(ROOT / "third_party/ape-helpers/source.lock.json")
+    source_lock = component("quickjs")
+    nightly = component("cosmocc")
+    helpers = component("ape_helpers")
     source_name = source_lock["commit"] + "-" + source_lock["patch_manifest_sha256"][:16]
     source = root / "quickjs" / source_name / "source"
     archive = root / "toolchains/cosmocc" / nightly["archive"]["sha256"] / "archive.zip"
@@ -109,7 +111,7 @@ def refusal_cases(args, report, directory):
             metadata = case_dir / "metadata"
             shutil.copytree(ROOT / "third_party/quickjs", metadata)
             cache = case_dir / "cache"
-            argv = [sys.executable, str(ROOT / "scripts/quickjs_source.py"), "verify", "--lock", str(metadata / "source.lock.json"),
+            argv = [sys.executable, str(ROOT / "scripts/quickjs_source.py"), "verify", "--fixture-lock", "--lock", str(metadata / "source.lock.json"),
                     "--cache", str(cache), "--report", str(target)]
             if name != "missing-source":
                 copied = cache / source_name / "source"
@@ -174,7 +176,7 @@ def refusal_cases(args, report, directory):
                 expectation = (1, "manifest mismatch")
             lock_path = case_dir / "cosmocc.lock.json"
             write_json(lock_path, lock)
-            argv = [sys.executable, str(ROOT / "scripts/nightly_toolchain.py"), "verify", "--lock", str(lock_path),
+            argv = [sys.executable, str(ROOT / "scripts/nightly_toolchain.py"), "verify", "--fixture-lock", "--lock", str(lock_path),
                     "--cache-dir", str(cache), "--report", str(target)]
         started = now()
         fixture_inventory = directory / (name + "-fixture-inventory.json")
@@ -301,11 +303,12 @@ def inventory(root, selected):
 
 
 def rebuild(args, report, directory):
+    attach(report)
     root = args.cache_root.absolute()
-    source_lock = read_json(ROOT / "third_party/quickjs/source.lock.json")
-    nightly = read_json(ROOT / "toolchains/cosmocc.lock.json")
-    helpers = read_json(ROOT / "third_party/ape-helpers/source.lock.json")
-    startup = read_json(ROOT / "toolchains/startup-loaders.lock.json")
+    source_lock = component("quickjs")
+    nightly = component("cosmocc")
+    helpers = component("ape_helpers")
+    startup = component("startup_loaders")
     selected = [root / "quickjs" / (source_lock["commit"] + "-" + source_lock["patch_manifest_sha256"][:16]),
                 root / "toolchains/cosmocc" / nightly["archive"]["sha256"],
                 root / "toolchains/cosmocc/official-assimilate-linux-x86_64-v1" / nightly["archive"]["sha256"],
@@ -313,6 +316,7 @@ def rebuild(args, report, directory):
                 root / "tools/zig/0.15.2" / startup["zig"]["archive"],
                 root / "tools/zig/0.15.2" / startup["zig"]["tree"], *args.input]
     recipe_paths = [ROOT / path for path in (
+        "toolchains/qaplet.lock.json", "scripts/input_lock.py",
         "third_party/quickjs/source.lock.json", "third_party/quickjs/patches.json",
         "toolchains/cosmocc.lock.json", "toolchains/cosmocc.acquisition.json",
         "third_party/ape-helpers/source.lock.json", "third_party/ape-helpers/patches.json",

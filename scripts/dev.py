@@ -38,6 +38,10 @@ def preflight(repo, receipt=None):
     for source in scripts:
         ast.parse(source.read_bytes(), filename=str(source))
     result = {"tracked_generated_files": 0, "python_files_parsed": len(scripts)}
+    if (repo / "toolchains/qaplet.lock.json").is_file():
+        from input_lock import InputLock, audit_consumers
+        result["input_lock"] = InputLock(repo / "toolchains/qaplet.lock.json").identity()
+        result["input_consumers"] = audit_consumers(repo)
     workflow = repo / ".github/workflows/workflow-tools.yml"
     if (repo / "scripts/dev.py").is_file() and not workflow.is_file():
         raise ValueError("Repository workflow tooling must have its CI guard")

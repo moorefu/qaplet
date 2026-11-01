@@ -17,6 +17,7 @@ from build_ape import publish_ape
 from build_ape import BuildError
 from build_ape import identity
 from build_ape import (headers, link_portable, native_toolchain, prepare_portable_helpers, run, verify_inputs)
+from input_lock import component, consume_identity
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from native_toolchain import recheck
@@ -101,7 +102,7 @@ def build(args, report, directory):
         report["loaders"].append({"os": "Linux", "arch": arch, **identity(target)})
     ordinary(args, report, directory, [output / "ape-x86_64.elf"], output / "svc-job.com")
     verify_inputs(args, report, directory, source=False, stage="after")
-    recheck(report["native_toolchain"], original, read_json(ROOT / "toolchains/cosmocc.lock.json"))
+    recheck(report["native_toolchain"], original, component("cosmocc"))
     report["build"]["sha256"] = hashlib.sha256(json.dumps(report["build"], sort_keys=True).encode()).hexdigest()
 
 
@@ -133,6 +134,7 @@ def consume(args, report, directory):
     if not args.input_report or not args.input_report.is_file() or not args.artifact or not args.artifact.is_file():
         raise BuildError("Supplied Ubuntu producer and application artifact required; validation never compiles", "blocked")
     producer = read_json(args.input_report)
+    consume_identity(producer, report)
     if not isinstance(producer, dict) or producer.get("schema_version") != 1 or producer.get("report_kind") != "svc-job-build" or producer.get("status") != "pass":
         raise BuildError("Passing svc-job-build v1 producer required")
     entries = producer.get("artifacts", [])

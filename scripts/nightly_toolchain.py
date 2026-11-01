@@ -18,6 +18,7 @@ import zipfile
 import re
 from urllib.request import getproxies
 
+from input_lock import attach, component, fixture_only
 from evidence import read_json
 from foundation import ROOT, case_record, command, host_facts, now, sha256
 
@@ -453,10 +454,17 @@ def import_receipt(args, identity):
         raise ValueError("Invalid acquisition receipt: " + str(error)) from error
 
 
+def supply_lock(args):
+    if args.fixture_lock:
+        return read_json(args.lock)
+    purpose = "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build"
+    return component("cosmocc", args.lock, purpose)
+
+
 def acquire(args, report, directory):
     locked = None
     if args.operation == "fetch" and args.lock.exists():
-        locked = read_json(args.lock)
+        locked = supply_lock(args)
         validate_lock(locked)
         if (args.cache_dir / locked["archive"]["sha256"]).exists():
             return resolve(args, report, directory)
@@ -465,7 +473,7 @@ def acquire(args, report, directory):
     if args.operation == "bump" and not args.lock.is_file():
         raise Unavailable("No existing lock to bump; use explicit fetch")
     if args.operation == "bump":
-        validate_lock(read_json(args.lock))
+        validate_lock(supply_lock(args))
         report["previous_lock_sha256"] = sha256(args.lock)
     official_input = not args.archive or args.acquisition_report or (locked and locked["source"]["kind"] == "official-nightly")
     filesystem = mounted_filesystem(args.cache_dir)
@@ -545,7 +553,7 @@ def check_cache(lock, cache, report):
 def resolve(args, report, directory):
     if not args.lock.is_file():
         raise Unavailable("Nightly lock is missing; run explicit fetch")
-    lock = read_json(args.lock)
+    lock = supply_lock(args)
     validate_lock(lock)
     if lock["source"]["kind"] != "official-nightly" and not args.allow_local_import:
         raise ValueError("Local-import lock is not official Nightly; fixture use requires --allow-local-import")
@@ -561,6 +569,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("download", "fetch", "bump", "verify", "path"))
     parser.add_argument("--lock", type=Path, default=ROOT / "toolchains/cosmocc.lock.json")
+    parser.add_argument("--fixture-lock", action="store_true", help="isolated historical supply tests only; cannot select product inputs")
+    parser.add_argument("--controlled-probe", action="store_true", help="verify complete candidate inputs without a product build claim")
     parser.add_argument("--cache-dir", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--report", type=Path, default=ROOT / "out/nightly-toolchain.json")
     parser.add_argument("--archive", type=Path, help="explicit local ZIP import; cannot authenticate official origin")
@@ -594,6 +604,15 @@ def main():
             "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion",
         }.items()}
     try:
+        if args.fixture_lock:
+            fixture_only(args.lock, ROOT / "toolchains/cosmocc.lock.json")
+            report["fixture_only"] = True
+        else:
+            locked = attach(report, "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build")
+            report["controlled_probe"] = args.controlled_probe
+            locked.component("cosmocc", args.lock)
+            if args.operation in ("bump", "download"):
+                raise ValueError("Production acquisition uses the v3 fixed artifact; rolling Nightly download/bump is forbidden")
         if args.operation == "download":
             if not args.download_to or args.download_to.exists():
                 raise ValueError("download requires a new --download-to path; existing archives are never overwritten")

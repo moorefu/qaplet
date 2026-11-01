@@ -17,6 +17,7 @@ import zipfile
 from build_ape import (BuildError, audit, identity, link_portable, native_toolchain,
                        prepare_portable_helpers, run, verify_inputs)
 from native_toolchain import recheck
+from input_lock import component, consume_identity
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -75,12 +76,13 @@ def build(args, report, directory):
         raise BuildError("Probe accepted wrong actual architecture/page size")
     report["negative_cases"] = [{"case_id": "wrong-native-environment", "status": "pass", "actual": expected_negative, "command": command}]
     verify_inputs(args, report, directory, source=False, stage="after")
-    recheck(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]), read_json(ROOT / "toolchains/cosmocc.lock.json"))
+    recheck(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]), component("cosmocc"))
     report["build"]["sha256"] = hashlib.sha256(json.dumps(report["build"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def guest_manifest(args, report):
     producer = read_json(args.input_report)
+    consume_identity(producer, report)
     if producer["status"] != "pass" or producer["report_kind"] != "pages64k-build":
         raise BuildError("Manifest requires a passing independent probe producer")
     files = []
@@ -106,6 +108,7 @@ def guest_manifest(args, report):
 def verify_guest(args, report):
     guest = read_json(args.guest_report)
     producer = read_json(args.input_report)
+    consume_identity(producer, report)
     if guest["status"] != "pass" or guest["report_kind"] != "arm64-guest" or producer["status"] != "pass":
         raise BuildError("Passing real guest and independent producer reports are required")
     actual = guest["guest"]
@@ -143,6 +146,7 @@ def run_native(args, report, directory):
     if host["os"] != "Linux" or host["execution_arch"] != "aarch64" or host["execution_mode"] != "native" or host["page_size"] != 65536:
         raise BuildError("Actual native Linux/AArch64/65536 host required; use full-system guest for a missing page configuration", "blocked")
     producer = read_json(args.input_report)
+    consume_identity(producer, report)
     if producer.get("status") != "pass" or producer.get("report_kind") != "pages64k-build":
         raise BuildError("Passing independent probe producer required")
     artifact = args.artifact.resolve()

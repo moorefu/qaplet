@@ -28,7 +28,7 @@ class NightlyToolchainContract(unittest.TestCase):
 
     def run_cli(self, operation, *args, env=None):
         completed = subprocess.run([sys.executable, str(CLI), operation,
-            "--lock", str(self.lock), "--cache-dir", str(self.cache),
+            "--fixture-lock", "--lock", str(self.lock), "--cache-dir", str(self.cache),
             "--report", str(self.output), *map(str, args)],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=45)
         report = json.loads(self.output.read_text(encoding="utf-8")) if self.output.exists() else None

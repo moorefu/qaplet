@@ -1,5 +1,12 @@
 # Locked cosmocc Nightly
 
+Current authority is `qaplet.lock.json` (`qaplet.toolchain-lock.v3`). The legacy
+locks below are exact-digest-bound component manifests, not independent version
+selectors. See [migration and state rules](../docs/development/input-lock.md).
+Historical initial acquisition and rolling `download`/`bump` examples below are
+retained for provenance; production use now refuses those operations. Use
+`fetch_locked_toolchain.py` for explicit acquisition of the fixed Artifact ZIP.
+
 `scripts/nightly_toolchain.py` is the shared CLI. A production lock is generated
 only after actual official acquisition, ZIP checks, full file hashing, and three
 successful compiler version commands. A missing lock is a missing prerequisite;

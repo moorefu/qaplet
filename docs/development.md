@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。本页描述已实现的操作路径；v1.5 的统一 v3 锁、目标 QuickJS 和新 M0-A 由[对齐任务](../.scratch/qaplet-v15-alignment/README.md)执行后再更新这些入口，计划样例不作为当前构建输入。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已接入既有 M0 输入；目标 QuickJS 和新 M0-A 仍由[后续对齐任务](../.scratch/qaplet-v15-alignment/README.md)执行，计划样例不作为当前构建输入。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
@@ -30,6 +30,7 @@
 | CI调整、查询或制品收集 | [CI与证据工具](development/ci.md) |
 | 报告路径、身份、严格回归或长验证 | [证据合同](development/evidence.md) |
 | 输入锁、APE、启动/I/O、ARM64 guest | [输入与产品探针](development/probes.md) |
+| v3 字段、迁移、状态、入口覆盖与兼容路径 | [统一构建输入锁](development/input-lock.md) |
 | 实施历史与已测限制 | [M0验收索引](../.scratch/qaplet-m0/README.md) |
 
 ## ENV-01 环境验收与目录
