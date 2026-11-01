@@ -3,7 +3,9 @@
 **Status:** ready-for-agent
 **Execution state:** 计划已确认；以下实现任务尚未执行。既有 M0 的完成状态保持不变。
 
-[当前总体计划](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md) · [对齐规格](spec.md) · [决策 ADR](../../docs/adr/0004-v15-platform-baseline.md)
+[当前总体计划](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md) · [正式对齐规格](spec.md) · [决策 ADR](../../docs/adr/0004-v15-platform-baseline.md)
+
+对齐规格已按 `to-spec` 模板发布，状态为 `ready-for-agent`，包含 44 条用户故事、实施与测试决定、范围排除及历史证据引用。测试边界已由用户确认：共享外部命令、真实制品运行与现有证据消费者；以下六张任务的依赖和状态保持不变。
 
 ## 推进顺序
 
@@ -24,8 +26,12 @@
 
 旧 [M0 12 张任务](../qaplet-m0/README.md)及其 Answer、失败记录、制品身份和 Core gate 均保留。服务应用相关 probe、测试和 workflow 保留为参考，不新增业务应用里程碑。统一锁、源码切换、缓存物化及新探针运行由本目录任务执行，不能将本次计划更新记成实现成绩。
 
-## 本轮计划检查（2026-11-01）
+## 计划更新检查（2026-11-01，b09b061）
 
 19 个文档/选型文件的本地检查通过：141 个本地链接目标存在，6 张任务的状态、必需章节和前置依赖一致且无环；选型 JSON 与既有 cosmocc 锁的 Run/Artifact/digest/size 一致。v1.4 原计划 SHA-256 未变，旧 12 张任务、实际源码/工具链锁、probe 和 workflow 未改。
 
 `python scripts/dev.py preflight --report out/v15-plan-update/preflight.json` 通过：解析 26 个 Python 文件、无生成物被跟踪、工具 CI 静态合同有效。一次性文档检查结果在 `out/v15-plan-update/docs-check.json`；这些是规划与仓库预检，不代表执行新的 M0-A/B/C 或 M1 验收。
+
+## 规格发布检查（2026-11-01）
+
+`to-spec` 的七个模板章节、44 条连续编号用户故事、19 项实施决定及 26 个本地链接检查通过；实现决定未包含具体文件路径或代码片段。六张任务的状态和 v1.4 原计划摘要未变，仓库 preflight 通过。结果保存在 `out/v15-to-spec/spec-check.json` 和 `out/v15-to-spec/preflight.json`；本轮仅修改规格及本索引。
