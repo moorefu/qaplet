@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution prerequisites:** 本地Windows/WSL/QEMU先探索，CI对应原生runner与缺失ARM64页配置的QEMU guest回归，区分native/emulated-system；TTY/PTY/ConPTY由fixture创建，无人值守runner缺少的交互设施显式记录。
 
@@ -57,4 +57,10 @@ EPIPE/半关闭、无效句柄、阻塞超时、子进程异常退出、TTY设�
 
 ## Comments
 
-尚未实施。
+2026-11-01：ticket08 implementer 在 `codex/m0-08-native-io` / `out/implement-spec/08` 认领；开工 HEAD `dc5c0c3` 与 integration 相同，已核验 ancestry。按用户确认的外部 CLI / 真实 OS / 结构化 evidence seam 使用 TDD；所有构建在 Ubuntu，共享实体缓存固定为主工作区 `.cache/`，其他宿主只执行同摘要制品。
+
+2026-11-01 实施就绪：独立 native-io fat APE / producer / samebytes consumer、20 个原生合同（Windows 另加 Console 关闭）、受控 Unix PTY / Windows ConPTY、Unicode/空格路径和 argv 的原生 spawn/wait、超时清理及 pthread/ZipOS 已实现。最终同摘要 `8d34081ddbff7ef2b0d705ebeae5ab75bc23c015f9267fb70d039ad87224aebe` 在 Windows x86_64 与 Ubuntu WSL x86_64 / 4096 页分别 21/21、20/20 通过。Ubuntu make check 通过 77 个合同，focused CLI 在两宿主均 9/9；失败样本与局限见[完整记录](../native-io-validation.md)。
+
+共享 native workflow 已加入 Ubuntu 单次 I/O producer 和五个同字节消费/独立失败 evidence 上传，尚未远程执行。所有必需 macOS / native ARM64 / 完整系统 ARM64 guest 仍待实际验收；07 负责 64K loader/packer 修复后重建新身份并重跑。保持 claimed，不由本地 native 成功关闭本票或完整 M0。
+
+2026-11-01 后续：07 的 64K producer/packer 修复已生成新身份 `b5576c3ae0e9391266f69dfd523039a3e5de6dc2664b9f03d3c3fef8b215ecb9`，同字节在本地 Linux/Windows 和 Unicode/空格路径的真实 AArch64 65536 字节页完整 guest 通过。08 增加 `guest-manifest` / `import-guest`，导出共享 guest payload 并用与 native 共用的 REQUIRED/EXPECTED/独立值检查消费实际全系统证据；15 个 CLI 合同在 Windows/Ubuntu 通过。缺 case、改运行后摘要、错误 EOF 却标 pass 均拒绝。原生 macOS / native ARM64 的 I/O 仍待新身份 CI，保持 claimed；已观测的既有 DrvFS full-check rename 失败与独立 suite 通过的差异另见完整记录，没有通过生产重试或放宽输入权限处理。
