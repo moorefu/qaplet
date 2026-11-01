@@ -1,0 +1,53 @@
+{
+  "origin": {
+    "kind": "Recorded ordinary-user Windows missing-export launch; used only for negative fault injection",
+    "recorded_at": "2026-11-01T04:23:02.830935+00:00",
+    "artifact_sha256": "0410864e8232379a7559410978f804da534b1550107f9a39ccdc050ef1bfaffb",
+    "raw_evidence": "out/svc-job/consumer-fix/ordinary-missing-export.json"
+  },
+  "command": {
+    "argv": ["svc-job.com", "--resolve-missing"],
+    "started_at": "2026-11-01T04:23:02.830935+00:00",
+    "finished_at": "2026-11-01T04:23:02.836331+00:00",
+    "timeout_seconds": 15,
+    "timed_out": false,
+    "exit_code": 0,
+    "cleanup": {
+      "terminate_owned_job": true,
+      "probe_reaped": true,
+      "accounting_query": true,
+      "active_processes": 0,
+      "total_processes": 1,
+      "thread_closed": true,
+      "process_closed": true,
+      "job_closed": true
+    }
+  },
+  "stdout": "{\"case_id\":\"job.missing-export\",\"status\":\"pass\",\"actual\":{\"resolved\":0,\"winerror\":127}}\n",
+  "stderr": "",
+  "facts": {
+    "runner_in_job": true,
+    "runner_limits": 10240,
+    "runner_query_error": 0,
+    "job_created": true,
+    "kill_on_close_set": true,
+    "inheritable": false,
+    "created_suspended": true,
+    "assigned": true,
+    "verified_before_resume": true,
+    "resumed": true,
+    "errors": [],
+    "cleanup": {
+      "terminate_owned_job": true,
+      "probe_reaped": true,
+      "accounting_query": true,
+      "active_processes": 0,
+      "total_processes": 1,
+      "thread_closed": true,
+      "process_closed": true,
+      "job_closed": true
+    },
+    "pid": 68084,
+    "artifact_in_job_before_assignment": true
+  }
+}

@@ -193,9 +193,42 @@ def collect(report, output, errors, executed, names, timeout):
                      EXPECTED.get(name, "Measured membership/handle-count invariant"), record["actual"], executed, timeout)
 
 
+def record_launch(report, label, case_id, executed, output, errors, facts, names, timeout):
+    """Retain and gate each real launch before its result can be superseded."""
+    report["commands"].append(executed)
+    report.setdefault("supervisors", {})[label] = {"command": executed, "facts": facts, "expected_exit_code": 0}
+    report["supervisor"] = facts
+    cleaned = facts.get("cleanup", {})
+    report["cleanup"] = cleaned
+    clean = (all(cleaned.get(key) is True for key in
+                 ("terminate_owned_job", "probe_reaped", "accounting_query", "thread_closed", "process_closed", "job_closed"))
+             and type(cleaned.get("active_processes")) is int and cleaned["active_processes"] == 0)
+    launched = (all(facts.get(key) is True for key in
+                    ("job_created", "kill_on_close_set", "created_suspended", "assigned", "verified_before_resume", "resumed"))
+                and facts.get("inheritable") is False and facts.get("errors") == [] and not facts.get("error"))
+    # Both native modes exit zero only after checking their assertions. The
+    # missing export's expected OS failure is null/error 127, not permission to
+    # ignore an unexpected nonzero process exit.
+    execution_ok = executed.get("timed_out") is False and type(executed.get("exit_code")) is int and executed["exit_code"] == 0
+    passed = clean and launched and execution_ok
+    add_case(report, case_id, passed,
+             "Owned non-inheritable fence verified before resume; exit 0 without timeout/error; zero active processes, waited probe and all handles closed",
+             facts, executed, timeout)
+    try:
+        collect(report, output, errors, executed, names, timeout)
+    finally:
+        if not passed:
+            blocked = clean and not facts.get("resumed") and bool(facts.get("error"))
+            report["capability"] = "blocked" if blocked else "failed"
+            raise BuildError("Windows supervisor launch or cleanup failed: " + label, "blocked" if blocked else "fail")
+
+
 def windows(args, report, directory):
     from svc_job_windows import launch
     report["runner"] = [identity(ROOT / "scripts/svc_job.py"), identity(ROOT / "scripts/svc_job_windows.py")]
+    report["consumer_source"] = {"files": report["runner"],
+                                 "sha256": hashlib.sha256(json.dumps(report["runner"], sort_keys=True).encode()).hexdigest(),
+                                 "note": "Current consumer bytes; producer source/build and C artifact identity remain historical and unchanged"}
     report["scope"] = "Current Windows host; local execution is not an isolated VM; CI identity recorded separately"
     report["coverage"] = ["Owned parent creates exactly one inherited child; explicit terminate and two independent waits",
                           "Owned leaf assigned to two new nested Jobs; kill on last inner close",
@@ -206,19 +239,11 @@ def windows(args, report, directory):
     report["capability_scope"] = "Owned fixtures only: membership, termination, close results and stable process handle counts after measured initialization"
     missing_dir = directory / "missing-export"; missing_dir.mkdir()
     executed, output, errors, facts = launch([str(args.artifact.resolve()), "--resolve-missing"], missing_dir, args.timeout)
-    report["commands"].append(executed)
-    collect(report, output, errors, executed, {"job.missing-export"}, args.timeout)
+    record_launch(report, "missing-export", "job.missing-export-supervisor", executed, output, errors, facts,
+                  {"job.missing-export"}, args.timeout)
     suite_dir = directory / "suite"; suite_dir.mkdir()
     executed, output, errors, facts = launch([str(args.artifact.resolve()), "--hang" if args.probe_mode == "hang" else "--suite"], suite_dir, args.timeout)
-    report["commands"].append(executed)
-    report["supervisor"] = facts; report["cleanup"] = facts["cleanup"]
-    cleaned = facts["cleanup"]
-    clean = cleaned.get("probe_reaped") and cleaned.get("accounting_query") and cleaned.get("active_processes") == 0 and all(cleaned.get(k) for k in ("thread_closed", "process_closed", "job_closed"))
-    add_case(report, "job.supervisor-cleanup", bool(clean), "Owned fence has zero active processes; probe waited and every handle closed", facts, executed, args.timeout)
-    if facts.get("error"):
-        report["capability"] = "blocked"
-        raise BuildError("Windows supervisor refused before fixture resume: " + facts["error"], "blocked" if clean else "fail")
-    collect(report, output, errors, executed, REQUIRED, args.timeout)
+    record_launch(report, "suite", "job.supervisor-cleanup", executed, output, errors, facts, REQUIRED, args.timeout)
     handles = next((case["actual"] for case in report["cases"] if case["case_id"] == "job.handles"), None)
     if isinstance(handles, dict):
         report["limitations"] = {"initial_process_handle_count": handles.get("initial"),

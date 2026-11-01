@@ -65,3 +65,5 @@
 2026-11-01：完成应用私有 Job APE、Ubuntu producer、同摘要 Windows consumer、独立 kill-on-close launcher fence 和独立 CI workflow。三个完整 Windows cycle 验证 owned parent+child、nested leaf、assignment access denied、重复 close、early exit、150ms leaf deadline 和全部 fixture 清理；实际 1 秒 launcher timeout 正确 fail 且 active 0。Windows 8/8 公开合同、Ubuntu 8/1 skip 及并入最新 integration 后最终 `make check` 115/25 explicit skips 通过；Core Hello/eval 独立 imports audit 均通过。远程 Job CI 未执行。
 
 能力只对上述 owned fixture、实际 close 和初始化后的稳定计数 verified。首版两次真实 handle-count failure 保留；最终 staged 结果将首次 +2 定位到 CreateProcessW 路径，但 handle 身份仍未归因，不声明所有进程 handle 完全无泄漏或任意树安全。完整身份、命令、实际值、失败复现、限制与后续方向见[验收](../job-object-validation.md)及[共享入口](../../../docs/svc-job-probe.md)。
+
+Fresh merge review 发现 first launch 的 fence 事实可能被后续 suite 覆盖；现已用统一的每次 launch gate 修复并分别保存全部 facts。13 种损坏真实记录的负向 module/report 回归先 red 后 green；无正向 OS success mock。C 和制品身份不变，当前 consumer 单独记录 source identity；同字节 Windows 重跑和真实 timeout 均保留两次 fence verdict/零残留。并入 `f24787b` 后 Windows 9/9、Ubuntu 9/1 skip、完整 `make check` 116/25 explicit skips 通过，详见验收的 consumer 修复段。远程 Job CI 仍未执行。

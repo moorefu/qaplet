@@ -28,6 +28,8 @@ Windows launcher 先测当前 Python runner 的已有 Job 归属及 immediate li
 
 `svc-job-{build,run,check-ci}` v1 是独立结构化报告；公共 source/toolchain/build/artifact、host/CI 和时间身份由 case 继承，每个 case 另保留 expected/actual、exit code、时限和原始命令日志。consumer 独立检查 native actual 值，不信任 native 的 pass 标签。缺项是 not_run、错误值是 fail；真实 assignment/nesting ERROR_ACCESS_DENIED 与 ABI 失败分开保留。build/Linux 验证的 capability 保持 not_run；Windows 全部必需 case 和外层清理成立才标记本覆盖范围 verified。`m0_core_status` 始终 not_run。
 
+每次 Windows launch 的完整 command/facts 分别保留在 `supervisors.missing-export` 和 `supervisors.suite`；两次都独立核验非继承/kill-on-close/suspended/assign/verify/resume、预期 exit、timeout/error、terminate、accounting、reap 及全部 handle close。第一 fence 任一失败立即停止，不能由后续 suite 覆盖。`--resolve-missing` 断言 API 返回 null/error 127 后本身应 exit 0；非零进程状态不能作为负向 API 的预期错误被忽略。`consumer_source`/`runner` 保存当前 consumer 字节身份，历史 producer source/build/C artifact 维持原身份。
+
 `.github/workflows/svc-job.yml` 独立调度 Ubuntu producer 和 Windows consumer；后者只下载同 commit 的应用制品、验摘要、调用共享 runner，并保留正常/超时清理证据。工作流静态检查不代表远程执行。当前本地授权是用户指定的开发宿主，不冒称可丢弃 VM。
 
 没有验证任意进程树、breakaway、跨 session/权限策略、已存在的无关 Job、重启、Windows ARM 或正式 Managed Process API。这些结果不能作为生产环境任意树回收保证。

@@ -1,17 +1,63 @@
 """Application-private Job public CLI contracts."""
 import json
+import copy
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts/svc_job.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+import svc_job
 
 
 class JobContract(unittest.TestCase):
+    def test_damaged_first_launch_evidence_cannot_reach_the_suite_or_verified(self):
+        recorded = json.loads((ROOT / "tests/contracts/fixtures/svc-job-missing-export.json").read_text())
+        mutations = [
+            ("nonzero-exit", ("command", "exit_code"), 37),
+            ("timeout", ("command", "timed_out"), True),
+            ("launch-error", ("facts", "error"), "Injected post-resume launch error"),
+            ("launch-errors", ("facts", "errors"), [{"api": "Injected failure", "winerror": 5}]),
+            ("not-assigned", ("facts", "assigned"), False),
+            ("inheritable-job", ("facts", "inheritable"), True),
+            ("terminate-failure", ("facts", "cleanup", "terminate_owned_job"), False),
+            ("accounting-failure", ("facts", "cleanup", "accounting_query"), False),
+            ("not-reaped", ("facts", "cleanup", "probe_reaped"), False),
+            ("live-owned-process", ("facts", "cleanup", "active_processes"), 1),
+            ("thread-close-failure", ("facts", "cleanup", "thread_closed"), False),
+            ("process-close-failure", ("facts", "cleanup", "process_closed"), False),
+            ("job-close-failure", ("facts", "cleanup", "job_closed"), False),
+        ]
+        for name, keys, value in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix="qaplet-job-fault-") as temp:
+                damaged = copy.deepcopy(recorded)
+                target = damaged
+                for key in keys[:-1]: target = target[key]
+                target[keys[-1]] = value
+                if keys[:2] == ("facts", "cleanup"):
+                    damaged["command"]["cleanup"] = copy.deepcopy(damaged["facts"]["cleanup"])
+                def negative_launch(argv, directory, timeout):
+                    if argv[-1] != "--resolve-missing":
+                        self.fail("A failed first fence must stop before another fixture launches")
+                    return damaged["command"], damaged["stdout"], damaged["stderr"], damaged["facts"]
+                args = SimpleNamespace(artifact=Path(recorded["command"]["argv"][0]), timeout=15, probe_mode="suite")
+                report = {"commands": [], "cases": [], "capability": "not_run"}
+                # Inject only negative OS-boundary evidence. No positive launch
+                # is mocked, and no actual process is created by this test.
+                with patch.dict(sys.modules, {"svc_job_windows": SimpleNamespace(launch=negative_launch)}):
+                    with self.assertRaises(svc_job.BuildError):
+                        svc_job.windows(args, report, Path(temp))
+                self.assertNotEqual(report["capability"], "verified")
+                self.assertEqual(report["supervisors"]["missing-export"]["facts"], damaged["facts"])
+                case = next(c for c in report["cases"] if c["case_id"] == "job.missing-export-supervisor")
+                self.assertEqual(case["status"], "fail")
+
     def invoke(self, *arguments):
         if os.environ.get("QAPLET_TEST_JOB_PRODUCER"):
             parent = ROOT / "out/svc-job/contracts"
@@ -98,9 +144,14 @@ class JobContract(unittest.TestCase):
             self.assertEqual(report["capability"], "verified")
             for name in ("job.context", "job.resolve", "job.missing-export", "job.assignment-denied",
                          "job.tree-terminate", "job.nested-close", "job.early-exit", "job.timeout-cleanup",
-                         "job.handles", "job.supervisor-cleanup"):
+                         "job.handles", "job.missing-export-supervisor", "job.supervisor-cleanup"):
                 self.assertEqual(cases[name]["status"], "pass", cases[name])
             self.assertEqual(report["cleanup"]["active_processes"], 0)
+            self.assertEqual(set(report["supervisors"]), {"missing-export", "suite"})
+            for observed in report["supervisors"].values():
+                self.assertEqual(observed["command"]["exit_code"], 0)
+                self.assertFalse(observed["command"]["timed_out"])
+                self.assertEqual(observed["facts"]["cleanup"]["active_processes"], 0)
         else:
             self.assertEqual(report["capability"], "not_run")
             self.assertEqual(cases["job.nonwindows-rejected"]["status"], "pass")

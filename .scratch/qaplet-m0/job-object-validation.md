@@ -62,3 +62,15 @@ Ubuntu-22.04 / WSL2 Linux x86_64、kernel `6.6.87.2-microsoft-standard-WSL2`、4
 - `out/svc-job/core-inspect-{hello,eval}.json`：对 07 当前 Core Hello `467f8889...` 和 eval `426a7b05...` 的独立同摘要 import/map/headers audit 均 pass。Core 配方未修改，也未加入本应用代码。
 
 `.github/workflows/svc-job.yml` 是独立 Ubuntu producer / Windows consumer，含实际 fence deadline 合同、失败证据上传；本票没有 push 或执行新远程 Job workflow，远程验证保持 not_run。所有 M0-SVC 报告的 `m0_core_status` 保持 not_run，不关闭完整 Core 门禁。
+
+## Consumer merge review 修复
+
+初次提交 `c1ae465` 的 fresh merger 发现：missing-export launch 的原始事实虽干净，但它的 facts/error、exit 和 cleanup 会被 suite 变量覆盖，存在未来清理失败仍被判 verified 的路径。因此 integration 未合入该提交；修复只修改 consumer 和公开合同，没有重编 C、修改原 producer 或覆盖原始失败。
+
+现在两次 launch 各自完整保存在 `supervisors`，通过同一真实 launch gate 检查设置/归属/非继承、exit 0、timeout/error、terminate、accounting active 0、reap 和 process/thread/Job handle close。missing-export fence 任一项失败立即停止 suite。其 native 负向 API 断言是 null/error 127，但断言成立后进程应返回 0，不能忽略意外非零退出。单独的 `consumer_source` 保存当前 consumer source set SHA-256 `4e1f1e86163a80b365cc35d6af6f870112e5cb7062d58c76c8c82ce4a9fa6ccb`，其中 `svc_job.py` 为 `4b61fcc63468856ee716c3cf0175b0ea4c06877114026b73ce914a0628bd6913`；历史 producer/C source/制品摘要仍是上文原值。
+
+回归在现有 `windows()` module/report seam 注入一份真实 ordinary-user missing-export fence 记录的 13 种损坏副本：exit、timeout、error/error list、assign/继承和 terminate/accounting/reap/各 handle close。没有模拟正向 OS 成功，也没有为测试启动进程。原 consumer 实际观察 13 red，修复后 green；`out/svc-job/consumer-fix/regression-red.{json,log}` 还保留用原 `c1ae465` 源码在内存中重放的同一 red，及 `regression-green.log`。`tests/contracts/fixtures/svc-job-missing-export.json` 是该实际记录的最小合同输入，原始路径参数已缩为制品名，测量值和来源说明保留。
+
+实际 Windows 使用同一个 `0410864e...` artifact 重新通过；missing-export/suite 各自 exit 0、未超时，accounting total 1/10、active 均 0，reap/3 handle close 全成立。实际 `--probe-mode hang --timeout 1` 正确 fail：missing-export fence pass，suite exit 98 / timed_out，自己的 accounting active 0、reap 和全部 close 仍成立。新原始结果在 `out/svc-job/consumer-fix/windows/{job,timeout}.json`，两次 launch 全部 facts 不再丢失。受限进程上下文另一次 missing-export capture 观测 15s timeout、零残留，普通用户上下文相同字节成功；两份记录均保留，未诊断其上下文差异，不外推为宿主 ABI 失败。
+
+已并入 integration `f24787b`。consumer 修复后的 Windows 9/9 公开合同、Ubuntu 9 tests/1 Windows-only skip 通过；完整 Ubuntu `make check` 116 tests/25 explicit skips、static/bootstrap pass，记录于 `out/svc-job/consumer-fix/check.log` 和 `check/`。原三次 handle 增长/稳定基线、两个初始 failure、Core audits 和首份 archive 保持原样；新 evidence 另行归档。
