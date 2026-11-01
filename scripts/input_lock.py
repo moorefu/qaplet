@@ -72,7 +72,7 @@ class InputLock:
         if self.path.is_symlink() or self.path.resolve() != self.path:
             raise ValueError("Unified input lock must be physical")
         self.value = value = read_json(self.path)
-        if value.get("schema") != "qaplet.toolchain-lock.v3":
+        if not isinstance(value, dict) or value.get("schema") != "qaplet.toolchain-lock.v3":
             raise ValueError("Unsupported unified input lock schema")
         if value.get("lock_state") not in ("pinned", "selected_pending_validation"):
             raise ValueError("Unknown input lock state")
@@ -276,7 +276,22 @@ def migrate(source_cache, root=ROOT, report=None, directory=None):
     }
 
 
+def report_path(args):
+    """Validate before any write; refusals must never replace authoritative data."""
+    target = args.report.absolute()
+    if target.resolve() != target or target in (args.lock.absolute(), args.output.absolute() if args.output else None):
+        raise ValueError("Report path aliases an input/output or redirects through links")
+    roots = {ROOT}
+    if args.lock.parent.name == "toolchains":
+        roots.add(args.lock.absolute().parent.parent)
+    for root in roots:
+        if target.is_relative_to(root) and not target.is_relative_to(root / "out"):
+            raise ValueError("Repository reports must be under out/, outside source, locks and caches")
+    return target
+
+
 def main():
+    from quickjs_source import SourceError
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("resolve", "audit", "migrate"))
     parser.add_argument("--lock", type=Path, default=LOCK)
@@ -288,8 +303,14 @@ def main():
     report = {"schema_version": 1, "report_kind": "input-lock", "status": "fail", "commands": [],
               "release_ready": False, "m0_core_status": "not_run"}
     try:
+        args.report = report_path(args)
+    except ValueError as error:
+        print(json.dumps({**report, "reason": str(error), "report_written": False}))
+        return 1
+    try:
         if args.operation == "migrate":
-            if not args.output or args.output.parent.resolve() != ROOT / "toolchains" or args.output.exists():
+            if (not args.output or args.output.parent.resolve() != ROOT / "toolchains" or
+                    args.output.exists() or args.output.is_symlink()):
                 raise ValueError("Migration requires a new output directly under repository toolchains/")
             directory = args.report.parent / "evidence" / uuid.uuid4().hex
             directory.mkdir(parents=True)
@@ -298,7 +319,7 @@ def main():
             try:
                 temporary.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
                 InputLock(temporary, "probe")
-                os.replace(temporary, args.output)
+                os.link(temporary, args.output)  # Atomic publication without replacing a concurrent original.
             finally:
                 temporary.unlink(missing_ok=True)
             args.lock, args.purpose = args.output, "probe"
@@ -307,7 +328,7 @@ def main():
         if args.operation == "audit":
             report["consumers"] = audit_consumers(locked.root)
         report.update(status="pass", reason="Unified identities resolved; no build/runtime/release claim")
-    except (OSError, ValueError, KeyError, TypeError, StopIteration, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, StopIteration, SourceError, subprocess.SubprocessError) as error:
         report["reason"] = str(error)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.report.with_name(args.report.name + "." + uuid.uuid4().hex + ".tmp")

@@ -156,6 +156,70 @@ class InputLockContract(unittest.TestCase):
                 self.assertIn("Fixture mode", actual["reason"])
                 self.assertEqual(actual["commands"], [])
 
+    def test_non_object_lock_replaces_a_previous_pass_with_structured_failure(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-input-shape-") as temp:
+            work = Path(temp)
+            for value in (None, [], "unknown"):
+                lock, report = work / "bad-lock.json", work / "refusal.json"
+                lock.write_text(json.dumps(value))
+                report.write_text('{"status":"pass","old_report":true}')
+                result = subprocess.run([sys.executable, str(CLI), "resolve", "--lock", str(lock),
+                                         "--report", str(report)], capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                actual = json.loads(report.read_text())
+                self.assertEqual(actual["status"], "fail", result.stderr)
+                self.assertNotIn("old_report", actual)
+
+    def test_report_aliases_cannot_replace_original_inputs_or_a_migration_candidate(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-input-output-") as temp:
+            repo = Path(temp)
+            self.copied_repo(repo)
+            targets = [repo / "toolchains/qaplet.lock.json", repo / "toolchains/cosmocc.lock.json",
+                       repo / "scripts/input_lock.py", repo / ".cache/archive.zip",
+                       repo / "toolchains/candidate.json"]
+            targets[3].parent.mkdir()
+            targets[3].write_bytes(b"only archive copy")
+            for target in targets:
+                with self.subTest(target=target):
+                    before = target.read_bytes() if target.exists() else None
+                    result = subprocess.run([sys.executable, str(repo / "scripts/input_lock.py"), "migrate",
+                                             "--source-cache", str(repo / ".cache/absent"),
+                                             "--output", str(target), "--report", str(target)],
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 1)
+                    if before is None:
+                        self.assertFalse(target.exists(), result.stdout + result.stderr)
+                    else:
+                        self.assertEqual(target.read_bytes(), before)
+
+    def test_migration_supplier_error_preserves_originals_and_writes_failure(self):
+        if not (ROOT / ".cache/quickjs").is_dir():
+            self.skipTest("Actual source cache required for migration refusal replay")
+        with tempfile.TemporaryDirectory(prefix="qaplet-input-migration-error-") as temp:
+            repo = Path(temp)
+            self.copied_repo(repo)
+            lock = json.loads((ROOT / "third_party/quickjs/source.lock.json").read_text())
+            name = lock["commit"] + "-" + lock["patch_manifest_sha256"][:16]
+            source = repo / ".cache/quickjs" / name / "source"
+            shutil.copytree(ROOT / ".cache/quickjs" / name / "source", source, symlinks=True)
+            try:
+                (source / "refused-link").symlink_to(source / "VERSION")
+            except OSError:
+                self.skipTest("Requires symlink permission for the source refusal fixture")
+            report, output = repo / "out/refusal.json", repo / "toolchains/candidate.json"
+            report.parent.mkdir()
+            report.write_text('{"status":"pass"}')
+            before = (repo / "toolchains/qaplet.lock.json").read_bytes()
+            result = subprocess.run([sys.executable, str(repo / "scripts/input_lock.py"), "migrate",
+                                     "--output", str(output), "--report", str(report)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            actual = json.loads(report.read_text())
+            self.assertEqual(actual["status"], "fail")
+            self.assertIn("symlink", actual["reason"])
+            self.assertFalse(output.exists())
+            self.assertEqual((repo / "toolchains/qaplet.lock.json").read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

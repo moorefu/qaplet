@@ -88,8 +88,8 @@
     },
     {
       "path": "scripts/input_lock.py",
-      "sha256": "1e983bceca2aa808e1aee810489c17d9789cf81d6ca728ecbb947f328892b680",
-      "size_bytes": 18034
+      "sha256": "184c2c109893d01d868f7a5e516a71bc2cde13d4b8c7cf9adc5075208aaf301d",
+      "size_bytes": 19119
     },
     {
       "path": "scripts/native_toolchain.py",
