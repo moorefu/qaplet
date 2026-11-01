@@ -7,7 +7,8 @@ the original license digest, and the ordered patch manifest digest. The official
 [upstream repository](https://github.com/bellard/quickjs).
 
 Only metadata, the unmodified upstream `LICENSE`, and patches belong here. Source
-checkouts and failed candidates stay under the ignored `out/` directory. No
+checkouts and failed candidates stay under the repository-local `.cache/quickjs/`
+directory by default. No
 QuickJS compilation or Runtime compatibility is established by this source lock.
 
 Run from the repository root (use `python3` on Linux):
@@ -28,6 +29,9 @@ seconds per Git command). `bump --repository /absolute/local/repository` is an
 explicit local fixture/mirror seam; its actual local repository identity is
 recorded instead of claiming an official fetch. The default and only accepted
 remote repository is `https://github.com/bellard/quickjs.git`.
+The default cache is `<repository>/.cache/quickjs/`; an explicit `--cache` selects
+another isolated cache. All required actual input data belongs under the current
+repository's `.cache/`, including when invoking the CLI from WSL.
 
 Exit statuses are `0` for verified input, `1` for invalid/modified input, and `2`
 for a missing prerequisite or failed upstream command. Reports use their own
@@ -67,7 +71,11 @@ and `git apply` in order. It records upstream and patched source separately.
 `fetch` reproduces the same patch sequence and compares both identities.
 `.gitattributes` preserves metadata, license, and patch bytes across checkout.
 
-A failed candidate does not replace the accepted lock. Restore a previous
+A failed candidate does not replace the accepted lock. If lock publication fails,
+the previous license and patch-manifest bytes are restored so the accepted input
+still verifies. Git command timeouts terminate the process tree and retain raw
+output; noncanonical manifest paths are rejected with a fresh failure report.
+Restore a previous
 reviewed metadata commit and its verified cache to roll back; use an explicit
 new `--cache` directory to diagnose corruption without erasing prior evidence.
 Ordinary builds must call `verify` and stop on any nonzero status. They must not
