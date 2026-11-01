@@ -1,0 +1,32 @@
+{
+  "name": "M0 locked fat APE",
+  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
+  "permissions": {"contents": "read", "actions": "read"},
+  "jobs": {
+    "build": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"name": "Local checks before acquisition and compilation", "run": "make check OUT=out/m0/check"},
+        {
+          "name": "Explicitly acquire exact locked upstream artifact",
+          "env": {"GH_TOKEN": "${{ github.token }}"},
+          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json"
+        },
+        {
+          "name": "Populate locked input caches explicitly",
+          "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
+        },
+        {"name": "Build and locally verify both fat probes using shared recipe", "run": "make build-ape OUT=out/m0"},
+        {
+          "name": "Distribute original bytes and all evidence",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0/", "if-no-files-found": "error", "retention-days": 7}
+        }
+      ]
+    }
+  }
+}
