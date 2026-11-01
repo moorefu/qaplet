@@ -59,3 +59,5 @@
 2026-11-01：在 `codex/m0-06-cross-host` / `out/implement-spec/06` 开工，已确认基于 integration `dc5c0c3`。沿用用户确认的 CLI / 实际 OS / evidence seam；独立实现原生 runner 与 Ubuntu 构建的 loader bundle，ARM64 完整 guest 复用 07。六宿主实际证据齐备前保持 claimed。
 
 原生 baseline 已完成本地 Ubuntu / Windows 五项执行、独立 Mac ARM64 helper 的 Ubuntu 构建、五原生 CI 编排及缺宿主拒绝汇总；见[验收与 64K 交接](../cross-host-startup-validation.md)。Mac/原生 ARM64 CI 仍待实际运行，64K loader/packer 修正与 generic guest 由 07 接续；不能关闭本票或完整 Core。
+
+2026-11-01 后续：已合入 07 final producer/source-built loader 与 08 native I/O，启动合同升级为七项，增加 JSValue pointer roundtrip 和 object/Map 生命周期。06 接通实际 generic guest 语义导入、可迁移 raw logs、按 native 实测页大小生成 QEMU 缺口与六目标 matrix；16K native 保留观测并补两种目标页，失败不能被后来的 blocked 报告覆盖。新 SHA 的 Windows 七项实际通过；完整本地/guest checkpoint 见[当前验收](../cross-host-startup-validation.md)。本票保持 claimed，等待新完整 CI 对这批 producer 字节的全部 native 与补缺 guest 验收；旧摘要 CI 不计入本轮通过。

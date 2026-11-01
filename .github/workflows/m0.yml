@@ -1,33 +1,80 @@
 {
   "name": "M0 locked fat APE",
-  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
-  "permissions": {"contents": "read", "actions": "read"},
+  "on": {
+    "push": {},
+    "pull_request": {},
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
   "jobs": {
     "build": {
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 30,
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"name": "Local checks before acquisition and compilation", "run": "make check OUT=out/m0/check"},
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Local checks before acquisition and compilation",
+          "run": "make check OUT=out/m0/check"
+        },
         {
           "name": "Explicitly acquire exact locked upstream artifact",
-          "env": {"GH_TOKEN": "${{ github.token }}"},
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
           "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json"
         },
         {
           "name": "Populate locked input caches explicitly",
           "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
         },
-        {"name": "Build and locally verify both fat probes using shared recipe", "run": "make build-ape OUT=out/m0"},
-        {"name": "Ubuntu-build independent native I/O artifact", "run": "python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json"},
-        {"name": "Explicitly acquire locked Ubuntu helper compiler", "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"},
-        {"name": "Ubuntu-build separate native loaders", "run": "python scripts/startup_loaders.py build --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"},
+        {
+          "name": "Explicitly acquire locked loader and packer sources",
+          "run": "python scripts/ape_helpers.py fetch --report out/m0/inputs/ape-helpers.json"
+        },
+        {
+          "name": "Build and locally verify both fat probes using shared recipe",
+          "run": "make build-ape OUT=out/m0"
+        },
+        {
+          "name": "Ubuntu-build independent native I/O artifact",
+          "run": "python scripts/native_io.py build --output-dir out/m0/io/artifacts --report out/m0/io/build-info.json"
+        },
+        {
+          "name": "Ubuntu-build independent 64K deep probe",
+          "run": "python scripts/pages64k.py build --output-dir out/m0/pages64k/artifacts --report out/m0/pages64k/build-info.json"
+        },
+        {
+          "name": "Explicitly acquire locked Ubuntu helper compiler",
+          "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"
+        },
+        {
+          "name": "Ubuntu-build separate native loaders",
+          "run": "python scripts/startup_loaders.py build --producer-report out/m0/build-info.json --output-dir out/m0/loaders --report out/m0/loaders/helpers.json"
+        },
         {
           "name": "Distribute original bytes and all evidence",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
-          "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0/", "if-no-files-found": "error", "retention-days": 7}
+          "with": {
+            "name": "m0-build-${{ github.sha }}",
+            "path": "out/m0/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
         }
       ]
     },
@@ -37,31 +84,319 @@
       "timeout-minutes": 10,
       "strategy": {
         "fail-fast": false,
-        "matrix": {"include": [
-          {"runner": "ubuntu-24.04", "os": "Linux", "arch": "x86_64"},
-          {"runner": "windows-2022", "os": "Windows", "arch": "x86_64"},
-          {"runner": "macos-15-intel", "os": "Darwin", "arch": "x86_64"},
-          {"runner": "macos-15", "os": "Darwin", "arch": "aarch64"},
-          {"runner": "ubuntu-24.04-arm", "os": "Linux", "arch": "aarch64"}
-        ]}
+        "matrix": {
+          "include": [
+            {
+              "runner": "ubuntu-24.04",
+              "os": "Linux",
+              "arch": "x86_64"
+            },
+            {
+              "runner": "windows-2022",
+              "os": "Windows",
+              "arch": "x86_64"
+            },
+            {
+              "runner": "macos-15-intel",
+              "os": "Darwin",
+              "arch": "x86_64"
+            },
+            {
+              "runner": "macos-15",
+              "os": "Darwin",
+              "arch": "aarch64"
+            },
+            {
+              "runner": "ubuntu-24.04-arm",
+              "os": "Linux",
+              "arch": "aarch64"
+            }
+          ]
+        }
       },
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-build-${{ github.sha }}", "path": "out/m0"}},
-        {"name": "Measure native host and execute unchanged producer bytes", "run": "python scripts/startup.py run --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/startup/${{ matrix.runner }}/startup.json"},
-        {"name": "Measure native handles and controlled terminal/process fixtures", "if": "${{ !cancelled() }}", "run": "python scripts/native_io.py run --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/io/${{ matrix.runner }}/io.json"},
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-build-${{ github.sha }}",
+            "path": "out/m0"
+          }
+        },
+        {
+          "name": "Measure native host and execute unchanged producer bytes",
+          "run": "python scripts/startup.py run --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/startup/${{ matrix.runner }}/startup.json"
+        },
+        {
+          "name": "Plan from actual native ARM64 page measurement",
+          "id": "native-pages",
+          "if": "${{ !cancelled() && matrix.os == 'Linux' && matrix.arch == 'aarch64' }}",
+          "run": "python scripts/startup.py page-gaps --input-report out/startup/${{ matrix.runner }}/startup.json --github-output \"$GITHUB_OUTPUT\" --report out/startup/${{ matrix.runner }}/page-plan.json"
+        },
+        {
+          "name": "Run deep probe when native ARM64 actually has 64K pages",
+          "if": "${{ !cancelled() && steps.native-pages.outputs.native_page_size == '65536' }}",
+          "run": "python scripts/pages64k.py run-native --input-report out/m0/pages64k/build-info.json --artifact out/m0/pages64k/artifacts/pages64k.com --loader out/m0/loaders/ape-aarch64.elf --report out/pages64k/${{ matrix.runner }}/pages64k.json"
+        },
+        {
+          "name": "Measure native handles and controlled terminal/process fixtures",
+          "if": "${{ !cancelled() }}",
+          "run": "python scripts/native_io.py run --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/io/${{ matrix.runner }}/io.json"
+        },
         {
           "name": "Retain every native result and raw log",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
-          "with": {"name": "m0-startup-${{ matrix.runner }}-${{ github.sha }}", "path": "out/startup/${{ matrix.runner }}/", "if-no-files-found": "error", "retention-days": 7}
+          "with": {
+            "name": "m0-startup-${{ matrix.runner }}-${{ github.sha }}",
+            "path": "out/startup/${{ matrix.runner }}/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
         },
         {
           "name": "Retain every I/O result and cleanup log",
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
-          "with": {"name": "m0-io-${{ matrix.runner }}-${{ github.sha }}", "path": "out/io/${{ matrix.runner }}/", "if-no-files-found": "error", "retention-days": 7}
+          "with": {
+            "name": "m0-io-${{ matrix.runner }}-${{ github.sha }}",
+            "path": "out/io/${{ matrix.runner }}/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        },
+        {
+          "name": "Retain native 64K deep evidence when selected",
+          "if": "${{ always() && steps.native-pages.outputs.native_page_size == '65536' }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-pages64k-native-${{ matrix.runner }}-${{ github.sha }}",
+            "path": "out/pages64k/${{ matrix.runner }}/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "page-plan": {
+      "needs": [
+        "build",
+        "native-startup"
+      ],
+      "if": "${{ always() && needs.build.result == 'success' }}",
+      "runs-on": "ubuntu-22.04",
+      "timeout-minutes": 5,
+      "outputs": {
+        "matrix": "${{ steps.plan.outputs.matrix }}",
+        "needs_guest": "${{ steps.plan.outputs.needs_guest }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Read actual native ARM64 measurement",
+          "uses": "actions/download-artifact@v8",
+          "continue-on-error": true,
+          "with": {
+            "name": "m0-startup-ubuntu-24.04-arm-${{ github.sha }}",
+            "path": "out/native-arm64"
+          }
+        },
+        {
+          "name": "Compute only missing measured page configurations",
+          "id": "plan",
+          "run": "python scripts/startup.py page-gaps --input-report out/native-arm64/startup.json --github-output \"$GITHUB_OUTPUT\" --report out/page-plan/plan.json"
+        },
+        {
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-page-plan-${{ github.sha }}",
+            "path": "out/page-plan/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "arm64-page-gaps": {
+      "needs": [
+        "build",
+        "page-plan"
+      ],
+      "if": "${{ always() && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
+      "runs-on": "ubuntu-22.04",
+      "timeout-minutes": 20,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": "${{ fromJSON(needs.page-plan.outputs.matrix) }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-build-${{ github.sha }}",
+            "path": "out/m0"
+          }
+        },
+        {
+          "name": "Install the locked QEMU major/minor runtime with repository caches",
+          "run": "mkdir -p .cache/apt/cache/archives/partial .cache/apt/lists/partial\nsudo apt-get -o Dir::Cache=\"$PWD/.cache/apt/cache\" -o Dir::State::lists=\"$PWD/.cache/apt/lists\" update\nsudo apt-get -y --no-install-recommends -o Dir::Cache=\"$PWD/.cache/apt/cache\" -o Dir::State::lists=\"$PWD/.cache/apt/lists\" install qemu-system-arm"
+        },
+        {
+          "name": "Explicitly fetch immutable locked guest inputs",
+          "run": "python scripts/arm64_guest.py fetch --cache .cache/guests --page-size ${{ matrix.page_size }} --report out/page-gaps/${{ matrix.page_size }}/acquisition.json"
+        },
+        {
+          "name": "Prepare verified guest kernel and userland offline",
+          "run": "python scripts/arm64_guest.py prepare --cache .cache/guests --page-size ${{ matrix.page_size }} --report out/page-gaps/${{ matrix.page_size }}/prepared.json"
+        },
+        {
+          "name": "Export seven startup cases on identical producer bytes",
+          "run": "python scripts/startup.py guest-manifest --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --loader-dir out/m0/loaders --page-size ${{ matrix.page_size }} --manifest out/page-gaps/${{ matrix.page_size }}/startup-manifest.json --report out/page-gaps/${{ matrix.page_size }}/startup-export.json"
+        },
+        {
+          "name": "Export independent native I/O suite",
+          "run": "python scripts/native_io.py guest-manifest --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader out/m0/loaders/ape-aarch64.elf --page-size ${{ matrix.page_size }} --manifest out/page-gaps/${{ matrix.page_size }}/io-manifest.json --report out/page-gaps/${{ matrix.page_size }}/io-export.json"
+        },
+        {
+          "name": "Export deep probe only for the missing 64K target",
+          "if": "${{ matrix.page_size == 65536 }}",
+          "run": "python scripts/pages64k.py guest-manifest --input-report out/m0/pages64k/build-info.json --guest-cache .cache/guests --report out/page-gaps/${{ matrix.page_size }}/pages-manifest.json"
+        },
+        {
+          "name": "Merge distinct same-byte payloads for 4096 pages",
+          "if": "${{ matrix.page_size == 4096 }}",
+          "run": "python scripts/arm64_guest.py merge-manifests --input-manifest out/page-gaps/${{ matrix.page_size }}/startup-manifest.json --input-manifest out/page-gaps/${{ matrix.page_size }}/io-manifest.json --manifest out/page-gaps/${{ matrix.page_size }}/manifest.json --page-size 4096 --report out/page-gaps/${{ matrix.page_size }}/merged.json"
+        },
+        {
+          "name": "Merge distinct same-byte payloads for 65536 pages",
+          "if": "${{ matrix.page_size == 65536 }}",
+          "run": "python scripts/arm64_guest.py merge-manifests --input-manifest out/page-gaps/${{ matrix.page_size }}/startup-manifest.json --input-manifest out/page-gaps/${{ matrix.page_size }}/io-manifest.json --input-manifest out/page-gaps/${{ matrix.page_size }}/pages-manifest.json --manifest out/page-gaps/${{ matrix.page_size }}/manifest.json --page-size 65536 --report out/page-gaps/${{ matrix.page_size }}/merged.json"
+        },
+        {
+          "name": "Boot actual locked full-system TCG guest",
+          "run": "python scripts/arm64_guest.py run --cache .cache/guests --page-size ${{ matrix.page_size }} --manifest out/page-gaps/${{ matrix.page_size }}/manifest.json --report out/page-gaps/${{ matrix.page_size }}/guest.json"
+        },
+        {
+          "name": "Validate actual startup semantics and transfer identities",
+          "if": "${{ !cancelled() }}",
+          "run": "python scripts/startup.py import-guest --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --guest-report out/page-gaps/${{ matrix.page_size }}/guest.json --report out/page-gaps/${{ matrix.page_size }}/startup.json"
+        },
+        {
+          "name": "Validate actual I/O semantics and controlled Unicode process fixture",
+          "if": "${{ !cancelled() }}",
+          "run": "python scripts/native_io.py import-guest --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --guest-report out/page-gaps/${{ matrix.page_size }}/guest.json --report out/page-gaps/${{ matrix.page_size }}/io.json"
+        },
+        {
+          "name": "Validate all required 64K deep observations",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/pages64k.py verify-guest --input-report out/m0/pages64k/build-info.json --guest-report out/page-gaps/${{ matrix.page_size }}/guest.json --report out/page-gaps/${{ matrix.page_size }}/pages64k.json"
+        },
+        {
+          "name": "Retain guest failures, serial bytes and semantic reports",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-page-gap-${{ matrix.page_size }}-${{ github.sha }}",
+            "path": "out/page-gaps/${{ matrix.page_size }}/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "startup-matrix": {
+      "needs": [
+        "build",
+        "native-startup",
+        "arm64-page-gaps"
+      ],
+      "if": "${{ always() && needs.build.result == 'success' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-build-${{ github.sha }}",
+            "path": "out/m0"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "continue-on-error": true,
+          "with": {
+            "pattern": "m0-startup-*-${{ github.sha }}",
+            "path": "out/startup-results"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "continue-on-error": true,
+          "with": {
+            "pattern": "m0-page-gap-*-${{ github.sha }}",
+            "path": "out/startup-results"
+          }
+        },
+        {
+          "name": "Require all six measured targets on the new producer identities",
+          "run": "python scripts/startup.py matrix --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --input-dir out/startup-results --report out/startup-matrix/matrix.json"
+        },
+        {
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-startup-matrix-${{ github.sha }}",
+            "path": "out/startup-matrix/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
         }
       ]
     }

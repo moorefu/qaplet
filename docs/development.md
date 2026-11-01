@@ -10,6 +10,8 @@
 
 本机该目录位于没有 `metadata` 选项的 DrvFS。实际执行、读写和内部符号链接可用；文件可设为无写权限，但非执行位和目录只读位不能按 POSIX 原样表示。工具链验证须在报告中记录实测权限限制，并持续核对原归档 SHA-256、所有文件内容/类型和链接目标；在支持 POSIX 权限的 Ubuntu 文件系统保留完整权限校验。没有更改全局 WSL/mount 设置。下文与历史验收记录中的 ext4/home 缓存、Windows 编译和旧 CI 矩阵是此前观测，当前默认与调度以本节及配置为准。
 
+缓存候选目录改名的另一次 `EACCES` 已通过现场 Windows Restart Manager 查询定位到 VS Code 的 Pylance 文件占用。仓库 `.vscode/settings.json` 排除 `.cache/`、`out/`、`toolchains/evidence/` 的递归监听；同一 CLI 的加入/移除/恢复对照及原始完整检查已验证，见[诊断记录](../.scratch/qaplet-m0/drvfs-publication-validation.md)。这不改变缓存位置、权限或输入验证，也不增加改名重试；其他程序主动占用文件仍可能导致 OS 拒绝操作。
+
 ## 命令与 scope
 
 | 入口 | 报告 | 成功含义 |
@@ -163,7 +165,11 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
   --report out/startup/startup.json
 ```
 
-`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。`matrix` 用重复的 `--input-report` 汇总六目标，缺项保持 blocked；`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 guest payload，不声明实际运行。详细本地状态与未解决的 64K loader/packer 问题见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)。五原生 CI 消费同一 Ubuntu 构建字节并保留失败；这不等于六宿主已通过。
+`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。每个宿主执行七项：Hello/eval facts、42、JSValue pointer roundtrip、object/Map 分配与销毁、异常和语法错误。helper `build --producer-report BUILD` 将 07 producer 的独立 source-built ARM64 loader 绑定到分发 bundle。
+
+`page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核七项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
+
+`matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。当前新摘要的本地结果及未完成 native CI 验收见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)，本地成功不等于六宿主已经通过。
 
 ## BOOT-07 native I/O
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Run the same Ubuntu-built Hello/eval bytes and collect actual host evidence."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ import stat
 import sys
 import uuid
 
-from build_ape import BuildError, headers, identity
+from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -18,8 +19,11 @@ NAMES = ("hello", "quickjs-eval")
 CASES = (("hello.facts", "hello", [], "facts"),
          ("quickjs-eval.facts", "quickjs-eval", ["--facts"], "facts"),
          ("quickjs-eval.value", "quickjs-eval", [], "value"),
+         ("quickjs-eval.pointer-roundtrip", "quickjs-eval", ["--pointer-check"], "pointer-roundtrip"),
+         ("quickjs-eval.objects-lifecycle", "quickjs-eval", [OBJECT_LIFECYCLE_EXPRESSION], "objects-lifecycle"),
          ("quickjs-eval.exception", "quickjs-eval", ["throw new Error('m0-probe')"], "Error: m0-probe"),
          ("quickjs-eval.syntax-error", "quickjs-eval", ["("], "SyntaxError:"))
+EXPECTED_STDOUT = {"value": "42\n", "pointer-roundtrip": "JSValue pointer round-trip: pass\n", "objects-lifecycle": "9990000\n"}
 
 
 def ci_facts():
@@ -92,16 +96,16 @@ def select_loader(args, report):
 
 def evaluate_case(case_id, name, kind, host, record, output, errors, artifact):
     actual = {"stdout": output, "stderr": errors, "exit_code": record["exit_code"], "timed_out": record["timed_out"]}
-    expected = {"exit_code": 0, "output": "JSON facts matching actual OS architecture/page size" if kind == "facts" else "42\\n"}
+    expected = {"exit_code": 0, "output": "JSON facts matching actual OS architecture/page size" if kind == "facts" else EXPECTED_STDOUT.get(kind)}
     passed = record["exit_code"] == 0 and not record["timed_out"]
     if kind == "facts":
         try:
             actual["facts"] = json.loads(output)
         except ValueError:
             actual["facts"] = None
-        passed = passed and actual["facts"] == {"probe": name, "arch": host["execution_arch"], "page_size": host["page_size"]}
-    elif kind == "value":
-        passed = passed and output == "42\n" and not errors
+        passed = passed and not errors and actual["facts"] == {"probe": name, "arch": host["execution_arch"], "page_size": host["page_size"]}
+    elif kind in EXPECTED_STDOUT:
+        passed = passed and output == EXPECTED_STDOUT[kind] and not errors
     else:
         expected = {"exit_code": "nonzero", "stderr_contains": kind}
         passed = record["exit_code"] is not None and record["exit_code"] != 0 and not record["timed_out"] and kind in errors
@@ -143,7 +147,7 @@ def native_run(args, report, directory, artifacts):
         if report["loader"]["sha256_after"] != report["loader"]["sha256"]:
             raise BuildError("Native loader bytes changed during execution")
     report.update(status="pass" if all(case["status"] == "pass" for case in report["cases"]) else "fail",
-                  reason="Five real startup/eval cases recorded; full six-host coverage requires matrix validation")
+                  reason="Seven real startup/eval cases recorded; full six-host coverage requires matrix validation")
 
 
 TARGETS = (("linux-x86_64", "Linux", "x86_64", None), ("windows-x86_64", "Windows", "x86_64", None),
@@ -184,8 +188,8 @@ def validate_startup(item, artifacts):
             raise BuildError("Startup report lacks unchanged artifact proof: " + name)
     if item["status"] == "pass":
         cases = {case["case_id"]: case for case in item["cases"]}
-        if len(item["cases"]) != 5 or set(cases) != {entry[0] for entry in CASES}:
-            raise BuildError("Passing startup report must contain exactly five cases")
+        if len(item["cases"]) != len(CASES) or set(cases) != {entry[0] for entry in CASES}:
+            raise BuildError("Passing startup report must contain exactly seven required cases")
         for case_id, name, arguments, kind in CASES:
             case = cases[case_id]
             if case["status"] != "pass" or len(case["commands"]) != 1:
@@ -201,22 +205,31 @@ def validate_startup(item, artifacts):
 def matrix(args, report, artifacts):
     report["report_kind"] = "ape-startup-matrix"
     report["inputs"] = []
+    report["additional_reports"] = []
     coverage = {name: {"target": name, "status": "blocked", "reason": "No actual startup report", "reports": []} for name, *_ in TARGETS}
     report["coverage"] = list(coverage.values())
-    for path in args.input_report:
+    paths = [*args.input_report, *(path for root in args.input_dir for path in sorted(root.rglob("startup.json")))]
+    for path in paths:
         item = read_json(path)
         validate_startup(item, artifacts)
         report["inputs"].append(identity(path))
         key = target_key(item["host"])
         if key is None:
+            host = item["host"]
+            if host["os"] == "Linux" and host["execution_arch"] == "aarch64" and host["execution_mode"] == "native":
+                report["additional_reports"].append({**identity(path), "report_id": item["report_id"],
+                    "host": host, "status": item["status"], "reason": "Measured native page size covers neither required ARM64 target"})
+                continue
             raise BuildError("Report does not cover a required measured target (including actual ARM64 page size)")
         slot = coverage[key]
         slot["reports"].append({**identity(path), "report_id": item["report_id"], "host": item["host"], "status": item["status"]})
-        if item["status"] != "pass":
-            slot.update(status="fail" if item["status"] == "fail" else "blocked", reason=item["reason"])
+        if item["status"] == "fail":
+            slot.update(status="fail", reason=item["reason"])
+        elif item["status"] != "pass" and slot["status"] != "fail":
+            slot.update(status="blocked", reason=item["reason"])
         elif all(entry["status"] == "pass" for entry in slot["reports"]):
-            slot.update(status="pass", reason="Five actual cases on unchanged producer bytes")
-    statuses = [entry["status"] for entry in coverage.values()]
+            slot.update(status="pass", reason="Seven actual cases on unchanged producer bytes")
+    statuses = [entry["status"] for entry in coverage.values()] + [entry["status"] for entry in report["additional_reports"]]
     report.update(status="fail" if "fail" in statuses else "pass" if all(value == "pass" for value in statuses) else "blocked",
                   reason="Six required measured targets, including failures and missing reports, retained")
 
@@ -226,14 +239,157 @@ def guest_manifest(args, report, artifacts):
         raise BuildError("Guest manifest requires explicit 4096/65536 page size")
     report["host"] = {"os": "Linux", "execution_arch": "aarch64", "cpu": "aarch64", "page_size": args.page_size}
     loader = select_loader(args, report)[0]
+    expected_loader = read_json(args.build_report)["portable_helpers"]["loader"]
+    if sha256(loader) != expected_loader["sha256"] or Path(loader).stat().st_size != expected_loader["size_bytes"]:
+        raise BuildError("Exported guest loader differs from selected portable producer")
     files = [{"path": entry["path"], "guest_path": "/payload/" + name + ".com", "sha256": entry["sha256"]} for name, entry in artifacts.items()]
     files.append({"path": loader, "guest_path": "/payload/ape-aarch64.elf", "sha256": sha256(loader)})
-    manifest = {"schema_version": 1, "page_size": args.page_size, "files": files, "commands": [
-        {"case_id": case_id, "argv": ["/payload/ape-aarch64.elf", "/payload/" + name + ".com", *arguments],
-         "expected_exit_code": 0 if kind in ("facts", "value") else 1} for case_id, name, arguments, kind in CASES]}
+    commands = []
+    for case_id, name, arguments, kind in CASES:
+        item = {"case_id": case_id, "argv": ["/payload/ape-aarch64.elf", "/payload/" + name + ".com", *arguments],
+                "expected_exit_code": 0 if kind == "facts" or kind in EXPECTED_STDOUT else 1}
+        if kind == "facts":
+            item.update(expected_stdout=json.dumps({"probe": name, "arch": "aarch64", "page_size": args.page_size}, separators=(",", ":")) + "\n", expected_stderr="")
+        elif kind in EXPECTED_STDOUT:
+            item.update(expected_stdout=EXPECTED_STDOUT[kind], expected_stderr="")
+        else:
+            item.update(expected_stdout="", stderr_contains=kind)
+        commands.append(item)
+    manifest = {"schema_version": 1, "page_size": args.page_size, "files": files, "commands": commands}
     write_json(args.manifest, manifest)
     report["report_kind"] = "ape-startup-manifest"
     report.update(status="pass", reason="Guest manifest exported; no guest execution claimed", manifest=identity(args.manifest))
+
+
+def import_guest(args, report, artifacts):
+    if not args.guest_report or not args.guest_report.is_file():
+        raise BuildError("Actual full-system guest report required", "blocked")
+    incoming = read_json(args.guest_report)
+    report["guest_report"] = identity(args.guest_report)
+    if incoming.get("schema_version") != 1 or incoming.get("report_kind") != "arm64-guest":
+        raise BuildError("Supported arm64-guest v1 evidence required")
+    facts = incoming["guest"]
+    report["validation_host"] = report["host"]
+    report["execution_host"] = incoming["host"]
+    report.update(guest=facts, qemu=incoming["qemu"], ci=incoming.get("ci"), cleanup=incoming["cleanup"],
+                  commands=incoming["commands"], guest_status=incoming["status"], guest_reason=incoming["reason"])
+    if not isinstance(facts, dict):
+        report["host"] = None
+        raise BuildError("Full-system guest did not yield measured startup facts: " + incoming["reason"],
+                         "blocked" if incoming["status"] == "blocked" else "fail")
+    report["host"] = {"os": facts["os"], "cpu": facts["architecture"], "execution_arch": facts["architecture"],
+        "kernel": facts["kernel"], "page_size": facts["page_size"], "execution_mode": facts["execution_mode"],
+        "measurement": "Actual full-system guest uname/getconf/smaps; see original serial evidence"}
+    if facts["os"] != "Linux" or facts["architecture"] != "aarch64" or facts["execution_mode"] != "emulated-system" or facts["page_size"] not in (4096, 65536):
+        raise BuildError("Actual Linux ARM64 full-system guest with measured 4096/65536 pages required")
+    if facts["page_size_alias"] != facts["page_size"] or facts["smaps_kib"] != facts["page_size"] // 1024 or not facts["kernel"]:
+        raise BuildError("Guest page-size/kernel measurements disagree")
+    qemu = incoming["qemu"]
+    if not qemu["acceleration"].startswith("tcg") or qemu["guest_arch"] != "aarch64" or qemu["host_arch"] != incoming["host"]["execution_arch"] or not all(qemu[key] for key in ("version", "machine", "cpu")):
+        raise BuildError("Complete actual QEMU TCG/machine/CPU/host identity required")
+    for key in ("kernel", "config", "rootfs", "executable", "serial_log", "stderr_log"):
+        entry = qemu[key]
+        if len(entry["sha256"]) != 64 or entry["size_bytes"] < 0:
+            raise BuildError("Missing QEMU input/raw-log identity: " + key)
+    for key in ("serial_log", "stderr_log"):
+        checked_raw_log(qemu[key], args.guest_report, incoming["report_id"])
+    transports = [entry for entry in incoming["commands"] if entry["stdout_log"] == qemu["serial_log"]["path"]]
+    if len(transports) != 1 or transports[0]["exit_code"] != 0 or transports[0]["timed_out"]:
+        raise BuildError("Actual QEMU serial command did not finish cleanly")
+    payloads = {entry["guest_path"]: entry for entry in incoming["files"]}
+    if len(payloads) != len(incoming["files"]):
+        raise BuildError("Duplicate guest payload identity")
+    before = facts["file_sha256"]
+    after = facts["file_sha256_after"]
+    if before != after or before != {path: item["sha256"] for path, item in payloads.items()}:
+        raise BuildError("Guest before/after transferred payload SHA-256 proof differs")
+    for name, artifact in artifacts.items():
+        path = "/payload/" + name + ".com"
+        if before.get(path) != artifact["sha256"] or payloads[path]["size_bytes"] != artifact["size_bytes"]:
+            raise BuildError("Guest startup artifact differs from selected producer: " + name)
+        artifact["sha256_after"] = after[path]
+    producer = read_json(args.build_report)
+    expected_loader = producer["portable_helpers"]["loader"]
+    guest_loader = "/payload/ape-aarch64.elf"
+    if before.get(guest_loader) != expected_loader["sha256"] or payloads[guest_loader]["size_bytes"] != expected_loader["size_bytes"]:
+        raise BuildError("Guest native loader differs from selected producer")
+    report["loader"] = {**payloads[guest_loader], "sha256_after": after[guest_loader],
+                        "origin": "Selected producer's source-built Linux ARM64 loader"}
+    cases = {case["case_id"]: case for case in incoming["cases"]}
+    if len(cases) != len(incoming["cases"]):
+        raise BuildError("Duplicate guest command result")
+    for case_id, name, arguments, kind in CASES:
+        raw = cases[case_id]
+        expected_argv = [guest_loader, "/payload/" + name + ".com", *arguments]
+        if raw["argv"] != expected_argv or raw["exit_code"] != raw["actual"]["exit_code"]:
+            raise BuildError("Actual guest command differs from required startup invocation: " + case_id)
+        paths = {}
+        for key in ("stdout", "stderr"):
+            data, paths[key] = checked_raw_log(raw[key + "_log"], args.guest_report, incoming["report_id"])
+            if data.decode("utf-8", "replace") != raw["actual"][key]:
+                raise BuildError("Guest actual output differs from raw log bytes: " + case_id)
+        if raw["serial_log"] != qemu["serial_log"]:
+            raise BuildError("Guest case refers to different raw serial evidence")
+        record = {"argv": raw["argv"], "cwd": raw.get("cwd"), "started_at": raw["started_at"],
+            "finished_at": raw["finished_at"], "timeout_seconds": raw["timeout_seconds"],
+            "exit_code": raw["exit_code"], "timed_out": raw["exit_code"] == 137,
+            "stdout_log": paths["stdout"], "stderr_log": paths["stderr"],
+            "serial_log": raw["serial_log"], "guest_case": raw}
+        compared = evaluate_case(case_id, name, kind, report["host"], record,
+                                raw["actual"]["stdout"], raw["actual"]["stderr"], artifacts[name].copy())
+        if raw["status"] != "pass":
+            compared.update(status="fail", reason="Original guest case did not pass")
+        report["cases"].append(compared)
+    clean = incoming["cleanup"]
+    passed = (incoming["status"] == "pass" and all(case["status"] == "pass" for case in report["cases"])
+              and clean["qemu_exited"] and clean["ram_only"] and not clean["timed_out"] and not clean["host_global_changes"]
+              and clean["disks"] == [] and clean["network"] == "none")
+    report.update(status="pass" if passed else "fail", reason="Actual guest startup semantics and unchanged producer bytes checked; full matrix remains separate")
+
+
+def checked_raw_log(entry, guest_report, report_id):
+    # Downloaded evidence keeps the report/evidence layout but belongs to a
+    # different checkout path. Validate the transported bytes before use.
+    path = guest_report.parent / "evidence" / report_id / Path(entry["path"]).name
+    if not path.is_file():
+        path = Path(entry["path"])
+    data = path.read_bytes()
+    if len(data) != entry["size_bytes"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
+        raise BuildError("Guest raw log SHA-256/size differs from evidence identity")
+    return data, str(path.resolve())
+
+
+def page_gaps(args, report):
+    """Plan scheduling from OS measurements; this is never a coverage pass."""
+    report["report_kind"] = "ape-page-plan"
+    observations, measured, covered = [], set(), set()
+    for path in args.input_report:
+        if not path.is_file():
+            observations.append({"path": str(path), "status": "not_run", "reason": "Native report unavailable"})
+            continue
+        incoming = read_json(path)
+        if incoming.get("report_kind") != "ape-startup" or incoming.get("schema_version") != 1:
+            raise BuildError("Page planning requires a supported actual startup report")
+        host = incoming["host"]
+        page = host["page_size"]
+        if not isinstance(page, int) or page <= 0 or not host["kernel"]:
+            raise BuildError("Actual kernel/page-size measurements required for page planning")
+        eligible = (host["os"] == "Linux" and host["cpu"] == host["execution_arch"] == "aarch64"
+                    and host["execution_mode"] == "native" and incoming["qemu"] == {"status": "not_applicable"})
+        observations.append({**identity(path), "host": host, "status": incoming["status"], "eligible_native_arm64": eligible})
+        if eligible:
+            measured.add(page)
+            if page in (4096, 65536):
+                covered.add(page)
+    missing = [page for page in (4096, 65536) if page not in covered]
+    report.update(status="pass", reason="Scheduling plan only; native startup failures and full matrix acceptance remain separate",
+                  observations=observations, measured_native_pages=sorted(measured), covered_native_pages=sorted(covered),
+                  missing_pages=missing, matrix={"include": [{"page_size": page} for page in missing]})
+    if args.github_output:
+        with args.github_output.open("a", encoding="utf-8") as stream:
+            stream.write("matrix=" + json.dumps(report["matrix"], separators=(",", ":")) + "\n")
+            stream.write("needs_guest=" + ("true" if missing else "false") + "\n")
+            stream.write("native_page_size=" + (str(next(iter(measured))) if len(measured) == 1 else "") + "\n")
 
 
 def producer_inputs(args, report):
@@ -260,9 +416,9 @@ def producer_inputs(args, report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("run", "matrix", "guest-manifest"))
-    parser.add_argument("--build-report", type=Path, required=True)
-    parser.add_argument("--artifact-dir", type=Path, required=True)
+    parser.add_argument("operation", choices=("run", "matrix", "guest-manifest", "import-guest", "page-gaps"))
+    parser.add_argument("--build-report", type=Path)
+    parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--loader-dir", type=Path)
     parser.add_argument("--loader-manifest", type=Path)
@@ -271,11 +427,16 @@ def main():
     parser.add_argument("--runner-label")
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--input-report", type=Path, action="append", default=[])
+    parser.add_argument("--input-dir", type=Path, action="append", default=[])
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--page-size", type=int)
+    parser.add_argument("--guest-report", type=Path)
+    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     if not 1 <= args.timeout <= 300:
         parser.error("timeout must be 1–300 seconds")
+    if args.operation != "page-gaps" and (not args.build_report or not args.artifact_dir):
+        parser.error(args.operation + " requires --build-report and --artifact-dir")
     args.report = args.report.resolve()
     directory = args.report.parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
@@ -285,11 +446,15 @@ def main():
               "host": host_facts(), "ci": ci_facts(), "qemu": {"status": "not_applicable"},
               "commands": [], "cases": [], "artifacts": [], "evidence_directory": str(directory)}
     try:
-        artifacts = producer_inputs(args, report)
-        if args.operation == "run":
+        artifacts = producer_inputs(args, report) if args.operation != "page-gaps" else None
+        if args.operation == "page-gaps":
+            page_gaps(args, report)
+        elif args.operation == "run":
             native_run(args, report, directory, artifacts)
         elif args.operation == "matrix":
             matrix(args, report, artifacts)
+        elif args.operation == "import-guest":
+            import_guest(args, report, artifacts)
         else:
             if not args.manifest:
                 raise BuildError("guest-manifest requires --manifest")
