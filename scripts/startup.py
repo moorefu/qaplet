@@ -11,7 +11,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
-from input_lock import component, consume_identity, check_helper_source
+from input_lock import component, consume_identity, check_loader_bundle
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -59,6 +59,21 @@ def measured_host(args, report, directory):
         raise BuildError("Kernel and OS API page-size measurement are required", "blocked")
 
 
+def loader_bundle(args, report):
+    if not args.loader_dir:
+        return None
+    manifest = args.loader_manifest or args.loader_dir / "helpers.json"
+    if manifest.is_file():
+        helpers = read_json(manifest)
+        if helpers.get("schema_version") != 1 or helpers.get("report_kind") != "ape-loaders" or helpers.get("status") != "pass":
+            raise BuildError("Successful ape-loaders v1 manifest required")
+        locked = consume_identity(helpers, report)
+        check_loader_bundle(helpers, locked)
+        report["loader_manifest"] = identity(manifest)
+        return helpers
+    return None
+
+
 def select_loader(args, report):
     host = report["host"]
     if host["os"] == "Windows":
@@ -66,17 +81,9 @@ def select_loader(args, report):
         return []
     if not args.loader_dir:
         raise BuildError("Explicit distributed native loader directory required", "blocked")
-    manifest = args.loader_manifest or args.loader_dir / "helpers.json"
-    if manifest.is_file():
-        helpers = read_json(manifest)
-        if helpers.get("schema_version") != 1 or helpers.get("report_kind") != "ape-loaders" or helpers.get("status") != "pass":
-            raise BuildError("Successful ape-loaders v1 manifest required")
-        locked = consume_identity(helpers, report, require_unified=True)
-        for entry in helpers["helpers"]:
-            if "source" in entry:
-                check_helper_source(entry["source"], locked)
+    helpers = loader_bundle(args, report)
+    if helpers is not None:
         entries = [entry for entry in helpers["helpers"] if entry["os"] == host["os"] and entry["arch"] == host["execution_arch"]]
-        report["loader_manifest"] = identity(manifest)
     else:
         # Exact official loader identities are already in the committed Nightly lock.
         suffix = "elf" if host["os"] == "Linux" else "macho"
@@ -216,6 +223,7 @@ def matrix(args, report, artifacts):
     paths = [*args.input_report, *(path for root in args.input_dir for path in sorted(root.rglob("startup.json")))]
     for path in paths:
         item = read_json(path)
+        consume_identity(item, report)
         validate_startup(item, artifacts)
         report["inputs"].append(identity(path))
         key = target_key(item["host"])
@@ -401,6 +409,8 @@ def page_gaps(args, report):
 def producer_inputs(args, report):
     producer = read_json(args.build_report)
     consume_identity(producer, report)
+    if report["host"]["os"] != "Windows":
+        loader_bundle(args, report)
     if producer.get("report_kind") != "ape-build" or producer.get("schema_version") != 1 or producer.get("status") != "pass":
         raise BuildError("A successful ape-build v1 producer report is required")
     report["producer_report"] = identity(args.build_report)

@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 
+from input_fixtures import current_input_identity
+
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts/startup.py"
 
@@ -23,7 +25,7 @@ class StartupContract(unittest.TestCase):
             work = Path(temp)
             (work / "hello.com").write_bytes(b"changed")
             (work / "producer.json").write_text(json.dumps({
-                "report_kind": "ape-build", "schema_version": 1, "status": "pass",
+                "report_kind": "ape-build", "schema_version": 1, "status": "pass", "input_lock": current_input_identity(),
                 "source": {}, "toolchain": {}, "build": {}, "artifacts": [
                     {"name": "hello", "sha256": "1" * 64, "size_bytes": 7},
                     {"name": "quickjs-eval", "sha256": "2" * 64, "size_bytes": 8}]}))

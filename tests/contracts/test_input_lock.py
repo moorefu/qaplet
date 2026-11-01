@@ -161,7 +161,9 @@ class InputLockContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-input-shape-") as temp:
             work = Path(temp)
             for value in (None, [], "unknown"):
-                lock, report = work / "bad-lock.json", work / "refusal.json"
+                (work / "toolchains").mkdir(exist_ok=True)
+                (work / "out").mkdir(exist_ok=True)
+                lock, report = work / "toolchains/bad-lock.json", work / "out/refusal.json"
                 lock.write_text(json.dumps(value))
                 report.write_text('{"status":"pass","old_report":true}')
                 result = subprocess.run([sys.executable, str(CLI), "resolve", "--lock", str(lock),
@@ -282,6 +284,60 @@ class InputLockContract(unittest.TestCase):
                 actual = json.loads(report.read_text())
                 self.assertEqual(actual["commands"], [])
                 self.assertFalse((work / "loaders").exists())
+
+    def test_unidentified_producer_cannot_be_relabelled_with_current_inputs(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-unidentified-producer-") as temp:
+            work = Path(temp)
+            artifacts = []
+            for name in ("hello", "quickjs-eval"):
+                raw = b"old, unrelated executable bytes"
+                (work / (name + ".com")).write_bytes(raw)
+                artifacts.append(dict(name=name, sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw)))
+            producer = {"schema_version": 1, "report_kind": "ape-build", "status": "pass", "source": {"commit": "old"},
+                        "toolchain": {}, "build": {}, "artifacts": artifacts}
+            path, report = work / "producer.json", work / "refusal.json"
+            path.write_text(json.dumps(producer))
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/startup.py"), "run", "--build-report", str(path),
+                                     "--artifact-dir", str(work), "--report", str(report)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            actual = json.loads(report.read_text())
+            self.assertIn("unified", actual["reason"])
+            self.assertEqual(actual["commands"], [])
+
+    def test_non_toolchains_external_lock_cannot_overwrite_its_component(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-lock-layout-") as temp:
+            repo = Path(temp)
+            self.copied_repo(repo)
+            (repo / "locks").mkdir()
+            lock = repo / "locks/candidate.json"
+            shutil.copyfile(repo / "toolchains/qaplet.lock.json", lock)
+            target = repo / "third_party/quickjs/source.lock.json"
+            before = target.read_bytes()
+            result = subprocess.run([sys.executable, str(CLI), "resolve", "--lock", str(lock), "--report", str(target)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_derived_helper_with_omitted_source_is_rejected_before_artifact_use(self):
+        _, resolved = self.run_cli()
+        with tempfile.TemporaryDirectory(prefix="qaplet-helper-source-omission-") as temp:
+            work = Path(temp)
+            producer = {"schema_version": 1, "report_kind": "ape-build", "status": "pass", "input_lock": resolved["input_lock"],
+                        "source": {}, "toolchain": {}, "build": {}, "artifacts": []}
+            path = work / "producer.json"
+            path.write_text(json.dumps(producer))
+            entries = [dict(os=system, arch=arch, file=name, sha256=hashlib.sha256(name.encode()).hexdigest(), size_bytes=42)
+                       for system, arch, name in (("Linux", "aarch64", "ape-aarch64.elf"), ("Linux", "x86_64", "ape-x86_64.elf"),
+                                                  ("Darwin", "x86_64", "ape-x86_64.macho"), ("Darwin", "aarch64", "ape-aarch64.macho"))]
+            (work / "helpers.json").write_text(json.dumps({"schema_version": 1, "report_kind": "ape-loaders", "status": "pass",
+                "input_lock": resolved["input_lock"], "helpers": entries}))
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/startup.py"), "run", "--build-report", str(path),
+                                     "--artifact-dir", str(work), "--loader-dir", str(work), "--report", str(work / "refusal.json")],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            actual = json.loads((work / "refusal.json").read_text())
+            self.assertIn("helper source", actual["reason"])
+            self.assertEqual(actual["commands"], [])
 
 
 if __name__ == "__main__":

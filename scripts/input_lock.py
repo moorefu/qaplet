@@ -80,10 +80,16 @@ def bound_file(root, entry):
     return actual
 
 
+def lock_root(path):
+    if Path(path).parent.name != "toolchains":
+        raise ValueError("Unified locks must be directly under a repository toolchains/ directory")
+    return Path(path).absolute().parent.parent.resolve()
+
+
 class InputLock:
     def __init__(self, path=LOCK, purpose="build"):
         self.path = Path(path).absolute()
-        self.root = self.path.parent.parent
+        self.root = lock_root(self.path)
         if self.path.is_symlink() or self.path.resolve() != self.path:
             raise ValueError("Unified input lock must be physical")
         self.value = value = read_json(self.path)
@@ -192,13 +198,13 @@ def attach(report, purpose="build"):
     return locked
 
 
-def consume_identity(producer, report, require_unified=False):
-    locked = attach(report)
-    if require_unified and "input_lock" not in producer:
-        raise ValueError("Supplied helper requires a unified v3 input identity")
-    if "input_lock" in producer and producer["input_lock"] != locked.identity():
+def consume_identity(producer, report):
+    locked = InputLock()
+    if not isinstance(producer, dict) or "input_lock" not in producer:
+        raise ValueError("Supplied producer requires a unified v3 input identity; historical evidence keeps its original scope")
+    if producer["input_lock"] != locked.identity():
         raise ValueError("Supplied producer resolved different unified v3 inputs")
-    report["producer_input_scope"] = "unified-v3" if "input_lock" in producer else "legacy-component-identities"
+    report["input_lock"] = locked.identity()
     return locked
 
 
@@ -216,6 +222,58 @@ def check_helper_source(source, locked):
             raise ValueError("Supplied helper source/patch manifest differs from unified inputs")
     if source.get("patches") != read_json(locked.root / patches["path"])["patches"]:
         raise ValueError("Supplied helper ordered patches differ from unified inputs")
+
+
+def same_content(actual, expected):
+    return isinstance(actual, dict) and all(actual.get(key) == expected[key] for key in ("sha256", "size_bytes"))
+
+
+def check_portable_helper(portable, locked):
+    check_helper_source(portable["source"], locked)
+    recipe = next(entry for entry in locked.value["recipes"] if entry["path"] == "scripts/ape_helpers.py")
+    if not same_content(portable["recipe"], recipe):
+        raise ValueError("Derived helper recipe differs from unified inputs")
+
+
+def check_loader_bundle(bundle, locked, selected_loader=None):
+    """Classify helpers by target and locked bytes; missing provenance cannot change their class."""
+    targets = {("Linux", "x86_64"): "ape-x86_64.elf", ("Linux", "aarch64"): "ape-aarch64.elf",
+               ("Darwin", "x86_64"): "ape-x86_64.macho", ("Darwin", "aarch64"): "ape-aarch64.macho"}
+    entries = bundle["helpers"]
+    keys = [(entry["os"], entry["arch"]) for entry in entries]
+    if len(keys) != len(targets) or set(keys) != set(targets):
+        raise ValueError("Distributed helper target inventory is incomplete or conflicting")
+    nightly = {entry["path"]: entry for entry in locked.component("cosmocc")["files"]}
+    for entry, target in zip(entries, keys):
+        filename = targets[target]
+        if entry["file"] != filename:
+            raise ValueError("Distributed helper filename differs from its locked target")
+        official = nightly.get("bin/" + filename)
+        if (official and same_content(entry, official) and entry.get("origin") == "unchanged official Nightly loader"
+                and "source" not in entry):
+            continue
+        if target == ("Linux", "aarch64"):
+            check_helper_source(entry.get("source"), locked)
+            build = entry["build"]
+            check_portable_helper(build, locked)
+            if build["source"] != entry["source"] or not same_content(entry, build["loader"]):
+                raise ValueError("Derived Linux helper source/result/recipe conflict")
+            if selected_loader is not None and not same_content(entry, selected_loader):
+                raise ValueError("Distributed source-built loader differs from selected producer")
+        elif target == ("Darwin", "aarch64"):
+            startup = locked.component("startup_loaders")
+            if (entry.get("origin") != "Ubuntu Zig cross-build of unchanged locked ape-m1.c" or
+                    not same_content(bundle["source"]["nightly_lock"], locked.value["manifests"]["cosmocc"]) or
+                    not same_content(bundle["source"]["helper_lock"], locked.value["manifests"]["startup_loaders"]) or
+                    not same_content(bundle["toolchain"]["archive"], startup["zig"]) or
+                    bundle["toolchain"]["zig"]["sha256"] != startup["zig"]["compiler_sha256"] or
+                    bundle["build"]["recipe"] != startup["recipe"]):
+                raise ValueError("Derived Apple helper compiler/source/recipe conflict")
+            source = [item for item in bundle["source"]["inputs"] if Path(item["path"]).name == "ape-m1.c"]
+            if len(source) != 1 or not same_content(source[0], nightly[startup["source"]["path"]]):
+                raise ValueError("Derived Apple helper source differs from original provider component")
+        else:
+            raise ValueError("Distributed helper differs from the locked original component")
 
 
 def fixture_only(path, canonical_path):
@@ -298,9 +356,7 @@ def report_path(args):
         raise ValueError("Report path aliases an input/output or redirects through links")
     if target.is_relative_to(args.source_cache.resolve()):
         raise ValueError("Report path overlaps the explicitly selected source cache")
-    roots = {ROOT}
-    if args.lock.parent.name == "toolchains":
-        roots.add(args.lock.absolute().parent.parent)
+    roots = {ROOT, lock_root(args.lock)}
     for root in roots:
         if target.is_relative_to(root) and not target.is_relative_to(root / "out"):
             raise ValueError("Repository reports must be under out/, outside source, locks and caches")

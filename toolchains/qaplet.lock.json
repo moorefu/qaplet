@@ -88,8 +88,8 @@
     },
     {
       "path": "scripts/input_lock.py",
-      "sha256": "9bf966740767f5762a179ccbd33802529f43e2681a33c756d6349dd7a9c194de",
-      "size_bytes": 19673
+      "sha256": "aef9738050d6858d4b48300585e70573b05ccb0221a97ea7c6c95b696731fb6b",
+      "size_bytes": 23142
     },
     {
       "path": "scripts/native_toolchain.py",
@@ -108,8 +108,8 @@
     },
     {
       "path": "scripts/startup_loaders.py",
-      "sha256": "2cb28b1f62fd5fe7ad83b4840f37c1a4d8b824344b3c6fc07d9bd38c4fbc25bf",
-      "size_bytes": 15707
+      "sha256": "b8a04f5577a3ffca4b05caef98bf2c23b0961b48804baa0e4c6a95d3ce3c8bdc",
+      "size_bytes": 15679
     },
     {
       "path": "tests/native/ape_hello.c",

@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from input_fixtures import current_input_identity
+
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts/svc_scm.py"
 
@@ -52,7 +54,7 @@ class SCMContract(unittest.TestCase):
             artifact = work / "svc-scm.com"
             artifact.write_bytes(b"unchanged")
             producer = work / "producer.json"
-            producer.write_text(json.dumps({"schema_version": 1, "report_kind": "svc-scm-build", "status": "pass",
+            producer.write_text(json.dumps({"schema_version": 1, "report_kind": "svc-scm-build", "status": "pass", "input_lock": current_input_identity(),
                 "build": {}, "toolchain": {}, "loaders": [],
                 "artifacts": [{"name": "svc-scm", "sha256": hashlib.sha256(b"unchanged").hexdigest(), "size_bytes": 9}]}))
             executed = subprocess.run([sys.executable, str(CLI), "run", "--artifact", str(artifact),
@@ -71,7 +73,7 @@ class SCMContract(unittest.TestCase):
             artifact = work / "svc-scm.com"
             artifact.write_bytes(b"original")
             producer = work / "producer.json"
-            producer.write_text(json.dumps({"schema_version": 1, "report_kind": "svc-scm-build", "status": "pass",
+            producer.write_text(json.dumps({"schema_version": 1, "report_kind": "svc-scm-build", "status": "pass", "input_lock": current_input_identity(),
                 "artifacts": [{"name": "svc-scm", "sha256": hashlib.sha256(b"original").hexdigest(), "size_bytes": 8}]}))
             artifact.write_bytes(b"tampered")
             executed = subprocess.run([sys.executable, str(CLI), "run", "--artifact", str(artifact),

@@ -7,6 +7,7 @@
 ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 的目标
 `2833510432045f72915919cef680ba59e5153b16` 仍待升级；
 `docs/plans/qaplet-toolchain-lock-selected.json` 仍是有未知字段的选型样例，不是可构建锁。
+显式候选也必须直接位于某个仓库的 `toolchains/`；解析器和报告防覆盖校验共用物理根目录判定。
 
 ## 字段与独立身份
 
@@ -74,6 +75,11 @@ v3 身份，拒绝把 fixture 报告用作构建输入。生产 `bump` 和 rolli
 另与 v3 对照。旧派生 bundle 保留原验收记录，须重新生成后才能作为当前组合分发；官方原版
 loader 的直接消费仍按绑定的 Nightly 组件清单验证。Core 同时核对供应报告、host context、
 bundle 以及选中 producer 的实际派生 loader 身份。
+helper 校验按目标与原件字节区分官方组件、Linux ARM64 派生物和 Zig 生成的 Apple ARM64
+派生物，各自强制所需来源和配方字段，不能通过删除 `source` 改变类别。
+
+所有当前 producer/host/bundle 证据消费均要求当前 v3 身份。没有 v3 身份的历史报告保留原记录，
+不能在当前入口被附上新组合重新签发通过；这不修改旧验收文件或结论。
 
 ## 入口覆盖与缓存
 
@@ -85,7 +91,7 @@ bundle 以及选中 producer 的实际派生 loader 身份。
 | `build_ape.py`、native I/O、pages64k、SCM/Job producer | 共用 `verify_inputs`，构建前后比较同一 v3 身份，拒绝不一致的供应报告 |
 | `ape_helpers.py`、`startup_loaders.py`、`native_toolchain.py` | helper 清单从 v3 解析；imported producer/bundle 强制当前 v3 与独立源/patch；native derivation 接收上游已验组件，保留独立派生身份 |
 | `offline_integrity.py` | v3 选择原缓存，recipe inventory 包含统一锁和解析器；双构建/负向 fixture 保留既有合同 |
-| startup / native I/O / pages64k / SCM/Job 消费者 | 新 producer 的 v3 身份必须一致；历史报告保留 legacy-component-identities 范围，不被改写成新成绩 |
+| startup / native I/O / pages64k / SCM/Job 消费者 | producer 的 v3 身份必须存在且一致；缺失身份的历史报告拒绝重标为当前成绩，原记录继续保留 |
 | `core_gate.py` / `check_evidence.py` | Core 只读解析 v3，核对当前组件和新 producer 身份，严格回归仍需显式选中完整证据 |
 
 `audit` 检测脚本中直接读取旧清单的 JSON 调用，覆盖字面路径及直接赋值的路径变量；它是

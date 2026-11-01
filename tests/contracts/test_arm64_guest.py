@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from input_fixtures import current_input_identity
 import hashlib
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,7 +51,7 @@ class ARM64GuestContract(unittest.TestCase):
             work = Path(temp)
             producer = work / "producer.json"
             guest = work / "guest.json"
-            producer.write_text(json.dumps({"status": "pass"}))
+            producer.write_text(json.dumps({"status": "pass", "input_lock": current_input_identity()}))
             guest.write_text(json.dumps({"status": "pass", "report_kind": "arm64-guest", "guest": {
                 "os": "Linux", "architecture": "aarch64", "page_size": 4096, "execution_mode": "emulated-system"}}))
             result = subprocess.run([sys.executable, str(ROOT / "scripts/pages64k.py"), "verify-guest",

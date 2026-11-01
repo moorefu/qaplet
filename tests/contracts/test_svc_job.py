@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from input_fixtures import current_input_identity
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -86,7 +88,7 @@ class JobContract(unittest.TestCase):
             work = Path(temp)
             artifact = work / "job.com"
             artifact.write_bytes(b"a changed application fixture")
-            producer = {"schema_version": 1, "report_kind": "svc-job-build", "status": "pass",
+            producer = {"schema_version": 1, "report_kind": "svc-job-build", "status": "pass", "input_lock": current_input_identity(),
                         "artifacts": [{"name": "svc-job", "sha256": "1" * 64, "size_bytes": 29}]}
             path = work / "producer.json"
             path.write_text(json.dumps(producer))

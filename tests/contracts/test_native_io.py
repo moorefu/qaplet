@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from input_fixtures import current_input_identity
+
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts/native_io.py"
 
@@ -148,7 +150,7 @@ class NativeIOContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-io-corrupt-") as temp:
             work = Path(temp)
             (work / "native-io.com").write_bytes(b"MZ-corrupt-zip-resource")
-            producer = {"report_kind": "native-io", "status": "pass", "artifacts": [
+            producer = {"report_kind": "native-io", "status": "pass", "input_lock": current_input_identity(), "artifacts": [
                 {"name": "native-io", "sha256": "1" * 64, "size_bytes": 22}]}
             (work / "build.json").write_text(json.dumps(producer))
             result = subprocess.run([sys.executable, CLI, "run", "--artifact", work / "native-io.com",
@@ -164,7 +166,7 @@ class NativeIOContract(unittest.TestCase):
             work = Path(temp)
             data = b"native I/O malformed identity fixture"
             (work / "native-io.com").write_bytes(data)
-            producer = {"schema_version": 1, "report_kind": "native-io", "scope": "build", "status": "pass",
+            producer = {"schema_version": 1, "report_kind": "native-io", "scope": "build", "status": "pass", "input_lock": current_input_identity(),
                         "source": None, "build": {"sha256": "2" * 64}, "artifacts": [
                             {"name": "native-io", "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}]}
             (work / "build.json").write_text(json.dumps(producer))

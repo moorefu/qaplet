@@ -92,6 +92,12 @@
       "source": "git"
     },
     {
+      "path": ".scratch/qaplet-v15-alignment/review-context.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
       "path": "Makefile",
       "audience": "common",
       "kind": "reference",
@@ -206,7 +212,25 @@
       "source": "git"
     },
     {
+      "path": "tests/contracts/input_fixtures.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_arm64_guest.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
       "path": "tests/contracts/test_input_lock.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_native_io.py",
       "audience": "common",
       "kind": "reference",
       "source": "git"
@@ -219,6 +243,24 @@
     },
     {
       "path": "tests/contracts/test_quickjs_source.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_startup.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_svc_job.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_svc_scm.py",
       "audience": "common",
       "kind": "reference",
       "source": "git"
@@ -252,6 +294,11 @@
       "audience": "common",
       "kind": "reference",
       "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/unified-input-lock-validation.md",
+      "audience": "aggregate",
+      "kind": "report"
     }
   ]
 }
