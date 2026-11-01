@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "kind": "official-sources-for-separate-native-loader-and-host-packer",
+  "repository": "https://github.com/jart/cosmopolitan",
+  "commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+  "git_tree": "39b98a5a1aca0ce501d3c8b5cc80c630468b3b63",
+  "retrieved_at": "2026-11-01T02:19:56Z",
+  "acquisition": "Connected GitHub contents API with exact commit ref; UTF-8 bytes staged without transformation; local Git blob hashes cross-checked against official directory/tree metadata for seven compile inputs, BUILD.mk and LICENSE",
+  "license": "per-file ISC or MIT",
+  "cache_root": ".cache/sources/ape-loader/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+  "source_identity_scope": "Independently pinned sources for newly derived helpers. No source mapping asserted for shipped loader, shipped apelink, or bundled Nightly libc.",
+  "toolchain_archive_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+  "files": [
+    {
+      "path": "LICENSE",
+      "size_bytes": 759,
+      "sha256": "188101f17152d898b65719a4c4fc501aa71c16649cc37ebab534bcb3511c6127",
+      "git_blob_sha1": "534169524b3e58e09a1da96d7a61492cde56d997",
+      "purpose": "license",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/LICENSE?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/LICENSE",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/aarch64.lds",
+      "size_bytes": 8498,
+      "sha256": "982e15828d67db3acbbfd831903659e1134ece8dd6d2d177e0b1f4002348ff6e",
+      "git_blob_sha1": "9731ae8820c5e95031fd9271f23dcce7dd571a95",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/aarch64.lds?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/aarch64.lds",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/ape.h",
+      "size_bytes": 488,
+      "sha256": "5861cbc541905297d405bbead806f1c37d16f94f39aed4a862f8cc37bd2db81c",
+      "git_blob_sha1": "d2f5896120980c98609bb5835a726b3cf999001b",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/ape.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/ape.h",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/BUILD.mk",
+      "size_bytes": 7418,
+      "sha256": "83140246e7ca87b6e1452bc52b109e3d23b9806d43c90efa640bce759509190b",
+      "git_blob_sha1": "89a1cac0c2ee30d662928361429e2aee0bf326d7",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/BUILD.mk?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/BUILD.mk",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/launch.S",
+      "size_bytes": 3196,
+      "sha256": "c0382ab8ecb528af7c968aba212546411ad86b214109295bef0aac61b82ec24c",
+      "git_blob_sha1": "f710fdec758bfc2ddf64e4d92caad80ed595e70a",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/launch.S?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/launch.S",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/loader.c",
+      "size_bytes": 32507,
+      "sha256": "00b41aa7e4abbb55c8023191bb44eaf96faf2d383a9b06cc56df3d95b6972634",
+      "git_blob_sha1": "b684934970d69ecd37d576817a267fc767b9c2b6",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/loader.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/loader.c",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/start.S",
+      "size_bytes": 3034,
+      "sha256": "299cee077a338f1a3234a3ba1ac894e43a4c8359151fef3b5274687c970ac5eb",
+      "git_blob_sha1": "29a661601c0d74100d206fb6c1bd0e79df1e8c5b",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/start.S?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/start.S",
+      "license": "ISC"
+    },
+    {
+      "path": "ape/systemcall.S",
+      "size_bytes": 2466,
+      "sha256": "5e8dfc47b98fdeae806f7b7b0372ed0e0856aab830e127140bf4d7ebb515d499",
+      "git_blob_sha1": "91daedc95f9b329541b9eb83406c2cd9297a5066",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/ape/systemcall.S?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/ape/systemcall.S",
+      "license": "ISC"
+    },
+    {
+      "path": "libc/dce.h",
+      "size_bytes": 3965,
+      "sha256": "ae5bad2373734ff82bccfd1ee5c42bd3b64cf79e7494851f3e5515fef8b92afd",
+      "git_blob_sha1": "c4bc0758bd9d274e2bd52d21a87b160335ee24a1",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/libc/dce.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/libc/dce.h",
+      "license": "ISC"
+    },
+    {
+      "path": "libc/macros.h",
+      "size_bytes": 11911,
+      "sha256": "72cff3706d029dca2da74ab9d2a7776dec01d88c36978b8f6128d567f3102eae",
+      "git_blob_sha1": "21553447cf3641732eb4a4ea73df1674f32f0bd7",
+      "purpose": "loader-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/libc/macros.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/libc/macros.h",
+      "license": "ISC"
+    },
+    {
+      "path": "third_party/haclstar/blake2b.c",
+      "size_bytes": 57684,
+      "sha256": "5b56cef5903470d4c86e79f5d4a5ccb0350cb36b531db90f9771200d9a65d1a6",
+      "git_blob_sha1": "f6a9144368885fc525324079689573a36a6fa46a",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/blake2b.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/blake2b.c",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/blake2b.h",
+      "size_bytes": 1661,
+      "sha256": "6de19ffd2a638f230ae05ef37c5f9116ee0dfc87594a67f8ead39f5db1dc0cd0",
+      "git_blob_sha1": "914190ba5971c5284d902a3854cb7aa19cdf0bd8",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/blake2b.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/blake2b.h",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/BUILD.mk",
+      "size_bytes": 4067,
+      "sha256": "a481371c164b1c525c155206d6e8fffc581d7593cbcbc053d860b0fa245df5bf",
+      "git_blob_sha1": "24768e77b10850c9e982c84b9db95c0dc7c6d13b",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/BUILD.mk?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/BUILD.mk",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/haclstar.h",
+      "size_bytes": 10647,
+      "sha256": "7a93c26f145646480bc3fa8694cd4f1e971ae0aa1ac6157522dc18abb817860a",
+      "git_blob_sha1": "4fe93ef4e92ae25f166bfb431f717d55e20b65c2",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/haclstar.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/haclstar.h",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/int128.h",
+      "size_bytes": 3123,
+      "sha256": "2040ce4f92c625d79d234da1ea95b994b6d7d4427d011da5500aa4352f9fefd9",
+      "git_blob_sha1": "eb471573dcaecfef63c58060d0260ca341dd7862",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/int128.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/int128.h",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/loop.h",
+      "size_bytes": 2779,
+      "sha256": "0f30607f030e5b6b5264b4f89219f74cc8ac6bfd510da79318df107bd260b0ad",
+      "git_blob_sha1": "e218ccffb48838b1183a064b7263676bd1a90155",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/loop.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/loop.h",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/macros.h",
+      "size_bytes": 1193,
+      "sha256": "c122904d357fcff5c191e6651c68c62a8c0a29ea1ff626920074254c29210818",
+      "git_blob_sha1": "23b95c12ce2633a90949099eeac04d96fc6cb1b9",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/macros.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/macros.h",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/notice.c",
+      "size_bytes": 163,
+      "sha256": "bd6f7dce5e060527b3a471ace35d8f5a74a4411ccd10dd0fc172f642e470a2e1",
+      "git_blob_sha1": "bf685e529c4c7d52a318cc6326af2e244669c02b",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/notice.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/notice.c",
+      "license": "MIT"
+    },
+    {
+      "path": "third_party/haclstar/optional.h",
+      "size_bytes": 912,
+      "sha256": "38c8b138502a9a20eae2b348237c9f70b1cc3efa265e66d95bb293c43b12d52d",
+      "git_blob_sha1": "048152b0205fa4a2bac82bdb5ba8aa006dad9bd9",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/third_party/haclstar/optional.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/third_party/haclstar/optional.h",
+      "license": "MIT"
+    },
+    {
+      "path": "tool/build/apelink.c",
+      "size_bytes": 86578,
+      "sha256": "6e236b3a10b1ed13eadf389de8b826cb6d57e220271a45890626080e6265c895",
+      "git_blob_sha1": "b0ec719f15cd8b2a325cf166b020c7c0c7d79727",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/apelink.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/apelink.c",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/build/BUILD.mk",
+      "size_bytes": 4021,
+      "sha256": "74c92b5667370413a911b57cf626ba98f201ed919001bace8c41e315f212a449",
+      "git_blob_sha1": "261352d1ffb2a87312d0abf06a4b2dfcc0789521",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/BUILD.mk?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/BUILD.mk",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/build/fixupobj.c",
+      "size_bytes": 22772,
+      "sha256": "2b5dd02732752b92397a7cbf8b6d6881c908161ff549913824e8e25d83fd6c4a",
+      "git_blob_sha1": "c25ceff6bb6fe5cd09e156af7b00a5687eb0ddab",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/fixupobj.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/fixupobj.c",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/build/lib/BUILD.mk",
+      "size_bytes": 3539,
+      "sha256": "f12b8d01a06d2b9562dcadeaa8d0f5b3562a814627648764df06816acf812af5",
+      "git_blob_sha1": "9fe70e019cde37e12c871d070ba5a13cd63c9b2b",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/lib/BUILD.mk?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/lib/BUILD.mk",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/build/lib/lib.h",
+      "size_bytes": 218,
+      "sha256": "721720a315af170c9ba5fd990cd034f1fa7169cd44e4e16feff7c2ee2e217915",
+      "git_blob_sha1": "a7d305c00c21039a6b3c378173403988eaa8c6aa",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/lib/lib.h?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/lib/lib.h",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/build/lib/parsesupportvector.c",
+      "size_bytes": 3668,
+      "sha256": "d1ea19d95cca73a24c3ef00921ea3e4f13ec13308540483cf06a84ecd4bd2c1d",
+      "git_blob_sha1": "cbd5d2faae13f610a8718fc806d8567c9704b784",
+      "purpose": "packer-compile-input",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/build/lib/parsesupportvector.c?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/build/lib/parsesupportvector.c",
+      "license": "ISC"
+    },
+    {
+      "path": "tool/cosmocc/bin/cosmocc",
+      "size_bytes": 20057,
+      "sha256": "e6176e65392c4fcfa0467f09d7f1d8c94dd20d0291641ff70af174951c46b565",
+      "git_blob_sha1": "c820f6492756b716498f43a893991316c4db9b9b",
+      "purpose": "recipe-evidence",
+      "url": "https://api.github.com/repos/jart/cosmopolitan/contents/tool/cosmocc/bin/cosmocc?ref=aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "raw_url": "https://raw.githubusercontent.com/jart/cosmopolitan/aefad27c09ffda64c6ac64bd69f758e9f9c7b91d/tool/cosmocc/bin/cosmocc",
+      "license": "ISC"
+    }
+  ],
+  "extended_at": "2026-11-01T02:29:10Z",
+  "packer": {
+    "upstream_path": "tool/build/apelink.c",
+    "nonexistent_path_confirmed_by_official_api": "ape/apelink.c",
+    "compile_units": [
+      "tool/build/apelink.c",
+      "tool/build/lib/parsesupportvector.c",
+      "third_party/haclstar/blake2b.c",
+      "third_party/haclstar/notice.c"
+    ],
+    "sdk_provider_receipt": "out/m0-integration/loader64k-research/packer-locked-sdk-providers.json",
+    "build_status": "not-run"
+  }
+}

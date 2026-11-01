@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "patches": [
+    {
+      "path": "patches/0001-preserve-load-alignment.patch",
+      "sha256": "025bc3b7824d838373d52ba2468a3bcc98ae2d9bcaa6cb5250bd2de2b9f8fc37",
+      "source": "tool/build/apelink.c",
+      "source_sha256": "6e236b3a10b1ed13eadf389de8b826cb6d57e220271a45890626080e6265c895",
+      "result_sha256": "a70d6b3cb73a200067f054dab4a33a8d16d3dd3d7f196be8a8c58462c2a98d24",
+      "origin": "Qaplet M0 portability overlay at official Cosmopolitan aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "reason": "Preserve maximum incoming PT_LOAD alignment through load merging and packing; rebase offsets by a multiple of that alignment. Keep virtual addresses and protection classes."
+    }
+  ]
+}
