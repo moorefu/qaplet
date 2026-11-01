@@ -59,6 +59,16 @@ VS Code 的递归文件监听。使用相同源代码、CLI 和缓存卷做可�
 另一个编辑器或扩展主动打开缓存文件时，操作仍可能被 OS 拒绝并保留失败报告。
 独立诊断副本及原始失败保存在明确标记的诊断目录，正式脚本没有 DEBUG 代码。
 
+随后在集成提交 `8fb7c39` 上运行当前完整检查，启用已供应的新字节 I/O 与七项
+startup CLI 合同：102 项测试、15 项明确 opt-in/平台 skip，其余通过，静态检查和
+系统 C bootstrap 同样通过。
+[`最终命令记录`](../../out/m0-integration/current-check/6a382b60-6cd6-4140-82e1-630e9ceb5c32/command.json)。
+此前一次 wrapper 把所有临时测试 fixture 的 `TMPDIR` 指向 DrvFS，导致要求真实
+0644 的 POSIX transport fixture 无法成立（实测 0777）；那次失败仍保留在
+`current-check/7ce00178-b174-497f-a0e3-a5ae98112047/`。恢复该测试声明的临时
+POSIX fixture 上下文后通过；这些一次性测试 fixture 不是可复用缓存，主仓库
+输入、实际构建缓存和产品/证据路径没有迁出。
+
 Microsoft 的 [files.watcherExclude 说明](https://code.visualstudio.com/docs/setup/linux)
 和 [file watcher API](https://code.visualstudio.com/api/references/vscode-api)
 支持该配置用途；[Restart Manager API](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmgetlist)
