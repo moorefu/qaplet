@@ -19,13 +19,14 @@ M0-SVC 的应用私有原生 SCM 探针现位于 `apps/svc/probes/`；该目录�
 | 入口 | 报告 | 成功含义 |
 | --- | --- | --- |
 | `make check` | 复用下列检查及其报告 | 提交前串联 CI 静态检查、合同回归、真实 C bootstrap |
-| `make doctor` | `out/doctor.json` | 环境盘点；当前因 M0 前置未齐整体 blocked |
+| `make doctor` | `out/doctor.json` | 当前执行上下文的环境盘点；不签发完整 Core 成绩 |
 | `make test-environment` | `out/environment.json` | ENV-01 Linux x64 工具、磁盘、目录、HTTPS/解包/摘要、系统 C 验收；须显式指定下载 URL |
 | `make test-bootstrap` | `out/bootstrap.json` | 系统 C 编译/执行通过，不是 APE 或 QuickJS 成绩 |
-| `make test-foundation` | `out/m0.json` | 当前始终非通过，列出输入、制品、六类宿主与必需探针缺口 |
+| `make test-foundation` | `out/m0.json` | BOOT-01 保留的非通过缺口报告；完整 Core 改用独立 consumer gate |
 | `make test` | unittest 输出 | 命令合同回归通过，不是产品矩阵 |
 | `make check-ci` | `out/check-ci.json` | JSON/YAML 语法及项目编排合同通过，远程未运行 |
 | `make build-ape` | `out/build-info.json` / `out/artifacts/` | QuickJS/Nightly/helper source 固定输入离线校验、Hello / QuickJS fat APE、双 CPU headers/link map/import 检查及 Linux x64 实际值/错误路径 |
+| `python scripts/core_gate.py evaluate --input-manifest INPUT --report OUTPUT` | 显式 OUTPUT | 完整实际证据消费门禁；Core 通过才退出 0，独立 SVC 不改变退出码 |
 
 这些 make recipe 与 CI 复用同一 Python CLI。也可直接执行：
 
@@ -123,7 +124,7 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
 
 此 GitHub 来源的锁不会因缓存缺失而切换到滚动发布站点。已有权威锁时，精确匹配的 ZIP 副本也可独立用于恢复；首次建立新的官方来源必须提供可核查获取记录。`acquire-nightly.yml` 的一次性 integration push 获取已结束，后续仅显式手动触发；它保留官方发布站点下载的成功/失败日志和归档 7 天，不更新任何锁。取回 artifact 后仍须本地校验和 Linux 工具测量。
 
-两种输入报告各自使用独立的版本化合同；现有 foundation `validate-report` 不验证它们，也不汇总这些结果关闭 M0。BOOT-09 仍须接入全部 Core 实际证据。
+两种输入报告各自使用独立的版本化合同；现有 foundation `validate-report` 不验证它们。BOOT-09 的 `core_gate.py` 现消费 producer 前后 input reports、实际交付字节及完整执行证据；单独供应验证不关闭 M0。
 
 ## CI skeleton
 
@@ -171,7 +172,7 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 
 `page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核七项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
 
-`matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。当前新摘要的本地结果及未完成 native CI 验收见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)，本地成功不等于六宿主已经通过。
+`matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。完整 CI `41271366261` 已通过，native Linux ARM64 实测 4096，完整系统 guest 仅补 65536；见 [06 验收](../.scratch/qaplet-m0/cross-host-startup-validation.md)及 [Core gate](../.scratch/qaplet-m0/core-evidence-gate-validation.md)。
 
 ## BOOT-07 native I/O
 
@@ -179,7 +180,7 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 
 `python scripts/native_io.py run --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader-dir out/m0/loaders --report out/io.json` 只消费 producer 摘要对应字节；Linux/macOS 使用 06 的 helpers.json 和 native loader，Windows 直接执行 PE。共享 measured-host 检查保留实际 CPU、执行架构、内核页大小及 macOS translation 观测。20 个必需 case 覆盖 socket/half-close、pipe/EOF/EPIPE、私有 PTY/ConPTY 的检测/修改/恢复/关闭、Unicode/空格路径/argv 的无隐式 shell spawn/wait、子进程 timeout/回收、pthread/TLS 和只读 ZipOS；Windows 另测独立 CONIN$ handle 的 CloseHandle/无效句柄。
 
-schema v1 report_kind 为 native-io，scope 为 build/host/manifest/guest；缺项保留 not_run 且非通过，缺实际交互设施为 blocked，异常为 fail，limitation 必须有实测返回值和明确原因。`--probe-mode hang --timeout 1` 是实际负向 deadline fixture，成功清理后仍报告 fail。所有命令/原始日志和 fixture 身份保留在独立 evidence UUID。共享 M0 workflow 的 Ubuntu producer 一次生成并分发；五个 native job 只验证，startup 失败后仍尝试 I/O 并分别保留证据。完整记录和当前未测宿主见 [I/O 基线](../.scratch/qaplet-m0/native-io-validation.md)。
+schema v1 report_kind 为 native-io，scope 为 build/host/manifest/guest；缺项保留 not_run 且非通过，缺实际交互设施为 blocked，异常为 fail，limitation 必须有实测返回值和明确原因。`--probe-mode hang --timeout 1` 是实际负向 deadline fixture，成功清理后仍报告 fail。所有命令/原始日志和 fixture 身份保留在独立 evidence UUID。共享 M0 workflow 的 Ubuntu producer 一次生成并分发；五个 native job 只验证，startup 失败后仍尝试 I/O 并分别保留证据。最新六目标 I/O 已通过，完整记录和历史缺口/失败见 [I/O 基线](../.scratch/qaplet-m0/native-io-validation.md)。
 
 `guest-manifest --build-report BUILD --artifact FILE --loader ARM64_ELF --page-size 65536 --manifest OUTPUT --report REPORT` 导出经过 SHA/LOAD 对齐验证的 Unicode/空格路径 payload（scope manifest，不运行 guest）；由 07 的 `merge-manifests` 和完整 guest runner 统一处理镜像、锁和启动。`import-guest --build-report BUILD --artifact FILE --guest-report GUEST_JSON --report IO_JSON` 复核实际 QEMU/guest/前后摘要/原始日志，再用 native 共用的 20 个必需值断言生成 scope guest 结果。host 保留真实 QEMU 物理宿主，execution/guest 明确 emulated-system 和实际页大小；不能作为物理 ARM64 或原生性能成绩。
 
@@ -233,4 +234,20 @@ root 仅创建独立 `unshare --net` namespace，`setpriv` 将实际探针和构
 
 精确 before/after inventory 逐文件保存类型、大小、SHA-256、权限和 link target，并拒绝缓存外重定向。它覆盖所选 QuickJS、原 Nightly archive/tree、完整 native 派生视图、锁定 loader/packer 源码和独立启动 helper 的 Zig archive/tree；build 中间件、复制负向 fixture、HOME/XDG/TMP 全在同一物理 `.cache/`。Zig 的可变 global cache 不作为锁定输入。两次 `.com`、`.com.dbg`、`.aarch64.elf` 共六个交付二进制逐字节比较；差异保存 offset/长度/SHA 并失败，不能用解释文字恢复通过。map/命令日志保留实际不同路径。此票不重构或声明单独 macOS ARM64 helper 可复现。
 
-`refusals` 单独在相同隔离条件运行复制用例；缺源/归档、改源码/补丁/HEAD、坏归档/工具内容、占位摘要、冲突 provenance 和缺启动 helper 工具须在 executable 使用前失败，`strace` 和供应报告共同证明没有启动供应 executable。实际输入不被修改。`compare`、`inventory`、`audit-network` 只消费相应本地证据，不独立声称执行过断网构建。完整报告和原始日志保留在 `out/`，历史报告同名替换时原 evidence 目录仍保留；`m0_core_status` 继续 `not_run`，由 10 的完整门禁汇总。
+`refusals` 单独在相同隔离条件运行复制用例；缺源/归档、改源码/补丁/HEAD、坏归档/工具内容、占位摘要、冲突 provenance 和缺启动 helper 工具须在 executable 使用前失败，`strace` 和供应报告共同证明没有启动供应 executable。实际输入不被修改。`compare`、`inventory`、`audit-network` 只消费相应本地证据，不独立声称执行过断网构建。完整报告和原始日志保留在 `out/`，历史报告同名替换时原 evidence 目录仍保留；这些原 scope 的 `m0_core_status` 继续 `not_run`，独立 `core_gate.py` 汇总完整 Core，不改写原报告。
+
+## BOOT-09 · 完整 Core evidence consumer
+
+`python scripts/core_gate.py evaluate --input-manifest FILE --report FILE` 不下载、不编译、不重跑探针、不安装服务。manifest v1 必须使用 `profile: "full"`，显式给出三类 `producers`（startup/io/pages64k）、`startup_reports` / `io_reports` / `pages64k_reports` 数组、`offline_report` 和 `offline_recipe_comparison`。manifest 相对路径以其父目录解释；报告原路径不重写。
+
+`path_mappings` 为 `{source, root}` 数组，表示原 POSIX/Windows 前缀和当前物理目录；使用最长前缀，拒绝重复前缀、`..`、ZIP 绝对路径/symlink、重复 member 和越界。`transports` 为 `{id, name, root, archive: {path, sha256, size_bytes}}` 数组；重新比对整个 ZIP 摘要/长度、每项 CRC 及其解包字节。索引记录 original/resolved path 和新测 SHA，没有 basename 搜索或缺日志 fallback。`svc_reports` 是可选独立状态指针；SCM/Job 缺项或失败只改变 `svc`。
+
+gate 从既有权威 case catalog 检查七项 startup、20/21 项 I/O、12 项 deep，按实际 OS/CPU/执行架构/页大小/mode 重算六目标。native Linux ARM64 必须先有实测，QEMU 仅补未覆盖的 4K/64K。完整 serial token、命令参数/时间/退出/deadline、原始字节、before/after payload、kernel/config/rootfs/QEMU 身份和 cleanup 均有对应检查；native Windows 控制台消费独立 console-results.ndjson。
+
+同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。当前 recipe 对比保留测试/当前两套原始 fingerprint，仅 `check_ci` AST 差异不冒称额外断网执行。
+
+完整实际 manifest、通过报告、红绿及负向回归见 [10 验收](../.scratch/qaplet-m0/core-evidence-gate-validation.md)。标准 `make check` 不自动寻找历史 `out/`；真实 consumer 回归须显式设置 `QAPLET_GATE_MANIFEST`。供应/build 配方不因新增 consumer 而改变。
+
+guest catalog 按实际目标页大小选择：4096 仅需要 Hello/eval + I/O、七项 startup 和一个 I/O suite；65536 另需 deep payload、facts/suite/shell-header 三条入口。`arm64_page_gaps` 只对已测页集合实施补缺规则：native 65536 可由4096 guest补缺，native 16384 需4096和65536两个guest；该纯调度模型不声明这些硬件已实际执行。
+
+`python scripts/core_gate.py validate-guest --input-manifest FILE --guest-report GUEST --report OUTPUT` 是独立 guest transport/原始语义检查入口。它只消费该页配置所需的 producer，成功时 `status: pass`、`scope: guest-transport`，但 `core.status` 和 `m0_core_status` 都为 `not_run`，不能代替完整 `evaluate`。4K profile 原 lock 只固定 Debian packages；补充 `guests/arm64-derived.lock.json` 将独立从这些 SHA-verified package tar members 解出的 Image/config/compressed kernel 身份固定，并绑定原 lock 摘要/精确 package IDs；错误派生摘要仍拒绝，不从报告任意非空字段恢复通过。原 canonical lock 和已有65536证据不改写。

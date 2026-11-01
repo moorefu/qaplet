@@ -1,6 +1,6 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / tickets-01-through-09-resolved / ticket-10-ready / ticket-11-resolved / ticket-12-resolved
+**Status:** implementation-in-progress / tickets-01-through-12-resolved / Core-gate-passed / final-review-pending
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
@@ -62,7 +62,7 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 01负责共享入口与CI骨架，02落实本地WSL/探测，05本地构建并支持CI重现，06接原生+补缺矩阵，07做64K深探针，08复用矩阵，11/12本地隔离VM探索并在CI回归。12张任务和Blocked by不变。
 
-当前无GitHub remote/workflow/probe实现；本轮只核查并修订方案，未触发CI或安装WSL。CI构建后分发同一摘要制品，失败也保留日志/串口/报告；Core/SVC继续独立判定。
+本段最初记录“无 GitHub remote/workflow/probe”的规划快照已被实际实现取代：完整 M0 CI `41271366261` 与独立 SCM CI `41271366311` 成功；Job 完成本地测量，远程仍未执行。CI 构建后分发同一摘要制品，失败也保留日志/串口/报告，Core/SVC 独立判定。
 
 ### BOOT-01 实施状态（2026-10-31）
 
@@ -78,11 +78,11 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 2026-11-01：12 的应用私有 Job 探针已在用户指定的当前 Windows 宿主完成受控父子/嵌套/拒绝/超时/清理验收，Ubuntu 构建并按同摘要消费；见[验收](job-object-validation.md)。首用 CreateProcessW +2 handle 增长未归因，owned handles 均关闭且重复基线稳定；不声明任意树安全或所有进程 handle 完全无泄漏。独立 Job CI 已接线但尚未远程执行，不改变 Core 门禁。
 
-2026-11-01：05 的固定输入 fat Hello/eval 构建、五项本地运行和双 CPU/map/import 审计已通过。WSLInterop 路由修正经原工具失败/派生 Linux 工具成功的同上下文对照验证。集成提交 `1b06a79` 的[真实 Ubuntu CI](https://github.com/moorefu/qaplet/actions/runs/41263354111) 完成精确工具链下载、共享构建及原字节分发，取回文件与本地 canonical SHA 完全一致；见[05 验收](fat-ape-build-validation.md)。06/07/08/09 和 11/12 的前置现已满足，完整 Core/跨宿主/SDK 尚未完成。
+2026-11-01：05 的固定输入 fat Hello/eval 构建、五项本地运行和双 CPU/map/import 审计已通过。WSLInterop 路由修正经原工具失败/派生 Linux 工具成功的同上下文对照验证。集成提交 `1b06a79` 的[真实 Ubuntu CI](https://github.com/moorefu/qaplet/actions/runs/41263354111) 完成精确工具链下载、共享构建及原字节分发，取回文件与本地 canonical SHA 完全一致；见[05 验收](fat-ape-build-validation.md)。06/07/08/09 和 11/12 的前置在该时已满足；后续完整 Core/跨宿主已通过10，正式SDK不在M0范围。
 
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。
 
-BOOT-01/ENV-01 命令、schema 和环境验收已实现；产品 probe 和完整 Core 门禁仍待对应任务。具体锁值、下载摘要、主机结果和产品能力必须来自实施测量，不在规划中填造。
+BOOT-01/ENV-01、固定输入、产品 probe 和完整 Core gate 均已有实现及真实测量。当前状态见[10 验收](core-evidence-gate-validation.md)，历史缺口/失败保留；不把 M0 探针外推为正式 Runtime/SDK。
 
 07 的实际 Linux/AArch64/65536 完整 guest、12 项独立深度合同、source-built loader/
 packer 修正和 ARM64 full-pointer QuickJS overlay 已完成，见[64K 记录](arm64-64k-validation.md)。
@@ -93,8 +93,8 @@ packer 修正和 ARM64 full-pointer QuickJS overlay 已完成，见[64K 记录](
 见[SCM 记录](scm-abi-validation.md)。Ubuntu 构建的独立 fat APE 在 Linux 普通入口、
 Windows export/layout、管理员 ServiceMain/HandlerEx/status 与 SCM 查询/重复 stop/删除
 均通过；普通 token 的 error 5 保留为 blocked。服务、受控进程与句柄清理及独立
-post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM workflow 的远程
-结果待后续调度；该本地 verified 能力不表示隔离 VM 或完整 Core 矩阵已通过。
+post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM workflow run
+`41271366311` 已成功且原始字节/日志已核验；当前完整 Core 由10独立通过。
 
 ## 后续里程碑（本轮不生成详细spec或任务）
 
@@ -112,5 +112,7 @@ post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM wo
 | M10 | Runtime/SDK与Service App分别按已声明范围判定发布 |
 
 详细内容继续引用总体计划；只有依赖事实就绪、即将实施的阶段再细化。
+
+2026-11-01：10 的完整 Core gate 通过六目标 startup/I/O、12项 deep、实际断网 pair/14 refusal 和 Core link/import 边界。三类 producer 与各自产品/derived helper 身份分别保留；许可/TLS未知项公开。独立 Job CI `41273469604` 在 `e17981c` 成功，首次 +2 handle 身份仍未归因，能力只限已测 owned fixtures。完整 manifest、报告、负向回归和边界见[10 验收](core-evidence-gate-validation.md)。全部12票已有 Answer，最终integration review另行执行。
 
 2026-11-01：09 已完成最终 producer 的两个真实断网 Ubuntu builds，六个二进制与额外 loader/packer 字节相同；14 个副本输入拒绝和精确 cache before/after inventory 通过。合入 `1129cd8` 后的 `make check` 107 tests / 0 failures / 15 explicit skips。测试 recipe 与随后 CI-only checker 变化的 raw fingerprint 分别保留，不宣称新 fingerprint 已重构。09 resolved，Core 完整门禁仍由 10 判定；见[断网最终验收](offline-integrity-validation.md)。

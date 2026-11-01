@@ -1,0 +1,38 @@
+{
+  "derivation": {
+    "method": "SHA-verified pinned Debian package tar members; gzip decompression; ARM64 Image page flag and actual config assertion",
+    "report_path": "out/m0-integration/core-gate/guest4096/derived-identities.json",
+    "report_sha256": "ebe4996eabf626d4e8e157058f77db6c548e8fa6163aa1387af65395b17d608d"
+  },
+  "guest_lock_sha256": "22b7512319c9484071eaf90e4db22bde4f0ecf8300e2997f72e5e149a01a976e",
+  "kind": "arm64-package-derived-identities",
+  "profiles": {
+    "4096": {
+      "compressed_kernel": {
+        "sha256": "353bab8eeaad9caf931dd85fd7a7bf8800d2669d759c0369ffaba7abc03a7aff",
+        "size_bytes": 18600927
+      },
+      "config": {
+        "sha256": "42a84d1758a4a33b07962624f41fcc41cc45a0ef8b6b0b1e0b2a1118a1ba5287",
+        "size_bytes": 337427
+      },
+      "image": {
+        "sha256": "ce78832564a2705c98d474fe487f11dbd6823eb0c5f5c162ebf1e760089b504f",
+        "size_bytes": 59079048
+      },
+      "image_page_code": 1,
+      "kernel_release": "6.8.0-147-generic",
+      "packages": {
+        "linux-buildinfo-6.8.0-147-generic_6.8.0-147.147_arm64.deb": {
+          "sha256": "c20634cc9df715dadb48bce8f3ca7ff20ee92fb48b1e64646aa2b965a4659e99",
+          "size_bytes": 700002
+        },
+        "linux-image-6.8.0-147-generic_6.8.0-147.147_arm64.deb": {
+          "sha256": "75159df987469ba9feb93a638a7f2a42511802fbf0f06ff891d2702bd7d3b23c",
+          "size_bytes": 18313352
+        }
+      }
+    }
+  },
+  "schema_version": 1
+}
