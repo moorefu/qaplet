@@ -13,6 +13,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import core_gate
 
 
+def guest_manifest_selection():
+    return os.environ.get("QAPLET_GATE_4K_MANIFEST") or os.environ.get("QAPLET_GATE_MANIFEST")
+
+
 class GuestPageCatalog(unittest.TestCase):
     def test_4k_guest_requires_startup_and_io_without_64k_deep_commands(self):
         catalog = core_gate.guest_requirements(4096)
@@ -39,14 +43,14 @@ class GuestPageCatalog(unittest.TestCase):
             core_gate.arm64_page_gaps(set(), {4096, 65536})
 
 
-@unittest.skipUnless(os.environ.get("QAPLET_GATE_4K_GUEST") and os.environ.get("QAPLET_GATE_MANIFEST"), "Explicit actual locked 4096 guest and producer evidence required")
+@unittest.skipUnless(os.environ.get("QAPLET_GATE_4K_GUEST") and guest_manifest_selection(), "Explicit actual locked 4096 guest and producer evidence required")
 class Actual4KGuest(unittest.TestCase):
     def test_direct_guest_cli_path_is_relative_to_working_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             (directory / "guest.json").write_bytes(Path(os.environ["QAPLET_GATE_4K_GUEST"]).read_bytes())
             result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "validate-guest",
-                                     "--input-manifest", os.environ["QAPLET_GATE_MANIFEST"],
+                                     "--input-manifest", guest_manifest_selection(),
                                      "--guest-report", "guest.json", "--report", "validated.json"],
                                     cwd=directory, capture_output=True, text=True, timeout=120)
             report = json.loads((directory / "validated.json").read_text())
@@ -59,14 +63,14 @@ class Actual4KGuest(unittest.TestCase):
         path.write_text(json.dumps(guest), encoding="utf-8")
         output = directory / "validated.json"
         result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "validate-guest",
-                                 "--input-manifest", str(manifest or os.environ["QAPLET_GATE_MANIFEST"]),
+                                 "--input-manifest", str(manifest or guest_manifest_selection()),
                                  "--guest-report", str(path), "--report", str(output)],
                                 capture_output=True, text=True, timeout=120)
         return result.returncode, json.loads(output.read_text())
 
     def test_4k_transport_does_not_consume_an_unused_deep_producer(self):
         guest = json.loads(Path(os.environ["QAPLET_GATE_4K_GUEST"]).read_text(encoding="utf-8"))
-        manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
+        manifest = json.loads(Path(guest_manifest_selection()).read_text(encoding="utf-8"))
         manifest["producers"].pop("pages64k")
         manifest["pages64k_reports"] = []
         with tempfile.TemporaryDirectory() as temporary:
@@ -81,7 +85,7 @@ class Actual4KGuest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "validated.json"
             result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "validate-guest",
-                                     "--input-manifest", os.environ["QAPLET_GATE_MANIFEST"],
+                                     "--input-manifest", guest_manifest_selection(),
                                      "--guest-report", os.environ["QAPLET_GATE_4K_GUEST"], "--report", str(output)],
                                     capture_output=True, text=True, timeout=120)
             report = json.loads(output.read_text())

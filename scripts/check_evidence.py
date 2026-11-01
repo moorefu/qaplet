@@ -15,7 +15,7 @@ from workflow_support import identity, local_path, now, read_json, write_json
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("test_core_gate", "test_core_gate_pages", "test_ape_publication", "test_recipe_comparison")
 SELECTION = {"input_manifest": "QAPLET_GATE_MANIFEST", "guest_report": "QAPLET_GATE_4K_GUEST",
-             "publication_inputs": "QAPLET_PUBLICATION_REPORTS"}
+             "publication_inputs": "QAPLET_PUBLICATION_REPORTS", "guest_manifest": "QAPLET_GATE_4K_MANIFEST"}
 
 
 def selection(config):
@@ -24,6 +24,9 @@ def selection(config):
         raise ValueError("Expected schema_version 1 / profile m0-evidence")
     paths = {}
     for key in SELECTION:
+        if key == "guest_manifest" and key not in value:
+            paths[key] = paths["input_manifest"]
+            continue
         if key not in value:
             raise ValueError("Missing evidence selection field: " + key)
         paths[key] = local_path(value[key], config.resolve().parent)
@@ -90,7 +93,7 @@ def run(config, output, preflight_only=False):
         report["core_preflight"] = identity(gate_path)
         if gate["core"]["status"] != "pass":
             raise ValueError("Core evidence preflight failed: " + "; ".join(gate["core"]["errors"]))
-        guest = core_gate.evaluate(paths["input_manifest"], paths["guest_report"])
+        guest = core_gate.evaluate(paths["guest_manifest"], paths["guest_report"])
         guest_path = directory / "guest-preflight.json"
         write_json(guest_path, guest)
         report["guest_preflight"] = identity(guest_path)

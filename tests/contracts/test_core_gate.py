@@ -127,6 +127,19 @@ class ActualCoreEvidence(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("QEMU", " ".join(result["core"]["errors"]))
 
+    def test_ci_consumer_commit_must_match_selected_producer_even_with_matching_archive_suffix(self):
+        def change(report):
+            ci = report.get("ci") or dict(run_id="1", run_attempt="1", workflow="fixture", runner_name="fixture",
+                runner_os="Linux", runner_arch="X64", image_os="fixture", image_version="1")
+            report["ci"] = dict(ci, commit="b" * 40)
+        self.inject_report("startup_reports", change)
+        reference = Path(self.manifest["startup_reports"][0])
+        transport = next(item for item in self.manifest["transports"] if reference.is_relative_to(Path(item["root"])))
+        transport["name"] = "consumer-mutation-" + "b" * 40
+        code, result = self.evaluate()
+        self.assertNotEqual(code, 0)
+        self.assertIn("CI", " ".join(result["core"]["errors"]))
+
     def test_mutated_real_startup_reports_cannot_hide_core_failures(self):
         mutations = {
             "missing-case": lambda report: report["cases"].pop(),
