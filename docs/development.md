@@ -10,6 +10,8 @@
 
 本机该目录位于没有 `metadata` 选项的 DrvFS。实际执行、读写和内部符号链接可用；文件可设为无写权限，但非执行位和目录只读位不能按 POSIX 原样表示。工具链验证须在报告中记录实测权限限制，并持续核对原归档 SHA-256、所有文件内容/类型和链接目标；在支持 POSIX 权限的 Ubuntu 文件系统保留完整权限校验。没有更改全局 WSL/mount 设置。下文与历史验收记录中的 ext4/home 缓存、Windows 编译和旧 CI 矩阵是此前观测，当前默认与调度以本节及配置为准。
 
+缓存候选目录改名的另一次 `EACCES` 已通过现场 Windows Restart Manager 查询定位到 VS Code 的 Pylance 文件占用。仓库 `.vscode/settings.json` 排除 `.cache/`、`out/`、`toolchains/evidence/` 的递归监听；同一 CLI 的加入/移除/恢复对照及原始完整检查已验证，见[诊断记录](../.scratch/qaplet-m0/drvfs-publication-validation.md)。这不改变缓存位置、权限或输入验证，也不增加改名重试；其他程序主动占用文件仍可能导致 OS 拒绝操作。
+
 ## 命令与 scope
 
 | 入口 | 报告 | 成功含义 |

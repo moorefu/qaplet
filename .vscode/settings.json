@@ -1,0 +1,7 @@
+{
+  "files.watcherExclude": {
+    "**/.cache/**": true,
+    "**/out/**": true,
+    "**/toolchains/evidence/**": true
+  }
+}
