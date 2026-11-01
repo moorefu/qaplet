@@ -106,6 +106,8 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 
 `page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核 17 项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
 
+显式 `arm64_guest.py fetch` 对同一锁定 URL 的 HTTP 408/429/500/502/503/504 最多尝试三次，共用原每输入 190 秒进程预算；每次命令、HTTP 状态及原始失败日志独立保留。只有长度/SHA 校验通过才发布缓存文件，签名链仍须通过；错摘要、非瞬时失败或耗尽重试仍失败，不切换版本或来源。普通 `verify` 保持离线。
+
 `matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。完整 CI `41271366261` 已通过，native Linux ARM64 实测 4096，完整系统 guest 仅补 65536；见 [06 验收](../../.scratch/qaplet-m0/cross-host-startup-validation.md)及 [Core gate](../../.scratch/qaplet-m0/core-evidence-gate-validation.md)。
 
 `matrix --profile cross` 只汇总五种实际 native OS/架构，Linux ARM64 保留实测页大小；guest 不替代 native。默认 `--profile full` 仍要求六个页配置目标。两种汇总均保留缺项和失败，拒绝重复 report ID、错误 producer 引用/上下文、旧输入及缺失 ESM/jobs 清单；成功不签发完整 Core。CI producer/实际执行 consumer 必须同时有完整 run/commit/runner/image 身份且 commit 相同；本地只读导入不改写实际执行 CI。

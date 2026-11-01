@@ -16,6 +16,7 @@ import shutil
 import stat
 import struct
 import sys
+import time
 import uuid
 
 from build_ape import BuildError, identity, run
@@ -80,10 +81,24 @@ def fetch(args, report, directory):
         url = item.get("url") or lock["archive_base_url"] + item["archive_path"]
         part = destination.with_suffix(destination.suffix + ".part-" + report["report_id"])
         try:
-            run(report, directory, "fetch-" + name, ["curl", "--fail", "--show-error", "--location", "--proto", "=https",
-                "--tlsv1.2", "--connect-timeout", "20", "--max-time", "180", "--output", part, url], 190)
-            checked(part, item)
-            part.replace(destination)
+            deadline = time.monotonic() + 190
+            for attempt in range(1, 4):
+                remaining = deadline - time.monotonic()
+                if remaining <= 1:
+                    raise BuildError("Locked guest download deadline exhausted: " + name)
+                part.unlink(missing_ok=True)
+                record, status, _ = run(report, directory, "fetch-" + name + "-attempt-" + str(attempt),
+                    ["curl", "--fail", "--show-error", "--location", "--proto", "=https", "--tlsv1.2",
+                     "--connect-timeout", "20", "--max-time", str(max(1, min(180, int(remaining - 1)))),
+                     "--write-out", "%{http_code}", "--output", part, url], remaining, expected=None)
+                if record["exit_code"] == 0 and not record["timed_out"]:
+                    checked(part, item)
+                    part.replace(destination)
+                    break
+                if record["timed_out"] or record["exit_code"] != 22 or status.strip() not in (
+                        "408", "429", "500", "502", "503", "504") or attempt == 3:
+                    raise BuildError("Locked guest download failed after " + str(attempt) + " attempt(s): " + name + "; see raw logs")
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
         finally:
             part.unlink(missing_ok=True)
     verify(args, report, directory)
