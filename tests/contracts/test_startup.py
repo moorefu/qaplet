@@ -50,6 +50,34 @@ class StartupContract(unittest.TestCase):
             self.assertFalse((work / "loaders").exists())
 
     @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_STARTUP_BUILD"),
+                         "Ubuntu and explicit current-v3 producer required")
+    def test_other_or_unidentified_helper_bundle_is_rejected_before_execution(self):
+        producer_path = Path(os.environ["QAPLET_STARTUP_BUILD"])
+        producer = json.loads(producer_path.read_text())
+        with tempfile.TemporaryDirectory(prefix="qaplet-helper-bundle-") as temp:
+            work = Path(temp)
+            resolved = subprocess.run([sys.executable, str(ROOT / "scripts/input_lock.py"), "resolve",
+                                       "--report", str(work / "resolved.json")], capture_output=True, text=True, timeout=30)
+            self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
+            current = json.loads((work / "resolved.json").read_text())["input_lock"]
+            self.assertEqual(producer.get("input_lock"), current, "Explicit producer must belong to the current v3")
+            artifacts = work / "artifacts"
+            shutil.copytree(producer_path.parent / "artifacts", artifacts)
+            loaders = work / "loaders"
+            loaders.mkdir()
+            for state in (None, "selected_pending_validation"):
+                bundle = {"schema_version": 1, "report_kind": "ape-loaders", "status": "pass", "helpers": []}
+                if state:
+                    bundle["input_lock"] = dict(current, lock_state=state)
+                (loaders / "helpers.json").write_text(json.dumps(bundle))
+                result = self.invoke("run", "--build-report", producer_path, "--artifact-dir", artifacts,
+                                     "--loader-dir", loaders, "--report", work / "refusal.json")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                actual = json.loads((work / "refusal.json").read_text())
+                self.assertIn("unified", actual["reason"])
+                self.assertEqual(actual["commands"], [])
+
+    @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_STARTUP_BUILD"),
                          "Ubuntu and explicit distributed producer required")
     def test_transported_nonexecutable_artifacts_restore_execute_metadata_without_changing_bytes(self):
         producer = Path(os.environ["QAPLET_STARTUP_BUILD"])

@@ -88,8 +88,8 @@
     },
     {
       "path": "scripts/input_lock.py",
-      "sha256": "c740f07dbcc71f18a7bf00aa30cf6e4a00b4f55b886f8f1d6efb140058c6f08b",
-      "size_bytes": 18164
+      "sha256": "9bf966740767f5762a179ccbd33802529f43e2681a33c756d6349dd7a9c194de",
+      "size_bytes": 19673
     },
     {
       "path": "scripts/native_toolchain.py",
@@ -98,18 +98,18 @@
     },
     {
       "path": "scripts/nightly_toolchain.py",
-      "sha256": "6c1316a9a86057e349c3de85160d733d02395ecad69a9e038c11eb15b27296c1",
-      "size_bytes": 37415
+      "sha256": "d8c9ee2ebf5b94d865d85484f42404ab6cc8fae4da895d954de6b2a0cdb0377e",
+      "size_bytes": 37356
     },
     {
       "path": "scripts/quickjs_source.py",
-      "sha256": "5962c0dc569255fcf7f4250f7af9fcfcfd11e5e30a9f00cc700e129970b722a4",
-      "size_bytes": 18226
+      "sha256": "23327c9902aebc27135a8617fea9ea4e9a29e1949bfed8ad9d493b571e31ca40",
+      "size_bytes": 18218
     },
     {
       "path": "scripts/startup_loaders.py",
-      "sha256": "ffbe27655511dd5a04c8a569ca943f5e0cb2f6917d62213eb2ff340eb36cd0fd",
-      "size_bytes": 15347
+      "sha256": "2cb28b1f62fd5fe7ad83b4840f37c1a4d8b824344b3c6fc07d9bd38c4fbc25bf",
+      "size_bytes": 15707
     },
     {
       "path": "tests/native/ape_hello.c",

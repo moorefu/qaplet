@@ -11,7 +11,7 @@ import sys
 import uuid
 
 from build_ape import BuildError, OBJECT_LIFECYCLE_EXPRESSION, headers, identity
-from input_lock import component, consume_identity
+from input_lock import component, consume_identity, check_helper_source
 from evidence import read_json
 from foundation import ROOT, command, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -71,6 +71,10 @@ def select_loader(args, report):
         helpers = read_json(manifest)
         if helpers.get("schema_version") != 1 or helpers.get("report_kind") != "ape-loaders" or helpers.get("status") != "pass":
             raise BuildError("Successful ape-loaders v1 manifest required")
+        locked = consume_identity(helpers, report, require_unified=True)
+        for entry in helpers["helpers"]:
+            if "source" in entry:
+                check_helper_source(entry["source"], locked)
         entries = [entry for entry in helpers["helpers"] if entry["os"] == host["os"] and entry["arch"] == host["execution_arch"]]
         report["loader_manifest"] = identity(manifest)
     else:

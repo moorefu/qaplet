@@ -18,7 +18,7 @@ import zipfile
 import re
 from urllib.request import getproxies
 
-from input_lock import attach, component, fixture_only
+from input_lock import attach, component, consumption_purpose, fixture_only
 from evidence import read_json
 from foundation import ROOT, case_record, command, host_facts, now, sha256
 
@@ -457,8 +457,7 @@ def import_receipt(args, identity):
 def supply_lock(args):
     if args.fixture_lock:
         return read_json(args.lock)
-    purpose = "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build"
-    return component("cosmocc", args.lock, purpose)
+    return component("cosmocc", args.lock, consumption_purpose(args.operation, args.controlled_probe))
 
 
 def acquire(args, report, directory):
@@ -608,7 +607,7 @@ def main():
             fixture_only(args.lock, ROOT / "toolchains/cosmocc.lock.json")
             report["fixture_only"] = True
         else:
-            locked = attach(report, "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build")
+            locked = attach(report, consumption_purpose(args.operation, args.controlled_probe))
             report["controlled_probe"] = args.controlled_probe
             locked.component("cosmocc", args.lock)
             if args.operation in ("bump", "download"):

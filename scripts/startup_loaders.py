@@ -15,7 +15,7 @@ import urllib.request
 import uuid
 
 from build_ape import BuildError, identity, run
-from input_lock import component, attach
+from input_lock import component, attach, consume_identity, check_helper_source
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
@@ -196,9 +196,7 @@ def build(args, report, directory, lock):
         path.chmod(0o555)
         report["helpers"].append({"os": system, "arch": arch, "file": name, **identity(path), "origin": "unchanged official Nightly loader"})
     if args.producer_report:
-        producer = read_json(args.producer_report)
-        if producer.get("status") != "pass" or producer.get("report_kind") != "ape-build":
-            raise BuildError("A passing portable producer report is required for the ARM64 loader override")
+        producer = args.portable_producer
         supplied = producer["portable_helpers"]["loader"]
         source_path = Path(supplied["path"])
         if sha256(source_path) != supplied["sha256"] or source_path.stat().st_size != supplied["size_bytes"]:
@@ -245,6 +243,13 @@ def main():
               "host": host_facts(), "ci": ci_facts(), "helpers": [], "commands": [], "source": None, "toolchain": None, "build": None}
     try:
         lock = attach(report, "fetch" if args.operation == "fetch" else "build").component("startup_loaders", args.lock)
+        if args.operation == "build" and args.producer_report:
+            producer = read_json(args.producer_report)
+            locked = consume_identity(producer, report, require_unified=True)
+            if producer.get("status") != "pass" or producer.get("report_kind") != "ape-build":
+                raise BuildError("A passing portable producer report is required for the ARM64 loader override")
+            check_helper_source(producer["portable_helpers"]["source"], locked)
+            args.portable_producer = producer
         if args.operation == "fetch":
             fetch(args, report, directory, lock)
         elif args.operation == "verify":

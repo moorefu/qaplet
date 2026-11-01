@@ -14,7 +14,7 @@ import sys
 import uuid
 
 from foundation import command, host_facts
-from input_lock import attach, fixture_only
+from input_lock import attach, consumption_purpose, fixture_only
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -309,7 +309,7 @@ def main():
             fixture_only(args.lock, ROOT / "third_party/quickjs/source.lock.json")
             report["fixture_only"] = True
         else:
-            locked = attach(report, "probe" if args.controlled_probe else "fetch" if args.operation == "fetch" else "build")
+            locked = attach(report, consumption_purpose(args.operation, args.controlled_probe))
             report["controlled_probe"] = args.controlled_probe
             locked.component("quickjs", args.lock)
             if args.operation == "bump":

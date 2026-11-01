@@ -182,17 +182,40 @@ def component(key, override=None, purpose="build"):
     return InputLock(purpose=purpose).component(key, override)
 
 
+def consumption_purpose(operation, controlled_probe=False):
+    return "probe" if controlled_probe else "fetch" if operation == "fetch" else "build"
+
+
 def attach(report, purpose="build"):
     locked = InputLock(purpose=purpose)
     report["input_lock"] = locked.identity()
     return locked
 
 
-def consume_identity(producer, report):
+def consume_identity(producer, report, require_unified=False):
     locked = attach(report)
+    if require_unified and "input_lock" not in producer:
+        raise ValueError("Supplied helper requires a unified v3 input identity")
     if "input_lock" in producer and producer["input_lock"] != locked.identity():
         raise ValueError("Supplied producer resolved different unified v3 inputs")
     report["producer_input_scope"] = "unified-v3" if "input_lock" in producer else "legacy-component-identities"
+    return locked
+
+
+def check_helper_source(source, locked):
+    expected = locked.component("ape_helpers")
+    if (not isinstance(source, dict) or source.get("commit") != expected["commit"] or
+            source.get("git_tree") != expected["git_tree"] or source.get("identity_scope") != expected["source_identity_scope"]):
+        raise ValueError("Supplied helper source Commit/Tree/scope differs from unified inputs")
+    patches = next((entry for entry in locked.value["metadata"] if entry["path"] == "third_party/ape-helpers/patches.json"), None)
+    if patches is None:
+        raise ValueError("Unified helper patch manifest identity is missing")
+    for actual, bound in ((source.get("lock"), locked.value["manifests"]["ape_helpers"]),
+                          (source.get("patch_manifest"), patches)):
+        if not isinstance(actual, dict) or any(actual.get(key) != bound[key] for key in ("sha256", "size_bytes")):
+            raise ValueError("Supplied helper source/patch manifest differs from unified inputs")
+    if source.get("patches") != read_json(locked.root / patches["path"])["patches"]:
+        raise ValueError("Supplied helper ordered patches differ from unified inputs")
 
 
 def fixture_only(path, canonical_path):

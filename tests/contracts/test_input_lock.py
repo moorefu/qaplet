@@ -263,6 +263,26 @@ class InputLockContract(unittest.TestCase):
                 self.assertIn("VERSION", actual["reason"])
                 self.assertEqual(actual["commands"], [])
 
+    def test_helper_build_refuses_other_inputs_and_wrong_source_before_using_zig(self):
+        _, resolved = self.run_cli()
+        with tempfile.TemporaryDirectory(prefix="qaplet-helper-identity-") as temp:
+            work = Path(temp)
+            for wrong_source in (False, True):
+                producer = {"report_kind": "ape-build", "status": "pass", "input_lock": copy.deepcopy(resolved["input_lock"]),
+                            "portable_helpers": {"source": {"commit": "wrong-helper-source"}}}
+                if not wrong_source:
+                    producer["input_lock"]["lock_state"] = "selected_pending_validation"
+                path, report = work / "producer.json", work / "refusal.json"
+                path.write_text(json.dumps(producer))
+                result = subprocess.run([sys.executable, str(ROOT / "scripts/startup_loaders.py"), "build",
+                                         "--producer-report", str(path), "--zig-cache", str(work / "absent"),
+                                         "--output-dir", str(work / "loaders"), "--report", str(report)],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                actual = json.loads(report.read_text())
+                self.assertEqual(actual["commands"], [])
+                self.assertFalse((work / "loaders").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

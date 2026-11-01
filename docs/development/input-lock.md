@@ -69,6 +69,12 @@ consumer 拒绝 selected。源码和 Nightly CLI 的显式 `fetch` 以及 `verif
 v3 身份，拒绝把 fixture 报告用作构建输入。生产 `bump` 和 rolling `download` 均被拒绝。
 固定 Artifact 的显式获取仍用 `fetch_locked_toolchain.py`。
 
+导入 producer 的派生启动 helper 和分发 `helpers.json` 必须携带当前 v3 身份；显式候选或其他
+组合会在使用前拒绝。派生 helper 的源 Commit/Tree、独立来源范围、原清单与有序 patch 身份
+另与 v3 对照。旧派生 bundle 保留原验收记录，须重新生成后才能作为当前组合分发；官方原版
+loader 的直接消费仍按绑定的 Nightly 组件清单验证。Core 同时核对供应报告、host context、
+bundle 以及选中 producer 的实际派生 loader 身份。
+
 ## 入口覆盖与缓存
 
 | 入口 | v3 解析与验证落点 |
@@ -77,7 +83,7 @@ v3 身份，拒绝把 fixture 报告用作构建输入。生产 `bump` 和 rolli
 | QuickJS verify/fetch、toolchains bootstrap/verify、Nightly verify/fetch/path | 供应 CLI 先解析完整 v3，随后验证缓存；QuickJS 另核对实际 Commit/Tree/VERSION |
 | `fetch_locked_toolchain.py` | 从 v3 解析固定 Artifact 原件；令牌仍只在环境/stdin 中传递 |
 | `build_ape.py`、native I/O、pages64k、SCM/Job producer | 共用 `verify_inputs`，构建前后比较同一 v3 身份，拒绝不一致的供应报告 |
-| `ape_helpers.py`、`startup_loaders.py`、`native_toolchain.py` | helper 清单从 v3 解析；native derivation 接收上游已验的 v3 组件，保留独立派生身份 |
+| `ape_helpers.py`、`startup_loaders.py`、`native_toolchain.py` | helper 清单从 v3 解析；imported producer/bundle 强制当前 v3 与独立源/patch；native derivation 接收上游已验组件，保留独立派生身份 |
 | `offline_integrity.py` | v3 选择原缓存，recipe inventory 包含统一锁和解析器；双构建/负向 fixture 保留既有合同 |
 | startup / native I/O / pages64k / SCM/Job 消费者 | 新 producer 的 v3 身份必须一致；历史报告保留 legacy-component-identities 范围，不被改写成新成绩 |
 | `core_gate.py` / `check_evidence.py` | Core 只读解析 v3，核对当前组件和新 producer 身份，严格回归仍需显式选中完整证据 |

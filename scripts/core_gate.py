@@ -14,7 +14,7 @@ import uuid
 import zipfile
 
 from build_ape import BuildError, FORBIDDEN, headers
-from input_lock import component, attach
+from input_lock import component, attach, consume_identity, check_helper_source
 from evidence import read_json
 from foundation import ROOT, decode, now
 from native_io import REQUIRED as IO_REQUIRED, matches_contract
@@ -266,6 +266,7 @@ class Gate:
         return ci
 
     def context(self, item, producer):
+        consume_identity(item, self.output)
         for field in ("source", "toolchain", "build"):
             require(item[field] == producer[field], "Host/producer context mismatch: " + field)
         self.evidence.read(item["producer_report"])
@@ -355,6 +356,8 @@ class Gate:
         for value in inputs.values():
             incoming = self.evidence.json(value)
             require(incoming["status"] == "pass", "Producer fixed-input verification failed")
+            if "input_lock" in item:
+                require(incoming.get("input_lock") == self.input_lock.identity(), "Supplier unified input lock mismatch")
         require(set(inputs) == ({"before-source", "after-source", "before-toolchain", "after-toolchain"} if family == "startup" else {"before-toolchain", "after-toolchain"}), "Producer before/after fixed-input reports incomplete")
         if family == "startup":
             require(all(self.evidence.json(inputs[key])["source"] == item["source"] for key in ("before-source", "after-source")), "Producer source identity differs from actual input verification")
@@ -699,7 +702,12 @@ class Gate:
         producer_path = self.evidence.resolve(self.manifest["producers"]["startup"])
         self.helpers = self.evidence.json(str(producer_path.parent / "loaders/helpers.json"))
         require(self.helpers["report_kind"] == "ape-loaders" and self.helpers["status"] == "pass", "Distributed loader bundle required")
+        consume_identity(self.helpers, self.output, require_unified=True)
         for helper in self.helpers["helpers"]:
+            if "source" in helper:
+                check_helper_source(helper["source"], self.input_lock)
+                require(same(helper, self.producers["startup"]["portable_helpers"]["loader"]),
+                        "Distributed source-built loader differs from selected producer")
             self.evidence.read(str(producer_path.parent / "loaders" / helper["file"]))
             require(same(helper, self.identity(str(producer_path.parent / "loaders" / helper["file"]))), "Distributed helper bytes differ from loader manifest")
         for field, method in (("startup_reports", self.startup), ("io_reports", self.io), ("pages64k_reports", self.deep)):
