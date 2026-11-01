@@ -104,6 +104,8 @@ def check_workflow(path):
     if not matrix:
         raise ValueError("Bootstrap compiler matrix is empty")
     for row in matrix:
+        if not isinstance(row.get("os"), str) or not row["os"].startswith("ubuntu-"):
+            raise ValueError("Build jobs must run on Ubuntu; other platforms validate supplied artifacts and SDKs")
         compiler = row.get("cc")
         if not isinstance(compiler, str) or not compiler or any(path(compiler).name != compiler for path in (PurePosixPath, PureWindowsPath)):
             raise ValueError("Hosted bootstrap compiler must be an executable name resolved through PATH")

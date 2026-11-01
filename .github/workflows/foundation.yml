@@ -11,9 +11,7 @@
         "fail-fast": false,
         "matrix": {"include": [
           {"os": "ubuntu-24.04", "cc": "cc"},
-          {"os": "ubuntu-24.04-arm", "cc": "cc"},
-          {"os": "windows-2022", "cc": "gcc"},
-          {"os": "macos-15", "cc": "cc"}
+          {"os": "ubuntu-24.04-arm", "cc": "cc"}
         ]}
       },
       "env": {"CC": "${{ matrix.cc }}"},
