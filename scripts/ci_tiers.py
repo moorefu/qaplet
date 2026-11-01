@@ -106,10 +106,8 @@ def check_workflow(workflow):
                 raise ValueError("Test job must consume distributed bytes without recompilation: " + name)
     native = workflow["jobs"].get("native-startup", {})
     rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
-    expected_rows = {("ubuntu-24.04", "Linux", "x86_64"), ("windows-2022", "Windows", "x86_64"),
-                     ("macos-15-intel", "Darwin", "x86_64"), ("macos-15", "Darwin", "aarch64"),
-                     ("ubuntu-24.04-arm", "Linux", "aarch64")}
-    if len(rows) != 5 or {(row.get("runner"), row.get("os"), row.get("arch")) for row in rows} != expected_rows:
+    expected_rows = {(row["runner"], row["os"], row["arch"]) for row in NATIVE}
+    if len(rows) != len(NATIVE) or {(row.get("runner"), row.get("os"), row.get("arch")) for row in rows} != expected_rows:
         raise ValueError("Native startup must schedule all five explicit OS/architecture runners")
     if native.get("needs") != ["tier-plan", "build"] or native.get("strategy", {}).get("fail-fast") is not False:
         raise ValueError("Native startup requires one distributed build and must retain every host result")
