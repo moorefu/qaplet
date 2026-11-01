@@ -110,3 +110,5 @@ post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM wo
 | M10 | Runtime/SDK与Service App分别按已声明范围判定发布 |
 
 详细内容继续引用总体计划；只有依赖事实就绪、即将实施的阶段再细化。
+
+2026-11-01：09 已完成最终 producer 的两个真实断网 Ubuntu builds，六个二进制与额外 loader/packer 字节相同；14 个副本输入拒绝和精确 cache before/after inventory 通过。合入 `1129cd8` 后的 `make check` 107 tests / 0 failures / 15 explicit skips。测试 recipe 与随后 CI-only checker 变化的 raw fingerprint 分别保留，不宣称新 fingerprint 已重构。09 resolved，Core 完整门禁仍由 10 判定；见[断网最终验收](offline-integrity-validation.md)。
