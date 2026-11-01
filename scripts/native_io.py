@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Build on Ubuntu; validate the same native I/O APE bytes on each supplied host."""
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -125,11 +126,11 @@ def build(args, report, directory):
     report.update(status="pass", reason="Independent native I/O fat APE built and audited on Ubuntu; run evidence is separate")
 
 
-def consume(args, report, directory):
+def producer_inputs(args, report):
     if not args.artifact or not args.artifact.is_file() or not args.build_report or not args.build_report.is_file():
         raise BuildError("Supplied artifact and producer build report are required; no compilation on validation hosts", "blocked")
     producer = read_json(args.build_report)
-    if producer.get("report_kind") != "native-io" or producer.get("status") != "pass":
+    if not isinstance(producer, dict) or producer.get("report_kind") != "native-io" or producer.get("status") != "pass":
         raise BuildError("Invalid or nonpassing native I/O producer report")
     artifacts = [a for a in producer["artifacts"] if a["name"] == "native-io"]
     if len(artifacts) != 1:
@@ -139,12 +140,20 @@ def consume(args, report, directory):
         raise BuildError("Artifact SHA-256/length differs from Ubuntu producer; refused before execution")
     if producer.get("scope") != "build":
         raise BuildError("A host run report cannot substitute for the Ubuntu producer report")
-    if producer.get("schema_version") != 1 or not producer.get("source", {}).get("sha256") or not producer.get("build", {}).get("sha256"):
+    if producer.get("schema_version") != 1 or not isinstance(producer.get("source"), dict) or not isinstance(producer.get("build"), dict):
+        raise BuildError("Producer schema/source/build identity is missing")
+    digests = (producer["source"].get("sha256"), producer["build"].get("sha256"))
+    if not all(isinstance(value, str) and len(value) == 64 and set(value) <= set("0123456789abcdef") for value in digests):
         raise BuildError("Producer schema/source/build identity is missing")
     if artifact.get("audit", {}).get("status") != "pass" or [s.get("machine") for s in artifact.get("headers", {}).get("slices", [])] != [62, 183]:
         raise BuildError("Producer does not prove audited fat x86_64/AArch64 content")
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
                   producer_report=identity(args.build_report), artifacts=[{**artifact, "path": str(args.artifact.resolve())}])
+    return producer, artifact
+
+
+def consume(args, report, directory):
+    producer, artifact = producer_inputs(args, report)
     from startup import measured_host, select_loader
     measured_host(args, report, directory)
     loader = args.loader
@@ -166,10 +175,15 @@ def consume(args, report, directory):
     fixture.mkdir()
     executable = fixture / ("native io.exe" if os.name == "nt" else "native io.com")
     shutil.copyfile(args.artifact, executable)
-    executable.chmod(0o755)
     if sha256(executable) != artifact["sha256"]:
         raise BuildError("Unicode/space executable fixture differs from supplied artifact")
+    mode_before = executable.stat().st_mode & 0o777
+    executable.chmod(0o755)
     report["process_fixture"] = identity(executable)
+    report["process_fixture"]["permissions"] = {"mode_before": mode_before, "mode_after": executable.stat().st_mode & 0o777,
+                                                "executable_after": os.access(executable, os.X_OK)}
+    if os.name != "nt" and not os.access(executable, os.X_OK):
+        raise BuildError("Verified native I/O fixture cannot execute on this filesystem", "blocked")
     report["process_fixture"]["child_argv"] = ["--child", "参数 空格", 'quote"slash\\', "literal&|;$()"]
     argv = ([loader] if loader else []) + [executable, "--" + args.probe_mode] + (["--launcher", loader] if loader else [])
     executed, stdout, stderr = run(report, directory, "suite", argv, args.timeout, expected=None)
@@ -215,31 +229,79 @@ def consume(args, report, directory):
             records.append({"case_id": "runner.terminal-exit", "status": "fail",
                             "actual": {"exit_code": terminal_command["exit_code"], "timed_out": terminal_command["timed_out"]},
                             "terminal_command": terminal_command})
+    collect_observations(report, records, executed, identity(args.artifact), report["host"], args.timeout)
+    if sha256(args.artifact) != artifact["sha256"] or sha256(executable) != artifact["sha256"] or (loader and sha256(loader) != report["loader"]["sha256"]):
+        raise BuildError("Artifact/helper changed during execution")
+    report.update(status="pass", reason="Supplied native I/O bytes executed on measured host; complete M0 matrix remains separate")
+
+
+def matches_contract(record, execution):
+    actual = record.get("actual")
+    if not isinstance(actual, dict):
+        return False
+    case = record["case_id"]
+    if case == "facts":
+        os_matches = str(actual.get("os", "")).startswith("Windows") if execution["os"] == "Windows" else actual.get("os") == execution["os"]
+        return os_matches and actual.get("probe") == "native-io" and actual.get("arch") == execution["execution_arch"] and actual.get("page_size") == execution["page_size"]
+    expected = EXPECTED.get(case)
+    if expected is None:
+        return False
+    if isinstance(expected, dict):
+        for key, value in expected.items():
+            if key in ("argv", "owned_pipe_closed", "live_child_remaining"):
+                continue  # Declared fixture conditions, checked at their owning boundary.
+            if key == "revents_contains":
+                # WinSock has separate normal/band input bits; POSIX hosts use 1.
+                input_mask = 0x0300 if execution["os"] == "Windows" else 1
+                if not actual.get("revents", 0) & input_mask:
+                    return False
+                continue
+            if isinstance(value, str) and value in ("EBADF", "EPIPE", "ENOTTY", "ENOENT", "EROFS"):
+                value = getattr(errno, value)
+            if actual.get(key) != value:
+                return False
+    if case in ("pipe.cleanup", "tty.cleanup"):
+        return bool(actual) and all(value in (1, True) for value in actual.values())
+    if case == "tty.redirected":
+        return actual.get("reader_closed") == 1 and actual.get("writer_closed") == 1
+    if case == "tty.controlled":
+        if execution["os"] == "Windows":
+            return actual.get("GetConsoleMode") == 1 and actual.get("SetConsoleMode") == 1 and actual.get("owned_CONIN_handle") is True and actual.get("modified_mode") == actual.get("before_mode", 0) ^ 4
+        return actual.get("isatty") == 1 and actual.get("getattr") == 0 and actual.get("setattr") == 0 and actual.get("modified") is True
+    return True
+
+
+def collect_observations(report, records, executed, artifact, execution, timeout):
+    report["execution"] = {key: execution[key] for key in ("os", "execution_arch", "kernel", "page_size", "execution_mode")}
     ids = [r["case_id"] for r in records]
-    required = REQUIRED | ({"tty.console-handle-closed"} if report["host"]["os"] == "Windows" else set())
+    required = REQUIRED | ({"tty.console-handle-closed"} if execution["os"] == "Windows" else set())
     report["required_cases"] = sorted(required)
     missing = required - set(ids)
     duplicate = len(ids) != len(set(ids))
+    optional = {"runner.terminal-fixture", "runner.terminal-exit"} if execution["os"] == "Windows" else set()
+    unexpected = set(ids) - required - optional
     for record in records:
         if record["status"] not in ("pass", "fail", "limitation", "blocked"):
             raise BuildError("Unknown native result status")
         if record["status"] == "limitation" and (not record.get("actual") or not record.get("reason")):
             raise BuildError("An OS limitation requires measured actual values and an explicit reason")
+        if record["status"] == "pass" and not matches_contract(record, execution):
+            record = {**record, "status": "fail", "reason": "Actual native values differ from the shared I/O contract"}
         event = record.pop("terminal_command", executed)
-        report["cases"].append({**record, "artifact": identity(args.artifact), "commands": [event],
-                                "expected": EXPECTED.get(record["case_id"], {"arch": report["host"]["execution_arch"], "page_size": report["host"]["page_size"]}),
+        report["cases"].append({**record, "artifact": artifact, "commands": [event],
+                                "expected": EXPECTED.get(record["case_id"], {"arch": execution["execution_arch"], "page_size": execution["page_size"]}),
                                 "reason": record.get("reason", "Measured native ABI result; raw OS return values retained"),
                                 "started_at": event["started_at"], "finished_at": event["finished_at"],
-                                "timeout_seconds": args.timeout, "exit_code": event["exit_code"]})
-    if missing or duplicate:
+                                "timeout_seconds": timeout, "exit_code": event["exit_code"]})
+    if missing or duplicate or unexpected:
         for case_id in sorted(missing):
             report["cases"].append({"case_id": case_id, "status": "not_run", "actual": None,
                                     "expected": "Required native I/O observation", "commands": [],
                                     "started_at": executed["started_at"], "finished_at": executed["finished_at"],
                                     "reason": "Probe/fixture did not return this required result"})
-        raise BuildError("Native suite returned duplicate/missing cases; observed results and raw output retained")
+        raise BuildError("Native suite returned duplicate/missing/unexpected cases; observed results and raw output retained")
     facts = next(r["actual"] for r in records if r["case_id"] == "facts")
-    if facts["arch"] != report["host"]["execution_arch"] or facts["page_size"] != report["host"]["page_size"]:
+    if facts.get("probe") != "native-io" or facts["arch"] != execution["execution_arch"] or facts["page_size"] != execution["page_size"]:
         raise BuildError("Probe architecture/page size differs from actual host OS measurements")
     if any(c["status"] == "fail" for c in report["cases"]):
         raise BuildError("Native I/O suite failed; see measured cases and raw logs")
@@ -247,16 +309,112 @@ def consume(args, report, directory):
         raise BuildError("Required controlled fixture unavailable; observed API error retained", "blocked")
     if executed["exit_code"] != 0:
         raise BuildError("Native I/O suite returned unexpected nonzero exit; raw OS status retained")
-    if sha256(args.artifact) != artifact["sha256"] or sha256(executable) != artifact["sha256"] or (loader and sha256(loader) != report["loader"]["sha256"]):
-        raise BuildError("Artifact/helper changed during execution")
-    report.update(status="pass", reason="Supplied native I/O bytes executed on measured host; complete M0 matrix remains separate")
+
+
+def import_guest(args, report):
+    if not args.guest_report or not args.guest_report.is_file():
+        raise BuildError("Full-system guest evidence report is required", "blocked")
+    producer, artifact = producer_inputs(args, report)
+    guest_report = read_json(args.guest_report)
+    report["guest_report"] = identity(args.guest_report)
+    if guest_report.get("schema_version") != 1 or guest_report.get("report_kind") != "arm64-guest" or guest_report.get("status") != "pass":
+        raise BuildError("Complete successful arm64-guest v1 transport evidence is required")
+    guest, qemu = guest_report["guest"], guest_report["qemu"]
+    if guest.get("os") != "Linux" or guest.get("architecture") != "aarch64" or guest.get("execution_mode") != "emulated-system" or guest.get("page_size") not in (4096, 65536):
+        raise BuildError("Actual full-system Linux ARM64 4K/64K guest facts are required")
+    if guest.get("page_size_alias") != guest["page_size"] or guest.get("smaps_kib") != guest["page_size"] // 1024 or not guest.get("kernel"):
+        raise BuildError("Independent guest page-size/kernel observations conflict")
+    execution = {"os": "Linux", "execution_arch": "aarch64", "kernel": guest["kernel"],
+                 "page_size": guest["page_size"], "execution_mode": "emulated-system"}
+    if args.expected_os and args.expected_os != "Linux" or args.expected_arch and args.expected_arch != "aarch64":
+        raise BuildError("Guest execution identity differs from requested target")
+    cleanup = guest_report["cleanup"]
+    transports = [c for c in guest_report["commands"] if "-kernel" in c["argv"] and "-initrd" in c["argv"]]
+    if qemu.get("guest_arch") != "aarch64" or qemu.get("acceleration") != "tcg,thread=single" or not qemu.get("machine") or not qemu.get("cpu") or not qemu.get("version"):
+        raise BuildError("Full-system QEMU/TCG machine, CPU, and version identities are required")
+    if len(transports) != 1 or "qemu-system-aarch64" not in Path(transports[0]["argv"][0]).name or transports[0]["exit_code"] != 0 or transports[0]["timed_out"] or not cleanup["qemu_exited"] or cleanup["timed_out"]:
+        raise BuildError("Full-system guest transport/cleanup did not finish successfully")
+    for name in ("kernel", "config", "rootfs", "executable", "serial_log"):
+        value = qemu[name]["sha256"]
+        if not isinstance(value, str) or len(value) != 64 or set(value) - set("0123456789abcdef"):
+            raise BuildError("Missing QEMU/guest input SHA-256 identity: " + name)
+    files = guest_report["files"]
+    before = {item["guest_path"]: item["sha256"] for item in files}
+    if len(before) != len(files) or guest["file_sha256"] != before or guest["file_sha256_after"] != before:
+        raise BuildError("Guest payload before/after SHA-256 identities conflict")
+    targets = [item for item in files if item["sha256"] == artifact["sha256"] and item["size_bytes"] == artifact["size_bytes"]]
+    if len(targets) != 1:
+        raise BuildError("Guest did not execute the same I/O artifact as the Ubuntu producer")
+    target = targets[0]["guest_path"]
+    if " " not in target or not any(ord(char) > 127 for char in target):
+        raise BuildError("Guest executable Unicode/space path was not measured", "blocked")
+    suites = [case for case in guest_report["cases"] if target in case["argv"] and "--suite" in case["argv"]]
+    if len(suites) != 1:
+        raise BuildError("Exactly one actual native I/O suite command is required")
+    suite = suites[0]
+    loader = suite["argv"][0]
+    if suite["argv"] != [loader, target, "--suite", "--launcher", loader] or loader not in before:
+        raise BuildError("Guest I/O must use explicit loader/program argv with no shell")
+    expected_loader = producer.get("portable_helpers", {}).get("loader", {}).get("sha256")
+    if expected_loader and before[loader] != expected_loader:
+        raise BuildError("Guest loader differs from producer's derived portable helper")
+    if suite["status"] != "pass" or suite["exit_code"] != 0 or suite["actual"]["exit_code"] != 0 or suite["actual"]["stderr"]:
+        raise BuildError("Guest native I/O command did not return a clean success")
+    paths = {}
+    for kind in ("stdout", "stderr"):
+        entry = suite[kind + "_log"]
+        path = args.guest_report.parent / "evidence" / guest_report["report_id"] / Path(entry["path"]).name
+        if not path.is_file():
+            raise BuildError("Guest raw " + kind + " evidence is missing", "blocked")
+        if sha256(path) != entry["sha256"] or path.stat().st_size != entry["size_bytes"] or path.read_bytes().decode("utf-8") != suite["actual"][kind]:
+            raise BuildError("Guest raw " + kind + " log differs from reported bytes")
+        paths[kind] = str(path.resolve())
+    records = [json.loads(line) for line in suite["actual"]["stdout"].splitlines() if line.strip()]
+    report.update(validation_host=report["host"], validation_ci=report["ci"], host=guest_report["host"],
+                  ci=guest_report.get("ci"), guest=guest, qemu=qemu, transport_commands=guest_report["commands"],
+                  transport_cleanup=cleanup, loader={"guest_path": loader, "sha256": before[loader]},
+                  process_fixture={"guest_path": target, "sha256": artifact["sha256"]},
+                  validation_started_at=report["started_at"],
+                  guest_execution_window={"started_at": guest_report["started_at"], "finished_at": guest_report["finished_at"]})
+    event = {"argv": suite["argv"], "cwd": "guest:/", "started_at": suite["started_at"], "finished_at": suite["finished_at"],
+             "timeout_seconds": suite["timeout_seconds"], "exit_code": 0, "timed_out": False,
+             "stdout_log": paths["stdout"], "stderr_log": paths["stderr"], "guest_report": report["guest_report"]}
+    collect_observations(report, records, event, identity(args.artifact), execution, suite["timeout_seconds"])
+    report.update(status="pass", reason="Same-artifact full-system guest I/O observations validated; no native hardware claim")
+
+
+def guest_manifest(args, report):
+    producer, artifact = producer_inputs(args, report)
+    if not args.manifest or not args.loader or not args.loader.is_file():
+        raise BuildError("Guest manifest output and supplied ARM64 loader are required", "blocked")
+    loader = identity(args.loader)
+    expected_loader = producer.get("portable_helpers", {}).get("loader", {}).get("sha256")
+    if not expected_loader:
+        entries = [item for item in read_json(ROOT / "toolchains/cosmocc.lock.json")["files"] if item["path"] == "bin/ape-aarch64.elf"]
+        expected_loader = entries[0]["sha256"] if len(entries) == 1 else None
+    if loader["sha256"] != expected_loader:
+        raise BuildError("Guest loader SHA-256 differs from producer's supplied/locked ARM64 helper")
+    arm = next(item for item in artifact["headers"]["slices"] if item["machine"] == 183)
+    if not all(load["alignment"] >= args.page_size and (load["virtual_address"] - load["offset"]) % args.page_size == 0 for load in arm["load_segments"]):
+        raise BuildError("Producer ARM64 LOAD layout is not proven for the requested guest page size", "blocked")
+    guest_loader, guest_program = "/payload/ape-aarch64.elf", "/payload/进程 空格/native io.com"
+    payload = {"schema_version": 1, "page_size": args.page_size,
+               "files": [{**loader, "guest_path": guest_loader}, {**identity(args.artifact), "guest_path": guest_program}],
+               "commands": [{"case_id": "native-io.suite", "argv": [guest_loader, guest_program, "--suite", "--launcher", guest_loader],
+                             "expected_exit_code": 0, "expected_stderr": ""}]}
+    write_json(args.manifest, payload)
+    report.update(status="pass", reason="Same-byte Unicode/space I/O guest payload exported; guest execution not performed",
+                  manifest=identity(args.manifest), loader=loader)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run"))
+    parser.add_argument("operation", choices=("build", "run", "import-guest", "guest-manifest"))
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--build-report", type=Path)
+    parser.add_argument("--guest-report", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--page-size", type=int, choices=(4096, 65536), default=65536)
     parser.add_argument("--toolchain-cache", type=Path, default=ROOT / ".cache/toolchains/cosmocc")
     parser.add_argument("--helper-source-cache", type=Path, default=ROOT / ".cache/sources/ape-loader")
     parser.add_argument("--build-dir", type=Path, default=ROOT / ".cache/build")
@@ -279,7 +437,7 @@ def main():
     directory = args.report.parent / "evidence" / str(uuid.uuid4())
     directory.mkdir(parents=True)
     report = {"schema_version": 1, "report_kind": "native-io", "report_id": directory.name,
-              "scope": "build" if args.operation == "build" else "host",
+              "scope": {"build": "build", "run": "host", "import-guest": "guest", "guest-manifest": "manifest"}[args.operation],
               "started_at": now(), "finished_at": None, "status": "not_run", "m0_core_status": "not_run",
               "reason": "", "host": host_facts(), "ci": None, "qemu": None, "source": None,
               "toolchain": None, "build": None, "artifacts": [], "cases": [], "commands": [],
@@ -293,17 +451,24 @@ def main():
             "commit": "GITHUB_SHA", "runner_name": "RUNNER_NAME", "runner_os": "RUNNER_OS",
             "runner_arch": "RUNNER_ARCH", "image_os": "ImageOS", "image_version": "ImageVersion"}.items()}
     try:
-        if args.expected_os and args.expected_os != report["host"]["os"] or args.expected_arch and args.expected_arch != report["host"]["execution_arch"]:
+        if args.operation in ("run", "build") and (args.expected_os and args.expected_os != report["host"]["os"] or args.expected_arch and args.expected_arch != report["host"]["execution_arch"]):
             raise BuildError("Actual host OS/execution architecture differs from scheduled target")
         if args.operation == "run":
             consume(args, report, directory)
+        elif args.operation == "import-guest":
+            import_guest(args, report)
+        elif args.operation == "guest-manifest":
+            guest_manifest(args, report)
         else:
             build(args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
+    if "guest_execution_window" in report:
+        report["validation_finished_at"] = report["finished_at"]
+        report.update(report["guest_execution_window"])
     if not report["cases"] and report["status"] != "pass":
         report["cases"].append({"case_id": "native-io." + args.operation, "status": report["status"],
                                 "reason": report["reason"], "commands": report["commands"],

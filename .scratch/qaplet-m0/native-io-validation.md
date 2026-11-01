@@ -1,6 +1,6 @@
 # BOOT-07：Windows / Unix 原生 I/O 基线
 
-2026-11-01，`codex/m0-08-native-io` / `out/implement-spec/08` 实施，开工基于 integration `dc5c0c3`，已核验 ancestry；交付前合入最新 integration。状态保持 **claimed**：原生本地基线已实现，完整 native CI、ARM64 页组合和完整系统 guest 尚须真实运行；M0 Core 保持 `not_run`。这些探针不实现 Node、Reactor、Runtime 或 Embed SDK。
+2026-11-01，`codex/m0-08-native-io` / `out/implement-spec/08` 实施，开工基于 integration `dc5c0c3`，已核验 ancestry；交付前合入最新 integration。状态保持 **claimed**：原生本地基线与本地 ARM64 64K guest 已有实测，完整 native CI 与剩余页组合尚待验收；M0 Core 保持 `not_run`。这些探针不实现 Node、Reactor、Runtime 或 Embed SDK。
 
 ## 公共接口与身份
 
@@ -65,8 +65,28 @@ python3 scripts/native_io.py run \
 
 最终交付 producer 另从提交 `5d6b594` 对应的完整 recipe 重建并重新执行前后供应校验：`out/ticket08-delivery/build-info.json` / report ID `9c9cc788-8557-41a5-b547-0a206c898c54`，status pass。build SHA 为 `215c2524d3dc9ad0a8529c2f3d9bd66f66b5714f7d0b322be086d816553e4c53`，source/recipe 集合 SHA 为 `bd96fa00d2ec10c3d30a0a1a1b55a5d844f7fd286247c1d6649de87182079339`。独立复核全部记录源码/recipe 与当前字节相符，最终 APE 与上表基线 **完全相同 SHA-256/长度**。新 producer 又经 `out/ticket08-delivery/linux.json` 20/20、`windows.json` 21/21 实际通过；因此后续消费应使用 delivery producer，而历史 native/negative 报告继续保留。
 
+消费端随后增加一条 malformed producer identity 的红绿合同：匹配 artifact 摘要但 `source: null` 的输入原先触发 AttributeError 而无结构化报告；现在拒绝非对象 source/build 与非规范 SHA，并始终保留 fail evidence、commands 为空。此变更没有改变 C/APE 字节，两个宿主 focused contracts 增至 10/10。交付 producer 仍精确记录其 `5d6b594` 版本，host 报告的 runner 字段单列当前消费代码身份。
+
+随后 78 合同的完整复核保留一个既有 DrvFS 测试失败：`test_drvfs_cache_preserves_archive_modes_and_refuses_dirty_inputs_before_execution` 在 `/08/.cache/input-review-drvfs-r2uin60y/official-cache/` 将 `.candidate-u8nx7fw1` rename 为固定 fixture SHA 目录时返回 EACCES，堆栈定位既有 `test_nightly_toolchain.py:358`。之前 77 全检查通过；失败后独立 18 个工具链合同全部通过，但再次完整 78 复核在同一合同的初始 cache publish（`:314`）又出现 EACCES，目录为 `input-review-drvfs-8lf10xi1/cache/.candidate-9i1mg2a6`。**完整 run 可复现，独立 suite 未复现；根因未知，没有宣称修复或最终全检查通过**。所有 08 合同在两次 full run 均通过。没有修改生产重试、缓存权限策略或主固定输入缓存；该临时测试 fixture 由原合同自清理。最后 recorded full check 的退出 1、原始 stdout/stderr 与完整堆栈保存在 `out/ticket08-delivery/check-last/{command.json,make-check.stdout.log,make-check.stderr.log}`。该既有 04/05 验证问题单独交回 integration 处理，不以过滤此失败恢复绿色。
+
+消费端保留下载后权限语义：先验证原件与 Unicode fixture 的 SHA，再对私有 fixture 恢复 execute bit，记录 before/after mode 和 X_OK；POSIX 仍不可执行时 blocked。没有对未核对的原件运行 chmod，也不通过原生 helper 绕过 noexec 判定。
+
+## 07 修复后的新身份与完整系统 guest
+
+07 将 producer 接入共享 source-built loader / 保留 LOAD 对齐的 packer 后，生成独立新 APE：`../07/out/io-portable/artifacts/native-io.com`，982754 字节，SHA-256 `b5576c3ae0e9391266f69dfd523039a3e5de6dc2664b9f03d3c3fef8b215ecb9`。其 producer 为相邻 `build-info.json`；Linux / Windows 的旧 8d34081d 身份不用于证明这一新身份。新字节经 07 的本地 native Linux / ordinary Windows 和下面完整 guest 实际运行；08 当前 consumer 的全部 15 个公共 CLI 合同又在 Windows 和 Ubuntu 对此同一新身份通过。
+
+原始完整系统证据为 `../07/out/extended-unicode-guest-fixed.json`：Linux / AArch64 / kernel `6.8.0-147-generic-64k`，getconf 两个别名均 65536、smaps 64 KiB；QEMU 6.2.0 / TCG / `virt-6.2,gic-version=3` / cortex-a72。实际可执行路径为 `/payload/进程 空格/native io.com`，原生 posix_spawn 继续通过同一路径创建子进程，没有借 shell 变换 argv。guest lo/devpts/ptmx 与每条命令私有 TMPDIR 由 07 的通用 guest runner 创建、清理，08 没有重写 guest 基础设施。
+
+`native_io.py import-guest --build-report BUILD --artifact FILE --guest-report GUEST_JSON --report IO_JSON` 验证通用报告版本/通过状态、真实 guest 架构/三份页测量、完整系统 QEMU/TCG 和 kernel/config/rootfs/executable 身份、传输退出/清理、全部 payload 前后 SHA、同 producer 的程序/helper、Unicode/空格路径、无 shell 的确切 suite argv，以及原始 stdout/stderr 的长度/SHA/字节。随后与 native 消费端共用 REQUIRED / EXPECTED 和独立实际值判定；status 字符串本身不能把错误值变为通过。原始物理宿主保存在 host、guest 和 qemu 单列，`execution` 指向 emulated-system guest；importer 的 validation_host/validation_ci 与原执行分离，不把导入时间的 CI 身份写成 guest 执行身份。
+
+实际导入报告 `out/ticket08-guest/io-64k.json` / ID `b1694224-8f6c-4c8f-93c6-08e2dfeb1abb` 为 20/20 pass，原始 guest report SHA 为 `0467cdbecb163d51e29cfee96f932dd4f7d4df3a92c2430be80ba7acd9abce3e`。负向公开 CLI 合同对自洽 raw-log 副本删除 EOF case、篡改 guest 的运行后 SHA，以及将 `pipe.eof.actual.read` 改为 1 却保留 pass 标签，分别得到 not_run/fail/fail；没有执行 payload 或启动另一个 guest。
+
+`native_io.py guest-manifest --build-report BUILD --artifact FILE --loader ARM64_ELF --page-size 4096|65536 --manifest OUTPUT --report REPORT` 只导出 07 通用格式的两个文件和一个 `native-io.suite` 命令，核对原件/helper 摘要及目标页大小的 ARM64 LOAD congruence。scope 为 manifest、cases/commands 为空，成功只表示 payload 导出，不表示 guest 已执行。06 的自适应缺页调度将其与 startup/deep manifest 合并后运行同一个真实 guest。
+
+独立语义 checker 的实际红绿额外发现：Windows socket/pipe readiness 的原始 revents 为 256，Linux 为 1；不能把 Unix 的 POLLIN 数值固定用于 Windows。首次独立检查因此在 Windows 误报，原报告保留于 `out/native-contracts/native-io-cqi5zrf3/`；修正为 WinSock input mask 后，现有原始 native 结果与完整 guest 都通过。没有修改 C 程序、原始返回值或隐藏失败。
+
 ## 尚待验收
 
 本地 Windows x86_64 与 WSL Ubuntu x86_64 为 native / 4096 字节页。正式同摘要 native CI 五个 runner 由共享 `.github/workflows/m0.yml` 编排：Ubuntu producer 构建一次；五个消费 job 运行 startup 和 I/O，分别上传失败/原始日志。I/O 即使 startup 先失败也尝试采集，不在消费 job 编译。
 
-macOS x86_64、macOS ARM64、Linux ARM64 原生实际页配置及 ARM64 完整系统 guest 在此记录写入时尚未执行，保持待验。07 的 guest runner 需要 guest 内 lo UP、devpts 和 /dev/ptmx；不会开启宿主网络或重复实现 guest 基础设施。64K 修复会改变 artifact ID；届时必须重新生成同摘要宿主证据，不能沿用旧 artifact 的通过记录。完整 M0/08 在实际所需宿主、缺失页配置和聚合门禁完成前保持未关闭。
+macOS x86_64、macOS ARM64 与 Linux ARM64 原生实际页配置的 **I/O** 仍待同一新身份的 CI 实测；其他探针成功不能替代 I/O。ARM64 64K guest 的本地新身份结果已见上节，其他缺失页组合由 06 根据 native ARM 实际页大小补齐。完整 M0/08 在所需宿主、缺失页配置和聚合门禁完成前保持未关闭。

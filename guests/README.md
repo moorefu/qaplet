@@ -4,11 +4,19 @@
 metadata, plus QEMU 6.2.0, `virt-6.2,gic-version=3`, Cortex-A72 and single-thread
 TCG. The 64K kernel is `6.8.0-147-generic-64k`; the optional 4K profile is only
 metadata-identified until it is acquired and actually booted.
+Acquisition uses the official immutable snapshot `20261031T234300Z` for both
+metadata and packages. The moving ports index already changed during local
+validation; fresh snapshot metadata and a small ARM64 package matched the
+original locked bytes, and all five package URLs were available. No alternate
+URL or moving-metadata fallback is used.
 
 ```sh
 # Explicit network acquisition; run/verify never fetch or repair inputs.
 python3 scripts/arm64_guest.py fetch --cache .cache/guests --report out/guest-fetch.json
 python3 scripts/arm64_guest.py verify --cache .cache/guests --report out/guest-verify.json
+python3 scripts/arm64_guest.py prepare --cache .cache/guests --report out/guest-prepare.json
+python3 scripts/arm64_guest.py merge-manifests --input-manifest out/startup.json \
+  --input-manifest out/deep.json --manifest out/payload.json --report out/guest-merge.json
 python3 scripts/arm64_guest.py run --manifest out/payload.json \
   --cache .cache/guests --report out/guest.json
 ```
@@ -19,6 +27,9 @@ files are rechecked; the signed InRelease-to-Packages-to-package chain is
 verified offline with Ubuntu's archive keyring. Derived initramfs images live
 under `.cache/guests/build/<run-id>/`. Reports and raw serial/stdout/stderr logs
 live beside the selected output report in a unique evidence directory.
+`prepare` is offline and unpacks verified inputs without claiming a boot;
+`merge-manifests` combines command suites, deduplicates identical payload bytes,
+and rejects conflicting guest paths or duplicate case IDs before any tool runs.
 
 Manifest v1 contains `page_size`, nonempty `files` and nonempty `commands`:
 
