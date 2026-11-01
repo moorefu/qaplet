@@ -171,7 +171,9 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
 
 `python scripts/native_io.py run --build-report out/m0/io/build-info.json --artifact out/m0/io/artifacts/native-io.com --loader-dir out/m0/loaders --report out/io.json` 只消费 producer 摘要对应字节；Linux/macOS 使用 06 的 helpers.json 和 native loader，Windows 直接执行 PE。共享 measured-host 检查保留实际 CPU、执行架构、内核页大小及 macOS translation 观测。20 个必需 case 覆盖 socket/half-close、pipe/EOF/EPIPE、私有 PTY/ConPTY 的检测/修改/恢复/关闭、Unicode/空格路径/argv 的无隐式 shell spawn/wait、子进程 timeout/回收、pthread/TLS 和只读 ZipOS；Windows 另测独立 CONIN$ handle 的 CloseHandle/无效句柄。
 
-schema v1 report_kind 为 native-io，scope 为 build/host；缺项保留 not_run 且非通过，缺实际交互设施为 blocked，异常为 fail，limitation 必须有实测返回值和明确原因。`--probe-mode hang --timeout 1` 是实际负向 deadline fixture，成功清理后仍报告 fail。所有命令/原始日志和 fixture 身份保留在独立 evidence UUID。共享 M0 workflow 的 Ubuntu producer 一次生成并分发；五个 native job 只验证，startup 失败后仍尝试 I/O 并分别保留证据。完整记录和当前未测宿主见 [I/O 基线](../.scratch/qaplet-m0/native-io-validation.md)。
+schema v1 report_kind 为 native-io，scope 为 build/host/manifest/guest；缺项保留 not_run 且非通过，缺实际交互设施为 blocked，异常为 fail，limitation 必须有实测返回值和明确原因。`--probe-mode hang --timeout 1` 是实际负向 deadline fixture，成功清理后仍报告 fail。所有命令/原始日志和 fixture 身份保留在独立 evidence UUID。共享 M0 workflow 的 Ubuntu producer 一次生成并分发；五个 native job 只验证，startup 失败后仍尝试 I/O 并分别保留证据。完整记录和当前未测宿主见 [I/O 基线](../.scratch/qaplet-m0/native-io-validation.md)。
+
+`guest-manifest --build-report BUILD --artifact FILE --loader ARM64_ELF --page-size 65536 --manifest OUTPUT --report REPORT` 导出经过 SHA/LOAD 对齐验证的 Unicode/空格路径 payload（scope manifest，不运行 guest）；由 07 的 `merge-manifests` 和完整 guest runner 统一处理镜像、锁和启动。`import-guest --build-report BUILD --artifact FILE --guest-report GUEST_JSON --report IO_JSON` 复核实际 QEMU/guest/前后摘要/原始日志，再用 native 共用的 20 个必需值断言生成 scope guest 结果。host 保留真实 QEMU 物理宿主，execution/guest 明确 emulated-system 和实际页大小；不能作为物理 ARM64 或原生性能成绩。
 
 ## CI 查询与故障定位
 

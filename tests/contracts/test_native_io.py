@@ -13,6 +13,98 @@ CLI = ROOT / "scripts/native_io.py"
 
 
 class NativeIOContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit portable producer and guest helper required")
+    def test_guest_manifest_exports_same_bytes_and_explicit_unicode_argv(self):
+        producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
+        with tempfile.TemporaryDirectory(prefix="qaplet-io-manifest-") as temp:
+            work = Path(temp)
+            result = subprocess.run([sys.executable, CLI, "guest-manifest", "--build-report", producer,
+                                     "--artifact", producer.parent / "artifacts/native-io.com",
+                                     "--loader", producer.parent / "artifacts/ape-aarch64.elf", "--page-size", "65536",
+                                     "--manifest", work / "payload.json", "--report", work / "io.json"],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads((work / "payload.json").read_text())
+            self.assertEqual(payload["page_size"], 65536)
+            self.assertEqual(len(payload["files"]), 2)
+            self.assertEqual(payload["commands"][0]["argv"], ["/payload/ape-aarch64.elf", "/payload/进程 空格/native io.com",
+                                                            "--suite", "--launcher", "/payload/ape-aarch64.elf"])
+            self.assertEqual(payload["commands"][0]["expected_exit_code"], 0)
+            for item in payload["files"]:
+                self.assertEqual(hashlib.sha256(Path(item["path"]).read_bytes()).hexdigest(), item["sha256"])
+            report = json.loads((work / "io.json").read_text())
+            self.assertEqual(report["scope"], "manifest")
+            self.assertEqual(report["commands"], [])
+            self.assertEqual(report["cases"], [])
+
+    def changed_guest(self, mutate):
+        producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
+        source = Path(os.environ["QAPLET_TEST_IO_GUEST_REPORT"])
+        guest = json.loads(source.read_text())
+        parent = ROOT / "out/native-contracts"
+        parent.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="native-io-guest-negative-", dir=parent))
+        suite = next(c for c in guest["cases"] if "--suite" in c["argv"])
+        mutate(guest, suite)
+        logs = work / "evidence" / guest["report_id"]
+        logs.mkdir(parents=True)
+        for kind in ("stdout", "stderr"):
+            content = suite["actual"][kind].encode()
+            path = logs / Path(suite[kind + "_log"]["path"]).name
+            path.write_bytes(content)
+            suite[kind + "_log"].update(path=str(path), sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content))
+        (work / "guest.json").write_text(json.dumps(guest))
+        result = subprocess.run([sys.executable, CLI, "import-guest", "--artifact", producer.parent / "artifacts/native-io.com",
+                                 "--build-report", producer, "--guest-report", work / "guest.json", "--report", work / "io.json"],
+                                capture_output=True, text=True, timeout=30)
+        return result, json.loads((work / "io.json").read_text())
+
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit real full-system guest evidence required")
+    def test_guest_pass_label_cannot_hide_a_wrong_eof_value(self):
+        def mutate(guest, suite):
+            rows = [json.loads(line) for line in suite["actual"]["stdout"].splitlines()]
+            next(r for r in rows if r["case_id"] == "pipe.eof")["actual"]["read"] = 1
+            suite["actual"]["stdout"] = "".join(json.dumps(row) + "\n" for row in rows)
+        result, report = self.changed_guest(mutate)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(report["status"], "fail")
+        self.assertEqual(next(c for c in report["cases"] if c["case_id"] == "pipe.eof")["status"], "fail")
+
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit real full-system guest evidence required")
+    def test_guest_missing_case_and_changed_payload_hash_never_pass(self):
+        def missing(guest, suite):
+            rows = [json.loads(line) for line in suite["actual"]["stdout"].splitlines()]
+            suite["actual"]["stdout"] = "".join(json.dumps(row) + "\n" for row in rows if row["case_id"] != "pipe.eof")
+        result, report = self.changed_guest(missing)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(next(c for c in report["cases"] if c["case_id"] == "pipe.eof")["status"], "not_run")
+        def changed(guest, suite):
+            guest["guest"]["file_sha256_after"][suite["argv"][1]] = "1" * 64
+        result, report = self.changed_guest(changed)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("before/after SHA-256", report["reason"])
+
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit real full-system guest evidence required")
+    def test_real_full_system_guest_io_preserves_target_identity_and_all_cases(self):
+        producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
+        parent = ROOT / "out/native-contracts"
+        parent.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="native-io-guest-", dir=parent))
+        result = subprocess.run([sys.executable, CLI, "import-guest", "--artifact", producer.parent / "artifacts/native-io.com",
+                                 "--build-report", producer, "--guest-report", os.environ["QAPLET_TEST_IO_GUEST_REPORT"],
+                                 "--report", work / "io.json"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads((work / "io.json").read_text())
+        self.assertEqual(report["execution"]["execution_mode"], "emulated-system")
+        self.assertEqual(report["execution"]["execution_arch"], "aarch64")
+        self.assertEqual(report["execution"]["page_size"], 65536)
+        original = json.loads(Path(os.environ["QAPLET_TEST_IO_GUEST_REPORT"]).read_text())
+        self.assertEqual(report["started_at"], original["started_at"])
+        self.assertEqual(report["finished_at"], original["finished_at"])
+        self.assertEqual(len(report["cases"]), 20)
+        self.assertTrue(all(c["status"] == "pass" for c in report["cases"]))
+        self.assertEqual(report["commands"], [])  # Import never executes the guest payload again.
+
     def test_ci_never_compiles_io_in_a_consumer_job(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-io-ci-") as temp:
             work = Path(temp)
@@ -83,6 +175,18 @@ class NativeIOContract(unittest.TestCase):
             self.assertTrue((work / "io.json").is_file(), result.stdout + result.stderr)
             report = json.loads((work / "io.json").read_text())
             self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["commands"], [])
+
+    def test_missing_full_system_guest_evidence_is_blocked(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-io-guest-missing-") as temp:
+            work = Path(temp)
+            result = subprocess.run([sys.executable, CLI, "import-guest", "--artifact", work / "missing.com",
+                                     "--build-report", work / "missing-build.json", "--guest-report", work / "missing-guest.json",
+                                     "--report", work / "io.json"], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertTrue((work / "io.json").is_file(), result.stdout + result.stderr)
+            report = json.loads((work / "io.json").read_text())
+            self.assertEqual(report["status"], "blocked")
             self.assertEqual(report["commands"], [])
 
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_PRODUCER"), "explicit Ubuntu-built native I/O artifact required")
