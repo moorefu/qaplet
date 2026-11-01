@@ -68,6 +68,23 @@ def without_paths(value):
     return value
 
 
+def guest_requirements(page_size):
+    """The page-gap payload contract; this does not attest an OS execution."""
+    require(page_size in (4096, 65536), "Guests only cover required ARM64 4096/65536 configurations")
+    deep = ("pages64k.facts", "pages64k.suite", "pages64k.shell-header") if page_size == 65536 else ()
+    return {"families": ("startup", "io", "pages64k") if deep else ("startup", "io"),
+            "case_ids": tuple(entry[0] for entry in STARTUP_CASES) + ("native-io.suite",) + deep}
+
+
+def arm64_page_gaps(native_pages, guest_pages):
+    """Apply QEMU-only-for-missing-pages policy to already measured page sets."""
+    native, guests = set(native_pages), set(guest_pages)
+    require(native, "Actual native Linux ARM64 measurement required before QEMU supplementation")
+    require(all(type(page) is int and page > 0 for page in native) and guests <= {4096, 65536}, "Invalid measured ARM64 page configuration")
+    require(not native & guests, "QEMU cannot replace an available native page configuration")
+    return tuple(sorted({4096, 65536} - native - guests))
+
+
 class Evidence:
     """One explicit resolver for original POSIX/Windows paths and moved archives."""
 
@@ -468,8 +485,21 @@ class Gate:
         require(qemu["acceleration"] == "tcg,thread=single" and qemu["machine"] == lock["qemu"]["machine"] and
                 qemu["cpu"] == lock["qemu"]["cpu"] and ("QEMU emulator version " + lock["qemu"]["version"]) in qemu["version"], "Full-system locked QEMU/TCG required")
         require(qemu["guest_arch"] == "aarch64" and qemu["host_arch"] == item["host"]["execution_arch"], "QEMU architecture mismatch")
+        require(qemu["image_page_code"] == {4096: 1, 65536: 3}[page], "Guest Image page flag contradicts actual page configuration")
+        expected_profile = profile
+        if not {"image", "config"} <= set(profile):
+            supplemental_path = ROOT / "guests/arm64-derived.lock.json"
+            supplemental = read_json(supplemental_path)
+            require(supplemental["schema_version"] == 1 and supplemental["kind"] == "arm64-package-derived-identities" and
+                    supplemental["guest_lock_sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Derived guest identities are not bound to canonical package lock")
+            expected_profile = supplemental["profiles"][str(page)]
+            expected_packages = {name: {key: lock["packages"][name][key] for key in ("sha256", "size_bytes")} for name in profile["packages"]}
+            require(expected_profile["packages"] == expected_packages and expected_profile["kernel_release"] == profile["kernel_release"], "Derived guest identities use different pinned packages")
+            require(same(qemu["compressed_kernel"], expected_profile["compressed_kernel"]), "Guest compressed kernel identity mismatch")
+            self.output.setdefault("guest_derivations", {})[str(page)] = {"supplement_sha256": digest(supplemental_path.read_bytes()),
+                "source_lock_sha256": supplemental["guest_lock_sha256"], "derivation": supplemental["derivation"], "identities": expected_profile}
         for field, locked in (("kernel", "image"), ("config", "config")):
-            require(same(qemu[field], profile[locked]), "Guest kernel/config identity mismatch")
+            require(same(qemu[field], expected_profile[locked]), "Guest kernel/config identity mismatch")
         for field in ("rootfs", "executable", "compressed_kernel"):
             require(re.fullmatch(r"[0-9a-f]{64}", qemu[field]["sha256"]) and qemu[field]["size_bytes"] > 0, "Missing QEMU/guest provenance: " + field)
         self.evidence.read(qemu["init"])
@@ -517,11 +547,14 @@ class Gate:
         files = unique(item["files"], "guest_path")
         expected_hashes = {path: info["sha256"] for path, info in files.items()}
         require(hashes == after == expected_hashes == facts["file_sha256"] == facts["file_sha256_after"], "Guest payload before/after transport mismatch")
-        for family in self.artifacts.values():
-            for artifact in family.values():
+        requirements = guest_requirements(page)
+        for family in requirements["families"]:
+            for artifact in self.artifacts[family].values():
                 found = [entry for entry in files.values() if same(entry, artifact)]
                 require(len(found) == 1, "Guest lacks selected Core payload")
                 self.evidence.read(found[0])
+        require("/payload/ape-aarch64.elf" in files and same(files["/payload/ape-aarch64.elf"], self.producers["startup"]["portable_helpers"]["loader"]), "Guest loader differs from selected producer")
+        self.evidence.read(files["/payload/ape-aarch64.elf"])
         cases = unique(item["cases"])
         require(set(cases) == set(records), "Guest serial/raw case coverage mismatch")
         for name, case in cases.items():
@@ -538,15 +571,28 @@ class Gate:
                              for case_id, name, arguments, _ in STARTUP_CASES}
         io_path = next(path for path, info in files.items() if same(info, self.artifacts["io"]["native-io"]))
         expected_commands["native-io.suite"] = ["/payload/ape-aarch64.elf", io_path, "--suite", "--launcher", "/payload/ape-aarch64.elf"]
-        expected_commands.update({"pages64k." + name: ["/payload/ape-aarch64.elf", "/payload/pages64k.com", "--" + name] for name in ("facts", "suite")})
-        expected_commands["pages64k.shell-header"] = ["/payload/busybox", "sh", "/payload/pages64k.com", "--facts"]
+        if page == 65536:
+            expected_commands.update({"pages64k." + name: ["/payload/ape-aarch64.elf", "/payload/pages64k.com", "--" + name] for name in ("facts", "suite")})
+            expected_commands["pages64k.shell-header"] = ["/payload/busybox", "sh", "/payload/pages64k.com", "--facts"]
+        require(set(expected_commands) == set(requirements["case_ids"]), "Guest required catalog is inconsistent")
         require(set(cases) == set(expected_commands) and all(case["argv"] == expected_commands[name] for name, case in cases.items()), "Guest invocation catalog mismatch")
+        execution = {"os": facts["os"], "execution_arch": facts["architecture"], "page_size": page}
+        for case_id, name, _, kind in STARTUP_CASES:
+            case = cases[case_id]
+            require(case["exit_code"] != 137 and evaluate_case(case_id, name, kind, execution, {**case, "timed_out": False},
+                    case["actual"]["stdout"], case["actual"]["stderr"], self.artifacts["startup"][name])["status"] == "pass", "Guest startup semantic contract failed")
+        suite = cases["native-io.suite"]
+        require(suite["exit_code"] == 0 and not suite["actual"]["stderr"], "Guest I/O suite did not exit cleanly")
+        observations = unique([json.loads(line) for line in suite["actual"]["stdout"].splitlines() if line.strip()])
+        require(set(observations) == IO_REQUIRED and all(row["status"] == "pass" and matches_contract(row, execution) for row in observations.values()), "Guest raw I/O semantics/coverage failed")
         self.guests[key] = item
         return item
 
     def deep(self, reference):
         item = self.evidence.report(reference, "pages64k-validation")
         producer = self.producers["pages64k"]
+        self.evidence.read(item["producer"])
+        require(same(item["producer"], self.identity(self.producer_paths[producer["report_id"]])), "64K selected producer report identity mismatch")
         require(same(item["artifact"], producer["artifacts"][0]) and item["build"] == producer["build"] and item["toolchain"] == producer["toolchain"], "64K producer identity mismatch")
         if item.get("guest_report"):
             guest = self.guest(item["guest_report"])
@@ -561,6 +607,7 @@ class Gate:
             stdout = suite["actual"]["stdout"]
         else:
             host = item["host"]
+            require(not item.get("guest") and not item.get("qemu"), "64K native execution cannot carry an emulated guest identity")
             require(host["os"] == "Linux" and host["cpu"] == host["execution_arch"] == "aarch64" and
                     host["execution_mode"] == "native" and host["page_size"] == 65536 and host["kernel"], "64K native execution requires actual Linux/ARM64/65536")
             executions = unique(item["executions"])
@@ -612,8 +659,7 @@ class Gate:
             for reference in self.manifest[field]:
                 method(reference)
         for family in ("startup", "io"):
-            require(self.native_arm[family], "Actual native Linux ARM64 measurement required before QEMU supplementation")
-            require(not self.native_arm[family] & self.guest_arm[family], "QEMU cannot replace an available native page configuration")
+            require(not arm64_page_gaps(self.native_arm[family], self.guest_arm[family]), "Missing required ARM64 page target execution: " + family)
         for slot in self.coverage.values():
             require(slot["startup"] and slot["io"], "Missing required target execution: " + slot["target"])
         self.offline(self.manifest["offline_report"])
@@ -770,20 +816,34 @@ class Gate:
             "scope": "Actual pair rebuilt the selected Hello/eval and fixed inputs. Current raw recipe fingerprint was not rebuilt; only check_ci AST differs. Independent CI helper identities remain distinct."}
 
 
-def evaluate(input_manifest):
+def evaluate(input_manifest, guest_report=None):
     report = {"schema_version": 1, "report_kind": "m0-core-gate", "report_id": str(uuid.uuid4()), "scope": "full",
               "started_at": now(), "finished_at": None,
               "core": {"status": "fail", "errors": []}, "svc": {"status": "not_run", "reports": []}}
     gate = None
     manifest = {}
+    verdict = report["core"]
+    if guest_report is not None:
+        report.update(report_kind="m0-guest-validation", scope="guest-transport")
+        report["core"]["status"] = "not_run"
+        verdict = report["guest_validation"] = {"status": "fail", "errors": []}
     try:
         manifest = read_json(Path(input_manifest))
         report["selected_inputs"] = manifest
-        gate = Gate(manifest, Path(input_manifest).resolve().parent, report["core"])
-        gate.run()
-        report["core"]["status"] = "pass"
+        gate = Gate(manifest, Path(input_manifest).resolve().parent, verdict)
+        if guest_report is None:
+            gate.run()
+        else:
+            gate.producer_paths = {}
+            selected_guest = gate.evidence.json(str(guest_report))
+            for family in guest_requirements(selected_guest["guest"]["page_size"])["families"]:
+                gate.producer(family, manifest["producers"][family])
+            incoming = gate.guest({"path": str(guest_report)})
+            verdict.update(report_id=incoming["report_id"], host=incoming["host"], guest=incoming["guest"],
+                           qemu=incoming["qemu"], cases=incoming["cases"], cleanup=incoming["cleanup"])
+        verdict["status"] = "pass"
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration, BuildError, zipfile.BadZipFile) as error:
-        report["core"]["errors"].append(type(error).__name__ + ": " + str(error))
+        verdict["errors"].append(type(error).__name__ + ": " + str(error))
     finally:
         if gate:
             report["evidence_index"] = list(gate.evidence.index.values())
@@ -813,20 +873,23 @@ def evaluate(input_manifest):
         report["svc"] = {"status": service_status([*services, *capabilities.values()]), "reports": services,
                          "capabilities": capabilities, "core_blocking": False}
         report["finished_at"] = now()
-        report["status"] = report["m0_core_status"] = report["core"]["status"]
+        report["status"], report["m0_core_status"] = verdict["status"], report["core"]["status"]
     return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("evaluate",))
+    parser.add_argument("operation", choices=("evaluate", "validate-guest"))
     parser.add_argument("--input-manifest", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--guest-report", type=Path)
     args = parser.parse_args()
-    report = evaluate(args.input_manifest)
+    if (args.operation == "validate-guest") != bool(args.guest_report):
+        parser.error("validate-guest requires --guest-report; evaluate does not accept it")
+    report = evaluate(args.input_manifest, args.guest_report)
     write_json(args.report, report)
-    print(json.dumps({"core": report["core"]["status"], "report": str(args.report)}))
-    return 0 if report["core"]["status"] == "pass" else 1
+    print(json.dumps({"status": report["status"], "core": report["core"]["status"], "report": str(args.report)}))
+    return 0 if report["status"] == "pass" else 1
 
 
 if __name__ == "__main__":

@@ -247,3 +247,7 @@ gate 从既有权威 case catalog 检查七项 startup、20/21 项 I/O、12 项 
 同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。当前 recipe 对比保留测试/当前两套原始 fingerprint，仅 `check_ci` AST 差异不冒称额外断网执行。
 
 完整实际 manifest、通过报告、红绿及负向回归见 [10 验收](../.scratch/qaplet-m0/core-evidence-gate-validation.md)。标准 `make check` 不自动寻找历史 `out/`；真实 consumer 回归须显式设置 `QAPLET_GATE_MANIFEST`。供应/build 配方不因新增 consumer 而改变。
+
+guest catalog 按实际目标页大小选择：4096 仅需要 Hello/eval + I/O、七项 startup 和一个 I/O suite；65536 另需 deep payload、facts/suite/shell-header 三条入口。`arm64_page_gaps` 只对已测页集合实施补缺规则：native 65536 可由4096 guest补缺，native 16384 需4096和65536两个guest；该纯调度模型不声明这些硬件已实际执行。
+
+`python scripts/core_gate.py validate-guest --input-manifest FILE --guest-report GUEST --report OUTPUT` 是独立 guest transport/原始语义检查入口。它只消费该页配置所需的 producer，成功时 `status: pass`、`scope: guest-transport`，但 `core.status` 和 `m0_core_status` 都为 `not_run`，不能代替完整 `evaluate`。4K profile 原 lock 只固定 Debian packages；补充 `guests/arm64-derived.lock.json` 将独立从这些 SHA-verified package tar members 解出的 Image/config/compressed kernel 身份固定，并绑定原 lock 摘要/精确 package IDs；错误派生摘要仍拒绝，不从报告任意非空字段恢复通过。原 canonical lock 和已有65536证据不改写。

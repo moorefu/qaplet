@@ -61,8 +61,16 @@ Core汇总报告、可追溯索引、link/import审计、许可/来源清单、�
 
 ## Answer
 
+Fresh merge review reopened this ticket: valid 4096 page-gap guests carry startup/I/O only, while the first consumer required the 65536 deep payload on every guest. The corrected implementation and actual locked4096 proof are recorded below; earlier pass/results remain historical evidence and are not deleted.
+
 完整 `scripts/core_gate.py evaluate` consumer 已实现并以实际 CI1129 / offline09 数据通过，Core pass / exit 0。主工作区保留 `out/m0-integration/core-gate/{inputs,inputs-linux,core-gate,core-gate-linux}.json`、425个 offline snapshot files 和仅两对被比较的 helper 产品；原报告与失败日志不改写。三类 producer、175项 startup/I/O/deep、617项 rehashed evidence、14个 ZIP transport、16项实际 offline cases 可追溯。SCM 与 Job 本地/独立CI状态指针各自保留，不进入Core阻断集合。
 
 TDD 真实 consumer 19/19 通过，含超过40种副本注入及重新打包/更新摘要后的语义拒绝。Ubuntu 最终 `make check` 135 tests / 0 failures / 43 explicit skips，static checks 和实际 C bootstrap 均 pass；Ubuntu 另行消费同一原始证据 pass，Windows 全量 consumer pass。原始 stdout/stderr、测试 red/green 和最终日志位于 `out/implement-spec/10/out/`；有真实数据的 integration suite 由 `QAPLET_GATE_MANIFEST` 显式启用，没有模拟正向 Core 验收。已并入最新 integration `31cb3b9`；未更改任何 Core producer 配方、工具链或 workflow。
 
 测试/当前 recipe inventory、每个 build 自己的 helper SHA、旧/新 I/O/deep 身份分别保留，原始真实断网 pair 不被冒称为新 fingerprint 的重构。实际许可清单、libc source unproven、network TLS unknown/unverified 与 M4 待办公开。完整输入合同、原始身份、已测宿主及限制见[验收记录](../core-evidence-gate-validation.md)和[开发入口](../../../docs/development.md#boot-09--完整-core-evidence-consumer)。正式 Runtime/SDK/API 与服务业务不在本票范围。
+
+### Fresh merge correction
+
+4096 guest现在只要求startup/I/O payload和8条实际入口；65536继续要求deep payload和11条入口。原canonical guest lock未变，新supplement以精确已签名packageIDs固定独立tar-stream派生的4K Image/config/compressed身份，错误摘要/页flag仍拒绝。真实4K guest UUID `4836647a-ac6a-4bb2-b8d8-a1d36a6e2838`、SHA `1070a35bbe6e965a42f0d0f2613c8e95c8afb1dc5755669db1540d4fa947dad7`，七startup/20I/O使用原CI1129产品通过；无新C构建。公共 `validate-guest` 返回guest scope pass、Core not_run；不能伪装完整矩阵。纯调度模型覆盖native64K+4Kguest、native16K+双guest，没有伪造这些native执行。
+
+修正后最终public consumer 26/26、Ubuntu `make check` 142 tests / 0 failures / 46 explicit skips；Windows和Ubuntu的真实4K scoped validator及原完整1129 gate均pass。完整Core仍为175 cases，新索引618项（新增deep producer引用校验）；原19/19、135/43和red日志保留。新报告为主工作区 `out/m0-integration/core-gate/core-gate-corrected.json` / `core-gate-linux-corrected.json`；4K全部命令、串口、派生、获取和scope结果位于 `guest4096/`。最终日志 `out/implement-spec/10/out/core-tests-corrected-final.log`、`check-corrected-final.{stdout,stderr}.log`。最新integration `31cb3b9`已在本分支，待fresh merger。
