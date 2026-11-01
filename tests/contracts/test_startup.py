@@ -169,7 +169,7 @@ class StartupContract(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             report = json.loads((work / "report.json").read_text())
             self.assertEqual(report["status"], "pass")
-            self.assertEqual(len(report["cases"]), 7)
+            self.assertEqual(len(report["cases"]), 17)
             cases = {case["case_id"]: case for case in report["cases"]}
             self.assertEqual(cases["quickjs-eval.value"]["actual"]["stdout"], "42\n")
             self.assertEqual(cases["quickjs-eval.pointer-roundtrip"]["actual"]["stdout"], "JSValue pointer round-trip: pass\n")

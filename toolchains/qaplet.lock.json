@@ -1,6 +1,6 @@
 {
   "schema": "qaplet.toolchain-lock.v3",
-  "lock_state": "selected_pending_validation",
+  "lock_state": "pinned",
   "manifests": {
     "quickjs": {
       "path": "third_party/quickjs/source.lock.json",
@@ -73,8 +73,8 @@
     },
     {
       "path": "scripts/build_ape.py",
-      "sha256": "be3ab0535a54eee90989ea31520652a02795bf9047ad3bb88a4e20d3a00788e8",
-      "size_bytes": 35141
+      "sha256": "922b80d4590606bd17e4a526f3b2e70c990f3c8542ec647cada6a9f0f6825b70",
+      "size_bytes": 36285
     },
     {
       "path": "scripts/evidence.py",
@@ -118,8 +118,8 @@
     },
     {
       "path": "tests/native/quickjs_eval.c",
-      "sha256": "5979f5154f2a63e64e15f80663649875461860e172bb9362e85939d49dfcd40b",
-      "size_bytes": 2136
+      "sha256": "b2418b6c94a3947803aeafd97ec7b538e87770b67f7e60e43279a0faaca750bd",
+      "size_bytes": 7481
     }
   ],
   "selection": {

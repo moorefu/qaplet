@@ -27,6 +27,20 @@ OBJECT_LIFECYCLE_EXPRESSION = ('(() => { let total=0; for(let round=0;round<20;r
     'const a=Array.from({length:1000},(_,i)=>({n:i,s:"value"+i})); '
     'const m=new Map(a.map(o=>[o.s,o])); '
     'total += Array.from(m.values()).reduce((s,o)=>s+o.n,0); } return total; })()')
+# Fixed micro-host fixtures, shared by producer, native/guest startup and Core.
+# Each tuple is (case suffix, argv, exact stdout, required stderr substring).
+M0A_CASES = (
+    ("esm-export", ["--esm-export"], "42\n", None),
+    ("esm-dependency", ["--esm-dependency"], "42\n", None),
+    ("esm-missing", ["--esm-missing"], None, "m0 module unavailable: m0:missing"),
+    ("esm-syntax", ["--esm-syntax"], None, "SyntaxError:"),
+    ("esm-exception", ["--esm-exception"], None, "Error: m0-module-eval"),
+    ("jobs-complete", ["--jobs-complete"], "42\n", None),
+    ("jobs-exception", ["--jobs-exception"], None, "InternalError: m0-job-exception"),
+    ("jobs-rejection", ["--jobs-rejection"], None, "Error: m0-job-rejection"),
+    ("jobs-unfinished", ["--jobs-unfinished"], None, "m0 Promise unfinished"),
+    ("jobs-budget", ["--jobs-budget"], None, "m0 job budget exceeded"),
+)
 FORBIDDEN = re.compile(r"\b(?:__imp_)?(?:OpenSCManager[AW]?|CreateService[AW]?|OpenService[AW]?|"
                        r"StartService[AW]?|StartServiceCtrlDispatcher[AW]?|RegisterServiceCtrlHandler(?:Ex)?[AW]?|"
                        r"SetServiceStatus|ControlService(?:Ex)?[AW]?|DeleteService|ChangeServiceConfig\w*|"
@@ -286,11 +300,14 @@ def build(args, report, directory):
             native_case(args, report, directory, tree, artifact, "syntax-error", ["("], 1, error="SyntaxError:")
             native_case(args, report, directory, tree, artifact, "pointer-roundtrip", ["--pointer-check"], expected_output="JSValue pointer round-trip: pass\n")
             native_case(args, report, directory, tree, artifact, "objects-lifecycle", [OBJECT_LIFECYCLE_EXPRESSION], expected_output="9990000\n")
+            for suffix, arguments, expected_output, error in M0A_CASES:
+                native_case(args, report, directory, tree, artifact, suffix, arguments,
+                            1 if error else 0, expected_output=expected_output, error=error)
     # Detect any mutation of either supplier cache during the actual build.
     verify_inputs(args, report, directory, stage="after")
     recheck_native_toolchain(report["native_toolchain"], Path(report["native_toolchain"]["original_tree"]),
                              component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
-    report.update(status="pass", reason="Two fat APE probes built, audited, and executed locally; ARM64 runtime and full M0 matrix not run")
+    report.update(status="pass", reason="Two fat APE probes built/audited; 17 native Ubuntu startup/eval/ESM/jobs cases passed; full M0 matrix not run")
 
 
 def publish_ape(work, output, name, helpers, helper_source):

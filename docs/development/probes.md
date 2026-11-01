@@ -84,6 +84,8 @@ make toolchain-fetch TOOLCHAIN_ARCHIVE=/path/to/original-artifact.zip \
 
 生成文件为 `artifacts/{hello,quickjs-eval}.com`、`.com.dbg`、`.aarch64.elf`、`.{x86_64,aarch64}.map` 和 `.build-commands.log`。Hello 输出包含 `probe`、编译执行架构和 `sysconf` 页大小的 JSON；eval 的 `--facts` 输出同样事实，默认求值 `6 * 7` 输出 `42`，一个参数作为 JS 表达式；异常和语法错误向 stderr 写出异常，Ubuntu 实测退出 `1`。跨宿主应断言错误语义及非零状态，并记录各宿主实际值（Windows 预检观测 256）。两探针通过锁定的原生 ELF APE loader 运行；WSLInterop/binding 状态记录在 build-info，不修改全局注册。
 
+03 在同一 `quickjs-eval` 增加 `--esm-export`、`--esm-dependency`、`--jobs-complete`，均从真实模块/Promise 取得 `42`。固定模块 loader 只提供内嵌 `m0:dependency`，不读取文件或网络。`--esm-missing`、`--esm-syntax`、`--esm-exception`、`--jobs-exception`、`--jobs-rejection`、`--jobs-unfinished`、`--jobs-budget` 分别验证加载、解析、求值、pending job、未处理 rejection、无可运行 job 的 pending Promise 与 256-job 上限，均须空 stdout、对应 stderr 和非零退出。外层进程时限继续由共享命令入口执行。该 fixture 不是产品 resolver、完整 TLA 合同或 SDK；[实际范围](../../.scratch/qaplet-v15-alignment/esm-promise-validation.md)限于已执行环境。
+
 最小引擎使用 `quickjs.c dtoa.c libregexp.c libunicode.c cutils.c`，`-Os -fwrapv -D_GNU_SOURCE` 和 VERSION 中的 `CONFIG_VERSION`；不定义 `CONFIG_TEMPORAL_INTL`，不启用 LTO。05 初次构建的空 patch 清单是历史输入；07 实际 ARM64 运行发现 47-bit pointer truncation 后，在同一 Bellard pin 上追加有序 header overlay，改用上游已有的完整指针表示，见下节。自有探针是 M0 验证程序，不是 Runtime/Embed SDK。所有服务专属导入（SCM / Job Object 等）均由两个 CPU 的符号、map 和最终 PE imports 拒绝；常规 libc 进程/线程能力可出现。
 
 独立审计：`python3 scripts/build_ape.py inspect --artifact out/m0/artifacts/hello.com --expected-sha256 <expected> --report out/inspect.json`。预期摘要先于工具执行比较；之后读取相邻的两个 sidecar 和 CPU map，缺失 slice/文件、坏边界或服务符号均失败。完整实际构建合同可显式运行 `QAPLET_TEST_SOURCE_CACHE=/path/to/cache make check OUT=out/check-native`；普通 `make check` 不会下载或强制每次重编大输入。
@@ -100,9 +102,9 @@ python scripts/startup.py run --build-report out/m0/build-info.json \
   --report out/startup/startup.json
 ```
 
-`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。每个宿主执行七项：Hello/eval facts、42、JSValue pointer roundtrip、object/Map 分配与销毁、异常和语法错误。helper `build --producer-report BUILD` 将 07 producer 的独立 source-built ARM64 loader 绑定到分发 bundle。
+`--expected-os` / `--expected-arch` 可把调度声明与实测身份比对。每个宿主执行 17 项：原七项 Hello/eval facts、42、JSValue pointer roundtrip、object/Map、异常/语法错误，加上上述十项 ESM/jobs。builder、startup 和 Core 消费同一用例清单；旧七项成绩不签发新增合同。helper `build --producer-report BUILD` 将 producer 的独立 source-built ARM64 loader 绑定到分发 bundle。
 
-`page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核七项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
+`page-gaps --input-report NATIVE --github-output FILE --report PLAN` 只根据实测 native Linux ARM64 页大小调度：4K 补 64K、64K 补 4K、16K 或缺报告补两项；失败的 native startup 保留失败，不用 guest 成功覆盖。`guest-manifest --page-size 65536 --manifest out/guest.json` 仅导出 07 generic guest payload，不声明运行。共享 `merge-manifests` 合并 startup 与 I/O，64K 另含 deep probe；实际 `arm64_guest.py run` 后，`startup.py import-guest --guest-report GUEST` 独立复核 17 项语义、producer/loader/传输前后摘要、TCG/guest 身份、原始日志和清理。原始日志随 report 的 `evidence/<report-id>/` 迁移后仍可导入。
 
 `matrix` 用重复的 `--input-report` 或 `--input-dir` 汇总六目标，保留同目标的失败和非目标页大小观测；缺项保持 blocked。五 native CI、仅补缺页的完整系统 guest 和最终 matrix 均消费同一 Ubuntu producer 字节；失败仍上传原始证据。完整 CI `41271366261` 已通过，native Linux ARM64 实测 4096，完整系统 guest 仅补 65536；见 [06 验收](../../.scratch/qaplet-m0/cross-host-startup-validation.md)及 [Core gate](../../.scratch/qaplet-m0/core-evidence-gate-validation.md)。
 

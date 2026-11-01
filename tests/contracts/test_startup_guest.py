@@ -33,7 +33,7 @@ class StartupGuestContract(unittest.TestCase):
             result = self.invoke(*arguments, "--report", work / "intact.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             manifest = json.loads((work / "manifest.json").read_text())
-            self.assertEqual(len(manifest["commands"]), 7)
+            self.assertEqual(len(manifest["commands"]), 17)
             self.assertIn("quickjs-eval.pointer-roundtrip", [item["case_id"] for item in manifest["commands"]])
             changed = bytearray(loader.read_bytes())
             changed[-1] ^= 1
@@ -111,7 +111,7 @@ class StartupGuestContract(unittest.TestCase):
         self.assertEqual(report["qemu"], original["qemu"])
         self.assertEqual(report["validation_host"]["execution_arch"], original["host"]["execution_arch"])
         cases = {case["case_id"]: case for case in report["cases"]}
-        self.assertEqual(len(cases), 7)
+        self.assertEqual(len(cases), 17)
         self.assertEqual(cases["quickjs-eval.pointer-roundtrip"]["actual"]["stdout"], "JSValue pointer round-trip: pass\n")
         self.assertEqual(cases["quickjs-eval.objects-lifecycle"]["actual"]["stdout"], "9990000\n")
         self.assertEqual(cases["quickjs-eval.value"]["actual"]["stdout"], "42\n")

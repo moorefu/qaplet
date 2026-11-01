@@ -17,13 +17,13 @@ class GuestPageCatalog(unittest.TestCase):
     def test_4k_guest_requires_startup_and_io_without_64k_deep_commands(self):
         catalog = core_gate.guest_requirements(4096)
         self.assertEqual(catalog["families"], ("startup", "io"))
-        self.assertEqual(len(catalog["case_ids"]), 8)
+        self.assertEqual(len(catalog["case_ids"]), 18)
         self.assertNotIn("pages64k.suite", catalog["case_ids"])
 
     def test_64k_guest_also_requires_all_three_deep_entry_commands(self):
         catalog = core_gate.guest_requirements(65536)
         self.assertEqual(catalog["families"], ("startup", "io", "pages64k"))
-        self.assertEqual(len(catalog["case_ids"]), 11)
+        self.assertEqual(len(catalog["case_ids"]), 21)
         self.assertTrue({"pages64k.facts", "pages64k.suite", "pages64k.shell-header"} <= set(catalog["case_ids"]))
 
     def test_page_gap_model_accepts_native_64k_or_native_16k_with_both_guests(self):
