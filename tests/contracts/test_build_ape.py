@@ -86,7 +86,7 @@ class BuildAPEContract(unittest.TestCase):
                                      *self.native_cache_options(),
                                      "--output-dir", str(work / "artifacts"),
                                      "--report", str(work / "build.json")],
-                                    capture_output=True, text=True, timeout=600)
+                                    capture_output=True, text=True, timeout=900)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             report = json.loads((work / "build.json").read_text())
             self.assertEqual(report["status"], "pass")
@@ -105,7 +105,7 @@ class BuildAPEContract(unittest.TestCase):
                 observed = subprocess.run([sys.executable, str(CLI), "inspect", "--artifact", str(artifact),
                                            *self.native_cache_options(),
                                            "--report", str(work / "inspect.json")],
-                                          capture_output=True, text=True, timeout=90)
+                                          capture_output=True, text=True, timeout=360)
                 return observed, json.loads((work / "inspect.json").read_text())
 
             with self.subTest("intact artifact can be independently inspected"):
@@ -144,7 +144,7 @@ class BuildAPEContract(unittest.TestCase):
                                      "--source-cache", os.environ["QAPLET_TEST_SOURCE_CACHE"],
                                      *self.native_cache_options(),
                                      "--output-dir", str(work / "artifacts"), "--report", str(work / "build.json")],
-                                    capture_output=True, text=True, timeout=90)
+                                    capture_output=True, text=True, timeout=360)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             report = json.loads((work / "build.json").read_text())
             self.assertEqual(report["status"], "fail")

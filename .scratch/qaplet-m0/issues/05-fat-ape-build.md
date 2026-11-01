@@ -26,10 +26,10 @@ foundation C/QuickJS 探针、APE 构建规则、私有补丁 overlay 和 build-
 
 ## Acceptance criteria
 
-- [ ] 两个制品均有可重放构建命令、输入身份、CPU slice/header 检查和独立 SHA-256。
-- [ ] QuickJS 探针验证确定性表达式的结果和异常/错误退出路径；最小 create/eval/destroy 只服务于探针。
-- [ ] 构建与可执行入口不依赖旧项目代码或预编译运行时；所有必要补丁都通过源码清单。
-- [ ] Core 探针及其链接记录不含 SCM、Job Object 或服务配置实现。
+- [x] 两个制品均有可重放构建命令、输入身份、CPU slice/header 检查和独立 SHA-256。
+- [x] QuickJS 探针验证确定性表达式的结果和异常/错误退出路径；最小 create/eval/destroy 只服务于探针。
+- [x] 构建与可执行入口不依赖旧项目代码或预编译运行时；所有必要补丁都通过源码清单。
+- [x] Core 探针及其链接记录不含 SCM、Job Object 或服务配置实现。
 - [ ] 本地可执行用例有真实日志；ARM64 slices 存在不等同 ARM64 运行通过，native/补缺QEMU跨宿主证据交给后续任务；先本地探索构建失败，CI复用相同配方重现并分发同一摘要制品，不在测试job重新编译冒充同一文件。
 
 ## Tests
@@ -58,3 +58,5 @@ Hello 与 eval 产物、build-info、源码/工具链/补丁身份、编译日�
 ## Comments
 
 2026-11-01：ticket 05 implementer 已领取；分支 `codex/m0-05-fat-ape`，基于 integration `cf0d125`。按已确认的 CLI / 原生行为 / evidence seam 执行 TDD。
+
+2026-11-01：本地实现完成；最终 Ubuntu 构建使用主仓库 `.cache/{quickjs,toolchains/cosmocc,build}`，两个 fat APE 和五项实际运行/错误路径通过，迁移前后字节一致。完整身份、headers/双 CPU maps、符号/PE 导入与原始日志见[BOOT-04A 验收记录](../fat-ape-build-validation.md)。`make build-ape` 和独立 `m0.yml` 共用配方，测试 job 再编译由静态合同拒绝。保持 claimed，等待 integration 实际 Ubuntu CI 完成锁定原归档获取、构建与原字节 artifact 上传后由 coordinator 关闭；本地成功不冒充 CI 成功。

@@ -36,7 +36,23 @@
 
 ## Ubuntu / 仓库缓存要求
 
-用户后续明确所有产品构建统一在 Ubuntu，其他平台只做制品与 SDK 验证；缓存实际数据统一仓库 `.cache/`，不得将 `.cache` 链接到仓库外。实现默认值因此为 `.cache/quickjs`、`.cache/toolchains/cosmocc`、`.cache/build/<report-id>`；worktree 显式指向主仓库同名目录，报告/分发制品仍在 `out/`。迁移后的最终复核结果将在下节记录，历史 home/ext4 结果不作为新缓存能力的证明。
+用户后续明确所有产品构建统一在 Ubuntu，其他平台只做制品与 SDK 验证；缓存实际数据统一仓库 `.cache/`，不得将 `.cache` 链接到仓库外。实现默认值因此为 `.cache/quickjs`、`.cache/toolchains/cosmocc`、`.cache/build/<report-id>`；worktree 显式指向主仓库同名目录，报告/分发制品仍在 `out/`。
+
+迁移后在 Ubuntu 实际执行：
+
+```sh
+make build-ape \
+  QUICKJS_CACHE=/mnt/d/Workspace/dairn/qaplet/.cache/quickjs \
+  TOOLCHAIN_CACHE=/mnt/d/Workspace/dairn/qaplet/.cache/toolchains/cosmocc \
+  APE_BUILD_DIR=/mnt/d/Workspace/dairn/qaplet/.cache/build \
+  OUT=out/ticket05/canonical
+```
+
+结果 `pass`，报告为 `out/implement-spec/05/out/ticket05/canonical/build-info.json`，report ID `80c4e13b-17e4-4f39-9cee-13f1415358c0`；真实中间文件全部在主仓库 `.cache/build/<id>/`。源码、工具链前后四次离线验证全部通过，五个原生 case 和双 CPU headers/maps/imports 全部通过；两个最终 APE 的大小和 SHA 与上表完全相同。构建配方及实际输入身份集合摘要为 `147fcf3ac9ef91a15517f5f2b5302af3205afdd0866a36d076c843bc6d4c5e9e`。自有探针文件摘要与实际 argv 在报告内。
+
+Nightly 输入报告记录实际 `9p` / `/mnt/d` / `drvfs-no-metadata-v1`：文件可无写权限，目录无写位和非执行位不可按 POSIX 表示；原 ZIP、所有内容/类型/link、可写文件拒绝仍启用，并保留完整 chmod 探针记录。构建前完整 Nightly 校验约 74 秒，构建后约 55 秒，均在 300 秒边界内。源锁、工具链锁和原 ZIP 身份未改变。嵌套 GNU 工具的自解包 loader 缓存在同一 `.cache/build/<id>/tmp/.ape-1.10`，实测 SHA `bf65f331e87544761b8ed3a2c03a61c1b61072c8776b689a67b06f50eefd546f` 与锁中 ELF loader 相同；不依赖旧 home 缓存中的实际数据。
+
+迁移后的原 ZIP 另经 `fetch_locked_toolchain.py` 的已有归档路径实际验证通过，报告 `out/implement-spec/05/out/ticket05/canonical-archive.json`。它证明锁中原字节仍然一致，尚不能代替真实 CI 中跨仓库鉴权和下载的验收。
 
 ## CI 与后续上下文
 
