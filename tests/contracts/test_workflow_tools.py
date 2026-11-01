@@ -219,6 +219,25 @@ class WorktreeContextCLI(unittest.TestCase):
 
 
 class CIEvidenceCLI(unittest.TestCase):
+    def test_invalid_selection_cannot_write_a_failure_report_over_an_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "out").mkdir()
+            archive = repo / "out/original.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("original.txt", "keep")
+            original = archive.read_bytes()
+            config = repo / "out/selection.json"
+            config.write_text(json.dumps({"schema_version": 1, "artifacts": [{"id": 17, "name": "original",
+                "archive": {"path": "original.zip", "sha256": "a" * 63, "size_bytes": len(original)}}]}), encoding="utf-8")
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/ci_evidence.py"), "fetch",
+                                     "--repo", str(repo), "--manifest", str(config), "--output-dir", str(repo / "out/extracted"),
+                                     "--report", str(archive)], capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(archive.read_bytes(), original)
+            self.assertIsNone(json.loads(result.stdout)["report"])
+
     def test_summary_cannot_overwrite_its_source_report(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "source.json"
