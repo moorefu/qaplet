@@ -30,7 +30,7 @@ class CITiersContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-contract-") as temp:
             work = Path(temp)
             original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
-            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal"):
+            for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "skip_seal", "skip_core_consumer"):
                 value = json.loads(json.dumps(original))
                 if mutation == "missing_core":
                     del value["jobs"]["full-core"]
@@ -42,8 +42,10 @@ class CITiersContract(unittest.TestCase):
                     next(step for step in value["jobs"]["arm64-page-gaps"]["steps"] if "scripts/arm64_guest.py run" in step.get("run", ""))["continue-on-error"] = True
                 elif mutation == "empty_native":
                     value["jobs"]["native-startup"]["strategy"]["matrix"]["include"] = []
-                else:
+                elif mutation == "skip_seal":
                     next(step for step in value["jobs"]["build"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
+                else:
+                    next(step for step in value["jobs"]["full-core"]["steps"] if "scripts/core_gate.py evaluate" in step.get("run", ""))["if"] = "${{ false }}"
                 path = work / "workflow.json"
                 path.write_text(json.dumps(value))
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
