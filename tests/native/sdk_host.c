@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 int sdk_promises(void);
+int sdk_modules(const char *, const char *);
 int sdk_budgets(void);
 
 #define CHECK(condition) do { if (!(condition)) { \
@@ -68,6 +69,7 @@ static int lifetime(void) {
   CHECK(snapshot.lifecycle == QAPLET_OPEN && snapshot.phase == QAPLET_PHASE_IDLE);
   CHECK(snapshot.limits.engine_heap_bytes == 67108864 && snapshot.limits.engine_stack_bytes == 1048576);
   CHECK(snapshot.limits.native_storage_bytes == 16777216 && snapshot.limits.source_bytes == 4194304);
+  CHECK(snapshot.limits.module_count == 256 && snapshot.limits.source_cache_bytes == 33554432);
   CHECK(snapshot.engine_current_bytes > 0 && snapshot.engine_current_bytes <= snapshot.engine_peak_bytes);
   CHECK(snapshot.native_current_bytes > 0 && snapshot.native_current_bytes <= snapshot.native_peak_bytes);
   CHECK(qaplet_destroy(runtime, NULL) == QAPLET_BAD_STATE);
@@ -231,6 +233,7 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && (!strcmp(argv[1], "--modules") || !strncmp(argv[1], "--module-", 9))) return sdk_modules(argv[2], argv[1]);
   if (argc == 1) {
     qaplet_config config = QAPLET_CONFIG_INIT;
     qaplet_runtime *runtime = NULL;

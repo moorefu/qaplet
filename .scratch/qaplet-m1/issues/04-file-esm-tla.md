@@ -4,9 +4,9 @@
 
 **Blocked by:** [03：Promise 与 jobs 的显式分步执行](03-promise-job-pump.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** completed；2026-11-02 在 `codex/m1-04` 实现真实文件 ESM、统一规范注册表、首次元信息、TLA/pump 与有限源码计量；合入 02/07 后，最终同字节 SDK/C Host 的 22 项在 Ubuntu、Windows x64 与 ARM64 64K 完整 guest 均通过。[验收与原始证据](../04-file-modules-validation.md)。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 通过真实源码文件运行静态依赖、动态 import、可完成 TLA 及已支持循环用例，结果与副作用可观察。
-- [ ] 入口相对路径用创建时 cwd，依赖相对路径用导入模块；内存动态 import 使用显式 base URL。
-- [ ] file 规范身份和统一注册表保证成功模块只求值一次，不能用重复原始 Eval 冒充缓存。
-- [ ] import.meta.url/main 按首次实例化规则初始化，模块 run 不桥接整个 namespace。
-- [ ] 有限单源码、源码缓存及模块计量接入既有存储基础，新能力有实际 C Host 证据。
+- [x] 通过真实源码文件运行静态依赖、动态 import、可完成 TLA 及已支持循环用例，结果与副作用可观察。
+- [x] 入口相对路径用创建时 cwd，依赖相对路径用导入模块；内存动态 import 使用显式 base URL。
+- [x] file 规范身份和统一注册表保证成功模块只求值一次，不能用重复原始 Eval 冒充缓存。
+- [x] import.meta.url/main 按首次实例化规则初始化，模块 run 不桥接整个 namespace。
+- [x] 有限单源码、源码缓存及模块计量接入既有存储基础，新能力有实际 C Host 证据。
 
 ## Validation and evidence
 
@@ -37,4 +37,12 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：先记录公开 C Host red/green 文件模块切片；随后合入 02 的严格值/诊断与 07 的共享执行账本。最终 source `2f15dd6aa90e7466bf89e1a6b81c3fba064c0da8` 已在构建前提交；`out/m1-04/combined/build.json` 为最终 Ubuntu producer，`run.json` 与 `check.json` 通过。父任务收到 READY 后，以相同 SDK/APE/真实模块文件在普通用户 Windows 和 ARM64 64K guest 各运行全部 22 项并通过。扩展失败/路径拒绝及 NUL overlay 由 05 验证；本票不声明完整 M1 Cross/Full 或发布就绪。
+
+## Answer
+
+新增公开 `qaplet_run_entry` 与 `qaplet_eval_with_base`，文件模块能力位为 8。`src/modules.c` 在递归 compile-only 解析前保留规范身份，持有真实源码和编译模块值；显式 run 复用模块求值 Promise，不重复原始 Eval、不桥接 namespace。首次 `import.meta.url/main`、创建 cwd、依赖基准、支持的函数循环、动态 import/TLA 与 PENDING/close 由供应静态 SDK 的纯 C Host 实际观察。默认单源码 4 MiB、源码缓存 32 MiB、256 模块，并公开计量；新 ESM 预算用例验证跨 pump 配额、宿主等待期限、模块循环中断和原生存储失败首因。
+
+最终 22 项在 Ubuntu x64/4K、Windows x64/4K 与完整系统仿真 ARM64/64K 全部通过，无本票用例 skip。准确 producer、SDK/APE/recipe 身份、原始 red/green、命令和各宿主记录见[验收记录](../04-file-modules-validation.md)。其他 M1 票、物理 ARM64/macOS 和发布门禁保持各自范围。
 

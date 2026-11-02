@@ -254,7 +254,8 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
   static const char *const messages[] = {
     "OK", "INVALID_ARGUMENT", "ABI_MISMATCH", "WRONG_THREAD", "BUSY", "BAD_STATE",
     "UNSUPPORTED", "JS_EXCEPTION", "VALUE_TYPE_UNSUPPORTED", "BUFFER_TOO_SMALL",
-    "SOURCE_TOO_LARGE", "MEMORY_LIMIT", "INVALID_UTF8", "VALUE_TOO_LARGE"
+    "SOURCE_TOO_LARGE", "MEMORY_LIMIT", "INVALID_UTF8", "VALUE_TOO_LARGE",
+    "MODULE_RESOLVE", "MODULE_LOAD", "MODULE_LIMIT"
   };
   if (diagnostic) {
     const char *message = (unsigned)code < sizeof(messages)/sizeof(messages[0]) ? messages[code] :

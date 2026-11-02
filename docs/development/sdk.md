@@ -8,7 +8,7 @@ Before publication, creation installs only engine intrinsics: no user JavaScript
 Host modules or external native resources run. Failed creation therefore reclaims
 outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
-Query capability bits before using a feature; modules, host modules, events and
+Query capability bits before using a feature; host modules, events and
 stop are added by subsequent M1 tickets.
 
 Promise/jobs capability adds explicit owner-driven `qaplet_pump`. An accepted
@@ -19,6 +19,25 @@ the Runtime for reuse. Only genuine Promises are waited on, without consulting
 thenable getters or Promise constructors. Closing a PENDING execution releases
 its references and remaining jobs without running user cleanup JavaScript.
 
+File-module capability adds `qaplet_run_entry` for real source ESM. The loader
+resolves dependencies against their importer and entry paths against the cwd
+captured at creation. It retains canonical realpath file URLs, source bytes,
+compiled module values and known failures in one registry until close. Cached
+modules keep their first `import.meta.url/main`, even if later run explicitly.
+`qaplet_eval_with_base` gives a Script an explicit absolute file URL for relative
+dynamic imports; ordinary eval has no relative import base. Run results are
+undefined and do not assimilate the module namespace, including an export named
+`then`. Actual module evaluation Promises and TLA use the same explicit pump.
+
+Finite defaults are 256 module identities, 4 MiB per source and 32 MiB retained
+module source bytes. Snapshots expose module/source-cache counts; repeat cache
+hits do not charge again. Discoverable root source-size refusals preserve the
+previous completed result. Close releases registry/source/engine references;
+the immutable cwd configuration stays in the CLOSED handle's native baseline
+until destroy. The SDK distribution includes the actual `sdk/modules` source
+fixtures used by the public C Host, so supplied consumers need no rebuild.
+File runs and Script imports with an explicit base start the same execution
+ledger as ordinary eval, including TLA jobs, host waits and module body loops.
 Execution budgets use one absolute monotonic deadline (default 30,000 ms) and
 one cumulative dispatch limit (default 100,000 jobs), preserved across PENDING
 and every pump. `qaplet_config.limits` configures finite instance maxima;

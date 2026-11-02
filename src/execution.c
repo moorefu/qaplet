@@ -176,8 +176,8 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
       if (!runtime->execution_code) {
         if (state == JS_PROMISE_REJECTED) {
           qaplet_capture_exception(runtime, value);
-          runtime->execution_code = QAPLET_JS_EXCEPTION;
-        } else runtime->execution_code = qaplet_store_scalar(runtime, value);
+          runtime->execution_code = qaplet_module_exception_code(runtime, value);
+        } else if (!runtime->module_execution) runtime->execution_code = qaplet_store_scalar(runtime, value);
       }
       JS_FreeValue(runtime->context, value);
     }
@@ -185,13 +185,14 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
   if (!JS_IsJobPending(runtime->engine)) {
     if (runtime->rejections && !runtime->execution_code) {
       qaplet_capture_exception(runtime, runtime->rejections->reason);
-      runtime->execution_code = QAPLET_JS_EXCEPTION;
+      runtime->execution_code = qaplet_module_exception_code(runtime, runtime->rejections->reason);
     }
     /* Includes the entry Promise's tracker record. It has already been
      * classified above, and must not resurface in a later execution. */
     clear_rejections(runtime);
     if (runtime->execution_code) pending = 0;
     if (!pending) {
+      qaplet_modules_complete(runtime);
       JS_FreeValue(runtime->context, runtime->entry_promise);
       runtime->entry_promise = JS_UNDEFINED;
     }
@@ -244,7 +245,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
       JSValue exception = JS_GetException(context);
       if (!qaplet_execution_check(runtime) && !runtime->execution_code) {
         qaplet_capture_exception(runtime, exception);
-        runtime->execution_code = QAPLET_JS_EXCEPTION;
+        runtime->execution_code = qaplet_module_exception_code(runtime, exception);
       }
       JS_FreeValue(context, exception);
     }

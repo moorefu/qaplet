@@ -7,6 +7,8 @@
 
 typedef union qaplet_allocation qaplet_allocation;
 typedef struct qaplet_rejection qaplet_rejection;
+typedef struct qaplet_module qaplet_module;
+typedef struct qaplet_module_alias qaplet_module_alias;
 struct qaplet_runtime {
   pthread_t owner;
   pthread_mutex_t mutex;
@@ -27,6 +29,12 @@ struct qaplet_runtime {
   JSValue entry_promise;
   qaplet_code execution_code;
   qaplet_rejection *rejections;
+  char *initial_cwd;
+  qaplet_module *modules, *active_module;
+  qaplet_module_alias *module_aliases;
+  JSValue module_exception;
+  qaplet_code module_exception_code;
+  int module_execution;
   uint64_t execution_deadline_ns;
   uint64_t execution_dispatch_limit;
   int execution_active;
@@ -45,6 +53,11 @@ qaplet_code qaplet_report_result(qaplet_runtime *, qaplet_diagnostic *, qaplet_c
 qaplet_code qaplet_execution_checkpoint(qaplet_runtime *, qaplet_progress *, unsigned);
 void qaplet_execution_init(qaplet_runtime *);
 void qaplet_execution_dispose(qaplet_runtime *);
+qaplet_code qaplet_modules_init(qaplet_runtime *);
+void qaplet_modules_dispose(qaplet_runtime *);
+void qaplet_modules_complete(qaplet_runtime *);
+qaplet_code qaplet_module_exception_code(qaplet_runtime *, JSValueConst);
+qaplet_code qaplet_eval_filename(qaplet_runtime *, const char *, size_t, const char *, qaplet_progress *, qaplet_diagnostic *);
 /* The caller owns the Runtime and has completed call preflight. */
 qaplet_code qaplet_check_execution_options(const qaplet_runtime *, const qaplet_execution_options *);
 qaplet_code qaplet_execution_begin(qaplet_runtime *, const qaplet_execution_options *);
