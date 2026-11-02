@@ -5,12 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/utsname.h>
+#include <unistd.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public close contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
 } } while (0)
 
-typedef struct { unsigned calls, forbidden, reentry; FILE *resource; } binding;
+typedef struct { unsigned calls, forbidden, reentry; FILE *resource; char resource_path[8192]; } binding;
 
 static qaplet_code observe(qaplet_runtime *runtime, uint64_t call, size_t argc,
                             const qaplet_value *argv, void *opaque) {
@@ -32,7 +34,18 @@ static qaplet_code forbidden(qaplet_runtime *runtime, uint64_t call, size_t argc
 }
 
 static int register_binding(qaplet_runtime *runtime, binding *host) {
-  host->resource = tmpfile();
+  /* This libc's tmpfile fails for native Windows relative-backslash argv[0].
+   * Use the measured native TEMP fixture boundary, as module-policy does. */
+  struct utsname facts;
+  CHECK(!uname(&facts));
+  const char *root = !strcmp(facts.sysname, "Windows") ? getenv("TEMP") : "/tmp";
+  CHECK(root && *root);
+  int length = snprintf(host->resource_path, sizeof(host->resource_path), "%s/qaplet-close-XXXXXX", root);
+  CHECK(length > 0 && (size_t)length < sizeof(host->resource_path));
+  int descriptor = mkstemp(host->resource_path);
+  CHECK(descriptor >= 0);
+  host->resource = fdopen(descriptor, "w+b");
+  if (!host->resource) { close(descriptor); unlink(host->resource_path); }
   CHECK(host->resource);
   qaplet_host_export items[] = {QAPLET_HOST_EXPORT_INIT, QAPLET_HOST_EXPORT_INIT};
   items[0].name = "observe"; items[0].name_length = 7; items[0].kind = QAPLET_HOST_FUNCTION;
@@ -89,6 +102,7 @@ static int verify_closed(qaplet_runtime *runtime, binding *host, qaplet_code rea
    * Host closes them before final handle release. SDK never owns this FILE. */
   CHECK(!fflush(host->resource) && ftell(host->resource) == 1 && !fclose(host->resource));
   host->resource = NULL;
+  CHECK(!unlink(host->resource_path));
   return 0;
 }
 
