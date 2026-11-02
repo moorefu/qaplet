@@ -222,25 +222,16 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
 
 qaplet_code qaplet_eval(qaplet_runtime *runtime, const char *source, size_t length,
                        qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return qaplet_eval_filename(runtime, source, length, "<eval>", progress, diagnostic);
-}
-
-static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size_t length,
-                               const char *filename, const qaplet_execution_options *options,
-                               qaplet_progress *progress, qaplet_diagnostic *diagnostic);
-
-qaplet_code qaplet_eval_filename(qaplet_runtime *runtime, const char *source, size_t length,
-                                const char *filename, qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return eval_source(runtime, source, length, filename, NULL, progress, diagnostic);
+  return qaplet_eval_filename(runtime, source, length, "<eval>", NULL, progress, diagnostic);
 }
 
 qaplet_code qaplet_eval_with_options(qaplet_runtime *runtime, const char *source, size_t length,
                                     const qaplet_execution_options *options,
                                     qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return eval_source(runtime, source, length, "<eval>", options, progress, diagnostic);
+  return qaplet_eval_filename(runtime, source, length, "<eval>", options, progress, diagnostic);
 }
 
-static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size_t length,
+qaplet_code qaplet_eval_filename(qaplet_runtime *runtime, const char *source, size_t length,
                                const char *filename, const qaplet_execution_options *options,
                                qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
   qaplet_code code = qaplet_check_diagnostic(diagnostic);

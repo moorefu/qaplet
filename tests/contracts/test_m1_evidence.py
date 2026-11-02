@@ -360,6 +360,36 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertNotEqual(process.returncode, 0)
             self.assertEqual(path.read_bytes(), before, "Strict output replaced original selected report")
 
+    def test_report_output_cannot_replace_selected_original_archives_including_m0(self):
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        for nested in (False, True):
+            with self.subTest(nested_m0=nested), fixture() as root:
+                root = root.resolve()
+                manifest = json.loads(json.dumps(original))
+                selected = json.loads(selected_path(manifest, manifest["m0_manifest"]).read_text()) if nested else manifest
+                provider = Path(selected["transports"][0]["archive"]["path"])
+                before = hashlib.sha256(provider.read_bytes()).hexdigest()
+                archive = root / "cloned-provider-original.zip"
+                shutil.copyfile(provider, archive)
+                selected["transports"][0]["archive"]["path"] = str(archive)
+                if nested:
+                    m0 = root / "m0-inputs.json"
+                    write(m0, selected)
+                    manifest["m0_manifest"] = str(m0)
+                inputs, config = root / "inputs.json", root / "config.json"
+                write(inputs, manifest)
+                write(config, {"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(inputs)})
+                process = subprocess.run([sys.executable, str(ROOT / "scripts/check_evidence.py"), "--config", str(config),
+                    "--report", str(archive)], capture_output=True, text=True, timeout=30)
+                write(root / "preservation.json", {"before_sha256": before,
+                    "clone_after_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                    "provider_after_sha256": hashlib.sha256(provider.read_bytes()).hexdigest(), "exit_code": process.returncode})
+                self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), before)
+                self.assertEqual(hashlib.sha256(provider.read_bytes()).hexdigest(), before)
+                self.assertNotEqual(process.returncode, 0)
+                self.assertIn("immutable", process.stdout)
+                self.assertFalse((root / "evidence").exists(), "Collision began evidence execution")
+
     def test_repacked_sdk_audit_must_inspect_its_selected_cpu_sidecar(self):
         manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
         with fixture() as root:

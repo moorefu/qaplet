@@ -120,10 +120,7 @@ struct qaplet_rejection {
 static void release_rejection(qaplet_runtime *runtime, qaplet_rejection *entry) {
   JS_FreeValue(runtime->context, entry->promise);
   JS_FreeValue(runtime->context, entry->reason);
-  free(entry);
-  pthread_mutex_lock(&runtime->mutex);
-  runtime->snapshot.native_current_bytes -= sizeof(*entry);
-  pthread_mutex_unlock(&runtime->mutex);
+  qaplet_native_free(runtime, entry, sizeof(*entry));
 }
 
 static void clear_rejections(qaplet_runtime *runtime) {
@@ -149,19 +146,8 @@ static void rejection_tracker(JSContext *context, JSValueConst promise,
     return;
   }
   if (*slot) return;
-  pthread_mutex_lock(&runtime->mutex);
-  qaplet_rejection *entry = NULL;
-  if (sizeof(*entry) <= runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes)
-    entry = malloc(sizeof(*entry));
-  if (!entry) {
-    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
-    pthread_mutex_unlock(&runtime->mutex);
-    return;
-  }
-  runtime->snapshot.native_current_bytes += sizeof(*entry);
-  if (runtime->snapshot.native_current_bytes > runtime->snapshot.native_peak_bytes)
-    runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
-  pthread_mutex_unlock(&runtime->mutex);
+  qaplet_rejection *entry = qaplet_native_alloc(runtime, sizeof(*entry));
+  if (!entry) return;
   entry->promise = JS_DupValue(context, promise);
   entry->reason = JS_DupValue(context, reason);
   entry->next = NULL;

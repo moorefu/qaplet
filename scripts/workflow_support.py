@@ -41,6 +41,72 @@ def local_path(value, parent):
     return (path if path.is_absolute() else parent / path).resolve()
 
 
+def guard_evidence_outputs(outputs, selections, roots=(), files=()):
+    """Refuse immutable-input collisions before a consumer creates any output.
+
+    This inspects selection metadata only, never validates/extracts transports or
+    executes evidence. Nested M0 selections use their own manifest directory.
+    Malformed/nonregular inputs retain the consumer's normal diagnostic path.
+    """
+    protected = {Path(path).resolve() for path in files if path is not None}
+    directories, visited = {Path(root).resolve() for root in roots}, set()
+
+    def inspect(path):
+        path = Path(path).resolve()
+        protected.add(path)
+        if path in visited or not path.is_file():
+            return
+        visited.add(path)
+        try:
+            value = read_json(path)
+        except (OSError, ValueError, UnicodeError):
+            return
+
+        def reference(item):
+            item = item.get("path") if isinstance(item, dict) else item
+            if isinstance(item, str) and item and "\x00" not in item:
+                protected.add(local_path(item, path.parent))
+
+        def selection(node):
+            if not isinstance(node, dict):
+                return
+            # Only selection edges are relevant. Do not resolve thousands of
+            # original per-log path mappings or walk producer/toolchain internals.
+            transports = node.get("transports", [])
+            for row in transports if isinstance(transports, list) else []:
+                if isinstance(row, dict):
+                    reference(row.get("archive"))
+                    if isinstance(row.get("root"), str):
+                        directories.add(local_path(row["root"], path.parent))
+            if isinstance(node.get("distribution_root"), str):
+                directories.add(local_path(node["distribution_root"], path.parent))
+            for key, item in node.items():
+                if key in ("input_manifest", "m0_manifest", "guest_manifest", "selection", "publication_inputs") and isinstance(item, str):
+                    inspect(local_path(item, path.parent))
+                elif key in ("provider_catalog", "selection", "manifest", "m0_original_manifest") or key.endswith("_report"):
+                    reference(item)
+                elif key.endswith("_reports") or key in ("reports", "distribution", "artifacts"):
+                    if isinstance(item, list):
+                        for entry in item:
+                            reference(entry)
+                elif key == "producers" and isinstance(item, dict):
+                    for entry in item.values():
+                        reference(entry)
+                elif key == "sdk_guest":
+                    selection(item)
+        selection(value)
+
+    for selection in selections:
+        if selection is not None:
+            inspect(selection)
+    for output in outputs:
+        if output is None:
+            continue
+        target = Path(output).resolve()
+        if target in protected or any(target.is_relative_to(root) for root in directories):
+            raise ValueError("Output may not replace selected immutable inputs or provider transport bytes")
+
+
 def git_read(repo, *arguments):
     process = subprocess.run(["git", "-c", "safe.directory=" + str(Path(repo).resolve()),
                               "-c", "core.quotepath=false", "-C", str(repo), *arguments],

@@ -10,13 +10,13 @@ import sys
 import unittest
 import uuid
 
-from workflow_support import identity, local_path, now, read_json, write_json
+from workflow_support import guard_evidence_outputs, identity, local_path, now, read_json, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("test_core_gate", "test_core_gate_pages", "test_ape_publication", "test_recipe_comparison")
 SELECTION = {"input_manifest": "QAPLET_GATE_MANIFEST", "guest_report": "QAPLET_GATE_4K_GUEST",
              "publication_inputs": "QAPLET_PUBLICATION_REPORTS", "guest_manifest": "QAPLET_GATE_4K_MANIFEST"}
-M1_MODULES = ("test_m1_evidence", "test_sdk_guest.ActualSDKGuestImport")
+M1_MODULES = ("test_m1_evidence", "test_sdk_guest.ActualSDKGuestImport", "test_evidence_preservation")
 
 
 def selection(config, value=None):
@@ -83,23 +83,12 @@ def run(config, output, preflight_only=False):
     # Inspect regular selection files before writing anything. FIFO inputs keep
     # the existing early progress report contract. A refused destination must
     # never be used even for the failure report itself.
-    try:
-        protected, roots = [config.resolve()], []
-        if config.is_file():
-            configuration = read_json(config)
-            if configuration.get("profile") == "m1-evidence" and configuration.get("input_manifest"):
-                inputs = local_path(configuration["input_manifest"], config.resolve().parent)
-                protected.append(inputs)
-                if inputs.is_file():
-                    manifest = read_json(inputs)
-                    protected.extend(local_path(manifest[key], inputs.parent) for key in ("provider_catalog", "m0_manifest") if key in manifest)
-                    roots = [local_path(row["root"], inputs.parent) for row in manifest.get("transports", [])]
-        if output.resolve() in protected or any(output.resolve().is_relative_to(root) for root in roots):
-            report.update(status="fail", reason="Report may not replace selected immutable inputs or provider transport bytes", finished_at=now())
-            return report
-    except (OSError, ValueError, KeyError, TypeError):
-        pass  # The normal configuration failure below retains its report.
     directory = output.resolve().parent / "evidence" / uuid.uuid4().hex
+    try:
+        guard_evidence_outputs([output, directory], [config])
+    except ValueError as error:
+        report.update(status="fail", reason=str(error), finished_at=now())
+        return report
     directory.mkdir(parents=True)
     progress = directory / "progress.json"
     report["progress"] = str(progress)
@@ -159,7 +148,8 @@ def run(config, output, preflight_only=False):
         else:
             sys.path.insert(0, str(ROOT / "tests/contracts"))
             loader = unittest.TestLoader()
-            modules = M1_MODULES if m1 and manifest["sdk_guest"] is not None else M1_MODULES[:1] if m1 else MODULES
+            modules = tuple(name for name in M1_MODULES if manifest["sdk_guest"] is not None or
+                            name != "test_sdk_guest.ActualSDKGuestImport") if m1 else MODULES
             report["regression_sources"] = [identity(ROOT / "tests/contracts" / (name.split(".")[0] + ".py")) for name in modules]
             suite = loader.loadTestsFromNames(modules)
             expected = suite.countTestCases()

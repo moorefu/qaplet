@@ -114,7 +114,6 @@ static int application(const char *entry, const char *mode) {
   REQUIRE(!pthread_mutex_init(&state.mutex,NULL) && !pthread_cond_init(&state.changed,NULL));
   qaplet_config config=QAPLET_CONFIG_INIT;
   qaplet_string argument={mode,strlen(mode)}; config.argv=&argument; config.argc=1;
-  if (!strcmp(mode,"deadline")) config.limits.execution_timeout_ms=20;
   if (!strcmp(mode,"queue-full")) config.limits.event_queue_slots=1;
   qaplet_diagnostic diagnostic=QAPLET_DIAGNOSTIC_INIT;
   diagnostic.message=message; diagnostic.capacity=sizeof(message);
@@ -132,7 +131,11 @@ static int application(const char *entry, const char *mode) {
     code=qaplet_register_host_module(state.runtime,&module,&diagnostic);
   }
   qaplet_progress progress=QAPLET_PROGRESS_INIT;
-  if (!code) code=qaplet_run_entry(state.runtime,entry,strlen(entry),&progress,&diagnostic);
+  qaplet_execution_options execution=QAPLET_EXECUTION_OPTIONS_INIT;
+  /* Keep the Runtime maxima and tighten only this module execution. Zero
+   * fields inherit the finite instance limits, including through every pump. */
+  if (!strcmp(mode,"deadline")) execution.timeout_ms=20;
+  if (!code) code=qaplet_run_entry_with_options(state.runtime,entry,strlen(entry),&execution,&progress,&diagnostic);
   if (!code) code=settle(state.runtime,&progress,&diagnostic);
   if (!code && progress.phase==QAPLET_PHASE_PENDING) {
     REQUIRE(!pthread_create(&thread,NULL,produce,&state)); started=1;

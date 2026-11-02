@@ -175,7 +175,13 @@ ledger as ordinary eval, including TLA jobs, host waits and module body loops.
 Execution budgets use one absolute monotonic deadline (default 30,000 ms) and
 one cumulative dispatch limit (default 100,000 jobs), preserved across PENDING
 and every pump. `qaplet_config.limits` configures finite instance maxima;
-`qaplet_eval_with_options` can only tighten them for that execution. NULL or zero
+`qaplet_eval_with_options`, `qaplet_run_entry_with_options`, and the combined
+`qaplet_eval_with_base_and_options` can only tighten them for that execution.
+The original module/base calls remain ABI 1 default-options conveniences.
+Rejected options preserve the previous result, state and module/source cache;
+the packaged `host-modules.c` exercises invalid structures/over-max values,
+zero/default options, cached runs, PENDING refusal priority and both tightened
+cross-pump dispatch and host-wait deadlines. NULL or zero
 options inherit the instance maxima. Exhaustion returns `DEADLINE_EXCEEDED` or
 `DISPATCH_LIMIT` and permanently marks the Runtime FAILED, including when async
 machinery turns an engine interruption into a rejection. The allocator and

@@ -17,6 +17,7 @@ from input_lock import consume_identity, check_portable_helper
 from nightly_toolchain import write_json
 import sdk
 from startup import ci_facts, check_ci_commit
+from workflow_support import guard_evidence_outputs
 
 
 def catalog(page):
@@ -194,6 +195,12 @@ def main():
     parser.add_argument("--expected-commit")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    try:
+        guard_evidence_outputs([args.report, *([args.manifest, args.selection] if args.operation == "export" else [])],
+            [args.build_report, args.input_manifest, args.guest_report, *([args.selection] if args.operation != "export" else [])],
+            [args.distribution] if args.distribution else [])
+    except ValueError as error:
+        parser.error(str(error))
     protected = [path.resolve() for path in (args.build_report, args.input_manifest, args.guest_report) if path]
     if args.operation != "export" and args.selection:
         protected.append(args.selection.resolve())

@@ -104,6 +104,9 @@ static void *worker(void *opaque) {
   qaplet_abi abi = QAPLET_ABI_INIT;
   const char source[] = "globalThis.foreign = 1";
   state->passed = qaplet_eval(state->runtime, source, sizeof(source) - 1, &progress, NULL) == QAPLET_WRONG_THREAD &&
+      qaplet_run_entry_with_options(state->runtime, "file.js", 7, NULL, &progress, NULL) == QAPLET_WRONG_THREAD &&
+      qaplet_eval_with_base_and_options(state->runtime, source, sizeof(source)-1, "file:///eval.js", 15,
+          NULL, &progress, NULL) == QAPLET_WRONG_THREAD &&
       qaplet_get_result(state->runtime, &result, NULL) == QAPLET_WRONG_THREAD &&
       qaplet_close(state->runtime, NULL) == QAPLET_WRONG_THREAD &&
       qaplet_destroy(state->runtime, NULL) == QAPLET_WRONG_THREAD &&

@@ -22,6 +22,7 @@ from native_io import REQUIRED as IO_REQUIRED, matches_contract
 from nightly_toolchain import write_json
 from pages64k import REQUIRED as DEEP_REQUIRED
 from startup import CASES as STARTUP_CASES, evaluate_case, target_key, check_ci_commit
+from workflow_support import guard_evidence_outputs
 
 
 def require(condition, reason):
@@ -944,6 +945,10 @@ def main():
     args = parser.parse_args()
     if (args.operation == "validate-guest") != bool(args.guest_report):
         parser.error("validate-guest requires --guest-report; evaluate does not accept it")
+    try:
+        guard_evidence_outputs([args.report], [args.input_manifest, args.guest_report])
+    except ValueError as error:
+        parser.error(str(error))
     report = evaluate(args.input_manifest, args.guest_report.resolve() if args.guest_report else None)
     write_json(args.report, report)
     print(json.dumps({"status": report["status"], "core": report["core"]["status"], "report": str(args.report)}))
