@@ -4,7 +4,7 @@
 **Publication baseline:** 每票独立文件；发布时均为 ready-for-agent，当前状态见各票。
 **Spec:** [正式 M1 实施规格](spec.md)。[设计记录](design.md)保留 Q1–Q32，规格与 ADR 是共同合同。
 
-**Implementation:** 集成分支 `codex/m1-integration`；01–12 已解决并合入，13 正在实施，其余按依赖推进。当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。已合入的闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)及[最小 CLI](12-cli-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
+**Implementation:** 集成分支 `codex/m1-integration`；01–13 已解决并合入，14、15 正在并行实施，16 等待两者。当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。已合入的闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)、[最小 CLI](12-cli-validation.md)及[可分发 SDK/完整 C 示例](13-sdk-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
 
 ## 任务与阻塞依赖
 
