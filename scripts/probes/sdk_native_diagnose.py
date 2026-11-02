@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--runner-label", default="diagnostic")
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--timeout", type=int, default=15)
+    parser.add_argument("--force-cpu-lower-bound", action="store_true")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     if not 1 <= args.repeat <= 10 or not 1 <= args.timeout <= 30:
@@ -48,6 +49,8 @@ def main():
         report.update(producer_report=identity(args.build_report), sdk_sha256=producer["sdk"]["sha256"],
                       sdk_recipe_sha256=producer["sdk_recipe"]["sha256"], artifact=identity(args.artifact))
         environment = dict(os.environ, QAPLET_M1_NATIVE_DIAG="1")
+        if args.force_cpu_lower_bound:
+            environment["QAPLET_M1_FORCE_CPU_LOWER_BOUND"] = "1"
         for suffix, arguments, output in sdk.HOST_CASES:
             if suffix not in ("stop-running", "module-aliases"):
                 continue

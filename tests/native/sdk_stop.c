@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <unistd.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public stop contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -123,6 +124,8 @@ typedef struct {
   qaplet_code stop_codes[4];
   int thread_rusage_status, thread_rusage_errno;
   uint64_t thread_rusage_ns;
+  int observer_ready, cpu_lower_bound;
+  uint64_t cpu_margin_ns, cpu_wall_ns, cpu_delta_ns, control_cpu_ns, control_lower_ns;
 } stop_gate;
 
 static uint64_t nanoseconds(clockid_t clock) {
@@ -135,14 +138,22 @@ static uint64_t nanoseconds(clockid_t clock) {
  * process CPU to observe owner progress after the JS arm callback has returned.
  * The loop allocates nothing and invokes no C functions after arm. Sleep merely
  * yields the polling worker; elapsed wall time never proves JS started/stopped. */
-static int other_cpu(stop_gate *gate, uint64_t *output) {
+static int process_cpu(stop_gate *gate, uint64_t *output) {
   struct rusage process_usage;
-  struct timespec self_time;
   /* The supplied Intel macOS libc rejects CLOCK_PROCESS_CPUTIME_ID with
    * EINVAL. getrusage measures the same user+system process CPU instead. */
   if (getrusage(RUSAGE_SELF,&process_usage)) {
     gate->clock_failure=1; gate->clock_errno=errno; return 0;
   }
+  *output=((uint64_t)process_usage.ru_utime.tv_sec+process_usage.ru_stime.tv_sec)*1000000000+
+      ((uint64_t)process_usage.ru_utime.tv_usec+process_usage.ru_stime.tv_usec)*1000;
+  return 1;
+}
+
+static int other_cpu(stop_gate *gate, uint64_t *output) {
+  uint64_t process;
+  struct timespec self_time;
+  if(!process_cpu(gate,&process)) return 0;
   if (clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) {
     gate->clock_failure=2; gate->clock_errno=errno;
     struct rusage thread_usage;
@@ -153,8 +164,6 @@ static int other_cpu(stop_gate *gate, uint64_t *output) {
       ((uint64_t)thread_usage.ru_utime.tv_usec+thread_usage.ru_stime.tv_usec)*1000;
     return 0;
   }
-  uint64_t process=((uint64_t)process_usage.ru_utime.tv_sec+process_usage.ru_stime.tv_sec)*1000000000+
-      ((uint64_t)process_usage.ru_utime.tv_usec+process_usage.ru_stime.tv_usec)*1000;
   uint64_t self=(uint64_t)self_time.tv_sec*1000000000+(uint64_t)self_time.tv_nsec;
   if (!gate->cpu_reads++) { gate->process_first=process; gate->self_first=self; }
   gate->process_last=process; gate->self_last=self;
@@ -162,6 +171,56 @@ static int other_cpu(stop_gate *gate, uint64_t *output) {
    * granularity. The clock return status, rather than its value, proves success. */
   *output=process>self ? process-self : 0;
   return 1;
+}
+
+/* With exactly owner+worker, owner CPU >= process CPU - worker CPU, and the
+ * worker cannot consume more CPU than the encompassing monotonic interval.
+ * Bracket CPU reads inside wall reads and subtract an additional margin for
+ * both user/system timeval endpoints and the measured wall-clock resolution.
+ * A busy sampler needs actual parallel owner CPU; time alone cannot pass. */
+static int cpu_bound_window(stop_gate *gate, int control) {
+  uint64_t start_wall=nanoseconds(CLOCK_MONOTONIC), start_cpu;
+  if(!start_wall || !process_cpu(gate,&start_cpu)) return 0;
+  uint64_t until=start_wall+2000000000;
+  do {
+    uint64_t current_cpu;
+    if(!process_cpu(gate,&current_cpu)) return 0;
+    uint64_t end_wall=nanoseconds(CLOCK_MONOTONIC);
+    if(end_wall<start_wall || current_cpu<start_cpu) return 0;
+    uint64_t wall=end_wall-start_wall, delta=current_cpu-start_cpu;
+    uint64_t upper=wall+gate->cpu_margin_ns;
+    uint64_t lower=delta>upper ? delta-upper : 0;
+    ++gate->cpu_reads;
+    if(control) {
+      if(lower>gate->control_lower_ns) gate->control_lower_ns=lower;
+      gate->control_cpu_ns=delta;
+      /* While arm holds the owner in C, worker activity cannot prove owner
+       * JS progress. First observe real worker CPU across a complete window. */
+      if(lower>=20000000) return 0;
+      if(delta>=20000000 && wall>=gate->cpu_margin_ns+40000000) return 1;
+    } else {
+      gate->cpu_wall_ns=wall; gate->cpu_delta_ns=delta;
+      gate->process_first=start_cpu; gate->process_last=current_cpu;
+      gate->owner_cpu_ns=lower;
+      if(lower>=20000000) return 1;
+    }
+    if(end_wall>=until) break;
+  } while(1);
+  return 0;
+}
+
+static int prepare_cpu_bound(stop_gate *gate) {
+  struct timespec resolution;
+  long ticks=sysconf(_SC_CLK_TCK);
+  if(ticks<=0 || ticks>1000000000 || clock_getres(CLOCK_MONOTONIC,&resolution)) return 0;
+  if(resolution.tv_sec<0 || resolution.tv_sec>1 || resolution.tv_nsec<0 || resolution.tv_nsec>=1000000000) return 0;
+  uint64_t wall_resolution=(uint64_t)resolution.tv_sec*1000000000+resolution.tv_nsec;
+  if(!wall_resolution) return 0;
+  uint64_t quantum=(1000000000+(uint64_t)ticks-1)/ticks;
+  if(quantum<1000) quantum=1000;
+  gate->cpu_margin_ns=4*quantum+2*wall_resolution;
+  gate->cpu_lower_bound=1;
+  return gate->cpu_margin_ns<1000000000 && cpu_bound_window(gate,1);
 }
 
 static qaplet_code observed_stop(stop_gate *gate, unsigned call, qaplet_code code) {
@@ -179,6 +238,7 @@ static qaplet_code arm(qaplet_runtime *runtime, uint64_t call, size_t argc,
   gate->entered=1;
   pthread_cond_broadcast(&gate->condition);
   if (!gate->mode) while (!gate->released) pthread_cond_wait(&gate->condition,&gate->mutex);
+  if (gate->mode==1) while (!gate->observer_ready) pthread_cond_wait(&gate->condition,&gate->mutex);
   pthread_mutex_unlock(&gate->mutex);
   if (!gate->mode) {
     if (gate->callback_hold_ns) {
@@ -205,8 +265,18 @@ static void *stop_worker(void *opaque) {
   pthread_mutex_unlock(&gate->mutex);
   if (gate->mode==1) {
     uint64_t start=0, until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
-    if (!other_cpu(gate,&start)) { gate->failed=1; gate->failure_stage=1; }
-    do {
+    int force_bound=getenv("QAPLET_M1_FORCE_CPU_LOWER_BOUND")!=NULL;
+    int precise=!force_bound && other_cpu(gate,&start);
+    if(!precise && (force_bound || gate->clock_failure==2)) {
+      if(!prepare_cpu_bound(gate)) { gate->failed=1; gate->failure_stage=4; }
+    } else if(!precise) { gate->failed=1; gate->failure_stage=1; }
+    pthread_mutex_lock(&gate->mutex);
+    gate->observer_ready=1;
+    pthread_cond_broadcast(&gate->condition);
+    pthread_mutex_unlock(&gate->mutex);
+    if(gate->cpu_lower_bound) {
+      if(!gate->failed && !cpu_bound_window(gate,0)) { gate->failed=1; gate->failure_stage=5; }
+    } else if(!gate->failed) do {
       uint64_t current;
       if (!other_cpu(gate,&current)) { gate->failed=1; if(!gate->failure_stage) gate->failure_stage=2; break; }
       if (current>=start) gate->owner_cpu_ns=current-start;
@@ -295,13 +365,15 @@ static int running(void) {
       CHECK(gate.arms==1);
     }
     if(getenv("QAPLET_M1_NATIVE_DIAG") || gate.failed || gate.marks || gate.accepted.termination_reason!=QAPLET_EXECUTION_STOPPED) {
-      fprintf(stderr,"[DEBUG-m1-14-stop] process_api=getrusage-self variant=%u failed=%d stage=%d marks=%u arms=%u owner_cpu_ns=%llu clock_failure=%d clock_errno=%d reads=%u process=%llu..%llu self=%llu..%llu calls=%u codes=%d,%d,%d,%d accepted=%d/%d/%d thread_rusage=%d/%d/%llu\n",
+      fprintf(stderr,"[DEBUG-m1-14-stop] process_api=getrusage-self variant=%u failed=%d stage=%d marks=%u arms=%u owner_cpu_ns=%llu clock_failure=%d clock_errno=%d reads=%u process=%llu..%llu self=%llu..%llu calls=%u codes=%d,%d,%d,%d accepted=%d/%d/%d thread_rusage=%d/%d/%llu lower_bound=%d margin_ns=%llu wall_ns=%llu process_delta_ns=%llu control_cpu_ns=%llu control_lower_ns=%llu\n",
         variant,gate.failed,gate.failure_stage,gate.marks,gate.arms,(unsigned long long)gate.owner_cpu_ns,
         gate.clock_failure,gate.clock_errno,gate.cpu_reads,(unsigned long long)gate.process_first,(unsigned long long)gate.process_last,
         (unsigned long long)gate.self_first,(unsigned long long)gate.self_last,gate.stop_calls,
         gate.stop_codes[0],gate.stop_codes[1],gate.stop_codes[2],gate.stop_codes[3],
         gate.accepted.lifecycle,gate.accepted.phase,gate.accepted.termination_reason,
-        gate.thread_rusage_status,gate.thread_rusage_errno,(unsigned long long)gate.thread_rusage_ns);
+        gate.thread_rusage_status,gate.thread_rusage_errno,(unsigned long long)gate.thread_rusage_ns,
+        gate.cpu_lower_bound,(unsigned long long)gate.cpu_margin_ns,(unsigned long long)gate.cpu_wall_ns,
+        (unsigned long long)gate.cpu_delta_ns,(unsigned long long)gate.control_cpu_ns,(unsigned long long)gate.control_lower_ns);
     }
     CHECK(!gate.failed && !gate.marks && gate.accepted.termination_reason==QAPLET_EXECUTION_STOPPED);
     if (variant<2) CHECK(gate.owner_cpu_ns>=20000000);
