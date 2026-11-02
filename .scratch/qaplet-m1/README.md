@@ -4,7 +4,7 @@
 **Publication:** 每票独立文件，状态均为 ready-for-agent；尚未领取、实现或验收。
 **Spec:** [正式 M1 实施规格](spec.md)。[设计记录](design.md)保留 Q1–Q32，规格与 ADR 是共同合同。
 
-**Implementation:** 集成分支 `codex/m1-integration`。任务 01 已解决并合入；当前 frontier 为 02、03。[01 验收](01-runtime-validation.md)记录公开 C 边界、实际 Ubuntu/Windows/ARM64 4K/64K 运行及创建失败修复。其余任务尚未解决，完整 M1 未验收。工作树清理前保留的原始 01 证据位于主工作区 `out/m1/tickets/01/out/`，原路径映射见 `out/m1/tickets/01/path-mappings.json`。
+**Implementation:** 集成分支 `codex/m1-integration`；当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。初始 Runtime/值/Promise 闭环的 01–03 已解决并合入：[01](01-runtime-validation.md)、[02](02-values-validation.md)、[03](03-promise-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
 
 ## 任务与阻塞依赖
 
