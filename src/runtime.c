@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "runtime_internal.h"
 #include <stddef.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -132,7 +133,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -160,13 +161,19 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   if (!limits.execution_dispatches) limits.execution_dispatches = 100000;
   if (!limits.event_queue_slots) limits.event_queue_slots = 256;
   if (!limits.event_payload_bytes) limits.event_payload_bytes = 1024;
+  if (!limits.bridge_value_bytes) limits.bridge_value_bytes = QAPLET_VALUE_BYTES_MAX;
+  if (!limits.host_arguments) limits.host_arguments = QAPLET_HOST_ARGUMENTS_MAX;
+  if (!limits.pump_jobs) limits.pump_jobs = 256;
+  if (!limits.pump_events) limits.pump_events = 32;
   code = qaplet_events_check_limits(&limits);
   if (code) return qaplet_report(diagnostic, code);
   if (limits.execution_timeout_ms > UINT64_MAX / 1000000)
     return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
-  if (limits.engine_heap_bytes > SIZE_MAX || limits.engine_stack_bytes > SIZE_MAX ||
+  if (limits.engine_heap_bytes > SIZE_MAX || limits.engine_stack_bytes > PTRDIFF_MAX ||
       limits.native_storage_bytes > SIZE_MAX || limits.source_bytes >= SIZE_MAX ||
-      limits.module_count > SIZE_MAX || limits.source_cache_bytes >= SIZE_MAX)
+      limits.module_count > SIZE_MAX || limits.source_cache_bytes >= SIZE_MAX ||
+      limits.bridge_value_bytes >= SIZE_MAX || limits.host_arguments > INT_MAX ||
+      limits.host_arguments > SIZE_MAX / (sizeof(qaplet_result) + sizeof(qaplet_value) + sizeof(void *)))
     return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   if (limits.native_storage_bytes < sizeof(qaplet_runtime))
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
@@ -198,6 +205,7 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   JS_SetContextOpaque(runtime->context, runtime);
   code = qaplet_modules_init(runtime, config);
   if (!code) code = qaplet_events_init(runtime);
+  if (!code) code = qaplet_execution_check(runtime);
   if (code) {
     qaplet_events_dispose(runtime);
     qaplet_modules_dispose(runtime);
@@ -248,28 +256,11 @@ static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size
   if (!code && !qaplet_utf8_valid(source, length)) code = QAPLET_INVALID_UTF8;
   if (code) return qaplet_report(diagnostic, code);
   /* A source copy is native SDK storage, separate from the engine allocator. */
-  pthread_mutex_lock(&runtime->mutex);
-  uint64_t available = runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes;
-  if (length == SIZE_MAX || length + 1 > available) {
-    pthread_mutex_unlock(&runtime->mutex);
-    return qaplet_report(diagnostic, QAPLET_SOURCE_TOO_LARGE);
-  }
-  char *copy = malloc(length + 1);
-  if (!copy) {
-    memory_failure(runtime);
-    pthread_mutex_unlock(&runtime->mutex);
-    return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
-  }
-  runtime->snapshot.native_current_bytes += length + 1;
-  if (runtime->snapshot.native_current_bytes > runtime->snapshot.native_peak_bytes)
-    runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
-  pthread_mutex_unlock(&runtime->mutex);
+  char *copy = qaplet_native_alloc(runtime, length + 1);
+  if (!copy) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   code = qaplet_execution_begin(runtime, options);
   if (code) {
-    free(copy);
-    pthread_mutex_lock(&runtime->mutex);
-    runtime->snapshot.native_current_bytes -= length + 1;
-    pthread_mutex_unlock(&runtime->mutex);
+    qaplet_native_free(runtime, copy, length + 1);
     return qaplet_report(diagnostic, code);
   }
   runtime->module_execution = 0;
@@ -286,9 +277,8 @@ static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size
     runtime->entry_promise = JS_DupValue(runtime->context, value);
   } else if (!code) code = qaplet_store_scalar(runtime, value);
   JS_FreeValue(runtime->context, value);
-  free(copy);
+  qaplet_native_free(runtime, copy, length + 1);
   pthread_mutex_lock(&runtime->mutex);
-  runtime->snapshot.native_current_bytes -= length + 1;
   runtime->execution_code = code;
   pthread_mutex_unlock(&runtime->mutex);
   code = qaplet_execution_checkpoint(runtime, progress, 1);

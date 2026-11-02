@@ -13,6 +13,7 @@ int sdk_events(const char *);
 int sdk_events_entry(const char *);
 int sdk_stop(const char *);
 int sdk_host_modules(const char *);
+int sdk_resources(const char *);
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public SDK contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -258,6 +259,7 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--owner")) return owner();
   if (!strcmp(argv[1], "--creation")) return creation();
   if (!strcmp(argv[1], "--resources")) return resources();
+  if (!strncmp(argv[1], "--resource-", 11)) return sdk_resources(argv[1]);
   if (!strcmp(argv[1], "--abi")) return abi_contract();
   if (!strcmp(argv[1], "--integers")) return integer_values();
   if (!strcmp(argv[1], "--strings")) return string_values();

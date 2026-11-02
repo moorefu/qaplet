@@ -4,9 +4,9 @@
 
 **Blocked by:** [05：模块失败固定与路径拒绝合同](05-module-cache-path-policy.md)、[08：跨线程 POD 到 JS 的有界事件桥](08-bounded-pod-events.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** completed；2026-11-02 /root/implement_09 完成；提交 724f3ce 的同一 SDK/Host 已实际通过 Ubuntu、普通用户 Windows 与 ARM64 64K full-system 消费，详见 [验证记录](../09-resource-validation.md)。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 落实引擎堆 64 MiB、栈 1 MiB、SDK 存储 16 MiB、单源码 4 MiB、源码缓存 32 MiB、模块 256 及全部队列/桥接默认值。
-- [ ] 0 使用有限默认，无无限模式；容量初始化后固定，配置和所有大小/时间换算先检查溢出。
-- [ ] 缓存命中不重复收费，内建/host/失败记录计模块，Script 源码不累计入模块缓存，宿主/OS 存储边界明确。
-- [ ] 从创建首个分配起计量，实际引擎/SDK 分配拒绝即使被 JS 捕获仍 FAILED；预检超限只拒绝调用。
-- [ ] 快照有当前/峰值、队列及事件计数和原因，自动 GC 不被当作硬额度；低额度真实负载验证所有资源失败与初始化清理。
+- [x] 落实引擎堆 64 MiB、栈 1 MiB、SDK 存储 16 MiB、单源码 4 MiB、源码缓存 32 MiB、模块 256 及全部队列/桥接默认值。
+- [x] 0 使用有限默认，无无限模式；容量初始化后固定，配置和所有大小/时间换算先检查溢出。
+- [x] 缓存命中不重复收费，内建/host/失败记录计模块，Script 源码不累计入模块缓存，宿主/OS 存储边界明确。
+- [x] 从创建首个分配起计量，实际引擎/SDK 分配拒绝即使被 JS 捕获仍 FAILED；预检超限只拒绝调用。
+- [x] 快照有当前/峰值、队列及事件计数和原因，自动 GC 不被当作硬额度；低额度真实负载验证所有资源失败与初始化清理。
 
 ## Validation and evidence
 
@@ -37,4 +37,10 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：领取后按公开 SDK supplied-static-SDK C Host 纵切实施，保留 source-copy 实际 quota 拒绝分类错误与缺失有效默认值的 red/green。扩展有限配置与桥接/参数/pump 限额，SDK callback frame 计量，维护首因、工厂 rollback 和 published close。源码 724f3ce 已合入 integration c817a2a（含 10 stop），同一 audited SDK/Host 在 Ubuntu 43/43、普通用户 Windows 42/42 required（symlink optional unavailable 如实保留）、ARM64 Linux 64K full-system 43/43 通过；本地 check 219 tests / 75 declared skips 及真实 C bootstrap 通过。全部原始 producer/consumer/log/artifact 见 worktree out/m1-09/；parent guest 见主工作区 out/m1/09-guest-combined/。不宣称完整 M1 Cross/Full、native ARM64 或发布完成。
+
+## Answer
+
+已补齐所有有限有效限额与公开计量/拒绝合同，预检资源超限可复用，真实 allocator 拒绝永久保留 MEMORY_LIMIT，捕获也不恢复。五个新增公开 resource case 和既有所有相关正负 SDK case 在上述实际执行范围通过。实现、精确 input/recipe/SDK/APE 身份、红绿过程及平台边界见 [09-resource-validation.md](../09-resource-validation.md)。
 

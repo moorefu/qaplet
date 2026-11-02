@@ -122,7 +122,7 @@ static qaplet_code string_size(qaplet_runtime *runtime, JSValueConst string, siz
   int failed = JS_IsException(length_value) || JS_ToUint32(runtime->context, &length, length_value);
   JS_FreeValue(runtime->context, length_value);
   if (failed) return QAPLET_MEMORY_LIMIT;
-  if (length > QAPLET_VALUE_BYTES_MAX) return QAPLET_VALUE_TOO_LARGE;
+  if (length > runtime->snapshot.limits.bridge_value_bytes) return QAPLET_VALUE_TOO_LARGE;
   size_t total = 0;
   for (uint32_t i = 0; i < length; ++i) {
     int32_t unit;
@@ -134,7 +134,7 @@ static qaplet_code string_size(qaplet_runtime *runtime, JSValueConst string, siz
       total += 4;
     } else if (unit >= 0xdc00 && unit <= 0xdfff) return QAPLET_INVALID_UTF8;
     else total += unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3;
-    if (total > QAPLET_VALUE_BYTES_MAX) return QAPLET_VALUE_TOO_LARGE;
+    if (total > runtime->snapshot.limits.bridge_value_bytes) return QAPLET_VALUE_TOO_LARGE;
   }
   *size = total;
   return QAPLET_OK;
@@ -216,7 +216,7 @@ static qaplet_code store_bytes(qaplet_runtime *runtime, JSValueConst value, qapl
     if (JS_IsException(size) || JS_ToFloat64(context, &length, size)) {
       JS_FreeValue(context, JS_GetException(context));
       code = QAPLET_MEMORY_LIMIT;
-    } else if (length > QAPLET_VALUE_BYTES_MAX) code = QAPLET_VALUE_TOO_LARGE;
+    } else if (length > runtime->snapshot.limits.bridge_value_bytes) code = QAPLET_VALUE_TOO_LARGE;
     else {
       unsigned char *bytes = JS_GetArrayBuffer(context, &backing_length, buffer);
       size_t count = (size_t)length;

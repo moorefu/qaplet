@@ -28,6 +28,7 @@ struct qaplet_module_alias {
 /* Registry/identity storage is SDK storage. Retained source bytes have their
  * separate cache ledger. Every retained engine value is an owned reference. */
 static void *native_alloc(qaplet_runtime *runtime, size_t size) {
+  if (!size) return NULL; /* A zero-size request is not an allocation refusal. */
   pthread_mutex_lock(&runtime->mutex);
   void *value = NULL;
   if (size <= runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes)

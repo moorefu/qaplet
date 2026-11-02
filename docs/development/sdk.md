@@ -19,8 +19,10 @@ replacement are rejected. C function code and userdata belong to the Host and
 must remain valid until close returns. Copied descriptors remain alive through
 normal engine finalization. No Host resources run in the unpublished factory.
 
-Callbacks execute synchronously on the owner, with at most 32 strictly bridged
-arguments. Each string/byte value is limited to 1 MiB. Arguments are borrowed
+Callbacks execute synchronously on the owner, with a finite default of 32 strictly bridged
+arguments. Each string/byte value defaults to a 1 MiB limit. The instance's
+`limits.host_arguments` and `limits.bridge_value_bytes` configure those maxima.
+Arguments are borrowed
 until callback return; `qaplet_host_set_result` synchronously copies its value.
 An unset return is undefined and a repeated setter preserves the first return.
 The setter uses a Runtime and monotonically unique callback ID, so an expired
@@ -73,7 +75,8 @@ It calls `fn({type, token, payload})`, with Number, exact BigInt and an independ
 Uint8Array. Source buffers can be immediately reused. Returned values and pending
 Promises are ignored, while runnable jobs and rejection checkpoints still settle.
 
-Each pump runs at most 256 jobs and 32 event callbacks; jobs settle before the
+Each pump defaults to at most 256 jobs and 32 event callbacks, configurable through
+`limits.pump_jobs/pump_events`; jobs settle before the
 next event. Events share an active entry's ledger. Otherwise each event and its
 jobs starts an independent ledger, retained across pumps until its checkpoint.
 Ordinary event exceptions settle runnable jobs before DONE and permit reuse;
@@ -131,6 +134,20 @@ execution on an OPEN Runtime starts a new ledger. Snapshots expose its cumulativ
 dispatch count; query and close remain available after failure. Interrupt polling
 also ends a JavaScript loop; native callbacks, compiler/GC and cleanup retain
 their cooperative boundary rather than a hard preemption guarantee.
+
+Resource-limits capability bit 13 adds the complete effective finite configuration
+in snapshots. Zero fields select defaults; creation copies and fixes capacities.
+The source/cache/module and bridge input checks refuse calls without failing the
+Runtime. Once a metered engine or SDK allocation is actually refused, the first
+cause is permanent, including caught errors and accepted Script source copies.
+SDK control/diagnostics, registry, queue/scratch, rejection records, callback
+argument frames and bridge copies count toward native storage; retained module
+source bytes use the separate cache ledger. Host userdata, external worker
+storage and OS/libc allocations are outside these budgets. Engine accounting
+starts at its first backing allocation and reports current/peak bytes, not RSS.
+Automatic GC remains enabled; no pump forces full GC. Event counters saturate
+at UINT64_MAX. `host-resources.c` exercises real small limits, caught storage
+refusals and failed factory recovery through the supplied public SDK.
 
 The copied-values capability adds exact signed/unsigned 64-bit BigInt, strict
 UTF-8 strings (including NUL), and safely copied Uint8Array views. Number stays
