@@ -33,6 +33,7 @@ enum {
   QAPLET_CAP_SCALAR_RESULT = 1u << 2, QAPLET_CAP_OWNER_THREAD = 1u << 3,
   QAPLET_CAP_POD_SNAPSHOT = 1u << 4, QAPLET_CAP_RESOURCE_BASE = 1u << 5,
   QAPLET_CAP_COPIED_VALUES = 1u << 6,
+  QAPLET_CAP_PROMISE_JOBS = 1u << 7,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -109,8 +110,17 @@ qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet
  * Objects/functions are never implicitly converted. Strings may contain NUL;
  * lone surrogates are INVALID_UTF8. A string/byte result is limited to
  * QAPLET_VALUE_BYTES_MAX encoded bytes. Shared/detached/out-of-bounds views and
- * Proxy wrappers are unsupported. Promise jobs are not driven by this version. */
+ * Proxy wrappers are unsupported. Only genuine Promises are waited on; arbitrary
+ * thenables are not inspected. Runnable jobs or an unsettled entry yield PENDING.
+ * While PENDING, another eval is BUSY and get_result is BAD_STATE. */
 qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* Runs at most 256 jobs, without sleeping. Empty jobs with an unsettled entry
+ * remain PENDING with progressed=0. Rejections are judged only after a complete
+ * jobs checkpoint. Ordinary errors settle remaining jobs before DONE, preserving
+ * state and allowing a new execution. An inactive pump reports no progress and
+ * OK; get_result retains the completed outcome until the next accepted eval.
+ * Outputs and diagnostic buffers are borrowed only for this call. */
+qaplet_code qaplet_pump(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *);
 /* Set output.buffer/capacity for STRING/BYTES. length is the payload byte count;
  * string payloads have no extra terminator. BUFFER_TOO_SMALL reports length,
  * copies no payload, and preserves the result for retry without re-executing JS.

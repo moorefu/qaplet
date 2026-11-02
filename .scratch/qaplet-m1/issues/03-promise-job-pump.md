@@ -4,9 +4,9 @@
 
 **Blocked by:** [01：纯 C Host 的最小 Runtime 闭环](01-runtime-c-host.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** completed；2026-11-02 在 `codex/m1-03` 实现公开 Promise/pump 合同，Ubuntu producer、Ubuntu/Windows/ARM64 64K 全部九项 C Host consumer 通过；[验收与原始证据](../03-promise-validation.md)。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 只自动等待真实 Promise，同实例仅一个活动执行，PENDING 时新 eval/run 拒绝为 BUSY。
-- [ ] pump jobs 默认配额 256，配额提前返回不忙等；无就绪工作仍未完成时返回 PENDING 和未推进。
-- [ ] 完整检查点才判定未处理 rejection，检查点内补处理器可消除记录，入口失败不重复报告。
-- [ ] 同步抛错/job 失败的剩余可运行 jobs 得到结算，普通失败完成后可再次执行并保留状态修改。
-- [ ] 纯 C Host 用实际 Promise 链演示跨多次 pump 完成与无进展，关闭 pending 结构不泄漏执行引用。
+- [x] 只自动等待真实 Promise，同实例仅一个活动执行，PENDING 时新 eval/run 拒绝为 BUSY。
+- [x] pump jobs 默认配额 256，配额提前返回不忙等；无就绪工作仍未完成时返回 PENDING 和未推进。
+- [x] 完整检查点才判定未处理 rejection，检查点内补处理器可消除记录，入口失败不重复报告。
+- [x] 同步抛错/job 失败的剩余可运行 jobs 得到结算，普通失败完成后可再次执行并保留状态修改。
+- [x] 纯 C Host 用实际 Promise 链演示跨多次 pump 完成与无进展，关闭 pending 结构不泄漏执行引用。
 
 ## Validation and evidence
 
@@ -37,4 +37,10 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：完成真实 Promise、显式 256-job pump、native 额度计量的 rejection 记录与完整检查点、普通异常结算/复用和 pending close；按 Q32 已批准的公开 SDK / 纯 C Host seam 执行 TDD。先向集成 owner 发送最终 READY producer，再获得同字节 Windows 与 ARM64 64K consumer 通过，现解决本票。
+
+## Answer
+
+源码提交 `0a95766526e65f5cfe1e3920a3d6cadae03eeedc`；[完整验收记录](../03-promise-validation.md)包含 pinned input、SDK/recipe/APE 身份、原始 red/green 迭代、最终 Ubuntu producer/consumer 与 repository check，以及 Windows/ARM64 64K 外部消费指针。仅新增已实现的 Promise/jobs 能力 bit 7，无未实现的成功 stub。BUSY 合同现由 eval 实跑；run_entry 尚未公开，由依赖本票的 04 提供真实模块入口并沿用同一执行状态，不提前宣称模块已验收。剩余 M1 及完整 Cross/Full 继续按各票推进。
 

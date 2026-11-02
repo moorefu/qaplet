@@ -8,8 +8,16 @@ Before publication, creation installs only engine intrinsics: no user JavaScript
 Host modules or external native resources run. Failed creation therefore reclaims
 outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
-Query capability bits before using a feature; modules, Promise pumping, host
-modules, events and stop are added by subsequent M1 tickets.
+Query capability bits before using a feature; modules, host modules, events and
+stop are added by subsequent M1 tickets.
+
+Promise/jobs capability adds explicit owner-driven `qaplet_pump`. An accepted
+eval can return PENDING, and each pump executes at most 256 runnable jobs. Empty
+jobs do not finish an unsettled entry Promise. Rejections are judged at a complete
+jobs checkpoint; ordinary errors settle runnable jobs before DONE and preserve
+the Runtime for reuse. Only genuine Promises are waited on, without consulting
+thenable getters or Promise constructors. Closing a PENDING execution releases
+its references and remaining jobs without running user cleanup JavaScript.
 
 The copied-values capability adds exact signed/unsigned 64-bit BigInt, strict
 UTF-8 strings (including NUL), and safely copied Uint8Array views. Number stays

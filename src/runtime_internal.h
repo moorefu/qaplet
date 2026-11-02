@@ -6,6 +6,7 @@
 #include <pthread.h>
 
 typedef union qaplet_allocation qaplet_allocation;
+typedef struct qaplet_rejection qaplet_rejection;
 struct qaplet_runtime {
   pthread_t owner;
   pthread_mutex_t mutex;
@@ -23,6 +24,9 @@ struct qaplet_runtime {
   size_t safe_diagnostic_length;
   int has_safe_diagnostic, safe_diagnostic_truncated;
   int has_result;
+  JSValue entry_promise;
+  qaplet_code execution_code;
+  qaplet_rejection *rejections;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
@@ -35,4 +39,7 @@ void qaplet_values_reset(qaplet_runtime *);
 void qaplet_values_dispose(qaplet_runtime *);
 void qaplet_capture_exception(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_report_result(qaplet_runtime *, qaplet_diagnostic *, qaplet_code);
+qaplet_code qaplet_execution_checkpoint(qaplet_runtime *, qaplet_progress *, unsigned);
+void qaplet_execution_init(qaplet_runtime *);
+void qaplet_execution_dispose(qaplet_runtime *);
 #endif
