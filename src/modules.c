@@ -385,7 +385,8 @@ qaplet_code qaplet_check_runtime_config(const qaplet_config *config) {
   for (size_t i = 0; i < config->argc; ++i) {
     const qaplet_string *argument = &config->argv[i];
     if (!argument->data && argument->length) return QAPLET_INVALID_ARGUMENT;
-    if (argument->length > QAPLET_VALUE_BYTES_MAX) return QAPLET_VALUE_TOO_LARGE;
+    uint64_t byte_limit = config->limits.bridge_value_bytes ? config->limits.bridge_value_bytes : QAPLET_VALUE_BYTES_MAX;
+    if (argument->length > byte_limit) return QAPLET_VALUE_TOO_LARGE;
     if (!qaplet_utf8_valid(argument->data, argument->length)) return QAPLET_INVALID_UTF8;
   }
   if (config->cwd) {

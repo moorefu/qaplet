@@ -189,7 +189,8 @@ cases check the currently implemented SDK contracts.
 
 Runtime-snapshot capability (bit 16) adds `qaplet_config.argv/argc` and optional
 `cwd/cwd_length`. Every argument is an explicit-length strict UTF-8 string,
-including ordinary embedded NUL. The factory copies the strings and native
+including ordinary embedded NUL, bounded by `limits.bridge_value_bytes`.
+The factory copies the strings and native
 directory base; later buffer edits and process `chdir` do not change them.
 NULL/zero cwd captures the native OS cwd; an explicit cwd must name an absolute
 native directory. Paths reject NUL and invalid UTF-8. `qaplet:runtime` exports

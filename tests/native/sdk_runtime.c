@@ -67,6 +67,9 @@ int sdk_runtime(const char *root) {
   CHECK(qaplet_create(&config,&runtime,NULL)==QAPLET_INVALID_UTF8&&!runtime);
   config=(qaplet_config)QAPLET_CONFIG_INIT;config.limits.module_count=1;
   CHECK(qaplet_create(&config,&runtime,NULL)==QAPLET_INVALID_ARGUMENT&&!runtime);
+  config=(qaplet_config)QAPLET_CONFIG_INIT;config.limits.bridge_value_bytes=4;
+  qaplet_string oversized={"12345",5};config.argv=&oversized;config.argc=1;
+  CHECK(qaplet_create(&config,&runtime,NULL)==QAPLET_VALUE_TOO_LARGE&&!runtime);
   qaplet_abi abi=QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi)==QAPLET_OK&&(abi.capabilities&QAPLET_CAP_RUNTIME_SNAPSHOT));
   puts("runtime snapshot: fixed read-only argv/cwd; public factory: pass");
