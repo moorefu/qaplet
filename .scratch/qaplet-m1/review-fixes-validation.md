@@ -79,6 +79,31 @@ All paths below are relative to this worktree unless stated otherwise.
   include 165 unselected evidence skips, so this is repository-check scope,
   separate from required matching-product strict acceptance. The last traversal
   adjustment will receive a fresh ordinary check after the source freeze.
+- Frozen source candidate: `f805cbf65bb473b17f199af075136a814edecbc4`;
+  `codex/m1-integration` was already up to date at freeze. Matching actual Full
+  `41511643549` was dispatched on that exact product commit, independently of
+  the evaluator-only refinement below.
+- `out/review-fixes/frozen-local/{build,run,package-consume}.json`: the f805
+  producer passes, all 98 public native cases / 1000 lifecycle cycles pass, and
+  the eight-case external public SDK package workload passes. Local metadata
+  honestly reports `working_tree_dirty=true`: Ubuntu Git sees the existing
+  Windows checkout's Markdown CRLF differences. Windows Git is clean; no
+  unrelated Markdown or Git configuration was changed to hide this. The
+  read-only `candidate-product-files.json` separately verifies all 57 product
+  files against exact f805 Git blobs, with `changed: []`.
+- Frozen local SDK is
+  `a591e77bd3b534d8bf107f43a743925548c4838a89fcc735273557deb4c1a2b8`,
+  recipe `efb2562732e4b138737b9c24a18f13ee837bcd3397fa86dde8528a2b973a2c63`;
+  these local bytes are not mixed into CI acceptance. `frozen-check.json`
+  passes 315 ordinary tests (165 explicit-data/platform skips), CI contracts
+  and actual system C bootstrap.
+- `out/review-fixes/mapped-guest-red.log`: a mapped selection without transports
+  exposed the remaining standalone guest path. The evaluator now supplies its
+  explicitly selected mapped roots to the same early guard. This changes only
+  `sdk_guest.py` and its public CLI tests, outside all 57 product recipe files;
+  f805 product execution reports remain original. All five tests / 27 cases pass
+  in `mapped-preservation-green.log` (6.196 seconds). The final strict run must
+  record this refined evaluator/test source identity separately from f805.
 
 ## Implemented boundaries and review refactors
 

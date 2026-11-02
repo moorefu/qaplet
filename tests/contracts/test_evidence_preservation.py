@@ -41,6 +41,32 @@ class EvidencePreservation(unittest.TestCase):
             self.assertNotEqual(process.returncode, 0)
             self.assertIn("immutable", process.stdout + process.stderr)
 
+    def test_guest_mapped_selection_preserves_distribution_without_transports(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-mapped-guest-selection-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            supplied = root / "sdk"
+            supplied.mkdir(parents=True)
+            fixture = root / "fixture.zip"
+            with zipfile.ZipFile(fixture, "w") as bundle:
+                bundle.writestr("original.txt", "immutable mapped distribution\n")
+            archive = supplied / "qaplet-sdk.zip"
+            shutil.copyfile(fixture, archive)
+            before = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (root / "selection.json").write_text(json.dumps({"distribution_root": "/original/sdk/sdk"}))
+            inputs = root / "inputs.json"
+            inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/sdk/selection.json",
+                "guest_report": "/original/sdk/guest.json", "path_mappings": [{"source": "/original/sdk", "root": str(root)}]}))
+            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
+                "--input-manifest", str(inputs), "--report", str(archive)], capture_output=True, text=True, timeout=30)
+            (root / "stdout.log").write_text(process.stdout)
+            (root / "stderr.log").write_text(process.stderr)
+            after = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (root / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
+            self.assertEqual(before, after)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("immutable", process.stdout + process.stderr)
+
     def test_guest_export_guards_every_declared_output(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
         with tempfile.TemporaryDirectory(prefix="qaplet-export-preservation-") as temporary:

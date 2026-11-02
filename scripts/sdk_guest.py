@@ -17,7 +17,7 @@ from input_lock import consume_identity, check_portable_helper
 from nightly_toolchain import write_json
 import sdk
 from startup import ci_facts, check_ci_commit
-from workflow_support import guard_evidence_outputs
+from workflow_support import guard_evidence_outputs, local_path
 
 
 def catalog(page):
@@ -195,10 +195,23 @@ def main():
     parser.add_argument("--expected-commit")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    mapped_roots = []
+    if args.input_manifest and args.input_manifest.is_file():
+        try:
+            selected = read_json(args.input_manifest)
+        except (OSError, ValueError):
+            selected = {}  # Preserve the normal malformed-input report below.
+        mappings = selected.get("path_mappings", []) if isinstance(selected, dict) else []
+        for row in mappings if isinstance(mappings, list) else []:
+            if isinstance(row, dict) and isinstance(row.get("root"), str):
+                try:
+                    mapped_roots.append(local_path(row["root"], args.input_manifest.resolve().parent))
+                except (OSError, ValueError):
+                    pass
     try:
         guard_evidence_outputs([args.report, *([args.manifest, args.selection] if args.operation == "export" else [])],
             [args.build_report, args.input_manifest, args.guest_report, *([args.selection] if args.operation != "export" else [])],
-            [args.distribution] if args.distribution else [])
+            [*([args.distribution] if args.distribution else []), *mapped_roots])
     except ValueError as error:
         parser.error(str(error))
     protected = [path.resolve() for path in (args.build_report, args.input_manifest, args.guest_report) if path]
