@@ -236,6 +236,9 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  extern int sdk_runtime(const char *), sdk_cli_contract(const char *);
+  if (argc == 3 && !strcmp(argv[1], "--runtime")) return sdk_runtime(argv[2]);
+  if (argc == 3 && !strcmp(argv[1], "--cli-contract")) return sdk_cli_contract(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--events-entry")) return sdk_events_entry(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--host-modules")) return sdk_host_modules(argv[2]);
   if (argc == 3 && (!strcmp(argv[1], "--modules") || !strncmp(argv[1], "--module-", 9))) return sdk_modules(argv[2], argv[1]);

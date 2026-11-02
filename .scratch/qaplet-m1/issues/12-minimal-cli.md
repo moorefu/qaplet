@@ -4,9 +4,9 @@
 
 **Blocked by:** [02：复制结果、严格值类型与安全诊断](02-result-values-diagnostics.md)、[05：模块失败固定与路径拒绝合同](05-module-cache-path-policy.md)、[07：跨 pump 的执行期限与总调度量](07-execution-budgets.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；2026-11-02 已领取，在 codex/m1-12 实施公开 SDK / CLI 垂直验收。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 

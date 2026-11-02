@@ -187,7 +187,7 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
   char *path = NULL, *directory = NULL;
   qaplet_code code = QAPLET_MODULE_RESOLVE;
   /* Registered host and declared builtin names are not file URLs. */
-  if (!root && (!strncmp(name, "host:", 5) || !strcmp(name, "qaplet:events"))) {
+  if (!root && (!strncmp(name, "host:", 5) || !strcmp(name, "qaplet:events") || !strcmp(name, "qaplet:runtime"))) {
     qaplet_module *entry = find_module(runtime, name);
     if (entry) return entry;
     module_throw(runtime, QAPLET_MODULE_RESOLVE);
@@ -298,9 +298,10 @@ static void save_failure(qaplet_runtime *runtime, qaplet_module *entry, JSValueC
 static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return -1; }
   if (!JS_IsUndefined(entry->compiled)) return 0;
-  if (!strncmp(entry->url, "host:", 5) || !strcmp(entry->url, "qaplet:events")) {
+  if (!strncmp(entry->url, "host:", 5) || !strncmp(entry->url, "qaplet:", 7)) {
     JSModuleDef *module = !strcmp(entry->url, "qaplet:events") ?
-        qaplet_events_load(runtime) : qaplet_host_load(runtime, entry->url);
+        qaplet_events_load(runtime) : !strcmp(entry->url, "qaplet:runtime") ?
+        qaplet_runtime_load(runtime) : qaplet_host_load(runtime, entry->url);
     if (!module) goto failure;
     entry->compiled = JS_DupValue(runtime->context, JS_MKPTR(JS_TAG_MODULE, module));
     return 0;
@@ -376,15 +377,94 @@ static int check_attributes(JSContext *context, void *opaque, JSValueConst attri
   return -1;
 }
 
-qaplet_code qaplet_modules_init(qaplet_runtime *runtime) {
+qaplet_code qaplet_check_runtime_config(const qaplet_config *config) {
+  if ((!config->argv && config->argc) || config->argc > UINT32_MAX ||
+      config->argc > SIZE_MAX / sizeof(qaplet_string) || (!config->cwd && config->cwd_length))
+    return QAPLET_INVALID_ARGUMENT;
+  for (size_t i = 0; i < config->argc; ++i) {
+    const qaplet_string *argument = &config->argv[i];
+    if (!argument->data && argument->length) return QAPLET_INVALID_ARGUMENT;
+    if (argument->length > QAPLET_VALUE_BYTES_MAX) return QAPLET_VALUE_TOO_LARGE;
+    if (!qaplet_utf8_valid(argument->data, argument->length)) return QAPLET_INVALID_UTF8;
+  }
+  if (config->cwd) {
+    if (!config->cwd_length || config->cwd_length > QAPLET_VALUE_BYTES_MAX)
+      return QAPLET_INVALID_ARGUMENT;
+    if (memchr(config->cwd, 0, config->cwd_length) || (config->cwd_length > 1 &&
+        config->cwd[0] == '/' && config->cwd[1] == '/'))
+      return QAPLET_INVALID_ARGUMENT;
+    if (!qaplet_utf8_valid(config->cwd, config->cwd_length)) return QAPLET_INVALID_UTF8;
+    if (config->cwd[0] != '/' && !(IsWindows() && config->cwd_length >= 3 &&
+        isalpha((unsigned char)config->cwd[0]) && config->cwd[1] == ':' &&
+        (config->cwd[2] == '/' || config->cwd[2] == '\\'))) return QAPLET_INVALID_ARGUMENT;
+  }
+  return QAPLET_OK;
+}
+
+void qaplet_runtime_snapshot_dispose(qaplet_runtime *runtime) {
+  for (size_t i = 0; i < runtime->initial_argc; ++i)
+    native_free(runtime, (void *)runtime->initial_argv[i].data, runtime->initial_argv[i].length + 1);
+  native_free(runtime, runtime->initial_argv, runtime->initial_argc * sizeof(qaplet_string));
+  if (runtime->initial_cwd) native_free(runtime, runtime->initial_cwd, strlen(runtime->initial_cwd) + 1);
+  runtime->initial_cwd = NULL; runtime->initial_argv = NULL; runtime->initial_argc = 0;
+}
+
+qaplet_code qaplet_modules_init(qaplet_runtime *runtime, const qaplet_config *config) {
   runtime->module_exception = JS_UNDEFINED;
-  char *cwd = getcwd(NULL, 0);
+  char *requested = NULL;
+  if (config->cwd) {
+    requested = native_alloc(runtime, config->cwd_length + 1);
+    if (!requested) return QAPLET_MEMORY_LIMIT;
+    memcpy(requested, config->cwd, config->cwd_length);
+    requested[config->cwd_length] = 0;
+  }
+  char *cwd = requested ? realpath(requested, NULL) : getcwd(NULL, 0);
+  native_free(runtime, requested, config->cwd_length + 1);
   if (!cwd) return QAPLET_MODULE_RESOLVE;
+  struct stat status;
+  if (!qaplet_utf8_valid(cwd, strlen(cwd))) { free(cwd); return QAPLET_INVALID_UTF8; }
+  if (stat(cwd, &status) || !S_ISDIR(status.st_mode)) { free(cwd); return QAPLET_MODULE_RESOLVE; }
   runtime->initial_cwd = native_string(runtime, cwd);
   free(cwd);
   if (!runtime->initial_cwd) return QAPLET_MEMORY_LIMIT;
+  if (config->argc) {
+    runtime->initial_argv = native_alloc(runtime, config->argc * sizeof(qaplet_string));
+    if (!runtime->initial_argv) return QAPLET_MEMORY_LIMIT;
+    runtime->initial_argc = config->argc;
+    for (size_t i = 0; i < config->argc; ++i) {
+      size_t length = config->argv[i].length;
+      char *copy = native_alloc(runtime, length + 1);
+      if (!copy) return QAPLET_MEMORY_LIMIT;
+      if (length) memcpy(copy, config->argv[i].data, length);
+      runtime->initial_argv[i] = (qaplet_string){copy, length};
+    }
+  }
   JS_SetModuleLoaderFunc2(runtime->engine, normalize_module, load_module, check_attributes, runtime);
-  return qaplet_modules_register_host(runtime, "qaplet:events");
+  qaplet_code code = qaplet_modules_register_host(runtime, "qaplet:events");
+  return code ? code : qaplet_modules_register_host(runtime, "qaplet:runtime");
+}
+
+static int initialize_runtime(JSContext *context, JSModuleDef *module) {
+  qaplet_runtime *runtime = JS_GetContextOpaque(context);
+  JSValue argv = JS_NewArray(context);
+  if (JS_IsException(argv)) return -1;
+  for (size_t i = 0; i < runtime->initial_argc; ++i) {
+    JSValue string = JS_NewStringLen(context, runtime->initial_argv[i].data, runtime->initial_argv[i].length);
+    if (JS_IsException(string) || JS_DefinePropertyValueUint32(context, argv, i, string, JS_PROP_ENUMERABLE) < 0) {
+      JS_FreeValue(context, argv); return -1;
+    }
+  }
+  if (JS_DefinePropertyValueStr(context, argv, "length", JS_NewUint32(context, runtime->initial_argc), 0) < 0 ||
+      JS_PreventExtensions(context, argv) < 0) { JS_FreeValue(context, argv); return -1; }
+  if (JS_SetModuleExport(context, module, "argv", argv) < 0) return -1;
+  return JS_SetModuleExport(context, module, "cwd", JS_NewString(context, runtime->initial_cwd));
+}
+
+JSModuleDef *qaplet_runtime_load(qaplet_runtime *runtime) {
+  JSModuleDef *module = JS_NewCModule(runtime->context, "qaplet:runtime", initialize_runtime);
+  if (module && (JS_AddModuleExport(runtime->context, module, "argv") < 0 ||
+                 JS_AddModuleExport(runtime->context, module, "cwd") < 0)) return NULL;
+  return module;
 }
 
 qaplet_code qaplet_modules_register_host(qaplet_runtime *runtime, const char *name) {

@@ -125,7 +125,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT;
   return code;
 }
 
@@ -139,12 +139,15 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   if (code) return qaplet_report(diagnostic, code);
   if (!output || config->flags || config->reserved[0] || config->reserved[1] ||
       config->reserved[2] || config->reserved[3]) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  code = qaplet_check_runtime_config(config);
+  if (code) return qaplet_report(diagnostic, code);
   qaplet_limits limits = config->limits;
   if (!limits.engine_heap_bytes) limits.engine_heap_bytes = 64u * 1024 * 1024;
   if (!limits.engine_stack_bytes) limits.engine_stack_bytes = 1024u * 1024;
   if (!limits.native_storage_bytes) limits.native_storage_bytes = 16u * 1024 * 1024;
   if (!limits.source_bytes) limits.source_bytes = 4u * 1024 * 1024;
   if (!limits.module_count) limits.module_count = 256;
+  if (limits.module_count < 2) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   if (!limits.source_cache_bytes) limits.source_cache_bytes = 32u * 1024 * 1024;
   if (!limits.execution_timeout_ms) limits.execution_timeout_ms = 30000;
   if (!limits.execution_dispatches) limits.execution_dispatches = 100000;
@@ -186,13 +189,13 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   qaplet_execution_init(runtime);
   runtime->event_handler = JS_UNDEFINED;
   JS_SetContextOpaque(runtime->context, runtime);
-  code = qaplet_modules_init(runtime);
+  code = qaplet_modules_init(runtime, config);
   if (!code) code = qaplet_events_init(runtime);
   if (code) {
     qaplet_events_dispose(runtime);
     qaplet_modules_dispose(runtime);
     qaplet_execution_dispose(runtime);
-    free(runtime->initial_cwd);
+    qaplet_runtime_snapshot_dispose(runtime);
     discard_unpublished_engine(runtime);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
@@ -330,7 +333,7 @@ qaplet_code qaplet_destroy(qaplet_runtime *runtime, qaplet_diagnostic *diagnosti
   code = qaplet_owner(runtime);
   if (!code && runtime->snapshot.lifecycle != QAPLET_CLOSED) code = QAPLET_BAD_STATE;
   if (!code) {
-    free(runtime->initial_cwd);
+    qaplet_runtime_snapshot_dispose(runtime);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
   }

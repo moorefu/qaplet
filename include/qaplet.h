@@ -44,6 +44,7 @@ enum {
   QAPLET_CAP_MODULE_POLICY = 1u << 10,
   QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_CAP_POD_EVENTS = 1u << 12,
+  QAPLET_CAP_RUNTIME_SNAPSHOT = 1u << 16,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -58,11 +59,17 @@ typedef struct {
   uint64_t execution_timeout_ms, execution_dispatches;
   uint64_t event_queue_slots, event_payload_bytes;
 } qaplet_limits;
+typedef struct { const char *data; size_t length; } qaplet_string;
+
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t flags;
   qaplet_limits limits;
   uint64_t reserved[4];
+  const qaplet_string *argv;
+  size_t argc;
+  const char *cwd;
+  size_t cwd_length;
 } qaplet_config;
 /* Zero fields inherit the finite instance limits. Nonzero values may only
  * tighten them. flags and reserved must be zero. Never retained after a call. */
@@ -150,7 +157,7 @@ typedef struct {
   uint64_t flags, reserved[2];
 } qaplet_host_module;
 #define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
+#define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}, NULL, 0, NULL, 0}
 #define QAPLET_EXECUTION_OPTIONS_INIT {sizeof(qaplet_execution_options), QAPLET_ABI_VERSION, 0, 0, 0, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
 #define QAPLET_PROGRESS_INIT {sizeof(qaplet_progress), QAPLET_ABI_VERSION, 0, 0, 0}
@@ -165,6 +172,12 @@ typedef struct {
  * belong to the thread that successfully created the Runtime. Output pointers
  * and diagnostics are borrowed only for the duration of a call. */
 qaplet_code qaplet_query_abi(qaplet_abi *output);
+/* argv is copied at creation as strict UTF-8 strings with explicit lengths
+ * (including NUL). NULL argv requires argc=0. cwd is an optional absolute native
+ * directory path; NULL/0 captures the OS cwd. Paths reject NUL/invalid UTF-8.
+ * qaplet:runtime exports a frozen argv array and primitive cwd snapshot. Later
+ * Host buffer changes/chdir do not change them or the module resolution base.
+ * Both qaplet builtins reserve module identities from creation. */
 qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet_diagnostic *);
 /* Registration copies names, declarations and constants atomically. Names use
  * a nonempty host: name. Module/export names are strict UTF-8 without NUL.

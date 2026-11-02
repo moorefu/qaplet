@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Build the Embed SDK on Ubuntu; run supplied Host bytes without rebuilding."""
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -32,7 +33,10 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/ex
           "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
+RECIPE += ("tests/native/sdk_runtime.c", "src/cli.c")
 HOST_CASES = (
+    ("runtime", ["--runtime", "{modules}"], "runtime snapshot: fixed read-only argv/cwd; public factory: pass\n"),
+    ("cli-contract", ["--cli-contract", "{modules}"], "CLI contrast: shared Script/ESM/cache/rejection/results/budgets; SDK pending preserved: pass\n"),
     ("events", ["--events"], "events: once-only registration; copied POD and independent exact JS values: pass\n"),
     ("events-queue", ["--events-queue"], "event queue: finite defaults; full/oversize atomic refusal; FIFO wrap; raw close drop: pass\n"),
     ("events-scheduling", ["--events-scheduling"], "event scheduling: jobs-first slices; ignored Promise return; checkpoint rejection; ordinary-error reuse: pass\n"),
@@ -67,6 +71,51 @@ HOST_CASES = (
     ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
     ("host-modules", ["--host-modules", "{modules}"], "host modules: copied registration; synchronous typed callback; catchable errors; guarded lifetime: pass\n"),
     ("facts", ["--facts"], None),
+)
+
+
+CLI_CASES = (
+    ("help", ["--help"], 0, "Usage: qaplet [--timeout-ms N] [--max-dispatches N] run <file> [-- args...]\n       qaplet [--timeout-ms N] [--max-dispatches N] eval --source <text>\n       qaplet --help | --version\nrun uses ESM; argv contains only args after --. eval uses Script.\neval prints scalar values, raw UTF-8 strings, or 0x-prefixed hex bytes, then a newline.\nZero budgets use finite SDK defaults. Exit: 0 success, 1 execution, 2 arguments.\n", ""),
+    ("version", ["--version"], 0, "qaplet 0.1.0 (Embed SDK ABI 1)\n", ""),
+    ("eval-number", ["eval", "--source", "6 * 7"], 0, "42\n", ""),
+    ("eval-undefined", ["eval", "--source", "undefined"], 0, "undefined\n", ""),
+    ("eval-null", ["eval", "--source", "null"], 0, "null\n", ""),
+    ("eval-bool", ["eval", "--source", "true"], 0, "true\n", ""),
+    ("eval-signed", ["eval", "--source", "-9223372036854775808n"], 0, "-9223372036854775808\n", ""),
+    ("eval-unsigned", ["eval", "--source", "18446744073709551615n"], 0, "18446744073709551615\n", ""),
+    ("eval-string-nul", ["eval", "--source", "'a\\0😀'"], 0, "a\0😀\n", ""),
+    ("eval-bytes", ["eval", "--source", "new Uint8Array([0,255,17])"], 0, "0x00ff11\n", ""),
+    ("eval-object", ["eval", "--source", "({toString(){throw new Error('conversion ran')}})"], 1, "", "qaplet: code=8 VALUE_TYPE_UNSUPPORTED"),
+    ("eval-thenable", ["eval", "--source", "({get then(){throw new Error('getter ran')}})"], 1, "", "qaplet: code=8 VALUE_TYPE_UNSUPPORTED"),
+    ("eval-script", ["eval", "--source", "var answer=40; answer+2"], 0, "42\n", ""),
+    ("eval-esm-refused", ["eval", "--source", "export const answer=42"], 1, "", "qaplet: code=7 "),
+    ("eval-promise", ["eval", "--source", "Promise.resolve(42)"], 0, "42\n", ""),
+    ("eval-rejection", ["eval", "--source", "Promise.reject(new Error('entry rejection'))"], 1, "", "qaplet: code=7 "),
+    ("eval-checkpoint", ["eval", "--source", "let bad=Promise.reject('handled');let p=Promise.resolve();for(let i=0;i<600;++i)p=p.then(()=>{});p.then(()=>{bad.catch(()=>{});return 42})"], 0, "42\n", ""),
+    ("eval-diagnostic-getter", ["eval", "--source", "throw Object.defineProperty(new Error(),'message',{get(){throw new Error('diagnostic getter ran')}})"], 1, "", "qaplet: code=7 JS_EXCEPTION"),
+    ("eval-unsettled", ["eval", "--source", "new Promise(()=>{})"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("eval-no-base", ["eval", "--source", "import('./entry.mjs')"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("eval-runtime", ["eval", "--source", "import('qaplet:runtime').then(m=>Object.isFrozen(m.argv)&&m.argv.length===0&&typeof m.cwd==='string'&&m.cwd[0]==='/')"], 0, "true\n", ""),
+    ("eval-unknown-builtin", ["eval", "--source", "import('qaplet:future')"], 1, "", "qaplet: code=6 UNSUPPORTED"),
+    ("run-argv", ["run", "{modules}/cli-runtime.mjs", "--", "first", "参数 空格", "--literal"], 0, "", ""),
+    ("run-cache-namespace", ["run", "{modules}/cli-cache.mjs"], 0, "", ""),
+    ("run-rejection", ["run", "{modules}/cli-reject.mjs"], 1, "", "qaplet: code=7 "),
+    ("run-unsettled", ["run", "{modules}/cli-unsettled.mjs"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("run-query", ["run", "{modules}/entry.mjs?refused"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("run-directory", ["run", "{modules}"], 1, "", "qaplet: code=15 MODULE_LOAD"),
+    ("run-missing", ["run", "{modules}/cli-absent.mjs"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("eval-dispatch-budget", ["--max-dispatches", "600", "eval", "--source", "let p=Promise.resolve();for(let i=0;i<1000;++i)p=p.then(()=>{});p"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("run-dispatch-budget", ["--max-dispatches", "600", "run", "{modules}/cli-jobs.mjs"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("eval-deadline", ["--timeout-ms", "20", "eval", "--source", "for(;;){}"], 1, "", "qaplet: code=17 DEADLINE_EXCEEDED"),
+    ("run-deadline", ["--timeout-ms", "20", "run", "{modules}/cli-loop.mjs"], 1, "", "qaplet: code=17 DEADLINE_EXCEEDED"),
+    ("args-empty", [], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-implicit-source", ["eval", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-source", ["eval", "--source"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-source-tail", ["eval", "--source", "42", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-file", ["run"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-separator", ["run", "{modules}/entry.mjs", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-invalid-budget", ["--timeout-ms", "-1", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-overflow-budget", ["--max-dispatches", "18446744073709551616", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
 )
 
 
@@ -107,6 +156,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
     shutil.copyfile(ROOT / "tests/native/sdk_events.c", distribution / "host-events.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_runtime.c", distribution / "host-runtime.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -155,23 +205,40 @@ def build(args, report, directory):
         "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-events-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-events.c", "-o", work / "events.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", archive],
+    run(report, directory, "host-runtime-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-runtime.c", "-o", work / "runtime-host.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "runtime-host.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)
     artifact["build_commands"] = identity(output / "qaplet-host.build-commands.log")
     report["artifacts"].append(artifact)
+    cli_work = work / "cli"
+    (cli_work / "tmp").mkdir(parents=True)
+    cli_environment = dict(environment, TMPDIR=str(cli_work / "tmp"), BUILDLOG=str(output / "qaplet.build-commands.log"))
+    run(report, directory, "cli-compile", [tree / "bin/cosmocc", "-Os", "-I" + str(distribution / "include"),
+        "-c", ROOT / "src/cli.c", "-o", cli_work / "cli.o"], args.compile_timeout, cli_work, cli_environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet", [cli_work / "cli.o", archive],
+                  cli_work / "qaplet.com", cli_work, cli_environment)
+    publish_ape(cli_work, output, "qaplet", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    cli_artifact = audit(args, report, directory, tree, "qaplet", output)
+    cli_artifact["build_commands"] = identity(output / "qaplet.build-commands.log")
+    report["artifacts"].append(cli_artifact)
     report["sdk"] = {"abi_version": 1, "recipe_id": report["sdk_recipe"]["sha256"],
         "components": [{"file": path.relative_to(output).as_posix(), **identity(path)}
                        for path in sorted(distribution.rglob("*")) if path.is_file()]}
     report["sdk"]["sha256"] = digest([{key: value for key, value in item.items() if key != "path"}
                                        for item in report["sdk"]["components"]])
+    # Bind all delivered APE sidecars, CPU maps, notices, loader and SDK bytes.
+    report["distribution"] = [{"file": path.relative_to(output).as_posix(), **identity(path)}
+                              for path in sorted(output.rglob("*")) if path.is_file()]
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
     if recipe() != files:
         raise BuildError("SDK recipe/source changed during build")
-    report.update(status="pass", reason="Static SDK and audited C Host fat APE built on Ubuntu; runtime evidence is separate")
+    report.update(status="pass", reason="Static SDK and audited CLI/C Host fat APEs built on Ubuntu; runtime evidence is separate")
 
 
 def consume(args, report, directory):
@@ -183,11 +250,29 @@ def consume(args, report, directory):
     if producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build" or producer.get("status") != "pass":
         raise BuildError("Successful qaplet-sdk producer required")
     selected = producer["artifacts"]
-    if len(selected) != 1 or selected[0]["name"] != "qaplet-host" or selected[0]["audit"]["status"] != "pass":
-        raise BuildError("Exactly one audited public C Host artifact required")
-    artifact = {**selected[0], "path": str(args.artifact.resolve())}
+    if len(selected) != 2 or {item["name"] for item in selected} != {"qaplet-host", "qaplet"} or any(item["audit"]["status"] != "pass" for item in selected):
+        raise BuildError("Exactly one audited public C Host and CLI artifact required")
+    artifact = {**next(item for item in selected if item["name"] == "qaplet-host"), "path": str(args.artifact.resolve())}
+    cli_path = args.cli_artifact.resolve() if args.cli_artifact else args.artifact.resolve().parent / "qaplet.com"
+    cli_artifact = {**next(item for item in selected if item["name"] == "qaplet"), "path": str(cli_path)}
     if sha256(args.artifact) != artifact["sha256"] or args.artifact.stat().st_size != artifact["size_bytes"]:
         raise BuildError("Supplied Host bytes differ from producer")
+    if cli_path.parent != args.artifact.resolve().parent:
+        raise BuildError("Supplied CLI and Host must share the delivered distribution")
+    if sha256(cli_path) != cli_artifact["sha256"] or cli_path.stat().st_size != cli_artifact["size_bytes"]:
+        raise BuildError("Supplied CLI bytes differ from producer")
+    def check_distribution():
+        delivered = producer.get("distribution")
+        if not delivered or len({item["file"] for item in delivered}) != len(delivered):
+            raise BuildError("Unique complete delivered distribution identities required")
+        for item in delivered:
+            name = Path(item["file"])
+            if name.is_absolute() or ".." in name.parts:
+                raise BuildError("Distribution component must stay within its supplied directory")
+            path = args.artifact.resolve().parent / name
+            if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+                raise BuildError("Supplied distribution component differs from producer: " + item["file"])
+    check_distribution()
     # Validate supplied SDK bytes independently, even on hosts which do not compile.
     for item in producer["sdk"]["components"]:
         name = Path(item["file"])
@@ -204,12 +289,14 @@ def consume(args, report, directory):
             if key not in ("git_commit", "working_tree_dirty", "sha256")}) != producer["sdk_recipe"]["sha256"]:
         raise BuildError("SDK recipe identity is inconsistent")
     headers(args.artifact, [args.artifact.with_suffix(".com.dbg"), args.artifact.with_suffix(".aarch64.elf")])
+    headers(cli_path, [cli_path.with_suffix(".com.dbg"), cli_path.with_suffix(".aarch64.elf")])
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
-                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report), artifacts=[artifact])
+                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact])
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
+        cli_path.chmod(cli_path.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
         arguments = [str(args.artifact.parent.resolve() / "sdk/modules") if value == "{modules}" else value for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
@@ -230,6 +317,27 @@ def consume(args, report, directory):
             "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
             "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
             "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else ""})
+    for suffix, arguments, expected_exit, expected_stdout, stderr_contains in CLI_CASES:
+        arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")) for value in arguments]
+        executed, _, _ = run(report, directory, "qaplet." + suffix, [*loader, cli_path, *arguments], args.timeout, expected=None)
+        # CLI strings are UTF-8 with explicit NUL bytes. The frozen M0 helper's
+        # decoding heuristic is unsuitable here; compare the preserved raw logs.
+        stdout = Path(executed["stdout_log"]).read_bytes()
+        stderr = Path(executed["stderr_log"]).read_bytes()
+        elapsed = (datetime.fromisoformat(executed["finished_at"]) - datetime.fromisoformat(executed["started_at"])).total_seconds()
+        immediate = suffix not in ("eval-unsettled", "run-unsettled") or elapsed < 2
+        passed = executed["exit_code"] == expected_exit and not executed["timed_out"] and immediate and stdout == expected_stdout.encode("utf-8") and (stderr_contains.encode("utf-8") in stderr if stderr_contains else not stderr)
+        report["cases"].append({"case_id": "qaplet." + suffix, "status": "pass" if passed else "fail", "required": True,
+            "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+            "expected": {"exit_code": expected_exit, "stdout": expected_stdout, "stderr_contains": stderr_contains,
+                         "maximum_elapsed_seconds": 2 if suffix in ("eval-unsettled", "run-unsettled") else None},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout.decode("utf-8"), "stderr": stderr.decode("utf-8"),
+                       "timed_out": executed["timed_out"], "elapsed_seconds": elapsed},
+            "commands": [executed], "artifact": identity(cli_path), "sdk_sha256": producer["sdk"]["sha256"],
+            "timeout_seconds": args.timeout, "reason": "Actual CLI process uses supplied public SDK, raw OS exit and raw UTF-8 logs"})
+    report["artifacts"][1]["sha256_after"] = sha256(cli_path)
+    if report["artifacts"][1]["sha256_after"] != cli_artifact["sha256"]:
+        raise BuildError("CLI artifact changed during execution")
     report["artifacts"][0]["sha256_after"] = sha256(args.artifact)
     if report["artifacts"][0]["sha256_after"] != artifact["sha256"]:
         raise BuildError("Artifact changed during execution")
@@ -239,10 +347,11 @@ def consume(args, report, directory):
             raise BuildError("Supplied SDK component changed during execution: " + item["file"])
     if recipe() != producer["sdk_recipe"]["files"]:
         raise BuildError("Consumer recipe differs from selected SDK producer")
+    check_distribution()
     report["required_cases"] = [item["case_id"] for item in report["cases"] if item["required"]]
     report["unavailable_cases"] = [item["case_id"] for item in report["cases"] if item["status"] == "blocked"]
     report.update(status="pass" if all(item["status"] == "pass" or not item["required"] and item["status"] == "blocked" for item in report["cases"]) else "fail",
-                  reason="Supplied SDK/Host identity and actual public C smoke checked; full M1 matrix not claimed")
+                  reason="Supplied SDK/CLI/Host identities and actual public process contracts checked; full M1 matrix not claimed")
 
 
 def main():
@@ -257,6 +366,7 @@ def main():
     parser.add_argument("--report", type=Path, default=ROOT / "out/sdk/report.json")
     parser.add_argument("--build-report", type=Path)
     parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--cli-artifact", type=Path, help="Supplied qaplet.com beside Host (default: sibling qaplet.com)")
     parser.add_argument("--loader-dir", type=Path)
     parser.add_argument("--loader-manifest", type=Path)
     parser.add_argument("--expected-os")
