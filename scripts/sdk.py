@@ -24,7 +24,7 @@ from workflow_support import workspace
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
-          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c", "tests/native/sdk_stop.c",
+          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c", "tests/native/sdk_resources.c", "tests/native/sdk_stop.c",
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
@@ -33,6 +33,11 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/ex
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 HOST_CASES = (
+    ("resource-storage", ["--resource-storage"], "resource storage: actual SDK source-copy refusal permanent; bounded accounting; fresh recovery: pass\n"),
+    ("resource-configuration", ["--resource-configuration"], "resource configuration: all finite defaults; copied fixed capacities; overflow rejection: pass\n"),
+    ("resource-bridge", ["--resource-bridge"], "resource bridge: configured byte/argument limits; preflight reuse; copied exact boundary; larger finite arguments: pass\n"),
+    ("resource-slices", ["--resource-slices"], "resource slices: configured jobs/events quotas; fixed queue; public event accounting: pass\n"),
+    ("resource-refusals", ["--resource-refusals"], "resource refusals: metered rejections/registration; caught bridge/engine refusal; 32 factory limits and recovery: pass\n"),
     ("stop", ["--stop"], "stop: queue-independent acceptance; immediate refusal; owner confirmation; raw jobs/events close: pass\n"),
     ("stop-running", ["--stop-running"], "stop running: measured JS CPU loops; async interruption; C callback barrier; idle PENDING: pass\n"),
     ("stop-ordering", ["--stop-ordering"], "stop ordering: claimed event in C; saturated acceptance barrier; unclaimed work dropped; no retry: pass\n"),
@@ -111,6 +116,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
     shutil.copyfile(ROOT / "tests/native/sdk_events.c", distribution / "host-events.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_resources.c", distribution / "host-resources.c")
     shutil.copyfile(ROOT / "tests/native/sdk_stop.c", distribution / "host-stop.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
@@ -160,9 +166,11 @@ def build(args, report, directory):
         "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-events-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-events.c", "-o", work / "events.o"], args.compile_timeout, work, environment)
+    run(report, directory, "host-resources-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-resources.c", "-o", work / "resources.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-stop-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-stop.c", "-o", work / "stop.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "stop.o", archive],
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "resources.o", work / "stop.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))

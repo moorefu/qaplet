@@ -31,7 +31,9 @@ qaplet_code qaplet_events_init(qaplet_runtime *runtime) {
 void qaplet_events_dispose(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);
   runtime->event_accepting = runtime->event_handler_ready = 0;
-  runtime->snapshot.events_dropped += runtime->snapshot.queue_depth;
+  uint64_t depth = runtime->snapshot.queue_depth;
+  runtime->snapshot.events_dropped = depth > UINT64_MAX - runtime->snapshot.events_dropped ?
+      UINT64_MAX : runtime->snapshot.events_dropped + depth;
   runtime->snapshot.queue_depth = 0;
   pthread_mutex_unlock(&runtime->mutex);
   JS_FreeValue(runtime->context, runtime->event_handler);
@@ -51,14 +53,16 @@ qaplet_code qaplet_post_event(qaplet_runtime *runtime, uint32_t type, uint64_t t
   if (!code && (runtime->snapshot.lifecycle != QAPLET_OPEN || !runtime->event_accepting)) code = QAPLET_BAD_STATE;
   if (!code && !runtime->event_handler_ready) code = QAPLET_NO_HANDLER;
   if (!code && runtime->snapshot.queue_depth == runtime->snapshot.limits.event_queue_slots) code = QAPLET_QUEUE_FULL;
-  if (code) ++runtime->snapshot.events_rejected;
+  if (code) {
+    if (runtime->snapshot.events_rejected != UINT64_MAX) ++runtime->snapshot.events_rejected;
+  }
   else {
     size_t index = (runtime->event_head + (size_t)runtime->snapshot.queue_depth) %
         (size_t)runtime->snapshot.limits.event_queue_slots;
     event_slot *slot = (event_slot *)(runtime->event_slots + runtime->event_stride * index);
     slot->type = type; slot->token = token; slot->length = length;
     if (length) memcpy(slot->payload, data, length);
-    ++runtime->snapshot.events_accepted;
+    if (runtime->snapshot.events_accepted != UINT64_MAX) ++runtime->snapshot.events_accepted;
     if (++runtime->snapshot.queue_depth > runtime->snapshot.queue_peak)
       runtime->snapshot.queue_peak = runtime->snapshot.queue_depth;
   }
@@ -88,7 +92,7 @@ qaplet_code qaplet_events_deliver(qaplet_runtime *runtime, unsigned *claimed) {
   if (slot->length) memcpy(copy->payload, slot->payload, slot->length);
   runtime->event_head = (runtime->event_head + 1) % (size_t)runtime->snapshot.limits.event_queue_slots;
   --runtime->snapshot.queue_depth;
-  ++runtime->snapshot.events_consumed;
+  if (runtime->snapshot.events_consumed != UINT64_MAX) ++runtime->snapshot.events_consumed;
   *claimed = 1;
   pthread_mutex_unlock(&runtime->mutex);
 
