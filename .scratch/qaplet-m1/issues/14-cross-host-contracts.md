@@ -4,9 +4,9 @@
 
 **Blocked by:** [13：可分发 SDK 包与完整纯 C 示例](13-sdk-distribution-c-example.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；以已合入 01–13 的 integration `31155083b3677bf9888d14d6c01dd8758d551707` 为基线，按 Q32 公开边界进行 TDD；完整原生 Cross 实际执行前不声明验收。
 
 **Execution prerequisites:** 匹配的新 SDK/CLI/C Host 供应制品，以及 Windows x64、macOS x64/ARM64、Linux ARM64 和 Linux Fast 的实际执行资源。
 
@@ -37,4 +37,6 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：领取本票；13 已 resolved 且属于本分支祖先。沿用 Q32 已批准的 SDK/CLI/纯 C Host 与现有 producer/native consumer seam，不新增私有测试边界。复用同一 m0.yml 原生 job 和供应 SDK 字节；缺项、skip、timeout 与 TCG 均不冒充必需原生 Cross 成绩。
 
