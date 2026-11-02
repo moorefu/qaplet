@@ -35,7 +35,7 @@ JavaScript catches the thrown error. The distributed `host-host-modules.c` and
 `modules/host-bridge.mjs` exercise this contract through the public header/SDK.
 
 Promise/jobs capability adds explicit owner-driven `qaplet_pump`. An accepted
-eval can return PENDING, and each pump executes at most 256 runnable jobs. Empty
+eval can return PENDING, and each pump obeys `limits.pump_jobs` (default 256). Empty
 jobs do not finish an unsettled entry Promise. Rejections are judged at a complete
 jobs checkpoint; ordinary errors settle runnable jobs before DONE and preserve
 the Runtime for reuse. Only genuine Promises are waited on, without consulting
@@ -152,7 +152,7 @@ refusals and failed factory recovery through the supplied public SDK.
 The copied-values capability adds exact signed/unsigned 64-bit BigInt, strict
 UTF-8 strings (including NUL), and safely copied Uint8Array views. Number stays
 double. Results reject arbitrary objects, functions, proxies, shared/detached
-views, lone surrogates and values above the 1 MiB byte limit without conversion
+views, lone surrogates and values above the configured byte limit (default 1 MiB) without conversion
 hooks. `qaplet_get_result` uses the caller's buffer and explicit capacity; a
 short buffer returns the required payload length and leaves the stable result
 available for retry. String payloads do not include an extra NUL terminator.
