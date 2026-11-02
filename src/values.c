@@ -261,7 +261,8 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
     const char *message = (unsigned)code < sizeof(messages)/sizeof(messages[0]) ? messages[code] :
         code == QAPLET_DEADLINE_EXCEEDED ? "DEADLINE_EXCEEDED" :
         code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" :
-        code == QAPLET_HOST_ERROR ? "HOST_ERROR" : "UNKNOWN";
+        code == QAPLET_HOST_ERROR ? "HOST_ERROR" : code == QAPLET_NO_HANDLER ? "NO_HANDLER" :
+        code == QAPLET_QUEUE_FULL ? "QUEUE_FULL" : code == QAPLET_PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;

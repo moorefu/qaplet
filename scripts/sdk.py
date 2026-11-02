@@ -22,9 +22,9 @@ from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
 from workflow_support import workspace
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
-          "tests/native/sdk_budgets.c", "tests/native/sdk_host_modules.c",
+          "tests/native/sdk_budgets.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c",
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
@@ -33,6 +33,12 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/ex
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 HOST_CASES = (
+    ("events", ["--events"], "events: once-only registration; copied POD and independent exact JS values: pass\n"),
+    ("events-queue", ["--events-queue"], "event queue: finite defaults; full/oversize atomic refusal; FIFO wrap; raw close drop: pass\n"),
+    ("events-scheduling", ["--events-scheduling"], "event scheduling: jobs-first slices; ignored Promise return; checkpoint rejection; ordinary-error reuse: pass\n"),
+    ("events-threads", ["--events-threads"], "event threads: controlled producer FIFO; owner/callback barriers; post and snapshot reentry: pass\n"),
+    ("events-budgets", ["--events-budgets"], "event budgets: shared/idle cumulative ledgers; owner-wait deadline; allocation first cause; factory refusal: pass\n"),
+    ("events-entry", ["--events-entry", "{modules}"], "event entry: static builtin; no-progress TLA; worker copy; owner pump completion: pass\n"),
     ("scalar", [], "scalar: 42; closed: true\n"),
     ("state", ["--state"], "state: 40 -> 42 -> exception -> 43; fresh: true\n"),
     ("lifetime", ["--lifetime"], "lifetime: closed twice; destroy ordering: pass; cycles: 1000\n"),
@@ -94,6 +100,7 @@ def build(args, report, directory):
     shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
     shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_events.c", distribution / "host-events.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -120,7 +127,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
@@ -138,7 +145,9 @@ def build(args, report, directory):
         "-c", distribution / "host-budgets.c", "-o", work / "budgets.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", archive],
+    run(report, directory, "host-events-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-events.c", "-o", work / "events.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)

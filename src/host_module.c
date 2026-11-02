@@ -195,7 +195,7 @@ static JSValue trampoline(JSContext *context, JSValueConst self, int argc, JSVal
     qaplet_host_export *item = &entry->exports[index];
     code = item->function(runtime, runtime->host_active_call, argc, arguments, item->userdata);
     runtime->host_active_call = 0;
-    if ((unsigned)code > QAPLET_HOST_ERROR) code = QAPLET_HOST_ERROR;
+    if ((unsigned)code > QAPLET_PAYLOAD_TOO_LARGE) code = QAPLET_HOST_ERROR;
   }
   for (int i = 0; i <= converted && i < argc; ++i)
     qaplet_native_free(runtime, payloads[i], copies[i].length);
