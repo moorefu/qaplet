@@ -14,6 +14,20 @@ ARM64 overlay 和固定 cosmocc 原 ZIP。任务 02 已选择目标
 `docs/plans/qaplet-toolchain-lock-selected.json` 仍是有未知字段的选型样例，不是可构建锁。
 显式候选也必须直接位于某个仓库的 `toolchains/`；解析器和报告防覆盖校验共用物理根目录判定。
 
+M1 任务 05 为模块名增加窄边界 overlay：静态 atom 与动态 import 在转入只有 C string 的
+host callback 前拒绝 NUL；普通字符串和 property atom 的 CString 语义不变。原 Bellard
+Commit/Tree、第一项 ARM64 overlay 和 cosmocc 原 ZIP 保持不变；第二项 patch、实际 patched
+inventory 和 engine compatibility identity 分别重新生成。官方网络获取失败的原日志保留；本次
+显式从已完整验证的旧缓存 Git objects 重建 pristine 同一 Commit/Tree，并独立比较完整 upstream
+inventory 后才应用 ordered patches，不声明一次新的成功官方获取，也不修改旧缓存。
+
+新 source cache 为 `2833510432045f72915919cef680ba59e5153b16-d418e131993e6539/source`，
+engine compatibility 为 `ca0f112ee82774eaa48aa1d2e646f6fb13d7862119e4797d819009f572307ad6`，
+新 input_id 为 `f07f23c64bfcfb4a92722723e3e673213534a6fa81e690c401bd9fa10e0fd178`。
+实际 selected Ubuntu SDK、Windows SDK、ARM64 64K SDK 和 Ubuntu/ARM64 M0 ESM/Promise
+探针通过后仅晋级 canonical state。原 selected lock、producer 和报告保持原身份；普通 producer
+须另行重建，详见 [05 验收记录](../../.scratch/qaplet-m1/05-module-policy-validation.md)。
+
 审查后的源码选择内部重命名改变了冻结 recipe，已按 selected、受控 17 项实际 producer/startup、
 pinned 的流程形成新 input_id；精确引擎/patch/toolchain 保持原值。新身份、晋级原字节与旧报告的
 历史范围见[审查修正验收](../../.scratch/qaplet-v15-alignment/review-fixes-validation.md)。

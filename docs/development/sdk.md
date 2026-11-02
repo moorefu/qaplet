@@ -100,6 +100,23 @@ previous completed result. Close releases registry/source/engine references;
 the immutable cwd configuration stays in the CLOSED handle's native baseline
 until destroy. The SDK distribution includes the actual `sdk/modules` source
 fixtures used by the public C Host, so supplied consumers need no rebuild.
+Module-policy capability bit 10 adds strict path refusals and the frozen failure
+contract. Invalid requests consume no identity; normalized load/parse/link/eval
+failures count as modules and retain their result until close. Source edits and
+symlink retargets do not hot-update an existing identity or successful alias;
+a new Runtime observes repaired files. Hard links retain distinct canonical
+URLs. Native Windows drives are uppercase in URLs, with path case supplied by
+OS realpath rather than global lowercasing. Only regular source files are read;
+nonblocking open avoids waiting on a FIFO before rejecting it.
+
+Module names reject NUL, including computed dynamic names at the engine's narrow
+module-name conversion boundary. Ordinary bridge strings retain embedded NUL.
+Query/fragment, nonempty authority, extra leading URL slashes, encoded NUL or
+separators, UNC/device paths, unknown schemes and unsupported formats reject
+before source evaluation. The public Host creates mutable fixtures in a private
+temporary directory; supplied SDK source fixtures stay unchanged and are checked
+both before and after consumption. `sdk.py --controlled-probe` explicitly admits
+selected input for candidate probes only; ordinary builds/consumers reject it.
 File runs and Script imports with an explicit base start the same execution
 ledger as ordinary eval, including TLA jobs, host waits and module body loops.
 Execution budgets use one absolute monotonic deadline (default 30,000 ms) and

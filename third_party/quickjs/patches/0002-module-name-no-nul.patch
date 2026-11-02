@@ -1,0 +1,49 @@
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -31014,6 +31014,19 @@
+     return m;
+ }
+ 
++/* Module names cross a C-string-only host boundary. Ordinary JS strings and
++   property atoms retain their length-aware embedded-NUL semantics. */
++static const char *js_module_atom_to_cstring(JSContext *ctx, JSAtom atom)
++{
++    JSValue value = JS_AtomToValue(ctx, atom);
++    const char *name;
++    if (JS_IsException(value))
++        return NULL;
++    name = JS_ToCStringNZ(ctx, value);
++    JS_FreeValue(ctx, value);
++    return name;
++}
++
+ static JSModuleDef *js_host_resolve_imported_module_atom(JSContext *ctx,
+                                                          JSAtom base_module_name,
+                                                          JSAtom module_name1,
+@@ -31022,10 +31035,10 @@
+     const char *base_cname, *cname;
+     JSModuleDef *m;
+ 
+-    base_cname = JS_AtomToCString(ctx, base_module_name);
++    base_cname = js_module_atom_to_cstring(ctx, base_module_name);
+     if (!base_cname)
+         return NULL;
+-    cname = JS_AtomToCString(ctx, module_name1);
++    cname = js_module_atom_to_cstring(ctx, module_name1);
+     if (!cname) {
+         JS_FreeCString(ctx, base_cname);
+         return NULL;
+@@ -32008,11 +32021,11 @@
+         JS_ThrowTypeError(ctx, "no function filename for import()");
+         goto exception;
+     }
+-    basename = JS_ToCString(ctx, basename_val);
++    basename = JS_ToCStringNZ(ctx, basename_val);
+     if (!basename)
+         goto exception;
+ 
+-    filename = JS_ToCString(ctx, specifier);
++    filename = JS_ToCStringNZ(ctx, specifier);
+     if (!filename)
+         goto exception;
+ 

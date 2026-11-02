@@ -4,8 +4,8 @@
   "manifests": {
     "quickjs": {
       "path": "third_party/quickjs/source.lock.json",
-      "sha256": "1458cd1d19f701a579fb4f375c7145eec2fca6c43b03fddf8b6ed4f5b4504f6a",
-      "size_bytes": 36387
+      "sha256": "f544d0cac9ee446210962bc38624f64653aca01ec7f6a8702592a92f4d5e6d25",
+      "size_bytes": 36842
     },
     "cosmocc": {
       "path": "toolchains/cosmocc.lock.json",
@@ -46,13 +46,18 @@
     },
     {
       "path": "third_party/quickjs/patches.json",
-      "sha256": "dc12be2f49d37dd237e195b9a491be10c68a367c9be1b8c5899222e0692ba616",
-      "size_bytes": 572
+      "sha256": "d418e131993e6539270055ac75c95973cc72159eb4de18d20864f33953d0c1f2",
+      "size_bytes": 1027
     },
     {
       "path": "third_party/quickjs/patches/0001-arm64-full-pointer-values.patch",
       "sha256": "6197ebf127147d917470759f603ff614f6eff68fe581a43f2a5dd37a2be26eff",
       "size_bytes": 345
+    },
+    {
+      "path": "third_party/quickjs/patches/0002-module-name-no-nul.patch",
+      "sha256": "5c559b810cd1e280ec3426ad18f64f6ea49068a9edfd8712ed1e9b1ba1317b66",
+      "size_bytes": 1625
     },
     {
       "path": "toolchains/cosmocc.acquisition.json",
@@ -129,8 +134,8 @@
       "git_tree_oid": "b2763aa1a9395672adc131322f17d7fad7383053",
       "version_file": "2026-06-04",
       "upstream_sha256": "8afcc7e394aae1ddae380ed63a1ca329d2bbeeb5c9ffdc08b50e0c65e111ac8f",
-      "source_sha256": "562217889e78aa63828113ff112034755d010cd8ec36ad9756eeded91d39138c",
-      "patchset_sha256": "dc12be2f49d37dd237e195b9a491be10c68a367c9be1b8c5899222e0692ba616"
+      "source_sha256": "e4dee17eb0a1bb1c109b96f5236cf26f8ed346f9075c91d4ce3265f6ab85b805",
+      "patchset_sha256": "d418e131993e6539270055ac75c95973cc72159eb4de18d20864f33953d0c1f2"
     },
     "cosmocc": {
       "archive": {
