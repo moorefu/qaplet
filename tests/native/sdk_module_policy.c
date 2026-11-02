@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "public module policy failed at line %d: %s\n", __LINE__, #c); return 1; } } while (0)
@@ -193,7 +194,16 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
   CHECK(entry(runtime,directory,"plain")==QAPLET_OK && !number(runtime,"extensionless",NULL,42));
   char fifo[4096]; snprintf(fifo,sizeof(fifo),"%s/pipe.js",directory);
   if(base[8] && base[9]!=':') {
-    CHECK(!mknod(fifo,S_IFIFO | 0600,0));
+    /* The supplied libc's mknod returns ENOSYS. Use the actual native fixture
+     * utility (Ubuntu coreutils or the retained guest BusyBox), without a shell. */
+    pid_t child=fork(); CHECK(child>=0);
+    if (!child) {
+      execl("/usr/bin/mkfifo","mkfifo",fifo,(char *)NULL);
+      execl("/bin/busybox","busybox","mkfifo",fifo,(char *)NULL);
+      _Exit(127);
+    }
+    int status=0; CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+    struct stat fifo_stat; CHECK(!lstat(fifo,&fifo_stat) && S_ISFIFO(fifo_stat.st_mode));
     CHECK(entry(runtime,directory,"pipe.js")==QAPLET_MODULE_LOAD);
     CHECK(!unlink(fifo));
   }
