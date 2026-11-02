@@ -52,7 +52,7 @@ static int release(qaplet_runtime *runtime) {
 }
 
 int sdk_modules(const char *directory, const char *mode) {
-  if (!strcmp(mode, "--module-nul")) return sdk_module_policy(mode);
+  if (!strcmp(mode, "--module-nul") || !strcmp(mode, "--module-cache")) return sdk_module_policy(mode);
   qaplet_config config = QAPLET_CONFIG_INIT;
   qaplet_runtime *runtime = NULL;
   qaplet_progress progress = QAPLET_PROGRESS_INIT;

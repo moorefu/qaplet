@@ -22,7 +22,7 @@ static qaplet_code finish(qaplet_runtime *runtime, qaplet_progress *progress, qa
   unsigned count = 0;
   while (!code && progress->phase == QAPLET_PHASE_PENDING && count++ < 16)
     code = qaplet_pump(runtime, progress, NULL);
-  return progress->phase == QAPLET_PHASE_DONE ? code : QAPLET_BAD_STATE;
+  return code ? code : progress->phase == QAPLET_PHASE_DONE ? QAPLET_OK : QAPLET_BAD_STATE;
 }
 
 static qaplet_code entry(qaplet_runtime *runtime, const char *directory, const char *name) {
@@ -51,6 +51,81 @@ static int release(qaplet_runtime *runtime) {
   return 0;
 }
 
+
+static int remove_fixture(const char *directory, const char *name) {
+  char path[4096];
+  CHECK(snprintf(path, sizeof(path), "%s/%s", directory, name) < sizeof(path));
+  CHECK(!unlink(path));
+  return 0;
+}
+
+static int frozen_failures(qaplet_runtime *runtime, const char *directory, const char *base) {
+  qaplet_snapshot snapshot = QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK);
+  uint64_t original_bytes = snapshot.source_cache_bytes;
+  CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=99; export const answer=99;"));
+  CHECK(entry(runtime, directory, "valid.js") == QAPLET_OK);
+  CHECK(!number(runtime, "validRuns", NULL, 1));
+  CHECK(!remove_fixture(directory, "valid.js"));
+  CHECK(entry(runtime, directory, "valid.js") == QAPLET_OK);
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1 && snapshot.source_cache_bytes == original_bytes);
+  CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=99; export const answer=99;"));
+  const char *names[] = {"parse.js", "throw.js", "tla.js", "missing-graph.js"};
+  const char *bad[] = {"export const = 0;", "globalThis.partial=(globalThis.partial||0)+1; throw new Error('frozen');", "globalThis.tlaPartial=(globalThis.tlaPartial||0)+1; await Promise.reject(new Error('frozen TLA'));", "import './absent.js';"};
+  const qaplet_code codes[] = {QAPLET_JS_EXCEPTION, QAPLET_JS_EXCEPTION, QAPLET_JS_EXCEPTION, QAPLET_MODULE_RESOLVE};
+  for (unsigned i = 0; i < 4; ++i) {
+    CHECK(!write_source(directory, names[i], bad[i]));
+    CHECK(entry(runtime, directory, names[i]) == codes[i]);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == i+2 && snapshot.lifecycle == QAPLET_OPEN);
+    uint64_t bytes = snapshot.source_cache_bytes;
+    CHECK(!write_source(directory, names[i], "globalThis.repaired=(globalThis.repaired||0)+1; export const answer=42;"));
+    CHECK(entry(runtime, directory, names[i]) == codes[i]);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == i+2 && snapshot.source_cache_bytes == bytes);
+  }
+  CHECK(!number(runtime, "partial===1 && tlaPartial===1 && validRuns===1 && typeof repaired==='undefined' ? 42:0", NULL, 42));
+  CHECK(!write_source(directory, "link-dep.js", "export const other=1;"));
+  CHECK(!write_source(directory, "link.js", "import {answer} from './link-dep.js'; globalThis.linkAnswer=answer;"));
+  CHECK(!number(runtime, "import('./link.js').then(()=>0,()=>42)", base, 42));
+  CHECK(!write_source(directory, "link-dep.js", "export const answer=42;"));
+  CHECK(!number(runtime, "import('./link.js').then(()=>0,()=>42)", base, 42));
+  CHECK(entry(runtime, directory, "link.js") == QAPLET_JS_EXCEPTION);
+  CHECK(!number(runtime, "typeof linkAnswer==='undefined' && partial===1 && validRuns===1 ? 42:0", NULL, 42));
+  qaplet_config config = QAPLET_CONFIG_INIT;
+  qaplet_runtime *fresh = NULL;
+  CHECK(qaplet_create(&config, &fresh, NULL) == QAPLET_OK);
+  CHECK(entry(fresh, directory, "valid.js") == QAPLET_OK);
+  CHECK(!number(fresh, "validRuns", NULL, 99));
+  for (unsigned i = 0; i < 4; ++i) CHECK(entry(fresh, directory, names[i]) == QAPLET_OK);
+  CHECK(!number(fresh, "repaired", NULL, 4));
+  CHECK(entry(fresh, directory, "link.js") == QAPLET_OK);
+  CHECK(!number(fresh, "linkAnswer", NULL, 42));
+  CHECK(!release(fresh));
+  /* A realpath-normalized non-file is a retained LOAD failure, with no source charge. */
+  char path[4096]; snprintf(path,sizeof(path),"%s/nonfile.js",directory);
+  CHECK(!mkdir(path,0700));
+  CHECK(entry(runtime,directory,"nonfile.js")==QAPLET_MODULE_LOAD);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK);
+  uint64_t count=snapshot.module_count, bytes=snapshot.source_cache_bytes;
+  CHECK(!rmdir(path)); CHECK(!write_source(directory,"nonfile.js","globalThis.nonfileRepaired=42;"));
+  CHECK(entry(runtime,directory,"nonfile.js")==QAPLET_MODULE_LOAD);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==count && snapshot.source_cache_bytes==bytes);
+  CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK);
+  CHECK(entry(fresh,directory,"nonfile.js")==QAPLET_OK && !number(fresh,"nonfileRepaired",NULL,42));
+  CHECK(!release(fresh));
+  /* Unresolvable requests consume no identity; a later file can be discovered. */
+  CHECK(entry(runtime,directory,"later.js")==QAPLET_MODULE_RESOLVE);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==count);
+  CHECK(!write_source(directory,"later.js","globalThis.laterAnswer=42;"));
+  CHECK(entry(runtime,directory,"later.js")==QAPLET_OK && !number(runtime,"laterAnswer",NULL,42));
+  CHECK(!release(runtime));
+  for(unsigned i=0;i<4;++i) CHECK(!remove_fixture(directory,names[i]));
+  const char *extra[]={"valid.js","link-dep.js","link.js","nonfile.js","later.js"};
+  for(unsigned i=0;i<sizeof(extra)/sizeof(*extra);++i) CHECK(!remove_fixture(directory,extra[i]));
+  CHECK(!rmdir(directory));
+  puts("module cache: source/load/parse/link/eval/TLA failures frozen; fresh repair; partial effects retained; accounting: pass");
+  return 0;
+}
+
 int sdk_module_policy(const char *mode) {
   char temporary[] = "/tmp/qaplet-module-policy-XXXXXX";
   char *directory = mkdtemp(temporary);
@@ -67,6 +142,7 @@ int sdk_module_policy(const char *mode) {
   result.buffer = base; result.capacity = sizeof(base) - 1;
   CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_OK && result.type == QAPLET_VALUE_STRING);
   base[result.length] = 0;
+  if (!strcmp(mode, "--module-cache")) return frozen_failures(runtime, directory, base);
   if (!strcmp(mode, "--module-nul")) {
     CHECK(!number(runtime, "import('./valid.js'+String.fromCharCode(0)+'suffix').then(()=>1,()=>42)", base, 42));
     CHECK(!write_source(directory, "static.js", "import './valid.js\\0suffix';"));
