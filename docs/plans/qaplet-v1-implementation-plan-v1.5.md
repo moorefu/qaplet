@@ -283,7 +283,9 @@ make cache-clean
 
 ### 4.2 运行时生命周期
 
-`CREATED -> INITIALIZING -> RUNNING -> QUIESCING -> CANCELLING -> DRAINING -> CLOSED`，失败可进入 `FAILED` 后做幂等关闭。进入 `QUIESCING` 时禁止接收普通新工作；owner thread 负责最后的 JS jobs 结算和 GC；完成队列中的迟到事件必须通过 token/generation 与 Runtime lifetime 验证后方可处理。SDK 的 `request_stop` 是**合作式停止请求**，并非承诺可安全抢占正在执行的任意 native syscall 或 JS 线程。
+M1 的公开生命周期为 `OPEN / STOP_REQUESTED / STOPPED / FAILED / CLOSED`，执行阶段单独报告 `IDLE / RUNNING / PENDING / DONE`；普通 JS 执行失败的 DONE 不等于 Runtime FAILED。具体合同见[已确认设计](../../.scratch/qaplet-m1/design.md)。stop 接受后立即拒收普通新工作，owner 到检查点后停止新用户 JS 调度；已领取事件协作退出，未领取事件及剩余 jobs 在关闭时释放，不承诺执行完或运行 JS finally。第一次记录的终止原因保留。
+
+owner 可在当前没有执行 JS/宿主回调时 close，包括尚为 PENDING 的执行；close 幂等清理并保留 CLOSED 控制句柄，destroy 只接受 CLOSED。最终释放前宿主负责撤下生产者并等待在途调用结束，SDK 不承诺识别释放后的旧指针。引擎清理期间宿主绑定仍须存活，native finalizer 不执行 JS。M2 承接 I/O 取消、迟到 completion 与完整调度，须使用 token/generation 和 Runtime lifetime 验证。`request_stop` 是**合作式停止请求**，不承诺抢占任意 native syscall 或固定停止/关闭延迟；M1 不公开可恢复的 request_interrupt。
 
 ---
 
@@ -367,9 +369,9 @@ qaplet/
 - 将原版上游源码物化为 `.cache/sources/quickjs/<commit>` **只读**，编译期把已版本化的私有补丁叠到独立 build tree 并记录来源；禁止源码目录随当前 `master` 自动更新，禁止通过修改 `vendor/quickjs` 创建第二事实源。
 - 原生 API：`JS_NewRuntime`、`JS_NewContext`、`JS_SetModuleLoaderFunc`、`JS_ExecutePendingJob`、`JS_SetMemoryLimit`、`JS_SetMaxStackSize`、`JS_SetInterruptHandler`、`JS_NewPromiseCapability`，以相应头文件当期实际签名验收；如主干有变更，先更新边界探针。
 - Runtime Context 创建要经统一 factory，确保主入口、Worker、qjsc 风格独立 APE、SDK 的内建模块注册、权限、资源 provider、异常回传相同。
-- 为模块加载实现 `normalize/load` 钩子；`qaplet:`/`qjb:`/`node:`/`file:` 等 Scheme 一律显式规则，不将任意字符串隐式交给 OS 访问。
+- 为模块加载实现 `normalize/load` 钩子；`qaplet:`/`qjb:`/`node:`/`file:` 等 Scheme 一律显式规则，不将任意字符串隐式交给 OS 访问。M1 只接受源码文件 ESM、显式注册的 `host:` 模块与已声明的 `qaplet:` 内建模块；文件采用规范绝对 URL、实例内固定缓存及失败记录，见 [ADR 0006](../adr/0006-m1-frozen-module-identity.md)，其余 Scheme 按阶段明确拒绝。
 - `JSValue` 的 `dup/free` 由 owner thread 管理；native 资源使用 opaque 句柄和引用计数；强制上下文关闭后的异步任务不再访问 JS 内存。
-- 运行时预算：内存上限（默认可调）、最大栈、脚本执行中断（CPU time budget）、native handles、任务数、文件大小、计时器数量、Worker 数量。同步 CPU 长循环必须有中断机制；异步任务取消属于另一套显式 API。
+- 运行时预算：内存上限（默认可调）、最大栈、脚本执行期限（单调时钟 execution deadline）、native handles、任务数、文件大小、计时器数量、Worker 数量，按对应阶段实现。M1 在引擎检查点与 owner 调度边界协作式检查期限，不作精确线程 CPU 计费或任意 native 调用抢占保证；parser/compiler、GC 和 native 清理也不承诺硬超时。同步 CPU 长循环必须有引擎中断机制；异步任务取消属于另一套显式 API。M1 的 Promise jobs 限额针对每轮执行量，公开 QuickJS API 不提供精确的待执行 jobs 条数上限。
 - 每次 QuickJS Git Commit、patchset、字节码编译 flags 变更都必须废弃与其绑定的 qjsc/QJB bytecode/object 缓存，以内容指纹而非 `VERSION` 字符串划分。QuickJS 字节码不是跨引擎版本稳定格式，也不是可信输入格式。只允许同一已锁引擎构建/验证的受信任字节码；来自不可信网络或 npm 包时默认以源文本编译，或用强制验证的可信编译清单。
 - ES2025/Temporal/Intl 能力依照当前锁定主干和 test262 结果声明；不得从“最新主干”推断所有提案都已经稳定实现。
 
@@ -381,9 +383,9 @@ qaplet/
 | QJB | `qaplet run app.qjb -- a b` | 无需解压、模块路径与资产可读、按 mount 生命周期关闭 |
 | 独立 App APE | `./app.com -- a b` / `app.exe -- a b` | 无 CLI 选项冲突、载荷指纹一致、路径身份明确 |
 | Worker | `new Worker(...)`（声明受支持子集） | Runtime 独立、错误/exit/transfer/terminate 明确 |
-| SDK | `qaplet_runtime_new/eval/run/close` | 重复创建销毁、Opaque 不冲突、证据可复现 |
+| SDK | `create/eval/run_entry/pump/close/destroy`（签名待实施规格） | 重复创建销毁、Opaque 不冲突、证据可复现 |
 
-C Embed SDK 的拟议通用入口为 `qaplet_runtime_create`、`register_host_module`、`run_entry/run`、`post_event(POD)`（thread-safe）、`request_stop`/`request_interrupt`（cooperative）、`destroy`，以及资源 Provider 和 Log Sink；正式函数签名由 M1/M2 真实 ABI 探针冻结。M1 提供 owner 主动处理的有界事件队列和协作式停止；M2 增加跨 OS waker、I/O 取消、迟到 completion 与完整调度。SDK 使用 versioned `struct_size/abi_version`，外部 ABI 不强制依赖裸 `JSContext*`。涉及 OS 的事件和线程语义由 M0-C/M2 的真实 ABI 探针冻结。
+C Embed SDK 的拟议通用入口为 `qaplet_runtime_create`、`register_host_module`、`eval/run_entry`、`pump/get_result`、`post_event(POD)`、`request_stop`、`close/destroy` 和 POD 状态快照；资源 Provider、Log Sink 按对应阶段扩展，C 原型由后续实施规格落实。M1 用显式 pump 推进 PENDING 入口和事件，不忙等或启动隐藏线程；close 与 destroy 分开，不公开可恢复的 request_interrupt。post_event、request_stop 与 POD 快照可跨线程调用，其余实例操作在 owner 执行；回调重入受限。宿主模块首版使用有限标量/UTF-8/字节桥，稳定 ABI 不公开裸 `JSContext*` 或 `JSValue`。ABI 主版本为 1，结构使用 `struct_size/abi_version`，错误诊断归调用方；M2 的 OS waker、取消及迟到 completion 合同仍由 M0-C/M2 的真实 ABI 探针约束。
 
 ### 6.3 Node vs Web API 层的实现原则
 
@@ -1108,9 +1110,27 @@ Release 默认在预热、已验证依赖的离线环境中构建；SBOM（SPDX/
 
 ### M1 — QuickJS Engine + 通用 C Embed SDK
 
-以统一 v3 锁、目标 QuickJS 升级与新增 M0-A ESM/Promise 通过为前置。实现统一 Runtime/Context Factory、ESM normalize/load、TLA/Promise/jobs/GC/interrupt 预算与最小 CLI；SDK `create/register_host_module/eval_or_run/post_event/request_stop/destroy` 使用版本化结构大小和 owner-thread 约束。M1 包含 owner 主动处理的有界 POD 队列和协作式 stop/interrupt，跨线程不调用 JS API；M2 承接跨 OS waker、I/O 取消、迟到 completion 和完整调度，并由相应 M0-C 证据约束冻结。
+**规格状态（2026-11-02）**：用户已确认 [M1 设计 Q1–Q32](../../.scratch/qaplet-m1/design.md)并确认共同理解达成，grilling 完成；[正式 M1 实施规格](../../.scratch/qaplet-m1/spec.md)已发布为 ready-for-agent，沿用 Q32 的测试与证据边界。以下仍为目标合同，正式 M1/SDK 尚未实现或验收；公开 C 声明和枚举数值由规格驱动的实现头文件落实，逐票工作由后续拆票承接。[ADR 0005](../adr/0005-m1-runtime-lifetime-boundary.md)、[0006](../adr/0006-m1-frozen-module-identity.md)、[0007](../adr/0007-m1-cooperative-resource-failure.md)分别记录生命周期、模块缓存及资源终止取舍。
 
-**门槛**：ESM/TLA/Promise、Context 多次创建销毁、非 owner 线程拒绝/安全事件桥、纯 C Embed 示例运行成功，Linux Fast + 主要宿主 Cross 有证据。
+**前置**：统一 v3 锁、目标 QuickJS 升级与新增 M0-A ESM/Promise 已通过；新配方仍须取得自身证据。
+
+- **Runtime/Context**：每 Runtime 一个主 Context，owner 固定为创建线程；全局状态和模块缓存跨求值保留。生命周期与执行阶段分开，显式 pump 推进 PENDING，不隐藏线程或忙等。
+- **模块与 CLI**：源码文件 ESM 支持静态/动态 import、TLA；realpath 后的规范 file URL 及失败在实例内缓存，同身份只求值一次。host 模块在首次执行前注册锁定。CLI 提供 `run <file> [-- args]`、`eval --source <text>`、help/version；保留 `qaplet:events` 和只读 `qaplet:runtime` argv/cwd。源码格式、URL/Windows 限制、import.meta 初始值与缓存规则以已确认设计为准；CJS/package/QJB 属于后续阶段。
+- **SDK 数据与错误**：ABI 1、结构大小检查、调用方诊断；有限标量/64 位整数/严格 UTF-8/字节桥，参数借用、返回同步复制。get_result 复制完成结果，缓冲区不足可重试。普通 JS 异常在原预算内结算可运行 jobs 后可复用；期限、总调度量及实际分配拒绝永久 FAILED，首因不被清理错误覆盖。
+- **队列与停止**：预分配固定槽、复制 POD、FIFO；未注册接收函数返回 NO_HANDLER，满队列立即 QUEUE_FULL，不覆盖或重试。入队成功不保证交付。stop 不占队列容量，立即拒收普通工作；已领取事件协作退出，剩余事件/jobs 在 close 时释放，不运行用户清理 JS。close 幂等保留句柄，destroy 要求 CLOSED 且宿主已撤下生产者并等待在途调用结束。
+
+| 默认预算 | 值 |
+|---|---|
+| 引擎堆 / 栈 / SDK 原生存储 | 64 MiB / 1 MiB / 16 MiB |
+| 单源码 / 模块源码缓存 / 模块数 | 4 MiB / 32 MiB / 256（含内建、host 与失败记录） |
+| 事件队列 / 单事件载荷 | 256 槽 / 1 KiB |
+| 单桥接字符串或字节值 / 宿主函数参数 | 1 MiB / 32 个 |
+| 单次执行期限 / 总调度量 | 30 秒单调时钟 / 100,000 个 jobs 或事件回调，跨 pump 不重置 |
+| 单次 pump | 最多 256 jobs、32 事件；jobs 未结算完不插入下一事件 |
+
+这些是可配置的有限工程默认值，不是 RSS 或硬抢占承诺；0 使用默认值，M1 无无限模式。空闲时各事件及其可运行 jobs 单独记账。未处理 rejection 在完整 jobs 检查点判定；SDK 无进展返回 PENDING，CLI 没有外部生产者时立即报告 UNSETTLED_ENTRY。CLI 成功/执行失败/参数错误退出码为 0/1/2。
+
+**门槛**：Ubuntu 构建 CLI、静态 SDK 与纯 C Host 示例，其他宿主验证供应制品；Linux Fast 完整正/负合同，Cross 覆盖 Windows x64、macOS x64/ARM64、Linux ARM64，敏感改动仍按现有规则提升 Full，ARM64 64K 覆盖新输入及 SDK 关键合同。验收模块/TLA/循环实际支持子集、缓存/错误、线程/重入、事件复制、队列饱和/stop 并发、预算/分配拒绝、普通异常后复用、初始化失败清理和 close/destroy 次序。Linux 至少 1,000 次创建关闭销毁，Cross 每目标至少 100 次；缺目标或必需用例失败/跳过不签发通过。M2 的 OS waker、I/O 取消、迟到 completion 与完整调度保持原分界。
 
 ### M2 — Loop / Reactor / WorkPool / Process / SDK Event Bridge
 
