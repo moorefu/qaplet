@@ -92,8 +92,7 @@ static qaplet_code copy_result(qaplet_runtime *runtime, const void *bytes, size_
   uint64_t available = runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes;
   unsigned char *copy = length <= available ? malloc(length) : NULL;
   if (!copy) {
-    if (runtime->snapshot.termination_reason == QAPLET_OK) runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-    runtime->snapshot.lifecycle = QAPLET_FAILED;
+    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
     pthread_mutex_unlock(&runtime->mutex);
     return QAPLET_MEMORY_LIMIT;
   }
@@ -258,7 +257,9 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
     "SOURCE_TOO_LARGE", "MEMORY_LIMIT", "INVALID_UTF8", "VALUE_TOO_LARGE"
   };
   if (diagnostic) {
-    const char *message = (unsigned)code < sizeof(messages)/sizeof(messages[0]) ? messages[code] : "UNKNOWN";
+    const char *message = (unsigned)code < sizeof(messages)/sizeof(messages[0]) ? messages[code] :
+        code == QAPLET_DEADLINE_EXCEEDED ? "DEADLINE_EXCEEDED" :
+        code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;

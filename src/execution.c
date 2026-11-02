@@ -1,6 +1,90 @@
 /* SPDX-License-Identifier: MIT */
 #include "runtime_internal.h"
 #include <stdlib.h>
+#include <time.h>
+
+void qaplet_record_termination_locked(qaplet_runtime *runtime, qaplet_code code) {
+  if (!runtime->snapshot.termination_reason) runtime->snapshot.termination_reason = code;
+  runtime->snapshot.lifecycle = QAPLET_FAILED;
+}
+
+static int monotonic_ns(uint64_t *output) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) || now.tv_sec < 0 ||
+      (uint64_t)now.tv_sec > (UINT64_MAX - (uint64_t)now.tv_nsec) / 1000000000)
+    return 0;
+  *output = (uint64_t)now.tv_sec * 1000000000 + (uint64_t)now.tv_nsec;
+  return 1;
+}
+
+qaplet_code qaplet_check_execution_options(const qaplet_runtime *runtime,
+                                          const qaplet_execution_options *options) {
+  if (!options) return QAPLET_OK;
+  qaplet_code code = qaplet_check_structure(options, sizeof(*options));
+  if (code) return code;
+  if (options->flags || options->reserved[0] || options->reserved[1] ||
+      options->reserved[2] || options->reserved[3] || options->timeout_ms > UINT64_MAX / 1000000)
+    return QAPLET_INVALID_ARGUMENT;
+  if (runtime && (options->timeout_ms > runtime->snapshot.limits.execution_timeout_ms ||
+                  options->max_dispatches > runtime->snapshot.limits.execution_dispatches))
+    return QAPLET_INVALID_ARGUMENT;
+  return QAPLET_OK;
+}
+
+qaplet_code qaplet_execution_begin(qaplet_runtime *runtime, const qaplet_execution_options *options) {
+  qaplet_code code = qaplet_check_execution_options(runtime, options);
+  if (code) return code;
+  uint64_t timeout = options && options->timeout_ms ? options->timeout_ms : runtime->snapshot.limits.execution_timeout_ms;
+  uint64_t now, duration = timeout * 1000000;
+  if (!monotonic_ns(&now)) return QAPLET_BAD_STATE;
+  if (duration > UINT64_MAX - now) return QAPLET_INVALID_ARGUMENT;
+  pthread_mutex_lock(&runtime->mutex);
+  runtime->execution_deadline_ns = now + duration;
+  runtime->execution_dispatch_limit = options && options->max_dispatches ? options->max_dispatches :
+      runtime->snapshot.limits.execution_dispatches;
+  runtime->snapshot.execution_dispatches = 0;
+  runtime->execution_active = 1;
+  runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
+  runtime->has_result = 0;
+  runtime->execution_code = QAPLET_OK;
+  pthread_mutex_unlock(&runtime->mutex);
+  qaplet_values_reset(runtime);
+  return QAPLET_OK;
+}
+
+qaplet_code qaplet_execution_check(qaplet_runtime *runtime) {
+  pthread_mutex_lock(&runtime->mutex);
+  uint64_t now;
+  if (!runtime->snapshot.termination_reason && runtime->execution_active) {
+    /* Clock failure cannot permit unbounded execution. It is an independent
+     * control failure, never inferred from an engine exception. */
+    if (!monotonic_ns(&now)) qaplet_record_termination_locked(runtime, QAPLET_BAD_STATE);
+    else if (now >= runtime->execution_deadline_ns)
+      qaplet_record_termination_locked(runtime, QAPLET_DEADLINE_EXCEEDED);
+  }
+  qaplet_code code = runtime->snapshot.termination_reason;
+  pthread_mutex_unlock(&runtime->mutex);
+  return code;
+}
+
+static int interrupt_handler(JSRuntime *engine, void *opaque) {
+  (void)engine;
+  return qaplet_execution_check(opaque) != QAPLET_OK;
+}
+
+/* Claim exactly one ready job/event before invoking it. Exact-quota completion
+ * is allowed; only trying to schedule further work exhausts the budget. */
+qaplet_code qaplet_execution_dispatch(qaplet_runtime *runtime) {
+  qaplet_code code = qaplet_execution_check(runtime);
+  if (code) return code;
+  pthread_mutex_lock(&runtime->mutex);
+  if (runtime->snapshot.execution_dispatches >= runtime->execution_dispatch_limit)
+    qaplet_record_termination_locked(runtime, QAPLET_DISPATCH_LIMIT);
+  else ++runtime->snapshot.execution_dispatches;
+  code = runtime->snapshot.termination_reason;
+  pthread_mutex_unlock(&runtime->mutex);
+  return code;
+}
 
 struct qaplet_rejection {
   JSValue promise, reason;
@@ -44,8 +128,7 @@ static void rejection_tracker(JSContext *context, JSValueConst promise,
   if (sizeof(*entry) <= runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes)
     entry = malloc(sizeof(*entry));
   if (!entry) {
-    if (!runtime->snapshot.termination_reason) runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-    runtime->snapshot.lifecycle = QAPLET_FAILED;
+    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
     pthread_mutex_unlock(&runtime->mutex);
     return;
   }
@@ -62,6 +145,7 @@ static void rejection_tracker(JSContext *context, JSValueConst promise,
 void qaplet_execution_init(qaplet_runtime *runtime) {
   runtime->entry_promise = JS_UNDEFINED;
   JS_SetHostPromiseRejectionTracker(runtime->engine, rejection_tracker, runtime);
+  JS_SetInterruptHandler(runtime->engine, interrupt_handler, runtime);
 }
 
 void qaplet_execution_dispose(qaplet_runtime *runtime) {
@@ -69,12 +153,21 @@ void qaplet_execution_dispose(qaplet_runtime *runtime) {
   clear_rejections(runtime);
   JS_FreeValue(runtime->context, runtime->entry_promise);
   runtime->entry_promise = JS_UNDEFINED;
+  runtime->execution_active = 0;
 }
 
 /* A checkpoint is complete only when all runnable jobs have settled. */
 qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
                                        qaplet_progress *progress, unsigned progressed) {
-  int pending = JS_IsJobPending(runtime->engine);
+  int pending = 0;
+  if (qaplet_execution_check(runtime)) goto finished;
+  pending = JS_IsJobPending(runtime->engine);
+  if (pending && runtime->snapshot.execution_dispatches >= runtime->execution_dispatch_limit) {
+    pthread_mutex_lock(&runtime->mutex);
+    qaplet_record_termination_locked(runtime, QAPLET_DISPATCH_LIMIT);
+    pthread_mutex_unlock(&runtime->mutex);
+    goto finished;
+  }
   if (!pending && !JS_IsUndefined(runtime->entry_promise)) {
     JSPromiseStateEnum state = JS_PromiseState(runtime->context, runtime->entry_promise);
     if (state == JS_PROMISE_PENDING) pending = 1;
@@ -103,6 +196,8 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
       runtime->entry_promise = JS_UNDEFINED;
     }
   }
+finished:
+  qaplet_execution_check(runtime);
   pthread_mutex_lock(&runtime->mutex);
   if (runtime->snapshot.lifecycle == QAPLET_FAILED) {
     runtime->execution_code = runtime->snapshot.termination_reason;
@@ -110,6 +205,7 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
   }
   runtime->snapshot.phase = pending ? QAPLET_PHASE_PENDING : QAPLET_PHASE_DONE;
   if (!pending) {
+    runtime->execution_active = 0;
     runtime->result.code = runtime->execution_code;
     runtime->has_result = 1;
   }
@@ -139,14 +235,14 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   pthread_mutex_unlock(&runtime->mutex);
   unsigned executed = 0;
   while (executed < 256 && JS_IsJobPending(runtime->engine) &&
-         runtime->snapshot.lifecycle == QAPLET_OPEN) {
+         !qaplet_execution_dispatch(runtime)) {
     JSContext *context = NULL;
     int status = JS_ExecutePendingJob(runtime->engine, &context);
     if (!status) break;
     ++executed;
     if (status < 0) {
       JSValue exception = JS_GetException(context);
-      if (!runtime->execution_code) {
+      if (!qaplet_execution_check(runtime) && !runtime->execution_code) {
         qaplet_capture_exception(runtime, exception);
         runtime->execution_code = QAPLET_JS_EXCEPTION;
       }

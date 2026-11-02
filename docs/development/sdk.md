@@ -19,6 +19,19 @@ the Runtime for reuse. Only genuine Promises are waited on, without consulting
 thenable getters or Promise constructors. Closing a PENDING execution releases
 its references and remaining jobs without running user cleanup JavaScript.
 
+Execution budgets use one absolute monotonic deadline (default 30,000 ms) and
+one cumulative dispatch limit (default 100,000 jobs), preserved across PENDING
+and every pump. `qaplet_config.limits` configures finite instance maxima;
+`qaplet_eval_with_options` can only tighten them for that execution. NULL or zero
+options inherit the instance maxima. Exhaustion returns `DEADLINE_EXCEEDED` or
+`DISPATCH_LIMIT` and permanently marks the Runtime FAILED, including when async
+machinery turns an engine interruption into a rejection. The allocator and
+execution driver share an independent first-cause latch. Only a new accepted
+execution on an OPEN Runtime starts a new ledger. Snapshots expose its cumulative
+dispatch count; query and close remain available after failure. Interrupt polling
+also ends a JavaScript loop; native callbacks, compiler/GC and cleanup retain
+their cooperative boundary rather than a hard preemption guarantee.
+
 The copied-values capability adds exact signed/unsigned 64-bit BigInt, strict
 UTF-8 strings (including NUL), and safely copied Uint8Array views. Number stays
 double. Results reject arbitrary objects, functions, proxies, shared/detached
