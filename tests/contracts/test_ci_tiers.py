@@ -14,6 +14,19 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    def test_required_sdk_fast_and_native_distribution_cannot_be_removed(self):
+        with tempfile.TemporaryDirectory(prefix="qaplet-sdk-ci-") as temp:
+            work = Path(temp)
+            value = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            # This removes the SDK increment while preserving every original M0 job.
+            for job in value["jobs"].values():
+                job["steps"] = [step for step in job["steps"] if "scripts/sdk.py" not in step.get("run", "")]
+            path = work / "workflow.json"
+            path.write_text(json.dumps(value))
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
+                "--workflow", str(path), "--report", str(work / "result.json")], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
     @unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_CI_POSIX_UID"), "Explicit Ubuntu root controller and nonroot namespace fixture required")
     def test_runner_can_write_transport_receipt_after_privileged_offline_setup(self):
         self.assertEqual(os.geteuid(), 0, "Only the controlled namespace fixture setup needs root")
