@@ -80,15 +80,20 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
     if (state == JS_PROMISE_PENDING) pending = 1;
     else {
       JSValue value = JS_PromiseResult(runtime->context, runtime->entry_promise);
-      if (!runtime->execution_code)
-        runtime->execution_code = state == JS_PROMISE_REJECTED ? qaplet_module_exception_code(runtime, value) :
-            (runtime->module_execution ? QAPLET_OK : qaplet_store_scalar(runtime, value));
+      if (!runtime->execution_code) {
+        if (state == JS_PROMISE_REJECTED) {
+          qaplet_capture_exception(runtime, value);
+          runtime->execution_code = qaplet_module_exception_code(runtime, value);
+        } else if (!runtime->module_execution) runtime->execution_code = qaplet_store_scalar(runtime, value);
+      }
       JS_FreeValue(runtime->context, value);
     }
   }
   if (!JS_IsJobPending(runtime->engine)) {
-    if (runtime->rejections && !runtime->execution_code)
+    if (runtime->rejections && !runtime->execution_code) {
+      qaplet_capture_exception(runtime, runtime->rejections->reason);
       runtime->execution_code = QAPLET_JS_EXCEPTION;
+    }
     /* Includes the entry Promise's tracker record. It has already been
      * classified above, and must not resurface in a later execution. */
     clear_rejections(runtime);
@@ -142,10 +147,13 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
     ++executed;
     if (status < 0) {
       JSValue exception = JS_GetException(context);
-      if (!runtime->execution_code) runtime->execution_code = qaplet_module_exception_code(runtime, exception);
+      if (!runtime->execution_code) {
+        qaplet_capture_exception(runtime, exception);
+        runtime->execution_code = qaplet_module_exception_code(runtime, exception);
+      }
       JS_FreeValue(context, exception);
     }
   }
   code = qaplet_execution_checkpoint(runtime, progress, executed != 0);
-  return qaplet_report(diagnostic, code);
+  return qaplet_report_result(runtime, diagnostic, code);
 }

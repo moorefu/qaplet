@@ -13,6 +13,8 @@ int sdk_modules(const char *);
   fprintf(stderr, "public SDK contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
 } } while (0)
 
+#include "host-values.c"
+
 static int scalar(qaplet_runtime *runtime, const char *source, double expected) {
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   qaplet_result result = QAPLET_RESULT_INIT;
@@ -246,6 +248,12 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--creation")) return creation();
   if (!strcmp(argv[1], "--resources")) return resources();
   if (!strcmp(argv[1], "--abi")) return abi_contract();
+  if (!strcmp(argv[1], "--integers")) return integer_values();
+  if (!strcmp(argv[1], "--strings")) return string_values();
+  if (!strcmp(argv[1], "--bytes")) return byte_values();
+  if (!strcmp(argv[1], "--diagnostics")) return safe_diagnostics();
+  if (!strcmp(argv[1], "--value-limits")) return copied_value_limits();
+  if (!strcmp(argv[1], "--promise-values")) return promise_values();
   if (!strcmp(argv[1], "--promises")) return sdk_promises();
   if (!strcmp(argv[1], "--facts")) {
 #if defined(__aarch64__)
