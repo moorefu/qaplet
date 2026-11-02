@@ -124,7 +124,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
   if (!code) output->capabilities = QAPLET_CAP_LIFECYCLE | QAPLET_CAP_SYNC_SCRIPT |
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
-      QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY;
+      QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES;
   return code;
 }
 
@@ -179,6 +179,7 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   }
   qaplet_execution_init(runtime);
+  JS_SetContextOpaque(runtime->context, runtime);
   code = qaplet_modules_init(runtime);
   if (code) {
     qaplet_modules_dispose(runtime);
@@ -301,6 +302,8 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
     qaplet_values_dispose(runtime);
     JS_FreeContext(runtime->context);
     JS_FreeRuntime(runtime->engine);
+    /* Function descriptors/code/userdata remain reachable through engine close. */
+    qaplet_host_dispose(runtime);
     runtime->context = NULL;
     runtime->engine = NULL;
     runtime->has_result = 0;

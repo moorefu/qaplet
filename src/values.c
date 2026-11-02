@@ -86,7 +86,7 @@ void qaplet_values_dispose(qaplet_runtime *runtime) {
   JS_FreeAtom(runtime->context, runtime->diagnostic_message_atom);
 }
 
-static qaplet_code copy_result(qaplet_runtime *runtime, const void *bytes, size_t length) {
+static qaplet_code copy_result(qaplet_runtime *runtime, qaplet_result *result, unsigned char **data, const void *bytes, size_t length) {
   if (!length) return QAPLET_OK;
   pthread_mutex_lock(&runtime->mutex);
   uint64_t available = runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes;
@@ -101,8 +101,8 @@ static qaplet_code copy_result(qaplet_runtime *runtime, const void *bytes, size_
     runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
   pthread_mutex_unlock(&runtime->mutex);
   memcpy(copy, bytes, length);
-  runtime->result_data = copy;
-  runtime->result.length = length;
+  *data = copy;
+  result->length = length;
   return QAPLET_OK;
 }
 
@@ -199,7 +199,7 @@ void qaplet_capture_exception(qaplet_runtime *runtime, JSValueConst exception) {
   }
 }
 
-static qaplet_code store_bytes(qaplet_runtime *runtime, JSValueConst value) {
+static qaplet_code store_bytes(qaplet_runtime *runtime, JSValueConst value, qaplet_result *result, unsigned char **data) {
   JSContext *context = runtime->context;
   size_t offset, ignored_length, element_size, backing_length;
   JSValue buffer = JS_GetTypedArrayBuffer(context, value, &offset, &ignored_length, &element_size);
@@ -221,8 +221,8 @@ static qaplet_code store_bytes(qaplet_runtime *runtime, JSValueConst value) {
       unsigned char *bytes = JS_GetArrayBuffer(context, &backing_length, buffer);
       size_t count = (size_t)length;
       if (offset <= backing_length && count <= backing_length - offset && (bytes || !count)) {
-        runtime->result.type = QAPLET_VALUE_BYTES;
-        code = copy_result(runtime, count ? bytes + offset : NULL, count);
+        result->type = QAPLET_VALUE_BYTES;
+        code = copy_result(runtime, result, data, count ? bytes + offset : NULL, count);
       }
     }
     JS_FreeValue(context, size);
@@ -260,7 +260,8 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
   if (diagnostic) {
     const char *message = (unsigned)code < sizeof(messages)/sizeof(messages[0]) ? messages[code] :
         code == QAPLET_DEADLINE_EXCEEDED ? "DEADLINE_EXCEEDED" :
-        code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" : "UNKNOWN";
+        code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" :
+        code == QAPLET_HOST_ERROR ? "HOST_ERROR" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;
@@ -293,8 +294,7 @@ qaplet_code qaplet_report_result(qaplet_runtime *runtime, qaplet_diagnostic *dia
   return code;
 }
 
-qaplet_code qaplet_store_scalar(qaplet_runtime *runtime, JSValueConst value) {
-  qaplet_result *result = &runtime->result;
+qaplet_code qaplet_copy_js_value(qaplet_runtime *runtime, JSValueConst value, qaplet_result *result, unsigned char **data) {
   if (JS_IsUndefined(value)) result->type = QAPLET_VALUE_UNDEFINED;
   else if (JS_IsNull(value)) result->type = QAPLET_VALUE_NULL;
   else if (JS_IsBool(value)) {
@@ -317,7 +317,7 @@ qaplet_code qaplet_store_scalar(qaplet_runtime *runtime, JSValueConst value) {
       result->unsigned_integer = low;
     } else return QAPLET_VALUE_TYPE_UNSUPPORTED;
   } else if (JS_IsObject(value) && JS_GetClassID(value) == runtime->uint8_array_class) {
-    return store_bytes(runtime, value);
+    return store_bytes(runtime, value, result, data);
   } else if (JS_IsString(value)) {
     size_t length, encoded;
     qaplet_code code = string_size(runtime, value, &length);
@@ -325,11 +325,15 @@ qaplet_code qaplet_store_scalar(qaplet_runtime *runtime, JSValueConst value) {
     const char *text = JS_ToCStringLen(runtime->context, &encoded, value);
     if (!text) return QAPLET_MEMORY_LIMIT;
     result->type = QAPLET_VALUE_STRING;
-    code = encoded == length && qaplet_utf8_valid(text, encoded) ? copy_result(runtime, text, length) : QAPLET_INVALID_UTF8;
+    code = encoded == length && qaplet_utf8_valid(text, encoded) ? copy_result(runtime, result, data, text, length) : QAPLET_INVALID_UTF8;
     JS_FreeCString(runtime->context, text);
     return code;
   } else return QAPLET_VALUE_TYPE_UNSUPPORTED;
   return QAPLET_OK;
+}
+
+qaplet_code qaplet_store_scalar(qaplet_runtime *runtime, JSValueConst value) {
+  return qaplet_copy_js_value(runtime, value, &runtime->result, &runtime->result_data);
 }
 
 qaplet_code qaplet_get_result(qaplet_runtime *runtime, qaplet_result *output, qaplet_diagnostic *diagnostic) {

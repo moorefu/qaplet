@@ -51,6 +51,9 @@ static void native_free(qaplet_runtime *runtime, void *value, size_t size) {
   pthread_mutex_unlock(&runtime->mutex);
 }
 
+void *qaplet_native_alloc(qaplet_runtime *runtime, size_t size) { return native_alloc(runtime, size); }
+void qaplet_native_free(qaplet_runtime *runtime, void *value, size_t size) { native_free(runtime, value, size); }
+
 static char *native_string(qaplet_runtime *runtime, const char *value) {
   size_t size = strlen(value) + 1;
   char *copy = native_alloc(runtime, size);
@@ -195,6 +198,12 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
       }
     }
   }
+  if (!root && !strncmp(name, "host:", 5)) {
+    qaplet_module *entry = find_module(runtime, name);
+    if (entry) return entry;
+    module_throw(runtime, QAPLET_MODULE_RESOLVE);
+    return NULL;
+  }
   if (!strncmp(name, "file:", 5)) path = url_path(runtime, name);
   else if (root) {
     if (IsWindows() && isalpha((unsigned char)name[0]) && name[1] == ':' && (name[2] == '/' || name[2] == '\\')) {
@@ -288,6 +297,12 @@ static void save_failure(qaplet_runtime *runtime, qaplet_module *entry, JSValueC
 static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return -1; }
   if (!JS_IsUndefined(entry->compiled)) return 0;
+  if (!strncmp(entry->url, "host:", 5)) {
+    JSModuleDef *module = qaplet_host_load(runtime, entry->url);
+    if (!module) goto failure;
+    entry->compiled = JS_DupValue(runtime->context, JS_MKPTR(JS_TAG_MODULE, module));
+    return 0;
+  }
   char *path = url_path(runtime, entry->url);
   if (!path) { module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
   int fd = open(path, O_RDONLY | O_NONBLOCK);
@@ -367,6 +382,22 @@ qaplet_code qaplet_modules_init(qaplet_runtime *runtime) {
   free(cwd);
   if (!runtime->initial_cwd) return QAPLET_MEMORY_LIMIT;
   JS_SetModuleLoaderFunc2(runtime->engine, normalize_module, load_module, check_attributes, runtime);
+  return QAPLET_OK;
+}
+
+qaplet_code qaplet_modules_register_host(qaplet_runtime *runtime, const char *name) {
+  if (find_module(runtime, name)) return QAPLET_INVALID_ARGUMENT;
+  if (runtime->snapshot.module_count >= runtime->snapshot.limits.module_count) return QAPLET_MODULE_LIMIT;
+  qaplet_module *entry = native_alloc(runtime, sizeof(*entry));
+  if (!entry) return QAPLET_MEMORY_LIMIT;
+  entry->url = native_string(runtime, name);
+  if (!entry->url) { native_free(runtime, entry, sizeof(*entry)); return QAPLET_MEMORY_LIMIT; }
+  entry->compiled = entry->failure = JS_UNDEFINED;
+  entry->next = runtime->modules;
+  runtime->modules = entry;
+  pthread_mutex_lock(&runtime->mutex);
+  ++runtime->snapshot.module_count;
+  pthread_mutex_unlock(&runtime->mutex);
   return QAPLET_OK;
 }
 

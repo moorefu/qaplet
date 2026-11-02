@@ -22,9 +22,9 @@ from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
 from workflow_support import workspace
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
-          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c",
+          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c",
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
@@ -58,6 +58,7 @@ HOST_CASES = (
     ("module-policy", ["--module-policy", "{modules}"], "module policy: URL/path/NUL/format refusals; real ordinary files only; no failed identities for invalid requests: pass\n"),
     ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual symlink/hardlink; frozen alias; fresh target; native drive and OS case identity: pass\n"),
     ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
+    ("host-modules", ["--host-modules", "{modules}"], "host modules: copied registration; synchronous typed callback; catchable errors; guarded lifetime: pass\n"),
     ("facts", ["--facts"], None),
 )
 
@@ -97,6 +98,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "tests/native/sdk_module_policy.c", distribution / "host-module-policy.c")
     shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
     shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -123,7 +125,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
@@ -141,7 +143,9 @@ def build(args, report, directory):
         "-c", distribution / "host-budgets.c", "-o", work / "budgets.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-module-policy-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-module-policy.c", "-o", work / "module-policy.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "module-policy.o", archive],
+    run(report, directory, "host-host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "module-policy.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))
