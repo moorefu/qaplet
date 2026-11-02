@@ -262,7 +262,8 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
         code == QAPLET_DEADLINE_EXCEEDED ? "DEADLINE_EXCEEDED" :
         code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" :
         code == QAPLET_HOST_ERROR ? "HOST_ERROR" : code == QAPLET_NO_HANDLER ? "NO_HANDLER" :
-        code == QAPLET_QUEUE_FULL ? "QUEUE_FULL" : code == QAPLET_PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" : "UNKNOWN";
+        code == QAPLET_QUEUE_FULL ? "QUEUE_FULL" : code == QAPLET_PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" :
+        code == QAPLET_EXECUTION_STOPPED ? "EXECUTION_STOPPED" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;
@@ -343,7 +344,7 @@ qaplet_code qaplet_get_result(qaplet_runtime *runtime, qaplet_result *output, qa
   code = qaplet_check_structure(output, sizeof(*output));
   if (!code && output->capacity && !output->buffer) code = QAPLET_INVALID_ARGUMENT;
   if (!code) code = qaplet_owner(runtime);
-  if (!code && (runtime->snapshot.lifecycle == QAPLET_CLOSED || !runtime->has_result)) code = QAPLET_BAD_STATE;
+  if (!code && (qaplet_get_lifecycle(runtime) == QAPLET_CLOSED || !runtime->has_result)) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
   {
     void *buffer = output->buffer;

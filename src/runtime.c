@@ -119,13 +119,20 @@ qaplet_code qaplet_owner(qaplet_runtime *runtime) {
   return QAPLET_OK;
 }
 
+qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *runtime) {
+  pthread_mutex_lock(&runtime->mutex);
+  qaplet_lifecycle lifecycle = runtime->snapshot.lifecycle;
+  pthread_mutex_unlock(&runtime->mutex);
+  return lifecycle;
+}
+
 qaplet_code qaplet_query_abi(qaplet_abi *output) {
   qaplet_code code = qaplet_check_structure(output, sizeof(*output));
   if (!code) output->capabilities = QAPLET_CAP_LIFECYCLE | QAPLET_CAP_SYNC_SCRIPT |
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -231,7 +238,7 @@ static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size
   if (!code) code = qaplet_check_execution_options(NULL, options);
   if (!code && !source && length) code = QAPLET_INVALID_ARGUMENT;
   if (!code) code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
+  if (!code && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
   if (!code) code = qaplet_check_execution_options(runtime, options);
   if (!code && length > runtime->snapshot.limits.source_bytes) code = QAPLET_SOURCE_TOO_LARGE;
@@ -304,7 +311,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   if (code) return code;
   code = qaplet_owner(runtime);
   if (code) return qaplet_report(diagnostic, code);
-  if (runtime->snapshot.lifecycle != QAPLET_CLOSED) {
+  if (qaplet_get_lifecycle(runtime) != QAPLET_CLOSED) {
     qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);
     qaplet_modules_dispose(runtime);

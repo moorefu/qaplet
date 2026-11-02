@@ -4,9 +4,9 @@
 
 **Blocked by:** [08：跨线程 POD 到 JS 的有界事件桥](08-bounded-pod-events.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** in_progress；2026-11-02 由 implement_10 领取，分支 codex/m1-10。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 

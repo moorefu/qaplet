@@ -422,7 +422,7 @@ qaplet_code qaplet_run_entry(qaplet_runtime *runtime, const char *path, size_t l
   if (!code && (!path || !length || length == SIZE_MAX || memchr(path, 0, length))) code = QAPLET_INVALID_ARGUMENT;
   if (!code && !qaplet_utf8_valid(path, length)) code = QAPLET_INVALID_UTF8;
   if (!code) code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
+  if (!code && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
   if (code) return qaplet_report(diagnostic, code);
   char *copy = native_alloc(runtime, length + 1);
@@ -489,7 +489,7 @@ qaplet_code qaplet_eval_with_base(qaplet_runtime *runtime, const char *source, s
   if (!code && (!source && length)) code = QAPLET_INVALID_ARGUMENT;
   if (!code && (!qaplet_utf8_valid(base, base_length) || !qaplet_utf8_valid(source, length))) code = QAPLET_INVALID_UTF8;
   if (!code) code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
+  if (!code && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
   if (!code && length > runtime->snapshot.limits.source_bytes) code = QAPLET_SOURCE_TOO_LARGE;
   if (code) return qaplet_report(diagnostic, code);

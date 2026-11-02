@@ -8,8 +8,7 @@ Before publication, creation installs only engine intrinsics: no user JavaScript
 Host modules or external native resources run. Failed creation therefore reclaims
 outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
-Query capability bits before using a feature; cooperative stop is added by
-a subsequent M1 ticket.
+Query capability bits before using a feature.
 
 The Host-module capability adds pre-execution `qaplet_register_host_module`.
 Registration validates the complete declaration before publishing an identity;
@@ -40,6 +39,19 @@ jobs checkpoint; ordinary errors settle runnable jobs before DONE and preserve
 the Runtime for reuse. Only genuine Promises are waited on, without consulting
 thenable getters or Promise constructors. Closing a PENDING execution releases
 its references and remaining jobs without running user cleanup JavaScript.
+
+Cooperative-stop capability (bit 14) adds any-thread `qaplet_request_stop`.
+Success acknowledges an irreversible request independently of event capacity;
+the same mutex orders stop, event acceptance and owner claims. STOP_REQUESTED
+immediately refuses ordinary work. Owner interrupt polling or the next pump
+confirms STOPPED/DONE with `EXECUTION_STOPPED` (23), including idle PENDING.
+Already claimed work exits cooperatively; unclaimed events/jobs remain raw
+until close releases them without scheduling user finally/cleanup JavaScript.
+Stop, deadline, dispatch and actual allocation refusals preserve whichever cause
+was recorded first. Repeated stop in STOP_REQUESTED/STOPPED/FAILED/CLOSED is a
+successful no-op. No OS waker, native-call cancellation or recovery is provided.
+The distributed `host-stop.c` covers controlled callback/queue handoffs and
+measured owner CPU progress before interrupting synchronous and async loops.
 
 POD-events capability (bit 12) adds any-thread `qaplet_post_event`. Native input
 has a uint32 type, uint64 token (including zero), byte pointer and explicit length.
