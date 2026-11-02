@@ -219,3 +219,78 @@ The completed f805 `out/review-fixes/final/` tree and sibling `final-*.log` file
 are closed permanently for writes and may be losslessly archived by the parent.
 Corrected matching acceptance will use a new `out/review-fixes/alias-final/`
 directory, preserving all previous records and original source identities.
+
+## Independent m1r4 follow-up and preservation completion
+
+The independent reports at MAIN `out/reviews/m1r4/` reviewed exactly b92 against
+beab. Spec returned zero findings. Standards returned two hard P2 findings
+(unprotected offline recipe comparison and ignored path mappings) and one P3
+heuristic (overlapping SDK guest collision policies). These remain distinct axes;
+all three Standards findings are addressed by this correction.
+
+`m1r4-red-{windows,ubuntu}.log` retain ten actual public CLI failures: three
+omitted selection files, six standalone/nested M0 mapped paths and one unrelated
+SDK output wrongly swallowed by a mapping root. The finite documented selection
+schema includes loader_manifest and package_consumer. One shared EvidencePaths
+resolver now supplies both the metadata guard and actual Evidence reader, with
+each nested M0 base, relative configuration bases and longest-prefix mappings.
+The four intermediate direct-base fixture failures remain in
+`m1r4-direct-base-red.log`; final public green reports supersede them.
+
+The adjacent loose-log audit produced three additional actual red cases on both
+platforms at `m1r4-raw-red-{windows,ubuntu}.log`: overwriting an already-read raw
+log, a later unread raw log, and a strict output on incomplete preflight. All
+mutation targets are private copies. A shared final writer now checks exact
+observed evidence paths and preserves any pre-existing destination when
+validation fails or is incomplete. New report paths retain running/progress and
+failure records. Terminal JSON explicitly identifies retained bytes through
+status=fail/report_written=false and a nonzero exit; successful unrelated output
+replacement remains supported. The intentional behavior is documented in the
+evidence contract. Standalone SDK guest uses the same final writer; its redundant
+local equality and broad mapping-root checks have been removed.
+
+Final public preservation plus loose-log regressions pass all ten methods on
+Windows (8.101s) and Ubuntu/DrvFS (23.830s), with logs
+`m1r4-public-green-{windows,ubuntu}-final.log`. Ubuntu ordinary validation at
+`m1r4-correction/check.json` passes 322 tests with 167 explicit unselected-data or
+platform skips plus actual system C bootstrap; the FIFO progress contract passes.
+Those ordinary skips are separate from required acceptance.
+
+The first standalone guest focused setup used a nonexistent selection and skipped;
+that log is retained. The corrected selection then correctly rejected the old
+f805 SDK recipe before the new loose-serial positive branch. Its six failures in
+`m1r4-guest-green-windows-2.log` are mismatched-product fixture attempts, not
+semantic acceptance. The new guest regression and unrelated-existing-output
+positive control require the forthcoming matching producer. The full required
+catalog grows from 92 to 97 methods.
+
+Prior-candidate b92 Full 41524394334 genuinely completed success, with all nine
+original ZIPs independently verified by the parent under MAIN
+`out/m1/ci/alias-fix-full/`. These results retain b92 scope. This correction changes
+recipe-listed workflow_support.py, so new matching Full and strict acceptance
+remain required. Closed `final/` and prior `alias-final/` data are unchanged;
+current correction attempts use `out/review-fixes/m1r4-correction/`, and matching
+acceptance will use a new sibling. The parent specification remains claimed.
+
+The finite observed-index collector was itself checked at the public CLI: an
+invalid selected M0 object containing evidence_index=null caused two real red
+failures in unrelated-output controls. `m1r4-untrusted-index-red.log` preserves
+them. Only the actual top-level reader index and independent M0 reader result
+are now consulted, never similarly named fields in input metadata. Final source
+checks at `m1r4-source-green-{windows,ubuntu}.log` pass 11 Windows / 12 Ubuntu
+methods, including the existing fresh-failure and POSIX FIFO contracts. The final
+ordinary check is `m1r4-correction/check-final.json` (322 tests, 167 explicit
+ordinary skips, actual C bootstrap). Terminal retention also exposes the original
+validation reason and progress path; its final focused check passes.
+
+The final recipe was rebuilt and validated at
+`m1r4-correction/local-final/{build,run,package-consume}.json`: build pass, 98
+public Host/CLI/application cases, 1000 actual lifecycle cycles, and eight actual
+public C cases compiled and audited outside the source tree. Guest export passes
+both actual CLI tests at `m1r4-export-final-ubuntu.log`. The final local SDK SHA is
+bc0e87e95181f609fd99716b2ad67f9e7e7021efc29f2423394f3045973f5a7a;
+recipe 443ca66ee13cfaa740c4a9f6b804acb0dd5f770a64b81ef08178c6ae0856d212.
+This is honest provisional local evidence created while HEAD was b92 with these
+working changes; it is not a producer for the forthcoming frozen commit. Earlier
+provisional local build/run/package/export results remain separately under
+`m1r4-correction/local/`. No original provider report or archive was rewritten.

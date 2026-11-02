@@ -15,6 +15,114 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class EvidencePreservation(unittest.TestCase):
+    def test_documented_selection_file_edges_are_preserved_before_validation(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-selection-edges-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            fields = (("core", "offline_report", "file"), ("core", "offline_recipe_comparison", "file"),
+                ("core", "producers", "map"), ("core", "startup_reports", "list"), ("core", "io_reports", "list"),
+                ("core", "pages64k_reports", "list"), ("core", "svc_reports", "list"),
+                ("strict", "provider_catalog", "file"), ("strict", "producer_report", "file"),
+                ("strict", "loader_manifest", "file"), ("strict", "package_consumer", "file"),
+                ("strict", "native_reports", "list"), ("strict", "m0_original_manifest", "file"))
+            for consumer, field, shape in fields:
+                with self.subTest(consumer=consumer, field=field):
+                    case = root / field
+                    case.mkdir(parents=True)
+                    selected = case / "selected.json"
+                    selected.write_text('{"original":"selected evidence"}')
+                    before = hashlib.sha256(selected.read_bytes()).hexdigest()
+                    reference = str(selected)
+                    value = [reference] if shape == "list" else {"startup": reference} if shape == "map" else reference
+                    inputs = case / "inputs.json"
+                    inputs.write_text(json.dumps({"schema_version": 1, "profile": "full" if consumer == "core" else "m1-full", field: value}))
+                    if consumer == "core":
+                        argv = ["core_gate.py", "evaluate", "--input-manifest", str(inputs)]
+                    else:
+                        config = case / "config.json"
+                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(inputs)}))
+                        argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
+                    process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
+                        capture_output=True, text=True, timeout=30)
+                    (case / "stdout.log").write_text(process.stdout)
+                    (case / "stderr.log").write_text(process.stderr)
+                    after = hashlib.sha256(selected.read_bytes()).hexdigest()
+                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
+                    self.assertEqual(before, after, "Required selection edge was overwritten before validation")
+                    self.assertNotEqual(process.returncode, 0)
+                    self.assertIn("immutable", process.stdout + process.stderr)
+                    self.assertFalse((case / "evidence").exists())
+
+    def test_mapped_m0_selections_use_their_own_base_and_longest_prefix(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-mapped-m0-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            for consumer in ("core", "strict", "nested"):
+                for longest in (False, True):
+                    with self.subTest(consumer=consumer, longest=longest):
+                        case = root / (consumer + ("-longest" if longest else "-short"))
+                        base = case / "outer/nested" if consumer == "nested" else case / "m0"
+                        actual = base / ("specific" if longest else "relocated")
+                        actual.mkdir(parents=True)
+                        selected = actual / "startup.json"
+                        selected.write_text('{"original":"mapped producer"}')
+                        before = hashlib.sha256(selected.read_bytes()).hexdigest()
+                        m0 = base / "inputs.json"
+                        m0.write_text(json.dumps({"schema_version": 1, "profile": "full", "evidence_index": None,
+                            "producers": {"startup": "/original/" + ("specific/" if longest else "") + "startup.json"},
+                            "path_mappings": [{"source": "/original", "root": "relocated"},
+                                              {"source": "/original/specific", "root": "specific"}]}))
+                        if consumer == "core":
+                            argv = ["core_gate.py", "evaluate", "--input-manifest", str(m0)]
+                        else:
+                            inputs = m0
+                            if consumer == "nested":
+                                inputs = case / "outer/inputs.json"
+                                inputs.write_text(json.dumps({"schema_version": 1, "profile": "m1-full", "m0_manifest": "nested/inputs.json",
+                                    "path_mappings": [{"source": "/original", "root": "unrelated-outer-root"}]}))
+                            config = case / "configuration/config.json"
+                            config.parent.mkdir()
+                            config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence" if consumer == "nested" else "m0-evidence",
+                                "input_manifest": os.path.relpath(inputs, config.parent)}))
+                            argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
+                        process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
+                            capture_output=True, text=True, timeout=30)
+                        (case / "stdout.log").write_text(process.stdout)
+                        (case / "stderr.log").write_text(process.stderr)
+                        after = hashlib.sha256(selected.read_bytes()).hexdigest()
+                        (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
+                        self.assertEqual(before, after, "Mapped/nested selection protected the wrong physical file")
+                        self.assertNotEqual(process.returncode, 0)
+                        self.assertIn("immutable", process.stdout + process.stderr)
+                        self.assertFalse((selected.parent / "evidence").exists())
+                        output = actual / "unrelated-report.json"
+                        ordinary = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(output)],
+                            capture_output=True, text=True, timeout=30)
+                        self.assertTrue(output.is_file(), ordinary.stdout + ordinary.stderr)
+                        self.assertEqual(json.loads(output.read_text())["status"], "fail")
+                        self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
+
+    def test_guest_mapping_roots_do_not_swallow_unrelated_report_outputs(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-guest-output-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            relocated = root / "relocated"
+            (relocated / "sdk").mkdir(parents=True)
+            selected = relocated / "selection.json"
+            selected.write_text(json.dumps({"distribution_root": "/original/sdk"}))
+            before = hashlib.sha256(selected.read_bytes()).hexdigest()
+            inputs = root / "inputs.json"
+            inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/selection.json",
+                "guest_report": "/original/guest.json", "path_mappings": [{"source": "/original", "root": "relocated"}]}))
+            output = relocated / "unrelated-report.json"
+            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import", "--input-manifest", str(inputs),
+                "--report", str(output)], capture_output=True, text=True, timeout=30)
+            (root / "stdout.log").write_text(process.stdout)
+            (root / "stderr.log").write_text(process.stderr)
+            self.assertTrue(output.is_file(), process.stdout + process.stderr)
+            self.assertEqual(json.loads(output.read_text())["status"], "fail")
+            self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
+
     def test_guest_input_manifest_preserves_the_selected_distribution_without_transports(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
         with tempfile.TemporaryDirectory(prefix="qaplet-guest-selection-") as temporary:

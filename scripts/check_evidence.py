@@ -10,7 +10,7 @@ import sys
 import unittest
 import uuid
 
-from workflow_support import guard_evidence_outputs, identity, local_path, now, read_json, write_json
+from workflow_support import guard_evidence_outputs, identity, local_path, now, read_json, write_evidence_report, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("test_core_gate", "test_core_gate_pages", "test_ape_publication", "test_recipe_comparison")
@@ -90,12 +90,14 @@ def run(config, output, preflight_only=False):
         report.update(status="fail", reason=str(error), finished_at=now())
         return report
     directory.mkdir(parents=True)
+    existing_output = output.exists()
     progress = directory / "progress.json"
     report["progress"] = str(progress)
     environment = {name: os.environ.get(name) for name in (*SELECTION.values(), "QAPLET_M1_INPUTS", "QAPLET_SDK_GUEST_INPUTS")}
     try:
         write_json(progress, {"phase": "configuration", "updated_at": now()})
-        write_json(output, report)
+        if not existing_output:
+            write_json(output, report)
         configuration = read_json(config)
         m1 = configuration.get("profile") == "m1-evidence"
         if m1:
@@ -134,15 +136,18 @@ def run(config, output, preflight_only=False):
                 write_json(guest_inputs, selected_guest)
                 os.environ["QAPLET_SDK_GUEST_INPUTS"] = str(guest_inputs)
         else:
+            report["evidence_index"] = gate.get("evidence_index", [])
             if gate["core"]["status"] != "pass":
                 raise ValueError("Core evidence preflight failed: " + "; ".join(gate["core"]["errors"]))
             guest = core_gate.evaluate(paths["guest_manifest"], paths["guest_report"])
+            report["evidence_index"].extend(guest.get("evidence_index", []))
             guest_path = directory / "guest-preflight.json"
             write_json(guest_path, guest)
             report["guest_preflight"] = identity(guest_path)
             if guest["guest_validation"]["status"] != "pass" or guest["guest_validation"]["guest"]["page_size"] != 4096:
                 raise ValueError("Actual 4096 guest evidence preflight failed")
-        write_json(output, report)
+        if not existing_output:
+            write_json(output, report)
         if preflight_only:
             report.update(status="pass", scope="evidence-preflight", reason="Selected real evidence passed preflight; regressions not run")
         else:
@@ -184,8 +189,12 @@ def run(config, output, preflight_only=False):
             else:
                 os.environ[name] = value
         report["finished_at"] = now()
+        try:
+            report["report_written"] = True
+            write_evidence_report(output, report, created=not existing_output)
+        except ValueError as error:
+            report.update(status="fail", report_written=False, validation_reason=report["reason"], reason=str(error))
         write_json(progress, {"phase": "finished", "status": report["status"], "updated_at": now()})
-        write_json(output, report)
     return report
 
 
@@ -197,7 +206,9 @@ def main():
     args = parser.parse_args()
     report = run(args.config, args.report, args.preflight_only)
     print(json.dumps({"status": report["status"], "scope": report["scope"], "report": str(args.report),
-                      "tests": report.get("tests", {}).get("run"), "reason": report["reason"][:300]}))
+                      "tests": report.get("tests", {}).get("run"), "reason": report["reason"][:300],
+                      "report_written": report.get("report_written", False),
+                      "validation_reason": report.get("validation_reason"), "progress": report.get("progress")}))
     return 0 if report["status"] == "pass" else 1
 
 

@@ -78,6 +78,10 @@ gate 从既有权威 case catalog 检查 17 项 startup（含 ESM/jobs）、20/2
 
 同一 report ID 重复即拒绝，包括完全相同副本；选中失败、blocked、skip 或未知 scope 均不能被后续成功覆盖。报告保存 `selected_inputs`，失败时保留原证据及已解析索引。重新哈希 Core APE、两个 sidecar/map 和 nm/PE-import 原始日志后重跑禁止服务符号合同。离线项必须是实际隔离/nonroot 的两次独立 build、六个二进制与两 helper 比较、14 refusal、真实 strace 和精确 cache/recipe before/after。recipe 对比保留测试/当前两套原始 fingerprint：输入闭包和实际当前字节相同时接受 `changed_inputs: []`；非空差异仅接受原有 `build_ape.py` 的 `check_ci` AST 证明，不冒称该差异后的配方已额外断网执行。声明的差异必须与两份 inventory 精确一致。
 
+`core_gate.py`、`sdk_guest.py` 与严格入口在创建输出前，按各选择文件自己的基目录和最长前缀映射保护显式选择的文件、原 ZIP 和供应目录；路径的大小写别名、hardlink 和目录别名也属于同一输入。映射根本身只是解析规则，不禁止在无关兄弟路径写报告。写最终报告前再核对已实际读取的 evidence_index，包括原始 serial/stdout/stderr 和嵌套 M0 索引。
+
+验证失败或未完成时，尚未打开的后续原件也必须保留。因此上述入口不会替换运行前已经存在的报告目标；终端返回非零、`status: fail`、`report_written: false` 和保留原因，既有文件不代表本次结果。使用新的报告路径可保存本次失败及已解析索引。新路径仍在读取配置前提供 running/progress，兼容阻塞输入；已有无关报告只有在完整所选验证成功且与实际输入无冲突时才可替换。
+
 新 CI 选择还将三个 producer 及其 native/完整 guest consumer 的 commit 逐边比较：任一方有 CI 身份时，另一方也必须有完整身份；不同 run 可消费同 commit 的已验原归档，不能用缺字段或另一 commit 绕过。64K producer 直接记录 CI，guest 导入保留实际 guest CI 与独立 validation_ci；历史缺 CI 的报告不能补写成为当前 CI 成绩。各报告仍须匹配原归档 provider ID、commit 后缀和实际字节。
 
 完整实际 manifest、通过报告、红绿及负向回归见 [10 验收](../../.scratch/qaplet-m0/core-evidence-gate-validation.md)。标准 `make check` 不自动寻找历史 `out/`；真实 consumer 回归须显式设置 `QAPLET_GATE_MANIFEST`。供应/build 配方不因新增 consumer 而改变。

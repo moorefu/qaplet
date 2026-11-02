@@ -80,6 +80,36 @@ class ActualSDKGuestExport(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("QAPLET_SDK_GUEST_INPUTS"), "Explicit actual SDK guest closure required")
 class ActualSDKGuestImport(unittest.TestCase):
+    def test_loose_serial_input_is_preserved_and_unrelated_sibling_output_is_allowed(self):
+        inputs_path = Path(os.environ["QAPLET_SDK_GUEST_INPUTS"]).resolve()
+        inputs = json.loads(inputs_path.read_text())
+        guest = json.loads(selected_path(inputs_path, inputs, inputs["guest_report"]).read_text())
+        with fixture() as temporary:
+            directory = Path(temporary)
+            serial = directory / "loose-serial.log"
+            shutil.copyfile(selected_path(inputs_path, inputs, guest["qemu"]["serial_log"]), serial)
+            before = hashlib.sha256(serial.read_bytes()).hexdigest()
+            guest["qemu"]["serial_log"]["path"] = str(serial)
+            next(command for command in guest["commands"] if "-accel" in command["argv"])["stdout_log"] = str(serial)
+            guest_path = directory / "guest.json"
+            guest_path.write_text(json.dumps(guest), encoding="utf-8")
+            inputs["selection"] = str(selected_path(inputs_path, inputs, inputs["selection"]))
+            inputs["guest_report"] = str(guest_path)
+            inputs.pop("transports", None)
+            selected = directory / "inputs.json"
+            selected.write_text(json.dumps(inputs), encoding="utf-8")
+            command = [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "verify", "--input-manifest", str(selected), "--report"]
+            output = directory / "unrelated.json"
+            output.write_text("previous unrelated result", encoding="utf-8")
+            control = subprocess.run([*command, str(output)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+            report = json.loads(output.read_text())
+            self.assertIn(str(serial), [row["resolved_path"] for row in report["evidence_index"]])
+            rejected = subprocess.run([*command, str(serial)], capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertFalse(json.loads(rejected.stdout)["report_written"])
+            self.assertEqual(hashlib.sha256(serial.read_bytes()).hexdigest(), before)
+
     def evaluate_mutated_guest(self, mutate):
         inputs_path = Path(os.environ["QAPLET_SDK_GUEST_INPUTS"]).resolve()
         inputs = json.loads(inputs_path.read_text())
@@ -217,6 +247,12 @@ class ActualSDKGuestImport(unittest.TestCase):
             document = json.loads(mutated.read_text())
             document["guest"]["page_size"] = 4096
             mutated.write_text(json.dumps(document))
+            accepted_bytes = (directory / "verify.json").read_bytes()
             rejected = subprocess.run(command, capture_output=True, text=True, timeout=60)
             self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn("Extracted byte differs from verified ZIP", json.loads((directory / "verify.json").read_text())["reason"])
+            self.assertFalse(json.loads(rejected.stdout)["report_written"])
+            self.assertEqual((directory / "verify.json").read_bytes(), accepted_bytes)
+            command[-1] = str(directory / "rejected.json")
+            rejected = subprocess.run(command, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("Extracted byte differs from verified ZIP", json.loads((directory / "rejected.json").read_text())["reason"])

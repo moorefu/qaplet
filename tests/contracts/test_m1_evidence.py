@@ -274,6 +274,62 @@ def mutation_test(family, name):
 
 @unittest.skipUnless(os.environ.get("QAPLET_M1_INPUTS"), "Explicit actual complete M1 closure required")
 class ActualM1Evidence(unittest.TestCase):
+    def test_failed_loose_m0_evidence_cannot_replace_a_consumed_raw_log(self):
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        selected = json.loads(selected_path(original, original["m0_manifest"]).read_text())
+        for consumer, case_index in (("core", 0), ("core", 1), ("strict", 1)):
+            with self.subTest(consumer=consumer, raw_already_read=case_index == 0), fixture() as root:
+                root = root.resolve()
+                manifest = json.loads(json.dumps(selected))
+                producer = json.loads(selected_path(manifest, manifest["producers"]["startup"]).read_text())
+                command = producer["cases"][case_index]["commands"][0]
+                raw = root / "loose-stdout.log"
+                shutil.copyfile(selected_path(manifest, command["stdout_log"]), raw)
+                before = hashlib.sha256(raw.read_bytes()).hexdigest()
+                # A negative, transport-free fixture stops after reading the actual
+                # stdout. No provider report or provider raw bytes are modified.
+                producer["ci"] = None
+                command["stdout_log"] = str(raw)
+                producer["cases"][0]["commands"][0]["stderr_log"] = str(root / "missing-stderr.log")
+                producer_path = root / "producer.json"
+                write(producer_path, producer)
+                manifest.pop("transports")
+                manifest["producers"]["startup"] = str(producer_path)
+                inputs = root / "m0.json"
+                write(inputs, manifest)
+                if consumer == "core":
+                    arguments = ["core_gate.py", "evaluate", "--input-manifest", str(inputs)]
+                else:
+                    publications = root / "publications.json"
+                    write(publications, {"reports": []})
+                    config = root / "config.json"
+                    write(config, {"schema_version": 1, "profile": "m0-evidence", "input_manifest": str(inputs),
+                        "guest_manifest": str(inputs), "guest_report": str(inputs), "publication_inputs": str(publications)})
+                    arguments = ["check_evidence.py", "--config", str(config), "--preflight-only"]
+                def run(output):
+                    return subprocess.run([sys.executable, str(ROOT / "scripts" / arguments[0]), *arguments[1:],
+                        "--report", str(output)], capture_output=True, text=True, timeout=60)
+                control_path = root / "unrelated-result.json"
+                control = run(control_path)
+                control_report = json.loads(control_path.read_text())
+                self.assertNotEqual(control.returncode, 0)
+                if consumer == "core":
+                    self.assertIn("missing-stderr.log", " ".join(control_report["core"]["errors"]))
+                    consumed = [entry["resolved_path"] for entry in control_report["evidence_index"]]
+                    if case_index == 0:
+                        self.assertIn(str(raw), consumed, "Control must actually consume the loose raw evidence")
+                    else:
+                        self.assertNotIn(str(raw), consumed, "Control must fail before the later selected raw input")
+                process = run(raw)
+                write(root / "raw-preservation.json", {"consumer": consumer, "before_sha256": before,
+                    "after_sha256": hashlib.sha256(raw.read_bytes()).hexdigest(), "exit_code": process.returncode,
+                    "stdout": process.stdout, "stderr": process.stderr})
+                self.assertNotEqual(process.returncode, 0)
+                self.assertEqual(hashlib.sha256(raw.read_bytes()).hexdigest(), before,
+                    "Failed evidence consumer replaced selected raw evidence")
+                self.assertIn("immutable", process.stdout + process.stderr)
+                self.assertFalse(json.loads(process.stdout)["report_written"])
+
     def test_required_catalog_cannot_skip_error_be_empty_or_interrupt_to_pass(self):
         with fixture() as root:
             clone = root / "checkout"
@@ -309,12 +365,12 @@ class ActualM1Evidence(unittest.TestCase):
                     if name == "empty": self.assertIn("empty", value["reason"])
 
     def test_actual_current_full_closure_is_accepted_separately_from_release(self):
-        with tempfile.TemporaryDirectory(prefix="qaplet-m1-strict-") as temp:
-            root = Path(temp)
+        with fixture() as root:
             config = root / "config.json"
             config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence",
                 "input_manifest": os.environ["QAPLET_M1_INPUTS"]}))
             report = root / "result.json"
+            report.write_text("previous unrelated result", encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/check_evidence.py"),
                 "--config", str(config), "--report", str(report), "--preflight-only"],
                 capture_output=True, text=True, timeout=300)
