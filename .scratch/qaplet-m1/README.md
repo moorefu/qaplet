@@ -1,10 +1,10 @@
 # 正式 M1 任务索引
 
 **Approved:** 2026-11-02，用户以 `ok` 确认 16 个纵向切片及阻塞依赖；23 条直接阻塞边，无环、无传递冗余边。
-**Publication:** 每票独立文件，状态均为 ready-for-agent；尚未领取、实现或验收。
+**Publication baseline:** 每票独立文件；发布时均为 ready-for-agent，当前状态见各票。
 **Spec:** [正式 M1 实施规格](spec.md)。[设计记录](design.md)保留 Q1–Q32，规格与 ADR 是共同合同。
 
-**Implementation:** 集成分支 `codex/m1-integration`；当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。初始 Runtime/值/Promise 闭环的 01–03 已解决并合入：[01](01-runtime-validation.md)、[02](02-values-validation.md)、[03](03-promise-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
+**Implementation:** 集成分支 `codex/m1-integration`；01–08、10 已解决并合入，09、12 正在实施，其余按依赖推进。当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。已合入的闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)及[协作停止](10-stop-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
 
 ## 任务与阻塞依赖
 
