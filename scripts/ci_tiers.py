@@ -243,6 +243,15 @@ def check_tier_transport(workflow):
     require(len(sdk_matrix) == 1 and sdk_matrix[0].get("if") == "${{ !cancelled() }}" and sdk_matrix[0]["run"] ==
             "python scripts/sdk.py matrix --profile cross --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-dir out/sdk-native --report out/sdk-matrix/matrix.json",
             "Cross must retain missing/failed SDK targets through the shared native matrix CLI")
+    sdk_guest = [step for step in jobs["arm64-page-gaps"]["steps"] if "scripts/sdk_guest.py" in step.get("run", "") or
+                 "/sdk/payload.json --timeout" in step.get("run", "")]
+    require([step["run"] for step in sdk_guest] == [
+        "python scripts/sdk_guest.py export --build-report out/sdk/build.json --distribution out/sdk/artifacts --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --report out/page-gaps/${{ matrix.page_size }}/sdk/export.json",
+        "python scripts/arm64_guest.py run --cache .cache/guests --page-size 65536 --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --timeout 900 --command-timeout 60 --report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json",
+        "python scripts/sdk_guest.py import --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --guest-report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json --report out/page-gaps/${{ matrix.page_size }}/sdk/import.json"],
+        "Full must execute and independently import the actual changed SDK on the missing locked 64K kernel")
+    require(all(step.get("if") == "${{ !cancelled() && matrix.page_size == 65536 }}" for step in sdk_guest),
+            "SDK guest execution must preserve native-first missing-64K selection and retain failures")
     core = jobs["full-core"]
     require(core.get("needs") == ["tier-plan", "build", "native-startup", "arm64-page-gaps", "startup-matrix"] and core.get("runs-on") == "ubuntu-24.04", "Full Core must await all selected same-commit jobs")
     require([step["run"] for step in core["steps"] if "run" in step] == [

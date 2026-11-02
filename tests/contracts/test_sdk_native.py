@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,13 +41,22 @@ class SDKNativeContract(unittest.TestCase):
             code, value = check(native)
             self.assertEqual(code, 0, value["reason"])
             self.assertEqual(value["coverage"][0]["lifecycle"]["completed_cycles"], 1000)
-            mutation = json.loads(json.dumps(original))
-            mutation["cases"] = [case for case in mutation["cases"] if case["case_id"] != "qaplet-host.stop-ordering"]
+            shutil.copytree(native.parent / "evidence" / original["report_id"], work / "evidence" / original["report_id"])
             selected = work / "run.json"
-            selected.write_text(json.dumps(mutation))
-            code, value = check(selected)
-            self.assertEqual(code, 1, value)
-            self.assertIn("catalog", value["reason"].lower())
+            for name in ("missing_case", "short_lifecycle", "guest_replacement", "required_skip"):
+                mutation = json.loads(json.dumps(original))
+                if name == "missing_case":
+                    mutation["cases"] = [case for case in mutation["cases"] if case["case_id"] != "qaplet-host.stop-ordering"]
+                elif name == "short_lifecycle":
+                    mutation["lifecycle"]["completed_cycles"] = 99
+                elif name == "guest_replacement":
+                    mutation["host"]["execution_mode"] = "emulated-system"
+                else:
+                    mutation["cases"][0]["status"] = "skip"
+                selected.write_text(json.dumps(mutation))
+                code, value = check(selected)
+                self.assertEqual(code, 1, name + ": " + str(value))
+                self.assertTrue(any(word in value["reason"].lower() for word in ("catalog", "lifecycle", "native", "contract")), value)
 
 
 if __name__ == "__main__":

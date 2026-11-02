@@ -411,7 +411,7 @@
       ],
       "if": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
       "runs-on": "ubuntu-22.04",
-      "timeout-minutes": 20,
+      "timeout-minutes": 35,
       "strategy": {
         "fail-fast": false,
         "matrix": "${{ fromJSON(needs.page-plan.outputs.matrix) }}"
@@ -439,6 +439,12 @@
         {
           "name": "Install the locked QEMU major/minor runtime with repository caches",
           "run": "mkdir -p .cache/apt/cache/archives/partial .cache/apt/lists/partial\nsudo apt-get -o Dir::Cache=\"$PWD/.cache/apt/cache\" -o Dir::State::lists=\"$PWD/.cache/apt/lists\" update\nsudo apt-get -y --no-install-recommends -o Dir::Cache=\"$PWD/.cache/apt/cache\" -o Dir::State::lists=\"$PWD/.cache/apt/lists\" install qemu-system-arm"
+        },
+        {
+          "name": "Download the identical SDK producer for missing 64K validation",
+          "if": "${{ matrix.page_size == 65536 }}",
+          "uses": "actions/download-artifact@v8",
+          "with": {"name": "m1-sdk-build-${{ github.sha }}", "path": "out/sdk"}
         },
         {
           "name": "Explicitly fetch immutable locked guest inputs",
@@ -489,6 +495,21 @@
           "name": "Validate all required 64K deep observations",
           "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
           "run": "python scripts/pages64k.py verify-guest --input-report out/m0/pages64k/build-info.json --guest-report out/page-gaps/${{ matrix.page_size }}/guest.json --report out/page-gaps/${{ matrix.page_size }}/pages64k.json"
+        },
+        {
+          "name": "Export the same SDK critical contracts to an independent 64K payload",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/sdk_guest.py export --build-report out/sdk/build.json --distribution out/sdk/artifacts --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --report out/page-gaps/${{ matrix.page_size }}/sdk/export.json"
+        },
+        {
+          "name": "Execute actual SDK contracts on the missing locked 64K kernel",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/arm64_guest.py run --cache .cache/guests --page-size 65536 --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --timeout 900 --command-timeout 60 --report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json"
+        },
+        {
+          "name": "Independently verify the SDK 64K serial semantics and byte identities",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/sdk_guest.py import --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --guest-report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json --report out/page-gaps/${{ matrix.page_size }}/sdk/import.json"
         },
         {
           "name": "Retain guest failures, serial bytes and semantic reports",

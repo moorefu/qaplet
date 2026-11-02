@@ -105,6 +105,8 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
             if i - prefix in module_arguments:
                 actual_argv[i] = normalized(actual_argv[i])
         require(actual_argv == wanted, "Actual invocation contradicts SDK catalog: " + case_id)
+        require(all(normalized(command[key + "_log"]).startswith(normalized(incoming["evidence_directory"]) + "/")
+                    for key in ("stdout", "stderr")), "Native raw logs must belong to the selected evidence root")
         raw = [evidence.read(command[key + "_log"]) for key in ("stdout", "stderr")]
         require(raw == [case["actual"][key].encode("utf-8") for key in ("stdout", "stderr")],
                 "Native actual output differs from raw logs: " + case_id)
