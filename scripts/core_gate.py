@@ -232,6 +232,102 @@ class Evidence:
         return tuple(decode(self.read(record[key])) for key in ("stdout_log", "stderr_log"))
 
 
+def verify_guest_transport(evidence, item, output):
+    """Replay the locked system, raw serial, payload hashes and cleanup contract."""
+    lock = read_json(ROOT / "guests/arm64.lock.json")
+    require(item["guest_lock"]["sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Guest lock identity mismatch")
+    facts, qemu = item["guest"], item["qemu"]
+    page = facts["page_size"]
+    require(page in (4096, 65536), "Wrong guest page configuration")
+    profile = lock["profiles"][str(page)]
+    require(facts["os"] == "Linux" and facts["architecture"] == "aarch64" and facts["execution_mode"] == "emulated-system" and
+            facts["page_size_alias"] == page and facts["smaps_kib"] == page // 1024 and facts["kernel"] == profile["kernel_release"], "Actual guest facts disagree with locked target")
+    require(qemu["acceleration"] == "tcg,thread=single" and qemu["machine"] == lock["qemu"]["machine"] and
+            qemu["cpu"] == lock["qemu"]["cpu"] and ("QEMU emulator version " + lock["qemu"]["version"]) in qemu["version"], "Full-system locked QEMU/TCG required")
+    require(qemu["guest_arch"] == "aarch64" and qemu["host_arch"] == item["host"]["execution_arch"], "QEMU architecture mismatch")
+    require(qemu["image_page_code"] == {4096: 1, 65536: 3}[page], "Guest Image page flag contradicts actual page configuration")
+    expected_profile = profile
+    if not {"image", "config"} <= set(profile):
+        supplemental_path = ROOT / "guests/arm64-derived.lock.json"
+        supplemental = read_json(supplemental_path)
+        require(supplemental["schema_version"] == 1 and supplemental["kind"] == "arm64-package-derived-identities" and
+                supplemental["guest_lock_sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Derived guest identities are not bound to canonical package lock")
+        expected_profile = supplemental["profiles"][str(page)]
+        expected_packages = {name: {key: lock["packages"][name][key] for key in ("sha256", "size_bytes")} for name in profile["packages"]}
+        require(expected_profile["packages"] == expected_packages and expected_profile["kernel_release"] == profile["kernel_release"], "Derived guest identities use different pinned packages")
+        require(same(qemu["compressed_kernel"], expected_profile["compressed_kernel"]), "Guest compressed kernel identity mismatch")
+        output.setdefault("guest_derivations", {})[str(page)] = {"supplement_sha256": digest(supplemental_path.read_bytes()),
+            "source_lock_sha256": supplemental["guest_lock_sha256"], "derivation": supplemental["derivation"], "identities": expected_profile}
+    for field, locked in (("kernel", "image"), ("config", "config")):
+        require(same(qemu[field], expected_profile[locked]), "Guest kernel/config identity mismatch")
+    for field in ("rootfs", "executable", "compressed_kernel"):
+        require(re.fullmatch(r"[0-9a-f]{64}", qemu[field]["sha256"]) and qemu[field]["size_bytes"] > 0, "Missing QEMU/guest provenance: " + field)
+    evidence.read(qemu["init"])
+    serial = decode(evidence.read(qemu["serial_log"]))
+    evidence.read(qemu["stderr_log"])
+    require(item["cleanup"]["qemu_exited"] is True and item["cleanup"]["timed_out"] is False and item["cleanup"]["ram_only"] is True and
+            item["cleanup"]["disks"] == [] and item["cleanup"]["network"] == "none" and item["cleanup"]["host_global_changes"] is False, "Guest transport cleanup/invocation failed")
+    commands = [command for command in item["commands"] if "-accel" in command["argv"]]
+    require(len(commands) == 1, "Actual full-system QEMU command required")
+    command = commands[0]
+    evidence.command(command, 0)
+    argv = command["argv"]
+    require(PurePosixPath(normalized(argv[0])).name == PurePosixPath(normalized(qemu["executable"]["path"])).name == "qemu-system-aarch64",
+            "Actual locked full-system QEMU executable required; qemu-user cannot provide kernel coverage")
+    require(argv == [argv[0], "-machine", qemu["machine"], "-cpu", qemu["cpu"], "-accel", "tcg,thread=single",
+                    "-smp", "1", "-m", "512M", "-display", "none", "-serial", "stdio", "-monitor", "none",
+                    "-nic", "none", "-no-reboot", "-kernel", qemu["kernel"]["path"], "-initrd", qemu["rootfs"]["path"],
+                    "-append", "console=ttyAMA0 rdinit=/init panic=-1"], "Full-system RAM-only isolated invocation differs from locked protocol")
+    for option, value in (("-accel", "tcg,thread=single"), ("-machine", qemu["machine"]), ("-cpu", qemu["cpu"]),
+                          ("-nic", "none"), ("-kernel", qemu["kernel"]["path"]), ("-initrd", qemu["rootfs"]["path"])):
+        require(argv.count(option) == 1 and argv[argv.index(option) + 1] == value, "QEMU command identity mismatch: " + option)
+    inputs = {PurePosixPath(normalized(entry["path"])).name: entry for entry in item["inputs"]}
+    for name in [*lock["metadata"], *lock["common_packages"], *profile["packages"]]:
+        require(name in inputs and same(inputs[name], lock["metadata"].get(name) or lock["packages"][name]), "Guest package/signature input mismatch")
+    require(item["signature_chain"]["status"] == "pass" and item["signature_chain"]["signer_fingerprint"] == lock["signer_fingerprint"], "Guest signature provenance mismatch")
+    token = "QAPLET_" + item["report_id"].replace("-", "")
+    observed_facts, hashes, after, records, done = {}, {}, {}, {}, 0
+    for line in serial.splitlines():
+        if not line.startswith(token + " "):
+            continue
+        kind, value = line.rstrip("\r")[len(token) + 1:].split(" ", 1)
+        if kind == "FACT":
+            name, content = value.split(" ", 1)
+            require(name not in observed_facts, "Duplicate serial fact")
+            observed_facts[name] = int(content) if name in ("page_size", "page_size_alias", "smaps_kib") else content
+        elif kind in ("HASH", "HASH_AFTER"):
+            name, content = value.rsplit(" ", 1)
+            destination = hashes if kind == "HASH" else after
+            require(name not in destination, "Duplicate serial payload hash")
+            destination[name] = content
+        elif kind == "CASE":
+            name, field, content = value.split(" ", 2)
+            require(field not in records.setdefault(name, {}), "Duplicate serial case field")
+            records[name][field] = content
+        elif kind == "DONE":
+            done += 1
+        else:
+            raise ValueError("Unknown guest serial token")
+    require(done == 1 and observed_facts == {key: facts[key] for key in observed_facts} and
+            set(observed_facts) == {"os", "architecture", "kernel", "page_size", "page_size_alias", "smaps_kib"}, "Guest serial facts/DONE mismatch")
+    files = unique(item["files"], "guest_path")
+    expected_hashes = {path: info["sha256"] for path, info in files.items()}
+    require(hashes == after == expected_hashes == facts["file_sha256"] == facts["file_sha256_after"], "Guest payload before/after transport mismatch")
+    cases = unique(item["cases"])
+    require(set(cases) == set(records), "Guest serial/raw case coverage mismatch")
+    for name, case in cases.items():
+        raw = records[name]
+        require(set(raw) == {"CWD", "START", "END", "EXIT", "STDOUT", "STDERR"}, "Incomplete actual guest command")
+        require(case["status"] == "pass" and int(raw["EXIT"]) == case["exit_code"] == case["actual"]["exit_code"] and
+                case["cwd"] == raw["CWD"] and case["started_at"] == raw["START"] and case["finished_at"] == raw["END"], "Guest case contradicts serial command")
+        interval(case)
+        require(0 < case["timeout_seconds"] <= 300, "Guest case deadline missing")
+        for field in ("stdout", "stderr"):
+            actual = base64.b64decode(raw[field.upper()], validate=True)
+            require(actual == evidence.read(case[field + "_log"]) and actual.decode("utf-8", "replace") == case["actual"][field], "Guest raw payload differs from serial")
+    return files, cases
+
+
 class Gate:
     def __init__(self, manifest, base, report):
         require(isinstance(manifest, dict), "Evidence manifest must be an object")
@@ -521,81 +617,11 @@ class Gate:
             return self.guests[key]
         item = self.evidence.report(reference, "arm64-guest")
         self.ci(item, item["host"])
-        lock = read_json(ROOT / "guests/arm64.lock.json")
-        require(item["guest_lock"]["sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Guest lock identity mismatch")
-        facts, qemu = item["guest"], item["qemu"]
+        files, cases = verify_guest_transport(self.evidence, item, self.output)
+        facts = item["guest"]
         page = facts["page_size"]
         for family in guest_requirements(page)["families"]:
             check_ci_commit(self.producers[family], item)
-        require(page in (4096, 65536), "Wrong guest page configuration")
-        profile = lock["profiles"][str(page)]
-        require(facts["os"] == "Linux" and facts["architecture"] == "aarch64" and facts["execution_mode"] == "emulated-system" and
-                facts["page_size_alias"] == page and facts["smaps_kib"] == page // 1024 and facts["kernel"] == profile["kernel_release"], "Actual guest facts disagree with locked target")
-        require(qemu["acceleration"] == "tcg,thread=single" and qemu["machine"] == lock["qemu"]["machine"] and
-                qemu["cpu"] == lock["qemu"]["cpu"] and ("QEMU emulator version " + lock["qemu"]["version"]) in qemu["version"], "Full-system locked QEMU/TCG required")
-        require(qemu["guest_arch"] == "aarch64" and qemu["host_arch"] == item["host"]["execution_arch"], "QEMU architecture mismatch")
-        require(qemu["image_page_code"] == {4096: 1, 65536: 3}[page], "Guest Image page flag contradicts actual page configuration")
-        expected_profile = profile
-        if not {"image", "config"} <= set(profile):
-            supplemental_path = ROOT / "guests/arm64-derived.lock.json"
-            supplemental = read_json(supplemental_path)
-            require(supplemental["schema_version"] == 1 and supplemental["kind"] == "arm64-package-derived-identities" and
-                    supplemental["guest_lock_sha256"] == digest((ROOT / "guests/arm64.lock.json").read_bytes()), "Derived guest identities are not bound to canonical package lock")
-            expected_profile = supplemental["profiles"][str(page)]
-            expected_packages = {name: {key: lock["packages"][name][key] for key in ("sha256", "size_bytes")} for name in profile["packages"]}
-            require(expected_profile["packages"] == expected_packages and expected_profile["kernel_release"] == profile["kernel_release"], "Derived guest identities use different pinned packages")
-            require(same(qemu["compressed_kernel"], expected_profile["compressed_kernel"]), "Guest compressed kernel identity mismatch")
-            self.output.setdefault("guest_derivations", {})[str(page)] = {"supplement_sha256": digest(supplemental_path.read_bytes()),
-                "source_lock_sha256": supplemental["guest_lock_sha256"], "derivation": supplemental["derivation"], "identities": expected_profile}
-        for field, locked in (("kernel", "image"), ("config", "config")):
-            require(same(qemu[field], expected_profile[locked]), "Guest kernel/config identity mismatch")
-        for field in ("rootfs", "executable", "compressed_kernel"):
-            require(re.fullmatch(r"[0-9a-f]{64}", qemu[field]["sha256"]) and qemu[field]["size_bytes"] > 0, "Missing QEMU/guest provenance: " + field)
-        self.evidence.read(qemu["init"])
-        serial = decode(self.evidence.read(qemu["serial_log"]))
-        self.evidence.read(qemu["stderr_log"])
-        require(item["cleanup"]["qemu_exited"] is True and item["cleanup"]["timed_out"] is False and item["cleanup"]["ram_only"] is True and
-                item["cleanup"]["disks"] == [] and item["cleanup"]["network"] == "none" and item["cleanup"]["host_global_changes"] is False, "Guest transport cleanup/invocation failed")
-        commands = [command for command in item["commands"] if "-accel" in command["argv"]]
-        require(len(commands) == 1, "Actual full-system QEMU command required")
-        command = commands[0]
-        self.evidence.command(command, 0)
-        argv = command["argv"]
-        for option, value in (("-accel", "tcg,thread=single"), ("-machine", qemu["machine"]), ("-cpu", qemu["cpu"]),
-                              ("-nic", "none"), ("-kernel", qemu["kernel"]["path"]), ("-initrd", qemu["rootfs"]["path"])):
-            require(argv.count(option) == 1 and argv[argv.index(option) + 1] == value, "QEMU command identity mismatch: " + option)
-        inputs = {PurePosixPath(normalized(entry["path"])).name: entry for entry in item["inputs"]}
-        for name in [*lock["metadata"], *lock["common_packages"], *profile["packages"]]:
-            require(name in inputs and same(inputs[name], lock["metadata"].get(name) or lock["packages"][name]), "Guest package/signature input mismatch")
-        require(item["signature_chain"]["status"] == "pass" and item["signature_chain"]["signer_fingerprint"] == lock["signer_fingerprint"], "Guest signature provenance mismatch")
-        token = "QAPLET_" + item["report_id"].replace("-", "")
-        observed_facts, hashes, after, records, done = {}, {}, {}, {}, 0
-        for line in serial.splitlines():
-            if not line.startswith(token + " "):
-                continue
-            kind, value = line.rstrip("\r")[len(token) + 1:].split(" ", 1)
-            if kind == "FACT":
-                name, content = value.split(" ", 1)
-                require(name not in observed_facts, "Duplicate serial fact")
-                observed_facts[name] = int(content) if name in ("page_size", "page_size_alias", "smaps_kib") else content
-            elif kind in ("HASH", "HASH_AFTER"):
-                name, content = value.rsplit(" ", 1)
-                destination = hashes if kind == "HASH" else after
-                require(name not in destination, "Duplicate serial payload hash")
-                destination[name] = content
-            elif kind == "CASE":
-                name, field, content = value.split(" ", 2)
-                require(field not in records.setdefault(name, {}), "Duplicate serial case field")
-                records[name][field] = content
-            elif kind == "DONE":
-                done += 1
-            else:
-                raise ValueError("Unknown guest serial token")
-        require(done == 1 and observed_facts == {key: facts[key] for key in observed_facts} and
-                set(observed_facts) == {"os", "architecture", "kernel", "page_size", "page_size_alias", "smaps_kib"}, "Guest serial facts/DONE mismatch")
-        files = unique(item["files"], "guest_path")
-        expected_hashes = {path: info["sha256"] for path, info in files.items()}
-        require(hashes == after == expected_hashes == facts["file_sha256"] == facts["file_sha256_after"], "Guest payload before/after transport mismatch")
         requirements = guest_requirements(page)
         for family in requirements["families"]:
             for artifact in self.artifacts[family].values():
@@ -604,18 +630,6 @@ class Gate:
                 self.evidence.read(found[0])
         require("/payload/ape-aarch64.elf" in files and same(files["/payload/ape-aarch64.elf"], self.producers["startup"]["portable_helpers"]["loader"]), "Guest loader differs from selected producer")
         self.evidence.read(files["/payload/ape-aarch64.elf"])
-        cases = unique(item["cases"])
-        require(set(cases) == set(records), "Guest serial/raw case coverage mismatch")
-        for name, case in cases.items():
-            raw = records[name]
-            require(set(raw) == {"CWD", "START", "END", "EXIT", "STDOUT", "STDERR"}, "Incomplete actual guest command")
-            require(case["status"] == "pass" and int(raw["EXIT"]) == case["exit_code"] == case["actual"]["exit_code"] and
-                    case["cwd"] == raw["CWD"] and case["started_at"] == raw["START"] and case["finished_at"] == raw["END"], "Guest case contradicts serial command")
-            interval(case)
-            require(0 < case["timeout_seconds"] <= 300, "Guest case deadline missing")
-            for field in ("stdout", "stderr"):
-                actual = base64.b64decode(raw[field.upper()], validate=True)
-                require(actual == self.evidence.read(case[field + "_log"]) and actual.decode("utf-8", "replace") == case["actual"][field], "Guest raw payload differs from serial")
         expected_commands = {case_id: ["/payload/ape-aarch64.elf", "/payload/" + name + ".com", *arguments]
                              for case_id, name, arguments, _ in STARTUP_CASES}
         io_path = next(path for path, info in files.items() if same(info, self.artifacts["io"]["native-io"]))
