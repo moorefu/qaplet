@@ -117,6 +117,7 @@ CLI_CASES = (
     ("args-missing-source", ["eval", "--source"], 2, "", "qaplet: INVALID_ARGUMENT"),
     ("args-source-tail", ["eval", "--source", "42", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
     ("args-missing-file", ["run"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-empty-file", ["run", ""], 2, "", "qaplet: INVALID_ARGUMENT"),
     ("args-missing-separator", ["run", "{modules}/entry.mjs", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
     ("args-invalid-budget", ["--timeout-ms", "-1", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
     ("args-overflow-budget", ["--max-dispatches", "18446744073709551616", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),

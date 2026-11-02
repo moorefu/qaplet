@@ -88,6 +88,7 @@ int main(int argc, char **argv) {
   if (is_run) {
     if (argc-position<2 || (argc-position>2 && strcmp(argv[position+2],"--"))) return invalid_arguments();
     input=argv[position+1];
+    if (!*input) return invalid_arguments();
     if (argc-position>3) {
       config.argc=(size_t)(argc-position-3);
       arguments=calloc(config.argc,sizeof(*arguments));
