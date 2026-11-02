@@ -5,6 +5,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <time.h>
+#include <errno.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public stop contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -113,6 +114,11 @@ typedef struct {
   uint64_t owner_cpu_ns;
   uint64_t callback_hold_ns;
   qaplet_snapshot accepted;
+  /* Temporary native Cross diagnostics; never changes the required verdict. */
+  int failure_stage, clock_failure, clock_errno;
+  unsigned cpu_reads, stop_calls;
+  uint64_t process_first, process_last, self_first, self_last;
+  qaplet_code stop_codes[4];
 } stop_gate;
 
 static uint64_t nanoseconds(clockid_t clock) {
@@ -125,16 +131,28 @@ static uint64_t nanoseconds(clockid_t clock) {
  * process CPU to observe owner progress after the JS arm callback has returned.
  * The loop allocates nothing and invokes no C functions after arm. Sleep merely
  * yields the polling worker; elapsed wall time never proves JS started/stopped. */
-static int other_cpu(uint64_t *output) {
+static int other_cpu(stop_gate *gate, uint64_t *output) {
   struct timespec process_time, self_time;
-  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&process_time) ||
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) return 0;
+  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&process_time)) {
+    gate->clock_failure=1; gate->clock_errno=errno; return 0;
+  }
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) {
+    gate->clock_failure=2; gate->clock_errno=errno; return 0;
+  }
   uint64_t process=(uint64_t)process_time.tv_sec*1000000000+(uint64_t)process_time.tv_nsec;
   uint64_t self=(uint64_t)self_time.tv_sec*1000000000+(uint64_t)self_time.tv_nsec;
+  if (!gate->cpu_reads++) { gate->process_first=process; gate->self_first=self; }
+  gate->process_last=process; gate->self_last=self;
   /* A fresh process can have zero measured CPU, especially with native clock
    * granularity. The clock return status, rather than its value, proves success. */
   *output=process>self ? process-self : 0;
   return 1;
+}
+
+static qaplet_code observed_stop(stop_gate *gate, unsigned call, qaplet_code code) {
+  gate->stop_calls|=1u<<call;
+  gate->stop_codes[call]=code;
+  return code;
 }
 
 static qaplet_code arm(qaplet_runtime *runtime, uint64_t call, size_t argc,
@@ -172,15 +190,15 @@ static void *stop_worker(void *opaque) {
   pthread_mutex_unlock(&gate->mutex);
   if (gate->mode==1) {
     uint64_t start=0, until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
-    if (!other_cpu(&start)) gate->failed=1;
+    if (!other_cpu(gate,&start)) { gate->failed=1; gate->failure_stage=1; }
     do {
       uint64_t current;
-      if (!other_cpu(&current)) { gate->failed=1; break; }
+      if (!other_cpu(gate,&current)) { gate->failed=1; if(!gate->failure_stage) gate->failure_stage=2; break; }
       if (current>=start) gate->owner_cpu_ns=current-start;
       if (gate->owner_cpu_ns>=20000000) break;
       struct timespec yield={0,1000000}; nanosleep(&yield,NULL);
     } while (nanoseconds(CLOCK_MONOTONIC)<until);
-    if (gate->owner_cpu_ns<20000000) gate->failed=1;
+    if (gate->owner_cpu_ns<20000000) { gate->failed=1; if(!gate->failure_stage) gate->failure_stage=3; }
   } else if (gate->mode==2) {
     uint64_t until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
     qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
@@ -197,10 +215,12 @@ static void *stop_worker(void *opaque) {
         qaplet_post_event(gate->runtime,4,0,NULL,0,NULL)!=QAPLET_QUEUE_FULL) gate->failed=1;
   }
   gate->accepted=(qaplet_snapshot)QAPLET_SNAPSHOT_INIT;
-  if (qaplet_request_stop(gate->runtime,NULL)!=QAPLET_OK ||
-      qaplet_request_stop(gate->runtime,NULL)!=QAPLET_OK ||
-      qaplet_get_snapshot(gate->runtime,&gate->accepted,NULL)!=QAPLET_OK ||
-      qaplet_post_event(gate->runtime,4,0,NULL,0,NULL)!=QAPLET_BAD_STATE) gate->failed=1;
+  if (observed_stop(gate,0,qaplet_request_stop(gate->runtime,NULL))!=QAPLET_OK ||
+      observed_stop(gate,1,qaplet_request_stop(gate->runtime,NULL))!=QAPLET_OK ||
+      observed_stop(gate,2,qaplet_get_snapshot(gate->runtime,&gate->accepted,NULL))!=QAPLET_OK ||
+      observed_stop(gate,3,qaplet_post_event(gate->runtime,4,0,NULL,0,NULL))!=QAPLET_BAD_STATE) {
+    gate->failed=1; if(!gate->failure_stage) gate->failure_stage=20;
+  }
   pthread_mutex_lock(&gate->mutex);
   gate->released=1;
   pthread_cond_broadcast(&gate->condition);
@@ -258,6 +278,14 @@ static int running(void) {
       CHECK(code==QAPLET_EXECUTION_STOPPED && progress.phase==QAPLET_PHASE_DONE && progress.code==QAPLET_EXECUTION_STOPPED);
       CHECK(!pthread_join(worker,NULL));
       CHECK(gate.arms==1);
+    }
+    if(gate.failed || gate.marks || gate.accepted.termination_reason!=QAPLET_EXECUTION_STOPPED) {
+      fprintf(stderr,"[DEBUG-m1-14-stop] variant=%u failed=%d stage=%d marks=%u arms=%u owner_cpu_ns=%llu clock_failure=%d clock_errno=%d reads=%u process=%llu..%llu self=%llu..%llu calls=%u codes=%d,%d,%d,%d accepted=%d/%d/%d\n",
+        variant,gate.failed,gate.failure_stage,gate.marks,gate.arms,(unsigned long long)gate.owner_cpu_ns,
+        gate.clock_failure,gate.clock_errno,gate.cpu_reads,(unsigned long long)gate.process_first,(unsigned long long)gate.process_last,
+        (unsigned long long)gate.self_first,(unsigned long long)gate.self_last,gate.stop_calls,
+        gate.stop_codes[0],gate.stop_codes[1],gate.stop_codes[2],gate.stop_codes[3],
+        gate.accepted.lifecycle,gate.accepted.phase,gate.accepted.termination_reason);
     }
     CHECK(!gate.failed && !gate.marks && gate.accepted.termination_reason==QAPLET_EXECUTION_STOPPED);
     if (variant<2) CHECK(gate.owner_cpu_ns>=20000000);

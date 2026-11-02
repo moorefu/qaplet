@@ -289,6 +289,11 @@
           "run": "python scripts/sdk.py run --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/sdk-native/${{ matrix.runner }}/run.json"
         },
         {
+          "name": "Bounded native repetitions for the two observed macOS failures",
+          "if": "${{ !cancelled() && matrix.os == 'Darwin' }}",
+          "run": "python scripts/probes/sdk_native_diagnose.py --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --repeat 5 --timeout 15 --report out/sdk-native/${{ matrix.runner }}/diagnostic.json"
+        },
+        {
           "name": "Plan from actual native ARM64 page measurement",
           "id": "native-pages",
           "if": "${{ !cancelled() && needs.tier-plan.outputs.run_full == 'true' && matrix.os == 'Linux' && matrix.arch == 'aarch64' }}",
