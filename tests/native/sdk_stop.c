@@ -125,10 +125,16 @@ static uint64_t nanoseconds(clockid_t clock) {
  * process CPU to observe owner progress after the JS arm callback has returned.
  * The loop allocates nothing and invokes no C functions after arm. Sleep merely
  * yields the polling worker; elapsed wall time never proves JS started/stopped. */
-static uint64_t other_cpu(void) {
-  uint64_t process=nanoseconds(CLOCK_PROCESS_CPUTIME_ID);
-  uint64_t self=nanoseconds(CLOCK_THREAD_CPUTIME_ID);
-  return process>self ? process-self : 0;
+static int other_cpu(uint64_t *output) {
+  struct timespec process_time, self_time;
+  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&process_time) ||
+      clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) return 0;
+  uint64_t process=(uint64_t)process_time.tv_sec*1000000000+(uint64_t)process_time.tv_nsec;
+  uint64_t self=(uint64_t)self_time.tv_sec*1000000000+(uint64_t)self_time.tv_nsec;
+  /* A fresh process can have zero measured CPU, especially with native clock
+   * granularity. The clock return status, rather than its value, proves success. */
+  *output=process>self ? process-self : 0;
+  return 1;
 }
 
 static qaplet_code arm(qaplet_runtime *runtime, uint64_t call, size_t argc,
@@ -165,10 +171,11 @@ static void *stop_worker(void *opaque) {
   while (!gate->entered) pthread_cond_wait(&gate->condition,&gate->mutex);
   pthread_mutex_unlock(&gate->mutex);
   if (gate->mode==1) {
-    uint64_t start=other_cpu(), until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
-    if (!start) gate->failed=1;
+    uint64_t start=0, until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
+    if (!other_cpu(&start)) gate->failed=1;
     do {
-      uint64_t current=other_cpu();
+      uint64_t current;
+      if (!other_cpu(&current)) { gate->failed=1; break; }
       if (current>=start) gate->owner_cpu_ns=current-start;
       if (gate->owner_cpu_ns>=20000000) break;
       struct timespec yield={0,1000000}; nanosleep(&yield,NULL);
