@@ -176,7 +176,7 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
   CHECK(entry(runtime,directory,"plain")==QAPLET_OK && !number(runtime,"extensionless",NULL,42));
   char fifo[4096]; snprintf(fifo,sizeof(fifo),"%s/pipe.js",directory);
   if(base[8] && base[9]!=':') {
-    CHECK(!mkfifo(fifo,0600));
+    CHECK(!mknod(fifo,S_IFIFO | 0600,0));
     CHECK(entry(runtime,directory,"pipe.js")==QAPLET_MODULE_LOAD);
     CHECK(!unlink(fifo));
   }
