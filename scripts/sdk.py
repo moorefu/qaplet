@@ -55,6 +55,8 @@ HOST_CASES = (
     ("module-budgets", ["--module-budgets", "{modules}"], "module budgets: cumulative TLA jobs; host-wait deadline; module loop interrupted; permanent failure: pass\n"),
     ("module-nul", ["--module-nul", "{modules}"], "module NUL: computed/static names rejected; existing files intact; ordinary NUL strings preserved: pass\n"),
     ("module-cache", ["--module-cache", "{modules}"], "module cache: source/load/parse/link/eval/TLA failures frozen; fresh repair; partial effects retained; accounting: pass\n"),
+    ("module-policy", ["--module-policy", "{modules}"], "module policy: URL/path/NUL/format refusals; real ordinary files only; no failed identities for invalid requests: pass\n"),
+    ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual symlink/hardlink; frozen alias; fresh target; native drive and OS case identity: pass\n"),
     ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
     ("facts", ["--facts"], None),
 )
