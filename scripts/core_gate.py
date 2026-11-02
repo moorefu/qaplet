@@ -19,9 +19,9 @@ from input_lock import component, attach, consume_identity, check_loader_bundle,
 from evidence import read_json
 from foundation import ROOT, decode, now
 from native_io import REQUIRED as IO_REQUIRED, matches_contract
-from nightly_toolchain import write_json
 from pages64k import REQUIRED as DEEP_REQUIRED
 from startup import CASES as STARTUP_CASES, evaluate_case, target_key, check_ci_commit
+from workflow_support import EvidencePaths, guard_evidence_outputs, normalized_evidence_path as normalized, write_evidence_report
 
 
 def require(condition, reason):
@@ -31,13 +31,6 @@ def require(condition, reason):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def normalized(value):
-    require(isinstance(value, str) and value and "\x00" not in value, "Invalid evidence path")
-    text = value.replace("\\", "/").rstrip("/")
-    require(".." not in text.split("/"), "Evidence path traversal rejected: " + text)
-    return text
 
 
 def same(left, right):
@@ -131,15 +124,12 @@ def arm64_page_gaps(native_pages, guest_pages):
     return tuple(sorted({4096, 65536} - native - guests))
 
 
-class Evidence:
+class Evidence(EvidencePaths):
     """One explicit resolver for original POSIX/Windows paths and moved archives."""
 
     def __init__(self, manifest, base, require_transport=False):
-        self.base = base
+        super().__init__(manifest, base)
         self.require_transport = require_transport
-        self.mappings = [(normalized(item["source"]), self.local(item["root"]))
-                         for item in manifest.get("path_mappings", [])]
-        require(len({source for source, _ in self.mappings}) == len(self.mappings), "Ambiguous source-root mappings")
         self.files, self.index, self.ids, self.transports = {}, {}, {}, []
         self.roots = []
         for item in manifest.get("transports", []):
@@ -170,24 +160,6 @@ class Evidence:
                                         "member": name, "sha256": digest(data), "size_bytes": len(data)}
                     count += 1
             self.transports.append({**item, "verified_files": count})
-
-    def local(self, value):
-        path = Path(normalized(str(value)))
-        return (path if path.is_absolute() else self.base / path).resolve()
-
-    def resolve(self, value):
-        original = normalized(str(value))
-        matches = [(source, root) for source, root in self.mappings
-                   if original == source or original.startswith(source + "/")]
-        if matches:
-            length = max(len(source) for source, _ in matches)
-            selected = [(source, root) for source, root in matches if len(source) == length]
-            require(len(selected) == 1, "Ambiguous transported path: " + original)
-            source, root = selected[0]
-            path = (root / original[len(source):].lstrip("/")).resolve()
-            require(path.is_relative_to(root), "Resolved evidence escaped selected root")
-            return path
-        return self.local(original)
 
     def read(self, reference):
         info = reference if isinstance(reference, dict) else {"path": str(reference)}
@@ -944,9 +916,18 @@ def main():
     args = parser.parse_args()
     if (args.operation == "validate-guest") != bool(args.guest_report):
         parser.error("validate-guest requires --guest-report; evaluate does not accept it")
+    try:
+        guard_evidence_outputs([args.report], [args.input_manifest, args.guest_report])
+    except ValueError as error:
+        parser.error(str(error))
     report = evaluate(args.input_manifest, args.guest_report.resolve() if args.guest_report else None)
-    write_json(args.report, report)
-    print(json.dumps({"status": report["status"], "core": report["core"]["status"], "report": str(args.report)}))
+    try:
+        write_evidence_report(args.report, report)
+    except ValueError as error:
+        print(json.dumps({"status": "fail", "report_written": False, "reason": str(error),
+                          "validation_errors": report.get("guest_validation", report["core"])["errors"], "report": str(args.report)}))
+        return 1
+    print(json.dumps({"status": report["status"], "core": report["core"]["status"], "report": str(args.report), "report_written": True}))
     return 0 if report["status"] == "pass" else 1
 
 

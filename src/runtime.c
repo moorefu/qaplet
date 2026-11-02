@@ -222,26 +222,18 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
 
 qaplet_code qaplet_eval(qaplet_runtime *runtime, const char *source, size_t length,
                        qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return qaplet_eval_filename(runtime, source, length, "<eval>", progress, diagnostic);
-}
-
-static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size_t length,
-                               const char *filename, const qaplet_execution_options *options,
-                               qaplet_progress *progress, qaplet_diagnostic *diagnostic);
-
-qaplet_code qaplet_eval_filename(qaplet_runtime *runtime, const char *source, size_t length,
-                                const char *filename, qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return eval_source(runtime, source, length, filename, NULL, progress, diagnostic);
+  return qaplet_eval_filename(runtime, source, length, "<eval>", NULL, NULL, progress, diagnostic);
 }
 
 qaplet_code qaplet_eval_with_options(qaplet_runtime *runtime, const char *source, size_t length,
                                     const qaplet_execution_options *options,
                                     qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
-  return eval_source(runtime, source, length, "<eval>", options, progress, diagnostic);
+  return qaplet_eval_filename(runtime, source, length, "<eval>", options, NULL, progress, diagnostic);
 }
 
-static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size_t length,
+qaplet_code qaplet_eval_filename(qaplet_runtime *runtime, const char *source, size_t length,
                                const char *filename, const qaplet_execution_options *options,
+                               const qaplet_execution_budget *prepared,
                                qaplet_progress *progress, qaplet_diagnostic *diagnostic) {
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
@@ -254,11 +246,16 @@ static qaplet_code eval_source(qaplet_runtime *runtime, const char *source, size
   if (!code) code = qaplet_check_execution_options(runtime, options);
   if (!code && length > runtime->snapshot.limits.source_bytes) code = QAPLET_SOURCE_TOO_LARGE;
   if (!code && !qaplet_utf8_valid(source, length)) code = QAPLET_INVALID_UTF8;
+  qaplet_execution_budget budget;
+  if (!code && !prepared) {
+    code = qaplet_execution_prepare(runtime, options, &budget);
+    prepared = &budget;
+  }
   if (code) return qaplet_report(diagnostic, code);
   /* A source copy is native SDK storage, separate from the engine allocator. */
   char *copy = qaplet_native_alloc(runtime, length + 1);
   if (!copy) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
-  code = qaplet_execution_begin(runtime, options);
+  code = qaplet_execution_begin(runtime, prepared);
   if (code) {
     qaplet_native_free(runtime, copy, length + 1);
     return qaplet_report(diagnostic, code);

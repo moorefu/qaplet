@@ -219,12 +219,23 @@ qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qap
  * encoded separators/NUL, UNC/device paths and other formats are rejected.
  * Completed runs have undefined results without converting the namespace. */
 qaplet_code qaplet_run_entry(qaplet_runtime *, const char *path, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* Same module/cache semantics with limits tightened for this execution only. */
+qaplet_code qaplet_run_entry_with_options(qaplet_runtime *, const char *path, size_t length,
+                                          const qaplet_execution_options *, qaplet_progress *, qaplet_diagnostic *);
 /* Script evaluation with an explicit absolute file URL filename for relative
- * dynamic import. The base need not exist. Ordinary eval has no relative base. */
+ * dynamic import. The base need not exist. Ordinary eval has no relative base.
+ * The combined variant applies per-execution tightening to that same Script. */
 qaplet_code qaplet_eval_with_base(qaplet_runtime *, const char *source, size_t length,
                                  const char *base_url, size_t base_length,
                                  qaplet_progress *, qaplet_diagnostic *);
-/* qaplet_eval is the default-options convenience call. An accepted execution
+qaplet_code qaplet_eval_with_base_and_options(qaplet_runtime *, const char *source, size_t length,
+                                             const char *base_url, size_t base_length,
+                                             const qaplet_execution_options *, qaplet_progress *, qaplet_diagnostic *);
+/* qaplet_eval, qaplet_run_entry and qaplet_eval_with_base are default-options
+ * convenience calls. All options-bearing variants accept NULL or zero fields
+ * to inherit instance maxima; nonzero limits may only tighten them. Rejected
+ * options do not accept execution, change the module cache or clear results.
+ * An accepted execution
  * has one absolute CLOCK_MONOTONIC deadline (default 30000 ms), including host
  * waits, and one cumulative dispatch limit (default 100000 jobs/events).
  * Exhaustion permanently FAILS the Runtime even if JS catches an exception.

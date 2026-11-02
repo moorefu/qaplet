@@ -23,19 +23,35 @@ from input_lock import component, consume_identity, consumption_purpose
 from native_toolchain import recheck
 from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
-from workflow_support import workspace
+from workflow_support import guard_evidence_outputs, workspace, write_evidence_report
+
+# Source, public distribution name, object, recorded compile step. host-values.c
+# is included by host-contract.c, so it is shipped/hashed but not compiled twice.
+HOST_UNITS = (
+    ("tests/native/sdk_host.c", "host-contract.c", "embed.o", "host-compile"),
+    ("tests/native/sdk_promises.c", "host-promises.c", "promises.o", "host-promises-compile"),
+    ("tests/native/sdk_modules.c", "host-modules.c", "modules-host.o", "host-modules-compile"),
+    ("tests/native/sdk_budgets.c", "host-budgets.c", "budgets.o", "host-budgets-compile"),
+    ("tests/native/sdk_host_modules.c", "host-host-modules.c", "host-modules.o", "host-host-modules-compile"),
+    ("tests/native/sdk_events.c", "host-events.c", "events.o", "host-events-compile"),
+    ("tests/native/sdk_module_policy.c", "host-module-policy.c", "module-policy.o", "host-module-policy-compile"),
+    ("tests/native/sdk_runtime.c", "host-runtime.c", "runtime-host.o", "host-runtime-compile"),
+    ("tests/native/sdk_resources.c", "host-resources.c", "resources.o", "host-resources-compile"),
+    ("tests/native/sdk_stop.c", "host-stop.c", "stop.o", "host-stop-compile"),
+    ("tests/native/sdk_close.c", "host-close.c", "close.o", "host-close-compile"),
+    ("tests/native/sdk_values.c", "host-values.c", None, None),
+)
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
-          "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
-          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c", "tests/native/sdk_resources.c", "tests/native/sdk_stop.c",
-          "tests/native/sdk_close.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
+          "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
-          "scripts/quickjs_source.py", "scripts/workflow_support.py", "tests/native/sdk_modules.c",
+          "scripts/quickjs_source.py", "scripts/workflow_support.py",
           "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
-RECIPE += ("tests/native/sdk_runtime.c", "src/cli.c")
+RECIPE += ("src/cli.c",)
 RECIPE += ("examples/application.c", "examples/SDK-README.md")
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
@@ -339,19 +355,9 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
     shutil.copyfile(ROOT / "examples/application.c", distribution / "application.c")
     shutil.copyfile(ROOT / "examples/SDK-README.md", distribution / "README.md")
-    shutil.copyfile(ROOT / "tests/native/sdk_host.c", distribution / "host-contract.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_values.c", distribution / "host-values.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_modules.c", distribution / "host-modules.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_module_policy.c", distribution / "host-module-policy.c")
+    for source_name, delivered, _, _ in HOST_UNITS:
+        shutil.copyfile(ROOT / source_name, distribution / delivered)
     shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
-    shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_events.c", distribution / "host-events.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_runtime.c", distribution / "host-runtime.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_resources.c", distribution / "host-resources.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_stop.c", distribution / "host-stop.c")
-    shutil.copyfile(ROOT / "tests/native/sdk_close.c", distribution / "host-close.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -386,29 +392,15 @@ def build(args, report, directory):
     archive = distribution / "lib/libqaplet.a"
     run(report, directory, "sdk-archive", [tree / "bin/cosmoar", "rcsD", archive, *objects], args.compile_timeout, work, environment)
     # Compile only against the distributed public header and link the supplied archive.
-    run(report, directory, "host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-contract.c", "-o", work / "embed.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-promises-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-promises.c", "-o", work / "promises.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-modules.c", "-o", work / "modules-host.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-budgets-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-budgets.c", "-o", work / "budgets.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-module-policy-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-module-policy.c", "-o", work / "module-policy.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-events-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-events.c", "-o", work / "events.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-runtime-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-runtime.c", "-o", work / "runtime-host.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-resources-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-resources.c", "-o", work / "resources.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-stop-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-stop.c", "-o", work / "stop.o"], args.compile_timeout, work, environment)
-    run(report, directory, "host-close-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
-        "-c", distribution / "host-close.c", "-o", work / "close.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "runtime-host.o", work / "resources.o", work / "stop.o", work / "close.o", archive],
+    host_objects = []
+    for _, delivered, object_name, step in HOST_UNITS:
+        if object_name is None:
+            continue
+        obj = work / object_name
+        run(report, directory, step, [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+            "-c", distribution / delivered, "-o", obj], args.compile_timeout, work, environment)
+        host_objects.append(obj)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [*host_objects, archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))
@@ -603,6 +595,15 @@ def main():
     if not 1 <= args.timeout <= 300 or not 1 <= args.compile_timeout <= 900:
         parser.error("Invalid execution/compile timeout")
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
+    if args.operation != "build":
+        try:
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation == "package-consume" else [])],
+                [args.build_report, args.loader_manifest, *args.input_report],
+                [*([args.artifact.resolve().parent] if args.artifact else []),
+                 *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
+                [args.artifact, args.cli_artifact])
+        except ValueError as error:
+            parser.error(str(error))
     directory.mkdir(parents=True)
     report = {"schema_version": 1, "report_kind": "qaplet-sdk", "scope": args.operation, "report_id": directory.name,
               "status": "not_run", "reason": "", "started_at": now(), "host": host_facts(), "ci": ci_facts(),
@@ -620,8 +621,16 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
-    write_json(args.report, report)
-    print(json.dumps({"status": report["status"], "reason": report["reason"], "report": str(args.report)}))
+    try:
+        if args.operation == "build":
+            write_json(args.report, report)
+        else:
+            write_evidence_report(args.report, report)
+    except ValueError as error:
+        print(json.dumps({"status": "fail", "reason": str(error), "validation_reason": report["reason"],
+                          "report": str(args.report), "report_written": False}))
+        return 1
+    print(json.dumps({"status": report["status"], "reason": report["reason"], "report": str(args.report), "report_written": True}))
     return {"pass": 0, "fail": 1, "blocked": 2}[report["status"]]
 
 

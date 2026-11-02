@@ -61,6 +61,8 @@ static qaplet_code reenter(qaplet_runtime *runtime, uint64_t call, size_t argc,
   if (qaplet_eval(runtime, "globalThis.reentered=1", 21, &progress, NULL) != QAPLET_BUSY ||
       qaplet_pump(runtime, &progress, NULL) != QAPLET_BUSY ||
       qaplet_run_entry(runtime, "file.js", 7, &progress, NULL) != QAPLET_BUSY ||
+      qaplet_run_entry_with_options(runtime, "file.js", 7, NULL, &progress, NULL) != QAPLET_BUSY ||
+      qaplet_eval_with_base_and_options(runtime, "0", 1, "file:///eval.js", 15, NULL, &progress, NULL) != QAPLET_BUSY ||
       qaplet_register_host_module(runtime, &module, NULL) != QAPLET_BUSY ||
       qaplet_get_result(runtime, &result, NULL) != QAPLET_BUSY ||
       qaplet_close(runtime, NULL) != QAPLET_BUSY || qaplet_destroy(runtime, NULL) != QAPLET_BUSY ||

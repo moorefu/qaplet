@@ -33,6 +33,14 @@ control handle, exits and is joined. The Host releases its real FILE resource
 and finally destroys the Runtime. The temporary resource uses native Windows
 TEMP or POSIX `/tmp` with mkstemp/fdopen. No engine header or JS value is exposed.
 
+Module runs use `qaplet_run_entry_with_options`; `--deadline` tightens that
+execution to 20 ms while keeping the Runtime's finite defaults. For a Script
+with relative dynamic imports, use `qaplet_eval_with_base_and_options` with an
+explicit absolute file URL and the same `qaplet_execution_options` structure.
+NULL options or zero fields inherit the instance limits. Tightened deadlines
+and dispatch counts persist through every PENDING return and pump. The original
+`qaplet_run_entry` and `qaplet_eval_with_base` calls keep their default behavior.
+
 `--abi` runs the packaged public ABI workload, including short structures,
 compatible zero tails, unknown flags/reserved values and independent caller
 diagnostics from a real worker thread. `--metadata` prints live SDK defaults.

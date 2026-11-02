@@ -10,6 +10,9 @@ typedef struct qaplet_rejection qaplet_rejection;
 typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
+typedef struct {
+  uint64_t deadline_ns, dispatch_limit;
+} qaplet_execution_budget;
 struct qaplet_runtime {
   pthread_t owner;
   pthread_mutex_t mutex;
@@ -84,10 +87,12 @@ void qaplet_host_dispose(qaplet_runtime *);
 void qaplet_modules_dispose(qaplet_runtime *);
 void qaplet_modules_complete(qaplet_runtime *);
 qaplet_code qaplet_module_exception_code(qaplet_runtime *, JSValueConst);
-qaplet_code qaplet_eval_filename(qaplet_runtime *, const char *, size_t, const char *, qaplet_progress *, qaplet_diagnostic *);
+qaplet_code qaplet_eval_filename(qaplet_runtime *, const char *, size_t, const char *, const qaplet_execution_options *, const qaplet_execution_budget *, qaplet_progress *, qaplet_diagnostic *);
 /* The caller owns the Runtime and has completed call preflight. */
 qaplet_code qaplet_check_execution_options(const qaplet_runtime *, const qaplet_execution_options *);
-qaplet_code qaplet_execution_begin(qaplet_runtime *, const qaplet_execution_options *);
+/* Prepare before native input/registry mutation; begin commits that same budget. */
+qaplet_code qaplet_execution_prepare(qaplet_runtime *, const qaplet_execution_options *, qaplet_execution_budget *);
+qaplet_code qaplet_execution_begin(qaplet_runtime *, const qaplet_execution_budget *);
 qaplet_code qaplet_execution_check(qaplet_runtime *);
 qaplet_code qaplet_execution_dispatch(qaplet_runtime *);
 /* Same check/claim as dispatch, while holding the acceptance mutex. */

@@ -68,10 +68,7 @@ qaplet_code qaplet_values_init(qaplet_runtime *runtime) {
 
 void qaplet_values_reset(qaplet_runtime *runtime) {
   if (runtime->result_data) {
-    free(runtime->result_data);
-    pthread_mutex_lock(&runtime->mutex);
-    runtime->snapshot.native_current_bytes -= runtime->result.length;
-    pthread_mutex_unlock(&runtime->mutex);
+    qaplet_native_free(runtime, runtime->result_data, runtime->result.length);
     runtime->result_data = NULL;
   }
   runtime->result = (qaplet_result)QAPLET_RESULT_INIT;
@@ -88,18 +85,8 @@ void qaplet_values_dispose(qaplet_runtime *runtime) {
 
 static qaplet_code copy_result(qaplet_runtime *runtime, qaplet_result *result, unsigned char **data, const void *bytes, size_t length) {
   if (!length) return QAPLET_OK;
-  pthread_mutex_lock(&runtime->mutex);
-  uint64_t available = runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes;
-  unsigned char *copy = length <= available ? malloc(length) : NULL;
-  if (!copy) {
-    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
-    pthread_mutex_unlock(&runtime->mutex);
-    return QAPLET_MEMORY_LIMIT;
-  }
-  runtime->snapshot.native_current_bytes += length;
-  if (runtime->snapshot.native_current_bytes > runtime->snapshot.native_peak_bytes)
-    runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
-  pthread_mutex_unlock(&runtime->mutex);
+  unsigned char *copy = qaplet_native_alloc(runtime, length);
+  if (!copy) return QAPLET_MEMORY_LIMIT;
   memcpy(copy, bytes, length);
   *data = copy;
   result->length = length;

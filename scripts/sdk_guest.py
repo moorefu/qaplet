@@ -17,6 +17,7 @@ from input_lock import consume_identity, check_portable_helper
 from nightly_toolchain import write_json
 import sdk
 from startup import ci_facts, check_ci_commit
+from workflow_support import guard_evidence_outputs, write_evidence_report
 
 
 def catalog(page):
@@ -194,13 +195,16 @@ def main():
     parser.add_argument("--expected-commit")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
-    protected = [path.resolve() for path in (args.build_report, args.input_manifest, args.guest_report) if path]
-    if args.operation != "export" and args.selection:
-        protected.append(args.selection.resolve())
-    if args.report.resolve() in protected or args.distribution and args.report.resolve().is_relative_to(args.distribution.resolve()):
-        parser.error("Report may not replace selected immutable inputs or supplied distribution bytes")
-    if args.distribution and any(path and path.resolve().is_relative_to(args.distribution.resolve()) for path in (args.manifest, args.selection)):
-        parser.error("Export selections may not modify the supplied distribution")
+    documents = []
+    if args.operation != "export" and not args.input_manifest:
+        documents.append(({"selection": str(args.selection.resolve()) if args.selection else None,
+                           "guest_report": str(args.guest_report.resolve()) if args.guest_report else None}, ROOT))
+    try:
+        guard_evidence_outputs([args.report, *([args.manifest, args.selection] if args.operation == "export" else [])],
+            [args.build_report, args.input_manifest], [args.distribution] if args.distribution else [],
+            [args.guest_report, *([args.selection] if args.operation != "export" else [])], documents)
+    except ValueError as error:
+        parser.error(str(error))
     report = {"schema_version": 1, "report_kind": "qaplet-sdk-guest", "scope": args.operation,
               "report_id": str(uuid.uuid4()), "started_at": now(), "status": "not_run", "ci": ci_facts(),
               "evidence_verified": False, "release_ready": False}
@@ -218,11 +222,13 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
-    if any(args.report.resolve() == Path(entry["resolved_path"]) for entry in report.get("evidence_index", [])):
-        print(json.dumps({"status": "fail", "reason": "Report may not replace selected immutable evidence", "evidence_verified": False}))
+    try:
+        write_evidence_report(args.report, report)
+    except ValueError as error:
+        print(json.dumps({"status": "fail", "reason": str(error), "validation_reason": report.get("reason"),
+                          "evidence_verified": False, "report_written": False}))
         return 1
-    write_json(args.report, report)
-    print(json.dumps({key: report[key] for key in ("status", "reason", "scope", "evidence_verified", "release_ready")}))
+    print(json.dumps({**{key: report[key] for key in ("status", "reason", "scope", "evidence_verified", "release_ready")}, "report_written": True}))
     return {"pass": 0, "fail": 1, "blocked": 2}[report["status"]]
 
 
