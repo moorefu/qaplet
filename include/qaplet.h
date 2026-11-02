@@ -38,6 +38,7 @@ enum {
   QAPLET_CAP_PROMISE_JOBS = 1u << 7,
   QAPLET_CAP_FILE_MODULES = 1u << 8,
   QAPLET_CAP_EXECUTION_BUDGETS = 1u << 9,
+  QAPLET_CAP_MODULE_POLICY = 1u << 10,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -133,6 +134,11 @@ qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qap
 /* Run source ESM using the cwd captured at creation. Relative imports use the
  * importing file. Canonical identities/source bytes remain until close and a
  * module body is evaluated once. import.meta.url/main are initialized once.
+ * Canonical load/link/evaluation failures are frozen too; repair requires a new
+ * Runtime. Unresolvable requests consume no module identity. Symlinks use OS
+ * realpath, while hard links retain distinct URLs. Only ordinary .js/.mjs or
+ * extensionless source files are supported. URL query/fragment/authority,
+ * encoded separators/NUL, UNC/device paths and other formats are rejected.
  * Completed runs have undefined results without converting the namespace. */
 qaplet_code qaplet_run_entry(qaplet_runtime *, const char *path, size_t length, qaplet_progress *, qaplet_diagnostic *);
 /* Script evaluation with an explicit absolute file URL filename for relative

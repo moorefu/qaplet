@@ -2,9 +2,11 @@
 #define _COSMO_SOURCE 1
 #include "runtime_internal.h"
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "libc/dce.h"
@@ -87,7 +89,7 @@ static int hex(unsigned char value) {
 /* Only local absolute file URLs are accepted. Encoded separators/NUL and URL
  * components are rejected before handing the native path to the filesystem. */
 static char *url_path(qaplet_runtime *runtime, const char *url) {
-  if (strncmp(url, "file:///", 8) || strchr(url, '?') || strchr(url, '#')) return NULL;
+  if (strncmp(url, "file:///", 8) || url[8] == '/' || strchr(url, '?') || strchr(url, '#')) return NULL;
   size_t length = strlen(url + 7);
   char *path = native_alloc(runtime, length + 1);
   if (!path) return NULL;
@@ -167,7 +169,9 @@ static char *absolute_path(qaplet_runtime *runtime, const char *base, const char
 static int supported_path(const char *path) {
   const char *name = strrchr(path, '/');
   const char *dot = strrchr(name ? name + 1 : path, '.');
-  return !dot || !strcmp(dot, ".js") || !strcmp(dot, ".mjs");
+  if (!dot) return 1;
+  return IsWindows() ? !strcasecmp(dot, ".js") || !strcasecmp(dot, ".mjs") :
+      !strcmp(dot, ".js") || !strcmp(dot, ".mjs");
 }
 
 static qaplet_module *find_module(qaplet_runtime *runtime, const char *url) {
@@ -179,6 +183,18 @@ static qaplet_module *find_module(qaplet_runtime *runtime, const char *url) {
 static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const char *name, int root) {
   char *path = NULL, *directory = NULL;
   qaplet_code code = QAPLET_MODULE_RESOLVE;
+  /* Refuse URL components and encoded separators before looking for native
+   * files which may coincidentally have those literal spellings. */
+  if (strchr(name, '?') || strchr(name, '#')) { module_throw(runtime, code); return NULL; }
+  for (size_t i = 0; name[i]; ++i) {
+    if (name[i] == '%' && name[i + 1] && name[i + 2]) {
+      int a = hex(name[i + 1]), b = hex(name[i + 2]);
+      int decoded = a >= 0 && b >= 0 ? a * 16 + b : -1;
+      if (decoded == 0 || decoded == '/' || decoded == '\\') {
+        module_throw(runtime, code); return NULL;
+      }
+    }
+  }
   if (!strncmp(name, "file:", 5)) path = url_path(runtime, name);
   else if (root) {
     if (IsWindows() && isalpha((unsigned char)name[0]) && name[1] == ':' && (name[2] == '/' || name[2] == '\\')) {
@@ -190,6 +206,7 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
       }
     } else if (!strchr(name, ':') && strncmp(name, "//", 2) && strncmp(name, "\\\\", 2))
       path = absolute_path(runtime, runtime->initial_cwd, name);
+    else if (strchr(name, ':')) code = QAPLET_UNSUPPORTED;
   } else if (!strncmp(name, "./", 2) || !strncmp(name, "../", 3)) {
     directory = url_path(runtime, base);
     if (directory) {
@@ -224,6 +241,10 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
   native_free(runtime, path, strlen(path) + 1);
   path = NULL;
   if (!real) { native_free(runtime, alias_url, strlen(alias_url) + 1); goto failed; }
+  if (!supported_path(real)) {
+    free(real); native_free(runtime, alias_url, strlen(alias_url) + 1);
+    code = QAPLET_UNSUPPORTED; goto failed;
+  }
   char *url = path_url(runtime, real);
   free(real);
   if (!url) { native_free(runtime, alias_url, strlen(alias_url) + 1); goto failed; }
@@ -269,13 +290,15 @@ static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   if (!JS_IsUndefined(entry->compiled)) return 0;
   char *path = url_path(runtime, entry->url);
   if (!path) { module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
-  FILE *file = fopen(path, "rb");
+  int fd = open(path, O_RDONLY | O_NONBLOCK);
   native_free(runtime, path, strlen(path) + 1);
   struct stat status;
-  if (!file) { module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
-  if (fstat(fileno(file), &status) || !S_ISREG(status.st_mode) || status.st_size < 0) {
-    fclose(file); module_throw(runtime, QAPLET_MODULE_LOAD); goto failure;
+  if (fd < 0) { module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
+  if (fstat(fd, &status) || !S_ISREG(status.st_mode) || status.st_size < 0) {
+    close(fd); module_throw(runtime, QAPLET_MODULE_LOAD); goto failure;
   }
+  FILE *file = fdopen(fd, "rb");
+  if (!file) { close(fd); module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
   uint64_t length = status.st_size;
   if (length > runtime->snapshot.limits.source_bytes || length >
       runtime->snapshot.limits.source_cache_bytes - runtime->snapshot.source_cache_bytes) {

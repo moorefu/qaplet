@@ -1,6 +1,6 @@
 {
   "schema": "qaplet.toolchain-lock.v3",
-  "lock_state": "selected_pending_validation",
+  "lock_state": "pinned",
   "manifests": {
     "quickjs": {
       "path": "third_party/quickjs/source.lock.json",
