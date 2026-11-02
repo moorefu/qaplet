@@ -4,9 +4,9 @@
 
 **Blocked by:** [01：纯 C Host 的最小 Runtime 闭环](01-runtime-c-host.md)
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** implementing；2026-11-02 由 ticket02 implementer 在 `codex/m1-02` 领取，基于 `codex/m1-integration` e07c227。
+**Execution state:** complete；2026-11-02 在 `codex/m1-02` 实施并合入当前集成 tip 08a2f14；最终产品源码 b75d38b。Ubuntu producer、Ubuntu/Windows x64 与 ARM64 64K 完整系统 guest 的 15 项公开 C Host 用例均通过；范围与原始证据见 [02 验收](../02-values-validation.md)。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 完整值类型与 unsupported 对象/函数/thenable 的拒绝可通过公开 C 消费者观察，整数不经过 Number 丢精度。
-- [ ] 严格 UTF-8、字符串 NUL、孤立 surrogate 和 Uint8Array 边界正确；返回数据不借用失效 JS/宿主缓冲区。
-- [ ] BUFFER_TOO_SMALL 提供所需长度并保留结果；未接受调用不覆盖旧执行结果。
-- [ ] 调用方诊断相互独立，截断/NUL/零容量不丢错误 code，不调用 getter/toString/Proxy trap。
-- [ ] 每个成功和失败分支通过真实引擎及纯 C 外部结果验证。
+- [x] 完整值类型与 unsupported 对象/函数/thenable 的拒绝可通过公开 C 消费者观察，整数不经过 Number 丢精度。
+- [x] 严格 UTF-8、字符串 NUL、孤立 surrogate 和 Uint8Array 边界正确；返回数据不借用失效 JS/宿主缓冲区。
+- [x] BUFFER_TOO_SMALL 提供所需长度并保留结果；未接受调用不覆盖旧执行结果。
+- [x] 调用方诊断相互独立，截断/NUL/零容量不丢错误 code，不调用 getter/toString/Proxy trap。
+- [x] 每个成功和失败分支通过真实引擎及纯 C 外部结果验证。
 
 ## Validation and evidence
 
@@ -37,4 +37,10 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+## Answer
+
+公开 SDK 支持完整严格值、精确 BigInt、拥有独立存储的字符串/字节复制、可重读结果和安全调用方诊断。保留现有 `qaplet_store_scalar` 内部入口；能力 bit6 仅在本票行为完成后公开。异常只读取原始字符串或真实 Error 的自有字符串 data message，不执行用户 getter、Proxy trap、toString 或 stack lookup。与任务03合并后，Promise 的值复制和首次失败诊断沿用同一入口及检查点。
+
+最终 Ubuntu 供应制品的15项公开 Host 合同在 Ubuntu x64、Windows x64 和实际 ARM64 65536页完整系统 guest 均通过；仓库检查通过。SDK recipe `741dcaef7abd30d7e4dfeeb4e9b27b3093ba1d46ef2b24169440516575798686`，Host APE `418761f66c4066990d7f627d979bcf17a1c7b5d960c125f9e26961c09a42203c`。原始 red/green、实际命令、SDK/制品/输入身份、日志、退出及资源关闭事实均保留。详见 [02 验收记录](../02-values-validation.md)；macOS、原生 ARM64 Cross、完整 M1 Full/严格聚合与发布门禁没有在本票中冒称通过。
 
