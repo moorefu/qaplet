@@ -23,7 +23,8 @@ from startup import check_ci_commit, ci_facts, measured_host, select_loader
 from workflow_support import workspace
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c",
-          "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_promises.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
+          "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
           "scripts/quickjs_source.py", "scripts/workflow_support.py")
@@ -35,6 +36,12 @@ HOST_CASES = (
     ("creation", ["--creation"], "creation: 128 bounded heap configurations; null failures; repeated recovery: pass\n"),
     ("resources", ["--resources"], "resources: source precheck; heap failure permanent; stack exception reusable\n"),
     ("abi", ["--abi"], "ABI: version/flags/tails/short structures; bounded diagnostics: pass\n"),
+    ("integers", ["--integers"], "integers: exact signed/unsigned 64-bit boundaries; oversized BigInt rejected\n"),
+    ("strings", ["--strings"], "strings: strict UTF-8 and NUL; copied retry; accepted/rejected result lifetime; byte limit\n"),
+    ("bytes", ["--bytes"], "bytes: copied Uint8Array views; resize/detach/brand/shared boundaries; no user coercion\n"),
+    ("diagnostics", ["--diagnostics"], "diagnostics: safe text; getter/Proxy/toString untouched; bounded independent caller buffers\n"),
+    ("value-limits", ["--value-limits"], "value limits: exact 1 MiB strings/bytes; independent copies; metered permanent allocation failure\n"),
+    ("promise-values", ["--promise-values"], "Promise values: exact/copied results; safe rejection diagnostics; first-error and handled checkpoints\n"),
     ("promises", ["--promises"], "promises: explicit pump; bounded jobs; checkpoints; failure reuse; pending close: pass\n"),
     ("facts", ["--facts"], None),
 )
@@ -69,6 +76,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "include/qaplet.h", distribution / "include/qaplet.h")
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host.c", distribution / "host-contract.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_values.c", distribution / "host-values.c")
     shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
