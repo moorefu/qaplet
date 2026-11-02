@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** in_progress；2026-11-02 由 implement_01 在 codex/m1-01 领取；起点与 codex/m1-integration 同为 b4f5233。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -35,6 +35,8 @@
 [正式 M1 规格](../spec.md) · [已确认设计](../design.md) · [任务索引与依赖](../README.md) · [开发入口](../../../docs/development.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-02：已确认 worktree 基于 integration；测试沿用规格 Q32 已批准的公开 SDK / 纯 C Host / 现有制品消费者边界。按 TDD 逐个纵向切片执行，未实现能力不进入能力声明。
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
 
