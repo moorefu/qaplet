@@ -62,9 +62,7 @@ static int release(qaplet_runtime *runtime) {
 static int remove_fixture(const char *directory, const char *name) {
   char path[4096];
   CHECK(snprintf(path, sizeof(path), "%s/%s", directory, name) < sizeof(path));
-  int removed=unlink(path), error=errno;
-  if(removed) fprintf(stderr,"[DEBUG-m1-14-alias] unlink name=%s rc=%d errno=%d\n",name,removed,error);
-  CHECK(!removed);
+  CHECK(!unlink(path));
   return 0;
 }
 
@@ -262,10 +260,7 @@ static int symlinks(qaplet_runtime *runtime,const char *directory,const char *ba
 
 static int aliases(qaplet_runtime *runtime,const char *directory,const char *base) {
   char alias[4096],hard[4096],original[4096];
-  struct stat lower_facts={0},upper_facts={0};
-  int lower_status=-2,upper_status=-2,lower_after_upper_unlink=-2,lower_after_errno=0;
   int lower_removed=0;
-  char *lower_real=NULL,*upper_real=NULL;
   snprintf(alias,sizeof(alias),"%s/alias.js",directory);
   snprintf(hard,sizeof(hard),"%s/hard.js",directory);
   snprintf(original,sizeof(original),"%s/valid.js",directory);
@@ -307,13 +302,12 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     CHECK(!number(runtime,"caseDistinct",NULL,42));
     CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+3);
     char upper[4096]; snprintf(upper,sizeof(upper),"%s/VALID.js",directory);
-    lower_status=lstat(original,&lower_facts); upper_status=lstat(upper,&upper_facts);
-    CHECK(!lower_status && !upper_status);
+    struct stat lower_facts,upper_facts;
+    CHECK(!lstat(original,&lower_facts) && !lstat(upper,&upper_facts));
     int case_names_alias=lower_facts.st_dev==upper_facts.st_dev && lower_facts.st_ino==upper_facts.st_ino;
-    lower_real=realpath(original,NULL); upper_real=realpath(upper,NULL);
     CHECK(!remove_fixture(directory,"VALID.js"));
     struct stat after;
-    lower_after_upper_unlink=lstat(original,&after); lower_after_errno=errno;
+    int lower_after_upper_unlink=lstat(original,&after), lower_after_errno=errno;
     /* File URL identities above still follow OS realpath spelling. Cleanup
      * instead follows the measured directory entry: case aliases have only
      * one entry, already removed by the required uppercase unlink. */
@@ -323,11 +317,6 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
   CHECK(!release(runtime));
   CHECK(!unlink(hard));
   int removed=lower_removed ? 0 : remove_fixture(directory,"valid.js");
-  if(getenv("QAPLET_M1_NATIVE_DIAG") || removed) fprintf(stderr,"[DEBUG-m1-14-alias] lower_stat=%d upper_stat=%d lower_dev_ino=%llu/%llu upper_dev_ino=%llu/%llu lower_after_upper_unlink=%d errno=%d lower_real=%s upper_real=%s lower_removed=%d\n",
-    lower_status,upper_status,(unsigned long long)lower_facts.st_dev,(unsigned long long)lower_facts.st_ino,
-    (unsigned long long)upper_facts.st_dev,(unsigned long long)upper_facts.st_ino,lower_after_upper_unlink,lower_after_errno,
-    lower_real?lower_real:"<absent>",upper_real?upper_real:"<absent>",lower_removed);
-  free(lower_real); free(upper_real);
   CHECK(!removed && !rmdir(directory));
   puts("module aliases: actual hardlink identities; native Windows drive and OS path case: pass");
   return 0;
