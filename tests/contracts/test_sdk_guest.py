@@ -168,9 +168,9 @@ class ActualSDKGuestImport(unittest.TestCase):
             old = token + " CASE " + case["case_id"] + " STDOUT " + base64.b64encode(case["actual"]["stdout"].encode()).decode()
             new = token + " CASE " + case["case_id"] + " STDOUT " + base64.b64encode(actual.encode()).decode()
             self.assertIn(old, serial)
-            serial_path.write_text(serial.replace(old, new))
+            serial_path.write_bytes(serial.replace(old, new).encode("utf-8"))
             raw = directory / "stdout.log"
-            raw.write_text(actual)
+            raw.write_bytes(actual.encode("utf-8"))
             def identity(path):
                 return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size_bytes": path.stat().st_size}
             guest["qemu"]["serial_log"] = identity(serial_path)

@@ -8,8 +8,8 @@ import posixpath
 
 from build_ape import BuildError, identity
 from core_gate import Evidence, interval, normalized, require, same, unique
-from input_lock import consume_identity
-from startup import check_ci_commit, select_loader
+from input_lock import component, consume_identity
+from startup import check_ci_commit, loader_bundle
 import sdk
 
 TARGETS = (("linux-x86_64", "Linux", "x86_64"), ("windows-x86_64", "Windows", "x86_64"),
@@ -38,6 +38,34 @@ def original_path(value, cwd):
     return posixpath.normpath(value)
 
 
+def validate_loader(args, incoming, evidence):
+    """Inspect distributed loader bytes without the executor's chmod side effect."""
+    host, loader = incoming["host"], incoming["loader"]
+    if host["os"] == "Windows":
+        require(loader == {"status": "not_applicable", "route": "Windows PE CreateProcess"},
+                "Windows must use actual native PE execution")
+        return
+    helpers = getattr(args, "loader_helpers", None)
+    if helpers is None:
+        require(args.loader_dir, "Explicit distributed native loader directory required")
+        helpers = loader_bundle(args, {"host": host})
+    if helpers is not None:
+        entries = [entry for entry in helpers["helpers"]
+                   if (entry["os"], entry["arch"]) == (host["os"], host["execution_arch"])]
+    else:
+        suffix = "elf" if host["os"] == "Linux" else "macho"
+        name = "ape-" + host["execution_arch"] + "." + suffix
+        entries = [{**entry, "file": name} for entry in component("cosmocc")["files"] if entry["path"] == "bin/" + name]
+    require(len(entries) == 1 and Path(entries[0]["file"]).name == entries[0]["file"],
+            "Exactly one safe distributed native loader required")
+    entry = entries[0]
+    require(same(loader, entry) and loader.get("sha256_after", loader["sha256"]) == loader["sha256"],
+            "Native loader differs from selected distributed loader")
+    reference = loader if getattr(args, "loader_helpers", None) is not None else {
+        **entry, "path": str(args.loader_dir.resolve() / entry["file"])}
+    evidence.read(reference)
+
+
 def validate_native(args, incoming, producer, selected, evidence, directory):
     consume_identity(incoming, {})
     check_ci_commit(producer, incoming)
@@ -53,14 +81,8 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
         require(translated["stdout"].strip() != "1", "Translated macOS cannot provide native evidence")
         require(host["translation"]["hw.optional.arm64"]["stdout"].strip() != "1" or host["cpu"] == "aarch64",
                 "macOS hardware/execution architecture disagrees")
-    loader_report = {"host": host, "commands": []}
-    select_loader(args, loader_report)
     loader = incoming["loader"]
-    if host["os"] == "Windows":
-        require(loader == loader_report["loader"], "Windows must use actual native PE execution")
-    else:
-        require(same(loader, loader_report["loader"]), "Native loader differs from selected distributed loader")
-        evidence.read(loader_report["loader"])
+    validate_loader(args, incoming, evidence)
     artifacts = unique(incoming["artifacts"], "name")
     supplied = unique(producer["artifacts"], "name")
     require(set(artifacts) == set(supplied), "All three supplied SDK APE identities required")
@@ -84,7 +106,7 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
         interval(command)
         require(case["started_at"] == command["started_at"] and case["finished_at"] == command["finished_at"],
                 "Native case/command timestamps disagree")
-        require(incoming["started_at"] <= case["started_at"] <= case["finished_at"] <= incoming["finished_at"],
+        require(interval(incoming)[0] <= interval(case)[0] <= interval(case)[1] <= interval(incoming)[1],
                 "Native command lies outside report interval")
         require(type(command.get("timeout_seconds")) in (int, float) and 0 < command["timeout_seconds"] <= 300 and
                 command["timeout_seconds"] == case["timeout_seconds"], "Actual per-case execution deadline required")
@@ -125,6 +147,7 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                     (error.encode("utf-8") in raw[1] if contains and error else raw[1] == error.encode("utf-8")),
                     "Required native case did not satisfy public contract: " + case_id)
         elapsed = (datetime.fromisoformat(command["finished_at"]) - datetime.fromisoformat(command["started_at"])).total_seconds()
+        require(elapsed <= command["timeout_seconds"], "Native command exceeded its recorded deadline: " + case_id)
         require(not immediate or elapsed < 2, "CLI unsettled entry did not fail immediately")
     require(incoming["required_cases"] == required_cases and incoming["unavailable_cases"] == unavailable,
             "Native required/unavailable catalog differs")

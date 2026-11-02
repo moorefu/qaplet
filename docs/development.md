@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已在任务 02 的精确源码/ARM64 与任务 03 的 Ubuntu ESM/Promise 探针通过后晋级 `pinned`；计划样例不作为当前构建输入。任务 04 的六目标 Core、页补缺与严格回归及任务 05 的 Fast/Cross/Full 已在各自记录的输入范围实际验收；后续配方变化须重新验收新输入。06 发布镜像由用户暂缓，正式 M1/SDK 尚未实现，微型 Host 仅提供入口证据。实际状态见[对齐任务](../.scratch/qaplet-v15-alignment/README.md)。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。当前产品源码 `21bd317f4246571f0048789ca97167632c09f924` 的成功 Full `41489263809` 提供五个原生宿主、实际 64K 和独立当前 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收与最终审查状态见[M1 索引](../.scratch/qaplet-m1/README.md)，旧 M0/对齐成绩保留原范围。后续产品配方变化必须重新验收；06 发布镜像由用户暂缓，`release_ready=false`。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 

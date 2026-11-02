@@ -101,17 +101,24 @@ def export(args, report):
                   evidence_verified=False)
 
 
-def consume(manifest, base, report, expected_commit=None):
+def consume(manifest, base, report, expected_commit=None, evidence=None, verified_producer=None):
     """Read-only semantic import; also reused by the final M1 evidence gate."""
     required = {"schema_version", "profile", "selection", "guest_report"}
     require(required <= set(manifest) <= required | {"transports", "path_mappings"}, "SDK guest selections have missing/unknown fields")
     require(manifest["schema_version"] == 1 and manifest["profile"] == "sdk-guest", "Versioned SDK guest profile required")
-    evidence = Evidence(manifest, base)
+    evidence = evidence if evidence is not None else Evidence(manifest, base)
     try:
         selected = evidence.json(manifest["selection"])
         require(selected["schema_version"] == 1 and selected["report_kind"] == "qaplet-sdk-guest-selection", "Versioned SDK guest selection required")
         supplied = evidence.resolve(selected["distribution_root"])
-        item = producer(evidence, selected["producer_report"], supplied, report, expected_commit)
+        if verified_producer is None:
+            item = producer(evidence, selected["producer_report"], supplied, report, expected_commit)
+        else:
+            item, reference, distribution = verified_producer
+            evidence.read(selected["producer_report"])
+            require(evidence.resolve(selected["producer_report"]["path"]) == evidence.resolve(reference) and
+                    supplied == distribution, "SDK guest selected a different final producer/distribution")
+            require(item["sdk_recipe"]["git_commit"] == expected_commit, "SDK guest final product commit differs")
         require(selected["input_lock"] == item["input_lock"] and selected["sdk_sha256"] == item["sdk"]["sha256"] and
                 selected["sdk_recipe_sha256"] == item["sdk_recipe"]["sha256"] and selected["qaplet_commit"] == item["sdk_recipe"]["git_commit"] and
                 selected["package"] == item["package"], "SDK guest selection differs from selected producer identities")

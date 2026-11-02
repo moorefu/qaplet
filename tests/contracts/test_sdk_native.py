@@ -1,5 +1,6 @@
 """Public supplied-SDK native evidence boundary; no synthetic passing reports."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -12,6 +13,36 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SDKNativeContract(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and os.environ.get("QAPLET_SDK_BUILD_REPORT") and
+                         os.environ.get("QAPLET_SDK_NATIVE_REPORT") and os.environ.get("QAPLET_SDK_LOADER_DIR"),
+                         "Actual SDK/native closure and POSIX loader modes required")
+    def test_read_only_matrix_preserves_loader_mode_and_bytes_on_success_and_failure(self):
+        producer = Path(os.environ["QAPLET_SDK_BUILD_REPORT"])
+        native = Path(os.environ["QAPLET_SDK_NATIVE_REPORT"])
+        with tempfile.TemporaryDirectory(prefix="qaplet-sdk-readonly-") as temp:
+            work = Path(temp)
+            loaders = work / "loaders"
+            shutil.copytree(os.environ["QAPLET_SDK_LOADER_DIR"], loaders)
+            for path in loaders.rglob("*"):
+                if path.is_file(): path.chmod(0o640)
+            before = {str(path): (path.stat().st_mode, hashlib.sha256(path.read_bytes()).hexdigest())
+                      for path in loaders.rglob("*") if path.is_file()}
+            original = json.loads(native.read_text())
+            shutil.copytree(native.parent / "evidence", work / "evidence")
+            for fail in (False, True):
+                incoming = json.loads(json.dumps(original))
+                if fail: incoming["cases"][0]["status"] = "skip"
+                selected = work / "run.json"
+                selected.write_text(json.dumps(incoming))
+                report = work / "matrix.json"
+                result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
+                    "--build-report", str(producer), "--artifact", str(producer.parent / "artifacts/qaplet-host.com"),
+                    "--loader-dir", str(loaders), "--input-report", str(selected), "--report", str(report)],
+                    capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, 1 if fail else 0, report.read_text()[-1500:])
+                self.assertEqual(before, {str(path): (path.stat().st_mode, hashlib.sha256(path.read_bytes()).hexdigest())
+                    for path in loaders.rglob("*") if path.is_file()}, "Evidence consumption changed supplied loader")
+
     def test_fast_matrix_requires_an_actual_native_report(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-sdk-matrix-") as temp:
             report = Path(temp) / "matrix.json"
