@@ -35,6 +35,9 @@ struct qaplet_runtime {
   JSValue module_exception;
   qaplet_code module_exception_code;
   int module_execution;
+  uint64_t execution_deadline_ns;
+  uint64_t execution_dispatch_limit;
+  int execution_active;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
@@ -55,4 +58,11 @@ void qaplet_modules_dispose(qaplet_runtime *);
 void qaplet_modules_complete(qaplet_runtime *);
 qaplet_code qaplet_module_exception_code(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_eval_filename(qaplet_runtime *, const char *, size_t, const char *, qaplet_progress *, qaplet_diagnostic *);
+/* The caller owns the Runtime and has completed call preflight. */
+qaplet_code qaplet_check_execution_options(const qaplet_runtime *, const qaplet_execution_options *);
+qaplet_code qaplet_execution_begin(qaplet_runtime *, const qaplet_execution_options *);
+qaplet_code qaplet_execution_check(qaplet_runtime *);
+qaplet_code qaplet_execution_dispatch(qaplet_runtime *);
+/* Shared first-cause latch. The Runtime mutex must already be held. */
+void qaplet_record_termination_locked(qaplet_runtime *, qaplet_code);
 #endif
