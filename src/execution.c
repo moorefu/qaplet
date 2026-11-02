@@ -227,13 +227,14 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
   runtime->host_registration_locked = 1;
-  unsigned jobs = 0, events = 0, progressed = 0;
+  uint64_t jobs = 0, events = 0;
+  unsigned progressed = 0;
   for (;;) {
     if (runtime->execution_active) {
       pthread_mutex_lock(&runtime->mutex);
       runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
       pthread_mutex_unlock(&runtime->mutex);
-      while (jobs < 256 && JS_IsJobPending(runtime->engine) &&
+      while (jobs < runtime->snapshot.limits.pump_jobs && JS_IsJobPending(runtime->engine) &&
              !qaplet_execution_dispatch(runtime)) {
         JSContext *context = NULL;
         int status = JS_ExecutePendingJob(runtime->engine, &context);
@@ -252,7 +253,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
       code = qaplet_execution_checkpoint(runtime, progress, progressed);
       if (code || JS_IsJobPending(runtime->engine)) break;
     }
-    if (events == 32 || !qaplet_events_pending(runtime)) {
+    if (events == runtime->snapshot.limits.pump_events || !qaplet_events_pending(runtime)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
       progress->code = QAPLET_OK;

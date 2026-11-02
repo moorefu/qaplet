@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define QAPLET_ABI_VERSION 1u
+/* Engineering default maxima. The copied instance limits are authoritative. */
 #define QAPLET_VALUE_BYTES_MAX (1024u * 1024u)
 #define QAPLET_HOST_ARGUMENTS_MAX 32u
 typedef struct qaplet_runtime qaplet_runtime;
@@ -44,6 +45,7 @@ enum {
   QAPLET_CAP_MODULE_POLICY = 1u << 10,
   QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_CAP_POD_EVENTS = 1u << 12,
+  QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -57,6 +59,8 @@ typedef struct {
   uint64_t module_count, source_cache_bytes;
   uint64_t execution_timeout_ms, execution_dispatches;
   uint64_t event_queue_slots, event_payload_bytes;
+  /* Per-value encoded bytes, synchronous callback argc, and work per pump. */
+  uint64_t bridge_value_bytes, host_arguments, pump_jobs, pump_events;
 } qaplet_limits;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -107,6 +111,7 @@ typedef struct {
   uint64_t module_count, source_cache_bytes;
   uint64_t execution_dispatches;
   uint64_t queue_depth, queue_peak;
+  /* Monotonic event counters saturate at UINT64_MAX. */
   uint64_t events_accepted, events_rejected, events_consumed, events_dropped;
 } qaplet_snapshot;
 typedef struct {
@@ -149,7 +154,7 @@ typedef struct {
   size_t export_count;
   uint64_t flags, reserved[2];
 } qaplet_host_module;
-#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
 #define QAPLET_EXECUTION_OPTIONS_INIT {sizeof(qaplet_execution_options), QAPLET_ABI_VERSION, 0, 0, 0, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
@@ -184,7 +189,8 @@ qaplet_code qaplet_host_set_result(qaplet_runtime *, uint64_t call_id, const qap
  * through INT64_MAX, then UINT64; Number remains DOUBLE (including NaN/-0).
  * Objects/functions are never implicitly converted. Strings may contain NUL;
  * lone surrogates are INVALID_UTF8. A string/byte result is limited to
- * QAPLET_VALUE_BYTES_MAX encoded bytes. Shared/detached/out-of-bounds views and
+ * limits.bridge_value_bytes encoded bytes (default QAPLET_VALUE_BYTES_MAX).
+ * Shared/detached/out-of-bounds views and
  * Proxy wrappers are unsupported. Only genuine Promises are waited on; arbitrary
  * thenables are not inspected. Runnable jobs or an unsettled entry yield PENDING.
  * While PENDING, another eval is BUSY and get_result is BAD_STATE. */
@@ -212,7 +218,8 @@ qaplet_code qaplet_eval_with_base(qaplet_runtime *, const char *source, size_t l
  * NULL options inherit instance limits. Options cannot increase those limits. */
 qaplet_code qaplet_eval_with_options(qaplet_runtime *, const char *source, size_t length,
                                     const qaplet_execution_options *, qaplet_progress *, qaplet_diagnostic *);
-/* Runs at most 256 jobs and 32 events, without sleeping. Jobs settle before the
+/* Runs at most limits.pump_jobs and limits.pump_events (defaults 256 and 32),
+ * without sleeping. Jobs settle before the
  * next event is claimed. Existing executions share their ledger with events;
  * idle events and their runnable jobs own independent cross-pump ledgers.
  * Empty jobs with an unsettled entry

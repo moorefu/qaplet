@@ -13,14 +13,14 @@ struct qaplet_host_record {
   qaplet_host_export exports[];
 };
 
-static qaplet_code valid_value(const qaplet_value *value) {
+static qaplet_code valid_value(const qaplet_value *value, uint64_t limit) {
   qaplet_code code = qaplet_check_structure(value, sizeof(*value));
   if (code) return code;
   if ((unsigned)value->type > QAPLET_VALUE_BYTES) return QAPLET_VALUE_TYPE_UNSUPPORTED;
   if (value->type == QAPLET_VALUE_BOOL && value->boolean > 1) return QAPLET_INVALID_ARGUMENT;
   if (value->type == QAPLET_VALUE_STRING || value->type == QAPLET_VALUE_BYTES) {
     if (value->length && !value->data) return QAPLET_INVALID_ARGUMENT;
-    if (value->length > QAPLET_VALUE_BYTES_MAX) return QAPLET_VALUE_TOO_LARGE;
+    if (value->length > limit) return QAPLET_VALUE_TOO_LARGE;
     if (value->type == QAPLET_VALUE_STRING && !qaplet_utf8_valid(value->data, value->length))
       return QAPLET_INVALID_UTF8;
   }
@@ -55,7 +55,7 @@ qaplet_code qaplet_host_set_result(qaplet_runtime *runtime, uint64_t call_id,
                                   const qaplet_value *value, qaplet_diagnostic *diagnostic) {
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
-  code = valid_value(value);
+  code = valid_value(value, runtime ? runtime->snapshot.limits.bridge_value_bytes : QAPLET_VALUE_BYTES_MAX);
   if (!code && !runtime) code = QAPLET_INVALID_ARGUMENT;
   if (!code && !pthread_equal(runtime->owner, pthread_self())) code = QAPLET_WRONG_THREAD;
   if (!code && (!call_id || call_id != runtime->host_active_call || runtime->host_return_set))
@@ -111,7 +111,7 @@ qaplet_code qaplet_register_host_module(qaplet_runtime *runtime, const qaplet_ho
           !memcmp(item->name, module->exports[j].name, item->name_length)) code = QAPLET_INVALID_ARGUMENT;
     if (!code && !add_size(&size, item->name_length + 1)) code = QAPLET_INVALID_ARGUMENT;
     if (!code && item->kind == QAPLET_HOST_CONSTANT) {
-      code = valid_value(&item->value);
+      code = valid_value(&item->value, runtime ? runtime->snapshot.limits.bridge_value_bytes : QAPLET_VALUE_BYTES_MAX);
       if (!code && (item->value.type == QAPLET_VALUE_STRING || item->value.type == QAPLET_VALUE_BYTES) &&
           !add_size(&size, item->value.length)) code = QAPLET_INVALID_ARGUMENT;
     }
@@ -171,12 +171,14 @@ static JSValue trampoline(JSContext *context, JSValueConst self, int argc, JSVal
   while (entry && entry->id != (uint32_t)id) entry = entry->next;
   if (!entry || index < 0 || (size_t)index >= entry->count) return host_throw(runtime, QAPLET_HOST_ERROR);
   qaplet_code code = qaplet_execution_check(runtime);
-  if (!code && (unsigned)argc > QAPLET_HOST_ARGUMENTS_MAX) code = QAPLET_VALUE_TOO_LARGE;
+  if (!code && (uint64_t)argc > runtime->snapshot.limits.host_arguments) code = QAPLET_VALUE_TOO_LARGE;
   if (!code && runtime->host_call_serial == UINT64_MAX) code = QAPLET_BAD_STATE;
   if (code) return host_throw(runtime, code);
-  qaplet_result copies[QAPLET_HOST_ARGUMENTS_MAX];
-  qaplet_value arguments[QAPLET_HOST_ARGUMENTS_MAX];
-  unsigned char *payloads[QAPLET_HOST_ARGUMENTS_MAX] = {0};
+  size_t storage = (size_t)argc * (sizeof(qaplet_result) + sizeof(qaplet_value) + sizeof(void *));
+  qaplet_result *copies = storage ? qaplet_native_alloc(runtime, storage) : NULL;
+  if (storage && !copies) return host_throw(runtime, QAPLET_MEMORY_LIMIT);
+  qaplet_value *arguments = argc ? (qaplet_value *)(copies + argc) : NULL;
+  unsigned char **payloads = argc ? (unsigned char **)(arguments + argc) : NULL;
   int converted = 0;
   for (; converted < argc; ++converted) {
     copies[converted] = (qaplet_result)QAPLET_RESULT_INIT;
@@ -199,6 +201,7 @@ static JSValue trampoline(JSContext *context, JSValueConst self, int argc, JSVal
   }
   for (int i = 0; i <= converted && i < argc; ++i)
     qaplet_native_free(runtime, payloads[i], copies[i].length);
+  qaplet_native_free(runtime, copies, storage);
   qaplet_code termination = qaplet_execution_check(runtime);
   if (termination) code = termination;
   JSValue result = runtime->host_return;

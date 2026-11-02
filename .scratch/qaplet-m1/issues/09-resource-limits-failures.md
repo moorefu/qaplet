@@ -4,9 +4,9 @@
 
 **Blocked by:** [05：模块失败固定与路径拒绝合同](05-module-cache-path-policy.md)、[08：跨线程 POD 到 JS 的有界事件桥](08-bounded-pod-events.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** in_progress；2026-11-02 /root/implement_09 领取，按公开 SDK C Host 边界实施与验收。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
