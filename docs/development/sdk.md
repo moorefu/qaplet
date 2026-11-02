@@ -8,8 +8,8 @@ Before publication, creation installs only engine intrinsics: no user JavaScript
 Host modules or external native resources run. Failed creation therefore reclaims
 outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
-Query capability bits before using a feature; events and stop are added by
-subsequent M1 tickets.
+Query capability bits before using a feature; cooperative stop is added by
+a subsequent M1 ticket.
 
 The Host-module capability adds pre-execution `qaplet_register_host_module`.
 Registration validates the complete declaration before publishing an identity;
@@ -27,7 +27,7 @@ An unset return is undefined and a repeated setter preserves the first return.
 The setter uses a Runtime and monotonically unique callback ID, so an expired
 callback never requires dereferencing an old callback stack. Outside/expired
 setters return BAD_STATE; other owner execution operations return BUSY during
-callbacks, while ABI/snapshot queries remain available. Ordinary callback
+callbacks, while ABI/snapshot queries and copied event posts remain available. Ordinary callback
 errors throw intrinsic JS Errors with an own numeric `code`; HOST_ERROR is 19.
 Actual storage refusals and execution first causes remain permanent even when
 JavaScript catches the thrown error. The distributed `host-host-modules.c` and
@@ -40,6 +40,36 @@ jobs checkpoint; ordinary errors settle runnable jobs before DONE and preserve
 the Runtime for reuse. Only genuine Promises are waited on, without consulting
 thenable getters or Promise constructors. Closing a PENDING execution releases
 its references and remaining jobs without running user cleanup JavaScript.
+
+POD-events capability (bit 12) adds any-thread `qaplet_post_event`. Native input
+has a uint32 type, uint64 token (including zero), byte pointer and explicit length.
+The fixed queue defaults to 256 slots with 1024 inline payload bytes each;
+`limits.event_queue_slots/event_payload_bytes` configure finite capacities.
+Queue slots and one owner scratch slot are allocated and charged at creation.
+The `qaplet:events` builtin also reserves one module identity from creation,
+including when never imported. No external Host callback or resource runs before
+the factory publishes the Runtime.
+
+JS calls `onEvent(fn)` exactly once; replacement and unregister are rejected.
+This window is independent of the locked C declarations and works from a TLA
+entry. Before registration, valid posts return `NO_HANDLER` (20). Invalid input
+and oversize payloads are checked before lifecycle, then handler and capacity;
+`PAYLOAD_TOO_LARGE` (22) and `QUEUE_FULL` (21) refuse the entire event. Success
+copies all bytes and denotes acceptance. Multiple producers share the Runtime
+mutex's acceptance order; owner pump claims that FIFO without blocking for work.
+It calls `fn({type, token, payload})`, with Number, exact BigInt and an independent
+Uint8Array. Source buffers can be immediately reused. Returned values and pending
+Promises are ignored, while runnable jobs and rejection checkpoints still settle.
+
+Each pump runs at most 256 jobs and 32 event callbacks; jobs settle before the
+next event. Events share an active entry's ledger. Otherwise each event and its
+jobs starts an independent ledger, retained across pumps until its checkpoint.
+Ordinary event exceptions settle runnable jobs before DONE and permit reuse;
+claimed events are never retried. Snapshots expose depth/peak and accepted,
+rejected, consumed and dropped counters. Close first shuts acceptance, drops raw
+queued POD and releases the handler without scheduling user JavaScript. The
+distributed `host-events.c` and `modules/events-entry.mjs` exercise worker/owner
+barriers and source ESM delivery through the public SDK.
 
 File-module capability adds `qaplet_run_entry` for real source ESM. The loader
 resolves dependencies against their importer and entry paths against the cwd

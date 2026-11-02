@@ -9,6 +9,8 @@
 int sdk_promises(void);
 int sdk_modules(const char *, const char *);
 int sdk_budgets(void);
+int sdk_events(const char *);
+int sdk_events_entry(const char *);
 int sdk_host_modules(const char *);
 
 #define CHECK(condition) do { if (!(condition)) { \
@@ -234,6 +236,7 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && !strcmp(argv[1], "--events-entry")) return sdk_events_entry(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--host-modules")) return sdk_host_modules(argv[2]);
   if (argc == 3 && (!strcmp(argv[1], "--modules") || !strncmp(argv[1], "--module-", 9))) return sdk_modules(argv[2], argv[1]);
   if (argc == 1) {
@@ -260,6 +263,7 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--promise-values")) return promise_values();
   if (!strcmp(argv[1], "--promises")) return sdk_promises();
   if (!strcmp(argv[1], "--budgets")) return sdk_budgets();
+  if (!strncmp(argv[1], "--events", 8)) return sdk_events(argv[1]);
   if (!strcmp(argv[1], "--facts")) {
 #if defined(__aarch64__)
     const char *arch = "aarch64";

@@ -227,31 +227,53 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
   runtime->host_registration_locked = 1;
-  if (runtime->snapshot.phase != QAPLET_PHASE_PENDING) {
-    progress->phase = runtime->snapshot.phase;
-    progress->progressed = 0;
-    progress->code = QAPLET_OK;
-    return qaplet_report(diagnostic, QAPLET_OK);
-  }
-  pthread_mutex_lock(&runtime->mutex);
-  runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
-  pthread_mutex_unlock(&runtime->mutex);
-  unsigned executed = 0;
-  while (executed < 256 && JS_IsJobPending(runtime->engine) &&
-         !qaplet_execution_dispatch(runtime)) {
-    JSContext *context = NULL;
-    int status = JS_ExecutePendingJob(runtime->engine, &context);
-    if (!status) break;
-    ++executed;
-    if (status < 0) {
-      JSValue exception = JS_GetException(context);
-      if (!qaplet_execution_check(runtime) && !runtime->execution_code) {
-        qaplet_capture_exception(runtime, exception);
-        runtime->execution_code = qaplet_module_exception_code(runtime, exception);
+  unsigned jobs = 0, events = 0, progressed = 0;
+  for (;;) {
+    if (runtime->execution_active) {
+      pthread_mutex_lock(&runtime->mutex);
+      runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
+      pthread_mutex_unlock(&runtime->mutex);
+      while (jobs < 256 && JS_IsJobPending(runtime->engine) &&
+             !qaplet_execution_dispatch(runtime)) {
+        JSContext *context = NULL;
+        int status = JS_ExecutePendingJob(runtime->engine, &context);
+        if (!status) break;
+        ++jobs;
+        progressed = 1;
+        if (status < 0) {
+          JSValue exception = JS_GetException(context);
+          if (!qaplet_execution_check(runtime) && !runtime->execution_code) {
+            qaplet_capture_exception(runtime, exception);
+            runtime->execution_code = qaplet_module_exception_code(runtime, exception);
+          }
+          JS_FreeValue(context, exception);
+        }
       }
-      JS_FreeValue(context, exception);
+      code = qaplet_execution_checkpoint(runtime, progress, progressed);
+      if (code || JS_IsJobPending(runtime->engine)) break;
     }
+    if (events == 32 || !qaplet_events_pending(runtime)) {
+      progress->phase = runtime->snapshot.phase;
+      progress->progressed = progressed;
+      progress->code = QAPLET_OK;
+      break;
+    }
+    /* A pending entry owns its ledger. Otherwise one event plus its runnable
+     * jobs owns a fresh independent ledger, which stays active across pumps. */
+    if (!runtime->execution_active) {
+      code = qaplet_execution_begin(runtime, NULL);
+      if (code) break;
+      runtime->module_execution = 0;
+    } else {
+      pthread_mutex_lock(&runtime->mutex);
+      runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
+      pthread_mutex_unlock(&runtime->mutex);
+    }
+    unsigned claimed = 0;
+    code = qaplet_events_deliver(runtime, &claimed);
+    if (code && !runtime->execution_code) runtime->execution_code = code;
+    events += claimed;
+    if (claimed) progressed = 1;
   }
-  code = qaplet_execution_checkpoint(runtime, progress, executed != 0);
   return qaplet_report_result(runtime, diagnostic, code);
 }

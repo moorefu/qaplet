@@ -147,7 +147,7 @@ static int registration(void) {
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_INVALID_ARGUMENT);
   module.name = "host:retry"; module.name_length = 10;
   qaplet_snapshot snapshot = QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && !snapshot.module_count);
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1);
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_OK);
   module.name = "host:中文"; module.name_length = strlen(module.name);
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_OK);
@@ -156,19 +156,24 @@ static int registration(void) {
   module.name = "host:late"; module.name_length = 9;
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_BAD_STATE);
   CHECK(!release(runtime));
-  config.limits.module_count = 1;
+  config.limits.module_count = 2;
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_OK);
   module.name = "host:other"; module.name_length = 10;
   CHECK(qaplet_register_host_module(runtime, &module, NULL) == QAPLET_MODULE_LIMIT);
-  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_OPEN && snapshot.module_count == 1);
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_OPEN && snapshot.module_count == 2);
   return release(runtime);
 }
 
 static int allocation_failure(void) {
-  qaplet_config config = QAPLET_CONFIG_INIT; config.limits.native_storage_bytes = 65536;
+  qaplet_config config = QAPLET_CONFIG_INIT;
   qaplet_runtime *runtime = NULL; host_state state = {0};
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
+  qaplet_snapshot baseline = QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+  CHECK(qaplet_get_snapshot(runtime, &baseline, NULL) == QAPLET_OK);
+  CHECK(!release(runtime));
+  config.limits.native_storage_bytes = baseline.native_current_bytes + 65536;
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   CHECK(!install(runtime, &state));
   const char *load = "import('host:bridge').then(m=>{globalThis.h=m})";
@@ -195,7 +200,7 @@ int sdk_host_modules(const char *root) {
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   CHECK(!install(runtime, &state));
   qaplet_snapshot snapshot = QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1);
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 2);
   char path[4096]; CHECK(snprintf(path, sizeof(path), "%s/host-bridge.mjs", root) < sizeof(path));
   CHECK(!finish(runtime, &progress, qaplet_run_entry(runtime, path, strlen(path), &progress, NULL)));
   CHECK(!check_js(runtime, "h.greeting==='a\\0b' && h.bytes.join(',')==='0,255,17' && h.max===18446744073709551615n"));

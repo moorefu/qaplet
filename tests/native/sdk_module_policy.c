@@ -14,6 +14,7 @@
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "public module policy failed at line %d: %s\n", __LINE__, #c); return 1; } } while (0)
 
 static int native_windows;
+static uint64_t declared_modules;
 
 static int write_source(const char *directory, const char *name, const char *source) {
   char path[4096];
@@ -74,7 +75,7 @@ static int frozen_failures(qaplet_runtime *runtime, const char *directory, const
   CHECK(!number(runtime, "validRuns", NULL, 1));
   CHECK(!remove_fixture(directory, "valid.js"));
   CHECK(entry(runtime, directory, "valid.js") == QAPLET_OK);
-  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1 && snapshot.source_cache_bytes == original_bytes);
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == declared_modules+1 && snapshot.source_cache_bytes == original_bytes);
   CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=99; export const answer=99;"));
   const char *names[] = {"parse.js", "throw.js", "tla.js", "missing-graph.js"};
   const char *bad[] = {"export const = 0;", "globalThis.partial=(globalThis.partial||0)+1; throw new Error('frozen');", "globalThis.tlaPartial=(globalThis.tlaPartial||0)+1; await Promise.reject(new Error('frozen TLA'));", "import './absent.js';"};
@@ -82,11 +83,11 @@ static int frozen_failures(qaplet_runtime *runtime, const char *directory, const
   for (unsigned i = 0; i < 4; ++i) {
     CHECK(!write_source(directory, names[i], bad[i]));
     CHECK(entry(runtime, directory, names[i]) == codes[i]);
-    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == i+2 && snapshot.lifecycle == QAPLET_OPEN);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == declared_modules+i+2 && snapshot.lifecycle == QAPLET_OPEN);
     uint64_t bytes = snapshot.source_cache_bytes;
     CHECK(!write_source(directory, names[i], "globalThis.repaired=(globalThis.repaired||0)+1; export const answer=42;"));
     CHECK(entry(runtime, directory, names[i]) == codes[i]);
-    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == i+2 && snapshot.source_cache_bytes == bytes);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == declared_modules+i+2 && snapshot.source_cache_bytes == bytes);
   }
   CHECK(!number(runtime, "partial===1 && tlaPartial===1 && validRuns===1 && typeof repaired==='undefined' ? 42:0", NULL, 42));
   CHECK(!write_source(directory, "link-dep.js", "export const other=1;"));
@@ -123,13 +124,13 @@ static int frozen_failures(qaplet_runtime *runtime, const char *directory, const
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==count);
   CHECK(!write_source(directory,"later.js","globalThis.laterAnswer=42;"));
   CHECK(entry(runtime,directory,"later.js")==QAPLET_OK && !number(runtime,"laterAnswer",NULL,42));
-  qaplet_config bounded=QAPLET_CONFIG_INIT; bounded.limits.module_count=1;
+  qaplet_config bounded=QAPLET_CONFIG_INIT; bounded.limits.module_count=declared_modules+1;
   CHECK(!write_source(directory,"count-failure.js","export const = 1;"));
   CHECK(qaplet_create(&bounded,&fresh,NULL)==QAPLET_OK);
   CHECK(entry(fresh,directory,"count-failure.js")==QAPLET_JS_EXCEPTION);
   CHECK(entry(fresh,directory,"valid.js")==QAPLET_MODULE_LIMIT);
   CHECK(entry(fresh,directory,"count-failure.js")==QAPLET_JS_EXCEPTION);
-  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1 && snapshot.lifecycle==QAPLET_OPEN);
+  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+1 && snapshot.lifecycle==QAPLET_OPEN);
   CHECK(!release(fresh)); CHECK(!remove_fixture(directory,"count-failure.js"));
   CHECK(!release(runtime));
   for(unsigned i=0;i<4;++i) CHECK(!remove_fixture(directory,names[i]));
@@ -234,14 +235,14 @@ static int symlinks(qaplet_runtime *runtime,const char *directory,const char *ba
   }
   CHECK(entry(runtime,directory,"alias.js")==QAPLET_OK);
   qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+1);
   uint64_t bytes=snapshot.source_cache_bytes;
   CHECK(!number(runtime,"validRuns",NULL,1));
   CHECK(!write_source(directory,"other.js","globalThis.otherRuns=42;"));
   CHECK(!unlink(alias) && !symlink("other.js",alias));
   CHECK(entry(runtime,directory,"alias.js")==QAPLET_OK);
   CHECK(!number(runtime,"validRuns===1 && typeof otherRuns==='undefined' ? 42:0",NULL,42));
-  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1 && snapshot.source_cache_bytes==bytes);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+1 && snapshot.source_cache_bytes==bytes);
   qaplet_config config=QAPLET_CONFIG_INIT; qaplet_runtime *fresh=NULL;
   CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK && entry(fresh,directory,"alias.js")==QAPLET_OK);
   CHECK(!number(fresh,"otherRuns",NULL,42)); CHECK(!release(fresh));
@@ -249,7 +250,7 @@ static int symlinks(qaplet_runtime *runtime,const char *directory,const char *ba
   CHECK(!write_source(directory,"bad.cjs","globalThis.unsupportedTarget=1;"));
   CHECK(!symlink("bad.cjs",alias));
   CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK && entry(fresh,directory,"alias.js")==QAPLET_UNSUPPORTED);
-  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==0);
+  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules);
   CHECK(!release(fresh)); CHECK(!release(runtime));
   CHECK(!unlink(alias));
   CHECK(!remove_fixture(directory,"bad.cjs") && !remove_fixture(directory,"valid.js") && !remove_fixture(directory,"other.js") && !rmdir(directory));
@@ -263,12 +264,12 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
   snprintf(hard,sizeof(hard),"%s/hard.js",directory);
   snprintf(original,sizeof(original),"%s/valid.js",directory);
   qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+1);
   uint64_t bytes=snapshot.source_cache_bytes;
   CHECK(!link(original,hard));
   CHECK(entry(runtime,directory,"hard.js")==QAPLET_OK);
   CHECK(!number(runtime,"validRuns",NULL,2));
-  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==2 && snapshot.source_cache_bytes==2*bytes);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+2 && snapshot.source_cache_bytes==2*bytes);
   if(native_windows) {
     /* Actual Windows native drive spelling and OS realpath casing. */
     char native[4096],canonical[4096];
@@ -280,7 +281,7 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     }
     native[j]=0; native[0]=native[0]>='A'&&native[0]<='Z'?native[0]+32:native[0];
     CHECK(request(runtime,native)==QAPLET_OK);
-    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==2);
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+2);
     snprintf(canonical,sizeof(canonical),"%s",base);
     canonical[8]=canonical[8]>='A'&&canonical[8]<='Z'?canonical[8]+32:canonical[8];
     CHECK(request(runtime,canonical)==QAPLET_OK);
@@ -291,14 +292,14 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     CHECK(original_case && requested_case);
     int distinct_case=strcmp(original_case,requested_case)!=0;
     CHECK(request(runtime,native)==QAPLET_OK);
-    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==(distinct_case?3:2));
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+(distinct_case?3:2));
     CHECK(!number(runtime,"validRuns",NULL,distinct_case?3:2));
     free(original_case); free(requested_case);
   } else {
     CHECK(!write_source(directory,"VALID.js","globalThis.caseDistinct=42;"));
     CHECK(entry(runtime,directory,"VALID.js")==QAPLET_OK);
     CHECK(!number(runtime,"caseDistinct",NULL,42));
-    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==3);
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+3);
     CHECK(!remove_fixture(directory,"VALID.js"));
   }
   CHECK(!release(runtime));
@@ -323,6 +324,9 @@ int sdk_module_policy(const char *mode) {
   CHECK(directory);
   CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=(globalThis.validRuns||0)+1; globalThis.baseUrl=import.meta.url; export const answer=42;"));
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+  qaplet_snapshot initial=QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_snapshot(runtime,&initial,NULL)==QAPLET_OK && initial.module_count==1 && !initial.source_cache_bytes);
+  declared_modules=initial.module_count; /* Declared qaplet:events identity, from the public snapshot. */
   CHECK(entry(runtime, directory, "valid.js") == QAPLET_OK);
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   qaplet_result result = QAPLET_RESULT_INIT;

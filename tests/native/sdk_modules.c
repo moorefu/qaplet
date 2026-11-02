@@ -119,7 +119,7 @@ int sdk_modules(const char *directory, const char *mode) {
     CHECK(!run(runtime, directory, "./entry.mjs"));
     CHECK(!run(runtime, directory, "dependency.js"));
     CHECK(!scalar(runtime, "entryRuns === 1 && dependencyRuns === 1 && dependencyMain === false ? 42 : 0", 42));
-    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 2);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 3);
     struct stat entry_stat, dependency_stat;
     char file[4096];
     CHECK(snprintf(file, sizeof(file), "%s/entry.mjs", directory) < sizeof(file) && !stat(file, &entry_stat));
@@ -127,7 +127,7 @@ int sdk_modules(const char *directory, const char *mode) {
     CHECK(snapshot.source_cache_bytes == (uint64_t)entry_stat.st_size + (uint64_t)dependency_stat.st_size);
     uint64_t bytes = snapshot.source_cache_bytes;
     CHECK(!run(runtime, directory, "entry.mjs"));
-    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.source_cache_bytes == bytes && snapshot.module_count == 2);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.source_cache_bytes == bytes && snapshot.module_count == 3);
     char base[4096];
     CHECK(qaplet_eval(runtime, "entryUrl", 8, &progress, NULL) == QAPLET_OK);
     result.buffer = base; result.capacity = sizeof(base);
@@ -157,11 +157,11 @@ int sdk_modules(const char *directory, const char *mode) {
     CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_OPEN && !snapshot.source_cache_bytes);
     CHECK(!release(runtime));
     config = (qaplet_config)QAPLET_CONFIG_INIT;
-    config.limits.module_count = 1;
+    config.limits.module_count = 2;
     CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
     CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_MODULE_LIMIT);
     CHECK(progress.phase == QAPLET_PHASE_DONE && progress.code == QAPLET_MODULE_LIMIT);
-    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1 && snapshot.lifecycle == QAPLET_OPEN);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 2 && snapshot.lifecycle == QAPLET_OPEN);
     CHECK(!scalar(runtime, "42", 42));
     CHECK(!release(runtime));
     config = (qaplet_config)QAPLET_CONFIG_INIT;
