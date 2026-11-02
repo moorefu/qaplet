@@ -149,17 +149,24 @@ class EvidencePreservation(unittest.TestCase):
     def test_selected_archive_outputs_are_refused_without_execution(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
         with tempfile.TemporaryDirectory(prefix="qaplet-preservation-") as temporary:
-            root = Path(retained) / uuid.uuid4().hex if retained else Path(temporary)
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
             root.mkdir(parents=True, exist_ok=True)
             original = root / "fixture.zip"
             with zipfile.ZipFile(original, "w") as bundle:
                 bundle.writestr("original.txt", "immutable fixture transport\n")
-            for consumer, nested in (("strict", False), ("strict", True), ("guest", False), ("core", False)):
-                with self.subTest(consumer=consumer, nested=nested):
-                    case = root / (consumer + ("-nested" if nested else ""))
+            variants = ((consumer, nested, kind) for kind in ("exact", "hardlink", "case")
+                        for consumer, nested in (("strict", False), ("strict", True), ("guest", False), ("core", False)))
+            for consumer, nested, kind in variants:
+                with self.subTest(consumer=consumer, nested=nested, alias=kind):
+                    case = root / (consumer + ("-nested" if nested else "") + "-" + kind)
                     case.mkdir()
                     archive = case / "selected.zip"
                     shutil.copyfile(original, archive)
+                    target = archive if kind == "exact" else case / ("linked.zip" if kind == "hardlink" else "SELECTED.ZIP")
+                    case_alias = kind == "case" and target.exists()
+                    if not target.exists():
+                        os.link(archive, target)
+                    self.assertTrue(target.samefile(archive))
                     before = hashlib.sha256(archive.read_bytes()).hexdigest()
                     inputs = case / "inputs.json"
                     manifest = {"schema_version": 1, "transports": [{"root": "extracted", "archive": {"path": "selected.zip"}}]}
@@ -176,12 +183,59 @@ class EvidencePreservation(unittest.TestCase):
                     else:
                         argv = ["core_gate.py", "evaluate", "--input-manifest", str(inputs)]
                     process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:],
-                        "--report", str(archive)], capture_output=True, text=True, timeout=30)
+                        "--report", str(target)], capture_output=True, text=True, timeout=30)
                     (case / "stdout.log").write_text(process.stdout)
                     (case / "stderr.log").write_text(process.stderr)
                     after = hashlib.sha256(archive.read_bytes()).hexdigest()
-                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
+                    alias_after = hashlib.sha256(target.read_bytes()).hexdigest()
+                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after,
+                        "alias_after": alias_after, "existing_case_alias": case_alias, "exit_code": process.returncode}))
                     self.assertEqual(before, after, "Consumer overwrote the selected original archive")
+                    self.assertEqual(before, alias_after, "Consumer replaced an existing alias of its selected archive")
                     self.assertNotEqual(process.returncode, 0)
                     self.assertIn("immutable", process.stdout + process.stderr)
                     self.assertFalse((case / "evidence").exists(), "Collision entered evidence execution")
+
+    def test_case_aliased_provider_roots_are_preserved_before_output_creation(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-root-alias-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            for consumer in ("strict", "guest", "core", "sdk"):
+                with self.subTest(consumer=consumer):
+                    case = root / consumer
+                    supplied = case / "extracted"
+                    supplied.mkdir(parents=True)
+                    member = supplied / "member.txt"
+                    member.write_bytes(b"immutable provider member\n")
+                    before = hashlib.sha256(member.read_bytes()).hexdigest()
+                    alias = case / "EXTRACTED"
+                    case_alias = alias.exists() and alias.samefile(supplied)
+                    target = (alias if case_alias else supplied) / member.name
+                    archive = case / "original.zip"
+                    with zipfile.ZipFile(archive, "w") as bundle:
+                        bundle.write(member, member.name)
+                    manifest = case / "inputs.json"
+                    manifest.write_text(json.dumps({"transports": [{"root": str(supplied), "archive": {"path": str(archive)}}]}))
+                    if consumer == "strict":
+                        config = case / "config.json"
+                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(manifest)}))
+                        argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
+                    elif consumer == "guest":
+                        argv = ["sdk_guest.py", "import", "--input-manifest", str(manifest)]
+                    elif consumer == "core":
+                        argv = ["core_gate.py", "evaluate", "--input-manifest", str(manifest)]
+                    else:
+                        producer = case / "build.json"
+                        producer.write_text("{}")
+                        argv = ["sdk.py", "run", "--build-report", str(producer), "--artifact", str(supplied / "qaplet-host.com")]
+                    process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(target)],
+                        capture_output=True, text=True, timeout=30)
+                    (case / "stdout.log").write_text(process.stdout)
+                    (case / "stderr.log").write_text(process.stderr)
+                    after = hashlib.sha256(member.read_bytes()).hexdigest()
+                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after,
+                        "existing_case_alias": case_alias, "exit_code": process.returncode}))
+                    self.assertEqual(before, after, "Case alias bypassed the immutable provider root")
+                    self.assertNotEqual(process.returncode, 0)
+                    self.assertIn("immutable", process.stdout + process.stderr)
+                    self.assertFalse((supplied / "evidence").exists(), "Collision created output inside provider root")

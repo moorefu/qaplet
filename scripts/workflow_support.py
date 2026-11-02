@@ -99,11 +99,28 @@ def guard_evidence_outputs(outputs, selections, roots=(), files=()):
     for selection in selections:
         if selection is not None:
             inspect(selection)
+    # PosixPath preserves spelling on case-insensitive mounts such as DrvFS.
+    # Existing file identities also bind aliases; parent identities bind roots
+    # even when the proposed output itself does not exist yet.
+    file_ids = {}
+    def file_id(path):
+        if path not in file_ids:
+            try:
+                info = path.stat()
+                file_ids[path] = (info.st_dev, info.st_ino)
+            except OSError:
+                file_ids[path] = None
+        return file_ids[path]
+
+    protected_ids = {file_id(path) for path in protected} - {None}
+    directory_ids = {file_id(path) for path in directories} - {None}
     for output in outputs:
         if output is None:
             continue
         target = Path(output).resolve()
-        if target in protected or any(target.is_relative_to(root) for root in directories):
+        if (target in protected or any(target.is_relative_to(root) for root in directories) or
+                file_id(target) in protected_ids or
+                any(file_id(parent) in directory_ids for parent in (target, *target.parents))):
             raise ValueError("Output may not replace selected immutable inputs or provider transport bytes")
 
 

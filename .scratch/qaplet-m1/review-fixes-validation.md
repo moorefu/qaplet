@@ -138,3 +138,84 @@ be relabelled as acceptance of this candidate. Ubuntu builds use the pinned f07
 source/compiler and main physical `.cache`; other platforms consume supplied
 bytes. No CI join bypass, synthetic CI identity or old M0 acceptance is allowed.
 Source candidate and matching actual Full/strict results will be recorded here.
+
+## f805 actual evidence and the subsequent alias correction
+
+Full `41511643549` on f805 failed SDK guest import because the raw serial lacked
+two entire frames: `qaplet-host.stop-ordering STDOUT` and
+`qaplet-host.diagnostics EXIT`. The stop-ordering raw START/END timestamps were
+equal and EXIT was zero; QEMU exited zero without timeout. Its retained init had
+both correct emit commands. The responsible emission/capture layer was not
+proven; no Runtime or strict-parser change was made. All nine originals
+(100,871,119 bytes) remain verified in MAIN
+`out/m1/ci/review-fixes-first-all-collection.json` / `review-fixes-full1/`.
+
+`out/review-fixes/diagnose/` retains the exact captured-frame red loop, unchanged
+five-line minimized trace, original-byte inventory and same-byte local controls:
+one stop-ordering process, twenty repetitions and the complete 98-command SDK
+payload all pass on the locked aarch64/65536 kernel. QEMU executable, kernel and
+config hashes match the failed CI guest. Those reports have CI=null and never
+replace the incomplete original. The real first-run negative preflight remains
+failed at its nonpassing guest (`first-incomplete-preflight.json`). An initial
+path-only derivation attempt mishandled native PE loader records without a path;
+its missing-config preflight/setup attempt is preserved separately.
+
+The unchanged-source retry Full `41514820432` genuinely completed successfully.
+Its nine originals (101,070,392 bytes) are preserved in MAIN
+`out/m1/ci/review-fixes-retry-collection.json` / `review-fixes-full2/`; actual
+provider names are restored by ID from `review-fixes-retry-artifacts.json`.
+Only those retry producer/package/native/guest/Core inputs were selected.
+
+- SDK provider 13173499541; pagegap SDK + M0 guest 13176015165;
+  Full outer 13174309542.
+- SDK `3a4da395ca5c397bad226c0c047cb364ddaad97bdabc1edbdbb41b8bfaf0dcb1`;
+  recipe `efb2562732e4b138737b9c24a18f13ee837bcd3397fa86dde8528a2b973a2c63`;
+  sealed ZIP `1aa79c76926be65abfa2ffc1200c7c65ff37d302002dd7d6b6ae49117ceee849`.
+- `out/review-fixes/final/preflight-ubuntu.json`: M1 and independent M0 pass;
+  all five native targets have 1000 lifecycle cycles, actual SDK 64K covers 98
+  commands, package C consumer covers eight, M0 Full covers 235. Required/optional
+  gaps are empty and `release_ready=false`.
+- `final/native-ubuntu.log`: all three real POSIX supplied-SDK reader contracts
+  pass, preserving loader mode and bytes on successful and failed validation.
+- `final/strict-windows.json`: the first complete run executed 91/91 with zero
+  failures/skips and two fixture errors. A new provider ordering selected a
+  Windows native report first, exposing backslash mapping sources in the derived
+  selection. The two raw-log mutations could not find their clone. Original
+  reports/provider bytes were unchanged. Only the new derived mapping source
+  spelling was normalized to `/`, and all evidence/fixtures were preserved.
+- `final/accepted-strict-windows.json`: the full fresh rerun genuinely passes
+  91/91 with zero failures/errors/skips and source rechecks. Its path-only
+  selection is `final/normalized-selection/`. Product snapshots before and after
+  match all 57 f805 Git blobs. `final/prior-candidate-summary.json` preserves this
+  real result under its original candidate scope.
+
+A subsequent private-fixture probe on the documented Ubuntu DrvFS demonstrated
+that `ORIGINAL.ZIP` can be the same file as selected `original.zip`, while
+PosixPath lexical resolution retains different spelling. The f805 guard therefore
+still replaced that clone. This is the same original-material preservation
+finding; the genuine f805 results above cannot close the newly demonstrated
+alias gap and must not be relabelled after the recipe changes below.
+
+`alias-red.log` retains twelve real clone-only failures: four case-aliased provider
+roots, four archive hardlinks and four archive case aliases, including nested M0.
+The shared guard now adds existing file identity and ancestor directory identity
+checks, caching each stat. Explicit same-file aliases and case-aliased provider
+roots are refused before any output creation. Only private fixture copies are
+hardlinked; no provider original is ever a mutation target.
+
+`alias-green-ubuntu.log` and `alias-green-windows.log` pass all six public tests /
+39 CLI cases on both actual Ubuntu DrvFS and Windows. Case-sensitive filesystems
+use a hardlink for the archive alias and the canonical provider root as an
+explicit control; actual case-alias presence is recorded in each receipt. A new
+matching product Full and complete 92-test strict catalog remain required after
+this recipe-listed guard correction. The parent specification stays claimed.
+
+The corrected alias candidate's local SDK build and all 98 supplied public
+Host/CLI/application cases (1000 lifecycle cycles) pass at
+`out/review-fixes/aliases/local/{build,run}.json`. The documented Ubuntu ordinary
+check passes 317 tests (165 unselected-data/platform skips) plus real system C
+bootstrap at `aliases/check.json`; ordinary skips are separate from acceptance.
+The completed f805 `out/review-fixes/final/` tree and sibling `final-*.log` files
+are closed permanently for writes and may be losslessly archived by the parent.
+Corrected matching acceptance will use a new `out/review-fixes/alias-final/`
+directory, preserving all previous records and original source identities.
