@@ -29,6 +29,7 @@ enum {
   QAPLET_CAP_LIFECYCLE = 1u << 0, QAPLET_CAP_SYNC_SCRIPT = 1u << 1,
   QAPLET_CAP_SCALAR_RESULT = 1u << 2, QAPLET_CAP_OWNER_THREAD = 1u << 3,
   QAPLET_CAP_POD_SNAPSHOT = 1u << 4, QAPLET_CAP_RESOURCE_BASE = 1u << 5,
+  QAPLET_CAP_PROMISE_JOBS = 1u << 7,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -93,11 +94,19 @@ typedef struct {
  * and diagnostics are borrowed only for the duration of a call. */
 qaplet_code qaplet_query_abi(qaplet_abi *output);
 qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet_diagnostic *);
-/* Script semantics; retains the instance's global state. This incremental SDK
- * supports synchronous undefined/null/bool/Number results only. Strings,
- * objects, BigInt and Promise results report VALUE_TYPE_UNSUPPORTED; they are
- * never implicitly converted. Promise jobs are not driven by this version. */
+/* Script semantics; retains global state. Only genuine Promises are waited on;
+ * arbitrary thenables are not inspected or converted. This incremental SDK
+ * copies undefined/null/bool/Number results. Other values are unsupported.
+ * An accepted execution with runnable jobs or an unsettled Promise is PENDING.
+ * While PENDING, another eval is BUSY and get_result is BAD_STATE. */
 qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* Runs at most 256 jobs, without sleeping. Empty jobs with an unsettled entry
+ * remain PENDING with progressed=0. Rejections are judged only after a complete
+ * jobs checkpoint. Ordinary errors settle remaining jobs before DONE, preserving
+ * state and allowing a new execution. An inactive pump reports no progress and
+ * OK; get_result retains the completed outcome until the next accepted eval.
+ * Outputs and diagnostic buffers are borrowed only for this call. */
+qaplet_code qaplet_pump(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *);
 qaplet_code qaplet_get_result(qaplet_runtime *, qaplet_result *, qaplet_diagnostic *);
 qaplet_code qaplet_get_snapshot(qaplet_runtime *, qaplet_snapshot *, qaplet_diagnostic *);
 /* close releases execution resources, keeps a queryable CLOSED handle, and is
