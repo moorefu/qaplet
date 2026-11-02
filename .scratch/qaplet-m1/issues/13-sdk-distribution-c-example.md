@@ -4,9 +4,9 @@
 
 **Blocked by:** [11：并发关闭与最终释放的完整合同](11-close-destroy-lifetime.md)、[12：共用 Runtime 的最小 CLI](12-minimal-cli.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** in_progress；`codex/m1-13` 已确认继承 integration `0c9eb272ea1133222c89df2f88a475d8747e4af1`，11、12 均已 resolved 并合入，开始公开分发包与外部纯 C 消费切片。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -37,4 +37,6 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：领取本票。测试 seam 沿用 Q32 已批准的公开 SDK、供应静态包 public-header-only C 应用、CLI 与现有 producer/consumer；不新增私有引擎测试入口。按 TDD 实际保存外部包消费红绿证据。
 

@@ -10,7 +10,9 @@ from pathlib import Path
 import platform
 import shutil
 import sys
+import tempfile
 import uuid
+import zipfile
 
 import ape_helpers
 from build_ape import (BuildError, SOURCES, audit, headers, identity, link_portable,
@@ -34,6 +36,25 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/ex
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 RECIPE += ("tests/native/sdk_runtime.c", "src/cli.c")
+RECIPE += ("examples/application.c", "examples/SDK-README.md")
+
+# Same public-process tuple as CLI_CASES; package consumers use this catalog too.
+EXAMPLE_CASES = (
+    ("abi", ["--abi"], 0, "package ABI: prefixes/short structures/zero tails/flags/reserved; independent worker diagnostics: pass\n", ""),
+    ("application", ["{modules}/application.mjs"], 0, "application: result=42; worker copied; stopped; closed; joined; resource released; destroyed\n", ""),
+    ("rejection", ["--reject", "{modules}/application.mjs"], 1, "", "application: code=7; closed; joined; resource released; destroyed\n"),
+    ("queue-full", ["--queue-full", "{modules}/application.mjs"], 1, "", "application: code=21; closed; joined; resource released; destroyed\n"),
+    ("deadline", ["--deadline", "{modules}/application-loop.mjs"], 1, "", "application: code=17; closed; joined; resource released; destroyed\n"),
+    ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
+    ("arguments", [], 2, "", "Usage: qaplet-example"),
+)
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 98303, "defaults": {
+    "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
+    "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
+    "execution_timeout_ms": 30000, "execution_dispatches": 100000,
+    "event_queue_slots": 256, "event_payload_bytes": 1024, "bridge_value_bytes": 1048576,
+    "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
+EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
     ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
     ("close-concurrent", ["--close-concurrent"], "close concurrent: producer overlap observed; post/snapshot/stop stable; CLOSED calls drained before destroy: pass\n"),
@@ -141,6 +162,159 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def package_consume(args, report, directory):
+    if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
+        raise BuildError("SDK package compilation runs on Ubuntu only", "blocked")
+    producer = read_json(args.build_report)
+    if not producer.get("package"):
+        raise BuildError("A sealed SDK package containing the complete public C application is required")
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
+    check_ci_commit(producer, report)
+    if producer.get("status") != "pass" or producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build":
+        raise BuildError("Successful SDK producer required")
+    supplied = args.artifact.resolve().parent
+    check_package(producer, supplied)
+    output = args.output_dir.resolve()
+    if output.exists() and any(output.iterdir()):
+        raise BuildError("External consumer output directory must be new or empty")
+    output.mkdir(parents=True, exist_ok=True)
+    # This is a one-use real application fixture, not a reusable input/cache.
+    external = Path(tempfile.mkdtemp(prefix="qaplet-sdk-consumer-"))
+    if external.is_relative_to(ROOT) or external.is_relative_to(Path(workspace(ROOT)["main_checkout"])):
+        raise BuildError("Package consumer must be outside the source tree")
+    report["external_consumer"] = {"directory": str(external), "package": identity(supplied / producer["package"]["file"]),
+        "include_directories": [str(external / "sdk/include")], "private_headers": False,
+        "archive": str(external / "sdk/lib/libqaplet.a"), "source": str(external / "sdk/application.c")}
+    with zipfile.ZipFile(supplied / producer["package"]["file"]) as archive:
+        archive.extractall(external)
+    check_package(producer, external, check_archive=False)
+    original = verify_inputs(args, report, directory)
+    tree = native_toolchain(args, report, directory, original)
+    helpers = prepare_portable_helpers(args, report, directory, tree)
+    report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
+                  package=producer["package"])
+    compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+    measured_host(args, report, directory)
+    loader = select_loader(args, report)
+    example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+    check_package(producer, external, check_archive=False)
+    verify_inputs(args, report, directory, stage="after")
+    recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
+    report.update(status="pass" if all(case["status"] == "pass" for case in report["cases"]) else "fail",
+                  reason="Actual sealed package extracted outside source tree, compiled using supplied public header/archive, audited and executed")
+
+
+def relative_identity(path, root):
+    return {"file": path.relative_to(root).as_posix(), "sha256": sha256(path), "size_bytes": path.stat().st_size}
+
+
+def seal_package(report, output):
+    distribution = output / "sdk"
+    manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
+        "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
+            "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot"],
+        "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
+            for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
+        "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
+        "source_commit": report["sdk_recipe"]["git_commit"], "engine": report["source"],
+        "toolchain_archive": report["toolchain"]["archive"],
+        "artifacts": [{"name": item["name"], "file": Path(item["path"]).name,
+                       "sha256": item["sha256"], "size_bytes": item["size_bytes"]} for item in report["artifacts"]],
+        "components": [relative_identity(path, output) for path in sorted(distribution.rglob("*")) if path.is_file()]}
+    write_json(distribution / "manifest.json", manifest)
+    members = [relative_identity(path, output) for path in sorted(output.rglob("*")) if path.is_file()]
+    path = output / "qaplet-sdk.zip"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in members:
+            entry = zipfile.ZipInfo(item["file"], date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o100644 << 16
+            archive.writestr(entry, (output / item["file"]).read_bytes())
+    report["package"] = {**relative_identity(path, output), "format": "zip", "members": members,
+                         "manifest": relative_identity(distribution / "manifest.json", output)}
+
+
+def check_package(producer, supplied, check_archive=True):
+    package = producer["package"]
+    members = package["members"]
+    expected = {item["file"]: item for item in members}
+    if len(expected) != len(members) or not members:
+        raise BuildError("Unique complete package members required")
+    if producer.get("distribution") and {item["file"]: {key: item[key] for key in ("file", "sha256", "size_bytes")}
+            for item in producer["distribution"] if item["file"] != "qaplet-sdk.zip"} != expected:
+        raise BuildError("Package inventory differs from delivered distribution")
+    if digest({key: value for key, value in producer["sdk_recipe"].items()
+               if key not in ("git_commit", "working_tree_dirty", "sha256")}) != producer["sdk_recipe"]["sha256"]:
+        raise BuildError("SDK package recipe identity is inconsistent")
+    for name in expected:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name:
+            raise BuildError("Unsafe SDK package member")
+    if check_archive:
+        path = supplied / package["file"]
+        if package["file"] != "qaplet-sdk.zip" or relative_identity(path, supplied) != {key: package[key] for key in ("file", "sha256", "size_bytes")}:
+            raise BuildError("SDK package archive differs from producer")
+        with zipfile.ZipFile(path) as archive:
+            if archive.namelist() != list(expected) or archive.testzip() is not None:
+                raise BuildError("SDK package members differ from complete distribution")
+            for name, item in expected.items():
+                data = archive.read(name)
+                if len(data) != item["size_bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+                    raise BuildError("SDK package member differs from producer: " + name)
+    for name, item in expected.items():
+        if relative_identity(supplied / name, supplied) != item:
+            raise BuildError("Extracted SDK package member differs from producer: " + name)
+    manifest = read_json(supplied / "sdk/manifest.json")
+    if {key: manifest[key] for key in RUNTIME_METADATA} != RUNTIME_METADATA or manifest["sdk_recipe_id"] != producer["sdk_recipe"]["sha256"]:
+        raise BuildError("SDK manifest ABI/capabilities/defaults/recipe mismatch")
+    if manifest["input_id"] != producer["input_lock"]["input_id"] or manifest["source_commit"] != producer["sdk_recipe"]["git_commit"] or manifest["engine"] != producer["source"] or manifest["toolchain_archive"] != producer["toolchain"]["archive"]:
+        raise BuildError("SDK manifest source/toolchain identity mismatch")
+    if manifest["components"] != [item for name, item in expected.items() if name.startswith("sdk/") and name != "sdk/manifest.json"]:
+        raise BuildError("SDK manifest public component inventory mismatch")
+    if manifest["artifacts"] != [{"name": item["name"], "file": item["name"] + ".com", "sha256": item["sha256"],
+                                  "size_bytes": item["size_bytes"]} for item in producer["artifacts"]]:
+        raise BuildError("SDK manifest executable identities mismatch")
+    if manifest["targets"] != [{"architecture": arch, **expected[name]} for arch, name in
+            (("x86_64", "sdk/lib/libqaplet.a"), ("aarch64", "sdk/lib/.aarch64/libqaplet.a"))]:
+        raise BuildError("Both target static archives must match manifest")
+
+
+def compile_example(args, report, directory, tree, helpers, sdk, work, output):
+    (work / "tmp").mkdir(parents=True)
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-example.build-commands.log"))
+    run(report, directory, "example-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", sdk / "application.c", "-o", work / "application.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-example", [work / "application.o", sdk / "lib/libqaplet.a"],
+                  work / "qaplet-example.com", work, environment)
+    shutil.copyfile(work / "qaplet-example.original-packer.com", directory / "qaplet-example.original-packer.com")
+    publish_ape(work, output, "qaplet-example", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-example", output)
+    artifact["build_commands"] = identity(output / "qaplet-example.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def example_cases(args, report, directory, artifact, modules, loader):
+    if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+    for suffix, arguments, expected_exit, expected_stdout, stderr_contains in EXAMPLE_CASES:
+        arguments = [value.replace("{modules}", str(modules)) for value in arguments]
+        executed, _, _ = run(report, directory, "qaplet-example." + suffix,
+                             [*loader, artifact, *arguments], args.timeout, expected=None)
+        stdout = Path(executed["stdout_log"]).read_bytes()
+        stderr = Path(executed["stderr_log"]).read_bytes()
+        passed = executed["exit_code"] == expected_exit and not executed["timed_out"] and stdout == expected_stdout.encode() and (
+            stderr_contains.encode() in stderr if stderr_contains else not stderr)
+        report["cases"].append({"case_id": "qaplet-example." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+            "expected": {"exit_code": expected_exit, "stdout": expected_stdout, "stderr_contains": stderr_contains},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout.decode(), "stderr": stderr.decode(), "timed_out": executed["timed_out"]},
+            "commands": [executed], "artifact": identity(artifact), "sdk_sha256": report["sdk"]["sha256"],
+            "timeout_seconds": args.timeout, "reason": "Complete public-only C application consumed supplied SDK"})
+
+
 def build(args, report, directory):
     if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
         raise BuildError("SDK distributions are built on Ubuntu only", "blocked")
@@ -160,6 +334,8 @@ def build(args, report, directory):
     (distribution / "lib/.aarch64").mkdir(parents=True)
     shutil.copyfile(ROOT / "include/qaplet.h", distribution / "include/qaplet.h")
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
+    shutil.copyfile(ROOT / "examples/application.c", distribution / "application.c")
+    shutil.copyfile(ROOT / "examples/SDK-README.md", distribution / "README.md")
     shutil.copyfile(ROOT / "tests/native/sdk_host.c", distribution / "host-contract.c")
     shutil.copyfile(ROOT / "tests/native/sdk_values.c", distribution / "host-values.c")
     shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
@@ -248,6 +424,8 @@ def build(args, report, directory):
     cli_artifact = audit(args, report, directory, tree, "qaplet", output)
     cli_artifact["build_commands"] = identity(output / "qaplet.build-commands.log")
     report["artifacts"].append(cli_artifact)
+    compile_example(args, report, directory, tree, helpers, distribution, work / "example", output)
+    seal_package(report, output)
     report["sdk"] = {"abi_version": 1, "recipe_id": report["sdk_recipe"]["sha256"],
         "components": [{"file": path.relative_to(output).as_posix(), **identity(path)}
                        for path in sorted(distribution.rglob("*")) if path.is_file()]}
@@ -260,7 +438,7 @@ def build(args, report, directory):
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
     if recipe() != files:
         raise BuildError("SDK recipe/source changed during build")
-    report.update(status="pass", reason="Static SDK and audited CLI/C Host fat APEs built on Ubuntu; runtime evidence is separate")
+    report.update(status="pass", reason="Static SDK ZIP and audited CLI/C Host/application fat APEs built on Ubuntu; runtime evidence is separate")
 
 
 def consume(args, report, directory):
@@ -272,8 +450,8 @@ def consume(args, report, directory):
     if producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build" or producer.get("status") != "pass":
         raise BuildError("Successful qaplet-sdk producer required")
     selected = producer["artifacts"]
-    if len(selected) != 2 or {item["name"] for item in selected} != {"qaplet-host", "qaplet"} or any(item["audit"]["status"] != "pass" for item in selected):
-        raise BuildError("Exactly one audited public C Host and CLI artifact required")
+    if len(selected) != 3 or {item["name"] for item in selected} != {"qaplet-host", "qaplet", "qaplet-example"} or any(item["audit"]["status"] != "pass" for item in selected):
+        raise BuildError("Exactly one audited public C Host, CLI and complete example artifact required")
     artifact = {**next(item for item in selected if item["name"] == "qaplet-host"), "path": str(args.artifact.resolve())}
     cli_path = args.cli_artifact.resolve() if args.cli_artifact else args.artifact.resolve().parent / "qaplet.com"
     cli_artifact = {**next(item for item in selected if item["name"] == "qaplet"), "path": str(cli_path)}
@@ -295,6 +473,11 @@ def consume(args, report, directory):
             if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
                 raise BuildError("Supplied distribution component differs from producer: " + item["file"])
     check_distribution()
+    check_package(producer, args.artifact.resolve().parent)
+    example_path = args.artifact.resolve().parent / "qaplet-example.com"
+    example_artifact = {**next(item for item in selected if item["name"] == "qaplet-example"), "path": str(example_path)}
+    if sha256(example_path) != example_artifact["sha256"] or example_path.stat().st_size != example_artifact["size_bytes"]:
+        raise BuildError("Supplied example bytes differ from producer")
     # Validate supplied SDK bytes independently, even on hosts which do not compile.
     for item in producer["sdk"]["components"]:
         name = Path(item["file"])
@@ -312,8 +495,9 @@ def consume(args, report, directory):
         raise BuildError("SDK recipe identity is inconsistent")
     headers(args.artifact, [args.artifact.with_suffix(".com.dbg"), args.artifact.with_suffix(".aarch64.elf")])
     headers(cli_path, [cli_path.with_suffix(".com.dbg"), cli_path.with_suffix(".aarch64.elf")])
+    headers(example_path, [example_path.with_suffix(".com.dbg"), example_path.with_suffix(".aarch64.elf")])
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
-                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact])
+                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], package=producer["package"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact, example_artifact])
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if os.name != "nt":
@@ -357,6 +541,10 @@ def consume(args, report, directory):
                        "timed_out": executed["timed_out"], "elapsed_seconds": elapsed},
             "commands": [executed], "artifact": identity(cli_path), "sdk_sha256": producer["sdk"]["sha256"],
             "timeout_seconds": args.timeout, "reason": "Actual CLI process uses supplied public SDK, raw OS exit and raw UTF-8 logs"})
+    example_cases(args, report, directory, example_path, args.artifact.parent.resolve() / "sdk/modules", loader)
+    report["artifacts"][2]["sha256_after"] = sha256(example_path)
+    if report["artifacts"][2]["sha256_after"] != example_artifact["sha256"]:
+        raise BuildError("Example artifact changed during execution")
     report["artifacts"][1]["sha256_after"] = sha256(cli_path)
     if report["artifacts"][1]["sha256_after"] != cli_artifact["sha256"]:
         raise BuildError("CLI artifact changed during execution")
@@ -370,6 +558,7 @@ def consume(args, report, directory):
     if recipe() != producer["sdk_recipe"]["files"]:
         raise BuildError("Consumer recipe differs from selected SDK producer")
     check_distribution()
+    check_package(producer, args.artifact.resolve().parent)
     report["required_cases"] = [item["case_id"] for item in report["cases"] if item["required"]]
     report["unavailable_cases"] = [item["case_id"] for item in report["cases"] if item["status"] == "blocked"]
     report.update(status="pass" if all(item["status"] == "pass" or not item["required"] and item["status"] == "blocked" for item in report["cases"]) else "fail",
@@ -379,7 +568,7 @@ def consume(args, report, directory):
 def main():
     cache = Path(workspace(ROOT)["cache_root"])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run"))
+    parser.add_argument("operation", choices=("build", "run", "package-consume"))
     parser.add_argument("--source-cache", type=Path, default=cache / "quickjs")
     parser.add_argument("--toolchain-cache", type=Path, default=cache / "toolchains/cosmocc")
     parser.add_argument("--helper-source-cache", type=Path, default=cache / "sources/ape-loader")
@@ -410,7 +599,7 @@ def main():
               "build": None, "native_toolchain": None, "evidence_directory": str(directory),
               "controlled_probe": args.controlled_probe}
     try:
-        (build if args.operation == "build" else consume)(args, report, directory)
+        {"build": build, "run": consume, "package-consume": package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
     except (OSError, ValueError, KeyError, TypeError) as error:

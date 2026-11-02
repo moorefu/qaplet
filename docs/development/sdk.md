@@ -1,5 +1,35 @@
 # Embed SDK development
 
+`python3 scripts/sdk.py build` produces `qaplet-sdk.zip` on Ubuntu with the
+public header, x86_64 and hidden `.aarch64` static archives, complete pure C
+application, source modules, licenses, manifest and audited Host/CLI/application
+APEs. Preserve the hidden archive when copying. `sdk/manifest.json` identifies
+both target components, ABI 1, capability names/bits, all effective finite
+defaults, engine/toolchain/recipe/source and each supplied executable.
+
+`sdk.py run --build-report FILE --artifact .../qaplet-host.com` verifies the
+entire delivered ZIP, manifest, SDK and APE bytes before and after supplied
+execution. `sdk.py package-consume --build-report FILE --artifact
+.../qaplet-host.com --output-dir NEW_DIR --loader-dir SUPPLIED_LOADERS
+--report FILE` performs the additional Ubuntu compile boundary: it extracts
+the actual ZIP under a fresh POSIX `/tmp` application directory outside both
+source checkouts, compiles only `sdk/application.c` with `sdk/include` and
+the supplied static archives, publishes/audits the resulting APE using the
+existing linker protocol, then runs the same required application catalog.
+Commands, external cwd, source/archive/ZIP identities and raw logs are retained.
+That one-use application fixture is separate from reusable `.cache` inputs.
+
+The complete application registers Host declarations, runs static/dynamic ESM
+and TLA, receives copied worker events, pumps on the owner, gets results,
+requests/confirms stop, closes while the worker retains the control handle,
+joins it, releases a real Host FILE and finally destroys the Runtime.
+Its explicit rejection, queue-full, deadline and missing-module modes exit 1
+after cleanup; argument errors exit 2. `--abi` validates short prefixes,
+zero/nonzero tails, unknown flags/reserved fields and independent worker
+diagnostics against the supplied public SDK. `--metadata` independently queries
+the live capabilities and defaults and must agree with the manifest. The
+package README contains copyable build/run commands and Host ownership rules.
+
 The initial SDK provides one owner-thread Runtime with one private Context,
 synchronous Script evaluation, strict copied results, synchronized POD snapshots and
 separate close/destroy operations. `include/qaplet.h` is the public contract.
