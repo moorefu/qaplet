@@ -22,7 +22,7 @@ cosmocc -Os -D_GNU_SOURCE -I sdk/include sdk/application.c sdk/lib/libqaplet.a -
 The verified producer uses the shared APE linker with 64 KiB ARM64 alignment,
 source-built portable loaders, publication sidecars and audits. Use that workflow
 for distribution. The `package-consume` operation extracts this exact ZIP outside
-the source checkout, compiles the application and public ABI Host using only its
+the source checkout, compiles the application and its public ABI workload using only its
 header/library materials, audits the resulting APE, and executes its catalog.
 
 The complete example registers copied Host constants/functions, imports source

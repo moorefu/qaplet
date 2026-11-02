@@ -247,6 +247,9 @@ def check_package(producer, supplied, check_archive=True):
     if digest({key: value for key, value in producer["sdk_recipe"].items()
                if key not in ("git_commit", "working_tree_dirty", "sha256")}) != producer["sdk_recipe"]["sha256"]:
         raise BuildError("SDK package recipe identity is inconsistent")
+    sdk_components = [{key: item[key] for key in ("file", "sha256", "size_bytes")} for item in producer["sdk"]["components"]]
+    if sdk_components != [item for name, item in expected.items() if name.startswith("sdk/")] or digest(sdk_components) != producer["sdk"]["sha256"]:
+        raise BuildError("SDK package aggregate differs from supplied public components")
     for name in expected:
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name:
