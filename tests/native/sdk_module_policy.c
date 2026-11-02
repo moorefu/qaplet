@@ -180,6 +180,14 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
   CHECK(qaplet_eval_with_base(runtime,"42",2,nulpath,sizeof(nulpath)-1,&progress,NULL)==QAPLET_INVALID_ARGUMENT);
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==count && snapshot.source_cache_bytes==bytes);
   CHECK(!number(runtime,"validRuns===1 && typeof unexpectedFormat==='undefined' ? 42:0",NULL,42));
+  /* File URL syntax must not narrow the copied host: identifier contract. */
+  qaplet_config host_config=QAPLET_CONFIG_INIT; qaplet_runtime *host_runtime=NULL;
+  qaplet_host_module host=QAPLET_HOST_MODULE_INIT;
+  host.name="host:literal?name%2f"; host.name_length=strlen(host.name);
+  CHECK(qaplet_create(&host_config,&host_runtime,NULL)==QAPLET_OK);
+  CHECK(qaplet_register_host_module(host_runtime,&host,NULL)==QAPLET_OK);
+  CHECK(!number(host_runtime,"import('host:literal?name%2f').then(()=>42)",NULL,42));
+  CHECK(!release(host_runtime));
   /* No suffix guessing: a real extensionless file succeeds, and a directory does not. */
   CHECK(!write_source(directory,"plain","globalThis.extensionless=42;"));
   CHECK(entry(runtime,directory,"plain")==QAPLET_OK && !number(runtime,"extensionless",NULL,42));
@@ -282,6 +290,8 @@ int sdk_module_policy(const char *mode) {
   char *directory = mkdtemp(temporary);
   qaplet_config config = QAPLET_CONFIG_INIT;
   qaplet_runtime *runtime = NULL;
+  qaplet_abi abi=QAPLET_ABI_INIT;
+  CHECK(qaplet_query_abi(&abi)==QAPLET_OK && (abi.capabilities & QAPLET_CAP_MODULE_POLICY));
   CHECK(directory);
   CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=(globalThis.validRuns||0)+1; globalThis.baseUrl=import.meta.url; export const answer=42;"));
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);

@@ -186,6 +186,13 @@ static qaplet_module *find_module(qaplet_runtime *runtime, const char *url) {
 static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const char *name, int root) {
   char *path = NULL, *directory = NULL;
   qaplet_code code = QAPLET_MODULE_RESOLVE;
+  /* Registered host identifiers are exact UTF-8 names, not file URLs. */
+  if (!root && !strncmp(name, "host:", 5)) {
+    qaplet_module *entry = find_module(runtime, name);
+    if (entry) return entry;
+    module_throw(runtime, QAPLET_MODULE_RESOLVE);
+    return NULL;
+  }
   /* Refuse URL components and encoded separators before looking for native
    * files which may coincidentally have those literal spellings. */
   if (strchr(name, '?') || strchr(name, '#')) { module_throw(runtime, code); return NULL; }
@@ -198,12 +205,6 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
       }
     }
   }
-  if (!root && !strncmp(name, "host:", 5)) {
-    qaplet_module *entry = find_module(runtime, name);
-    if (entry) return entry;
-    module_throw(runtime, QAPLET_MODULE_RESOLVE);
-    return NULL;
-  }
   if (!strncmp(name, "file:", 5)) path = url_path(runtime, name);
   else if (root) {
     if (IsWindows() && isalpha((unsigned char)name[0]) && name[1] == ':' && (name[2] == '/' || name[2] == '\\')) {
@@ -215,7 +216,7 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
       }
     } else if (!strchr(name, ':') && strncmp(name, "//", 2) && strncmp(name, "\\\\", 2))
       path = absolute_path(runtime, runtime->initial_cwd, name);
-    else if (strchr(name, ':')) code = QAPLET_UNSUPPORTED;
+    else if (strchr(name, ':') && strncmp(name, "//", 2) && strncmp(name, "\\\\", 2)) code = QAPLET_UNSUPPORTED;
   } else if (!strncmp(name, "./", 2) || !strncmp(name, "../", 3)) {
     directory = url_path(runtime, base);
     if (directory) {
