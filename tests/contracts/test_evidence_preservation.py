@@ -15,6 +15,43 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class EvidencePreservation(unittest.TestCase):
+    def run_cli(self, directory, arguments):
+        directory.mkdir(parents=True, exist_ok=True)
+        process = subprocess.run(arguments, capture_output=True, text=True, timeout=30)
+        (directory / "stdout.log").write_text(process.stdout)
+        (directory / "stderr.log").write_text(process.stderr)
+        return process
+
+    def assert_preserved(self, directory, arguments, paths, no_output=(), **metadata):
+        def hashes():
+            return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+        before = hashes()
+        process = self.run_cli(directory, arguments)
+        after = hashes()
+        (directory / "receipt.json").write_text(json.dumps({"before": before, "after": after,
+            "exit_code": process.returncode, **metadata}))
+        self.assertEqual(before, after, "Consumer replaced selected immutable bytes or their alias")
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("immutable", process.stdout + process.stderr)
+        for path in no_output:
+            self.assertFalse(path.exists(), "Collision created consumer output: " + str(path))
+        return process
+
+    def test_sdk_matrix_explicit_reports_preserve_their_evidence_roots(self):
+        retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
+        with tempfile.TemporaryDirectory(prefix="qaplet-matrix-raw-") as temporary:
+            root = (Path(retained) / uuid.uuid4().hex if retained else Path(temporary)).resolve()
+            raw = root / "native/evidence/native-id/stdout.log"
+            raw.parent.mkdir(parents=True)
+            raw.write_bytes(b"original native stdout\n")
+            incoming, producer = root / "native/run.json", root / "build.json"
+            incoming.write_text(json.dumps({"schema_version": 1, "report_kind": "qaplet-sdk", "scope": "run",
+                "report_id": "native-id", "evidence_directory": "/original/native/evidence/native-id"}))
+            producer.write_text("{}")
+            self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
+                "--build-report", str(producer), "--input-report", str(incoming), "--report", str(raw)],
+                [raw], [raw.parent / "evidence"])
+
     def test_documented_selection_file_edges_are_preserved_before_validation(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
         with tempfile.TemporaryDirectory(prefix="qaplet-selection-edges-") as temporary:
@@ -31,7 +68,6 @@ class EvidencePreservation(unittest.TestCase):
                     case.mkdir(parents=True)
                     selected = case / "selected.json"
                     selected.write_text('{"original":"selected evidence"}')
-                    before = hashlib.sha256(selected.read_bytes()).hexdigest()
                     reference = str(selected)
                     value = [reference] if shape == "list" else {"startup": reference} if shape == "map" else reference
                     inputs = case / "inputs.json"
@@ -42,16 +78,9 @@ class EvidencePreservation(unittest.TestCase):
                         config = case / "config.json"
                         config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(inputs)}))
                         argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
-                    process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
-                        capture_output=True, text=True, timeout=30)
-                    (case / "stdout.log").write_text(process.stdout)
-                    (case / "stderr.log").write_text(process.stderr)
-                    after = hashlib.sha256(selected.read_bytes()).hexdigest()
-                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-                    self.assertEqual(before, after, "Required selection edge was overwritten before validation")
-                    self.assertNotEqual(process.returncode, 0)
-                    self.assertIn("immutable", process.stdout + process.stderr)
-                    self.assertFalse((case / "evidence").exists())
+                    self.assert_preserved(case,
+                        [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
+                        [selected], [case / "evidence"])
 
     def test_mapped_m0_selections_use_their_own_base_and_longest_prefix(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -85,19 +114,12 @@ class EvidencePreservation(unittest.TestCase):
                             config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence" if consumer == "nested" else "m0-evidence",
                                 "input_manifest": os.path.relpath(inputs, config.parent)}))
                             argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
-                        process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
-                            capture_output=True, text=True, timeout=30)
-                        (case / "stdout.log").write_text(process.stdout)
-                        (case / "stderr.log").write_text(process.stderr)
-                        after = hashlib.sha256(selected.read_bytes()).hexdigest()
-                        (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-                        self.assertEqual(before, after, "Mapped/nested selection protected the wrong physical file")
-                        self.assertNotEqual(process.returncode, 0)
-                        self.assertIn("immutable", process.stdout + process.stderr)
-                        self.assertFalse((selected.parent / "evidence").exists())
+                        self.assert_preserved(case,
+                            [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
+                            [selected], [selected.parent / "evidence"])
                         output = actual / "unrelated-report.json"
-                        ordinary = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(output)],
-                            capture_output=True, text=True, timeout=30)
+                        ordinary = self.run_cli(case / "allowed-output",
+                            [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(output)])
                         self.assertTrue(output.is_file(), ordinary.stdout + ordinary.stderr)
                         self.assertEqual(json.loads(output.read_text())["status"], "fail")
                         self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
@@ -115,10 +137,8 @@ class EvidencePreservation(unittest.TestCase):
             inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/selection.json",
                 "guest_report": "/original/guest.json", "path_mappings": [{"source": "/original", "root": "relocated"}]}))
             output = relocated / "unrelated-report.json"
-            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import", "--input-manifest", str(inputs),
-                "--report", str(output)], capture_output=True, text=True, timeout=30)
-            (root / "stdout.log").write_text(process.stdout)
-            (root / "stderr.log").write_text(process.stderr)
+            process = self.run_cli(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
+                "--input-manifest", str(inputs), "--report", str(output)])
             self.assertTrue(output.is_file(), process.stdout + process.stderr)
             self.assertEqual(json.loads(output.read_text())["status"], "fail")
             self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
@@ -134,20 +154,12 @@ class EvidencePreservation(unittest.TestCase):
                 bundle.writestr("original.txt", "immutable selected distribution\n")
             archive = supplied / "qaplet-sdk.zip"
             shutil.copyfile(fixture, archive)
-            before = hashlib.sha256(archive.read_bytes()).hexdigest()
             selected = root / "selection.json"
             selected.write_text(json.dumps({"distribution_root": "sdk"}))
             inputs = root / "inputs.json"
             inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "selection.json", "guest_report": "guest.json"}))
-            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
-                "--input-manifest", str(inputs), "--report", str(archive)], capture_output=True, text=True, timeout=30)
-            (root / "stdout.log").write_text(process.stdout)
-            (root / "stderr.log").write_text(process.stderr)
-            after = hashlib.sha256(archive.read_bytes()).hexdigest()
-            (root / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-            self.assertEqual(before, after)
-            self.assertNotEqual(process.returncode, 0)
-            self.assertIn("immutable", process.stdout + process.stderr)
+            self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
+                "--input-manifest", str(inputs), "--report", str(archive)], [archive])
 
     def test_guest_mapped_selection_preserves_distribution_without_transports(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -160,20 +172,12 @@ class EvidencePreservation(unittest.TestCase):
                 bundle.writestr("original.txt", "immutable mapped distribution\n")
             archive = supplied / "qaplet-sdk.zip"
             shutil.copyfile(fixture, archive)
-            before = hashlib.sha256(archive.read_bytes()).hexdigest()
             (root / "selection.json").write_text(json.dumps({"distribution_root": "/original/sdk/sdk"}))
             inputs = root / "inputs.json"
             inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/sdk/selection.json",
                 "guest_report": "/original/sdk/guest.json", "path_mappings": [{"source": "/original/sdk", "root": str(root)}]}))
-            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
-                "--input-manifest", str(inputs), "--report", str(archive)], capture_output=True, text=True, timeout=30)
-            (root / "stdout.log").write_text(process.stdout)
-            (root / "stderr.log").write_text(process.stderr)
-            after = hashlib.sha256(archive.read_bytes()).hexdigest()
-            (root / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-            self.assertEqual(before, after)
-            self.assertNotEqual(process.returncode, 0)
-            self.assertIn("immutable", process.stdout + process.stderr)
+            self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
+                "--input-manifest", str(inputs), "--report", str(archive)], [archive])
 
     def test_guest_export_guards_every_declared_output(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -194,22 +198,13 @@ class EvidencePreservation(unittest.TestCase):
                         archive = supplied / "qaplet-sdk.zip"
                         shutil.copyfile(original, archive)
                         target = producer if material == "producer" else archive
-                        before = hashlib.sha256(target.read_bytes()).hexdigest()
                         outputs = {name: case / (name + ".json") for name in ("report", "manifest", "selection")}
                         outputs[output_name] = target
                         argv = [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "export",
                                 "--build-report", str(producer), "--distribution", str(supplied)]
                         for name, path in outputs.items():
                             argv += ["--" + name, str(path)]
-                        process = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-                        (case / "stdout.log").write_text(process.stdout)
-                        (case / "stderr.log").write_text(process.stderr)
-                        after = hashlib.sha256(target.read_bytes()).hexdigest()
-                        (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-                        self.assertEqual(before, after)
-                        self.assertNotEqual(process.returncode, 0)
-                        self.assertIn("immutable", process.stdout + process.stderr)
-                        self.assertTrue(all(path == target or not path.exists() for path in outputs.values()))
+                        self.assert_preserved(case, argv, [target], [path for path in outputs.values() if path != target])
 
     def test_sdk_consumers_preserve_supplied_material_before_execution(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -238,21 +233,11 @@ class EvidencePreservation(unittest.TestCase):
                         incoming.write_text("{}")
                         target = {"package": package, "component": component, "producer": producer,
                                   "loader": loader, "native": incoming}[material]
-                        before = hashlib.sha256(target.read_bytes()).hexdigest()
-                        process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), operation,
+                        self.assert_preserved(case, [sys.executable, str(ROOT / "scripts/sdk.py"), operation,
                             "--build-report", str(producer), "--artifact", str(supplied / "qaplet-host.com"),
                             "--loader-dir", str(loaders), "--input-dir", str(native),
-                            "--output-dir", str(case / "output"), "--report", str(target)],
-                            capture_output=True, text=True, timeout=30)
-                        (case / "stdout.log").write_text(process.stdout)
-                        (case / "stderr.log").write_text(process.stderr)
-                        after = hashlib.sha256(target.read_bytes()).hexdigest()
-                        (case / "receipt.json").write_text(json.dumps({"before": before, "after": after, "exit_code": process.returncode}))
-                        self.assertEqual(before, after, "SDK consumer overwrote supplied material")
-                        self.assertNotEqual(process.returncode, 0)
-                        self.assertIn("immutable", process.stdout + process.stderr)
-                        self.assertFalse((target.parent / "evidence").exists(), "Collision entered product execution")
-                        self.assertFalse((case / "output").exists(), "Collision created consumer output")
+                            "--output-dir", str(case / "output"), "--report", str(target)], [target],
+                            [target.parent / "evidence", case / "output"])
 
     def test_selected_archive_outputs_are_refused_without_execution(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -275,7 +260,6 @@ class EvidencePreservation(unittest.TestCase):
                     if not target.exists():
                         os.link(archive, target)
                     self.assertTrue(target.samefile(archive))
-                    before = hashlib.sha256(archive.read_bytes()).hexdigest()
                     inputs = case / "inputs.json"
                     manifest = {"schema_version": 1, "transports": [{"root": "extracted", "archive": {"path": "selected.zip"}}]}
                     if nested:
@@ -290,19 +274,8 @@ class EvidencePreservation(unittest.TestCase):
                         argv = ["sdk_guest.py", "import", "--input-manifest", str(inputs)]
                     else:
                         argv = ["core_gate.py", "evaluate", "--input-manifest", str(inputs)]
-                    process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:],
-                        "--report", str(target)], capture_output=True, text=True, timeout=30)
-                    (case / "stdout.log").write_text(process.stdout)
-                    (case / "stderr.log").write_text(process.stderr)
-                    after = hashlib.sha256(archive.read_bytes()).hexdigest()
-                    alias_after = hashlib.sha256(target.read_bytes()).hexdigest()
-                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after,
-                        "alias_after": alias_after, "existing_case_alias": case_alias, "exit_code": process.returncode}))
-                    self.assertEqual(before, after, "Consumer overwrote the selected original archive")
-                    self.assertEqual(before, alias_after, "Consumer replaced an existing alias of its selected archive")
-                    self.assertNotEqual(process.returncode, 0)
-                    self.assertIn("immutable", process.stdout + process.stderr)
-                    self.assertFalse((case / "evidence").exists(), "Collision entered evidence execution")
+                    self.assert_preserved(case, [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:],
+                        "--report", str(target)], [archive, target], [case / "evidence"], existing_case_alias=case_alias)
 
     def test_case_aliased_provider_roots_are_preserved_before_output_creation(self):
         retained = os.environ.get("QAPLET_PRESERVATION_OUT") or os.environ.get("QAPLET_M1_TEST_OUT")
@@ -315,7 +288,6 @@ class EvidencePreservation(unittest.TestCase):
                     supplied.mkdir(parents=True)
                     member = supplied / "member.txt"
                     member.write_bytes(b"immutable provider member\n")
-                    before = hashlib.sha256(member.read_bytes()).hexdigest()
                     alias = case / "EXTRACTED"
                     case_alias = alias.exists() and alias.samefile(supplied)
                     target = (alias if case_alias else supplied) / member.name
@@ -336,14 +308,6 @@ class EvidencePreservation(unittest.TestCase):
                         producer = case / "build.json"
                         producer.write_text("{}")
                         argv = ["sdk.py", "run", "--build-report", str(producer), "--artifact", str(supplied / "qaplet-host.com")]
-                    process = subprocess.run([sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(target)],
-                        capture_output=True, text=True, timeout=30)
-                    (case / "stdout.log").write_text(process.stdout)
-                    (case / "stderr.log").write_text(process.stderr)
-                    after = hashlib.sha256(member.read_bytes()).hexdigest()
-                    (case / "receipt.json").write_text(json.dumps({"before": before, "after": after,
-                        "existing_case_alias": case_alias, "exit_code": process.returncode}))
-                    self.assertEqual(before, after, "Case alias bypassed the immutable provider root")
-                    self.assertNotEqual(process.returncode, 0)
-                    self.assertIn("immutable", process.stdout + process.stderr)
-                    self.assertFalse((supplied / "evidence").exists(), "Collision created output inside provider root")
+                    self.assert_preserved(case,
+                        [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(target)],
+                        [member, target], [supplied / "evidence"], existing_case_alias=case_alias)

@@ -122,6 +122,13 @@ def guard_evidence_outputs(outputs, selections, roots=(), files=(), documents=()
         if key in visited:
             return
         visited.add(key)
+        # The standalone SDK matrix relocates an explicit native report's raw
+        # logs beneath that report's own directory, before validating cases.
+        native_id = value.get("report_id") if isinstance(value, dict) else None
+        if (isinstance(value, dict) and value.get("report_kind") == "qaplet-sdk" and value.get("scope") == "run" and
+                isinstance(native_id, str) and native_id and native_id not in (".", "..") and
+                not any(char in native_id for char in ("/", "\\", ":", "\x00"))):
+            directories.add((path.parent / "evidence" / native_id).resolve())
         selection(value, paths)
 
     def reference(item, paths, local=False, direct=False):

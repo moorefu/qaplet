@@ -536,6 +536,8 @@ qaplet_code qaplet_run_entry_with_options(qaplet_runtime *runtime, const char *p
   if (!code && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
   if (!code) code = qaplet_check_execution_options(runtime, options);
+  qaplet_execution_budget budget;
+  if (!code) code = qaplet_execution_prepare(runtime, options, &budget);
   if (code) return qaplet_report(diagnostic, code);
   char *copy = qaplet_native_alloc(runtime, length + 1);
   if (!copy) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
@@ -565,7 +567,7 @@ qaplet_code qaplet_run_entry_with_options(qaplet_runtime *runtime, const char *p
     }
     if (native) qaplet_native_free(runtime, native, strlen(native) + 1);
   }
-  code = qaplet_execution_begin(runtime, options);
+  code = qaplet_execution_begin(runtime, &budget);
   if (code) return qaplet_report(diagnostic, code);
   runtime->module_execution = 1;
   runtime->active_module = entry;
@@ -613,6 +615,8 @@ qaplet_code qaplet_eval_with_base_and_options(qaplet_runtime *runtime, const cha
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
   if (!code) code = qaplet_check_execution_options(runtime, options);
   if (!code && length > runtime->snapshot.limits.source_bytes) code = QAPLET_SOURCE_TOO_LARGE;
+  qaplet_execution_budget budget;
+  if (!code) code = qaplet_execution_prepare(runtime, options, &budget);
   if (code) return qaplet_report(diagnostic, code);
   char *copy = qaplet_native_alloc(runtime, base_length + 1);
   if (!copy) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
@@ -628,7 +632,7 @@ qaplet_code qaplet_eval_with_base_and_options(qaplet_runtime *runtime, const cha
   char *url = absolute ? path_url(runtime, absolute) : NULL;
   if (absolute) qaplet_native_free(runtime, absolute, strlen(absolute) + 1);
   if (!url) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
-  code = qaplet_eval_filename(runtime, source, length, url, options, progress, diagnostic);
+  code = qaplet_eval_filename(runtime, source, length, url, options, &budget, progress, diagnostic);
   qaplet_native_free(runtime, url, strlen(url) + 1);
   return code;
 }

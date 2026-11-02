@@ -34,7 +34,7 @@ class SDKNativeContract(unittest.TestCase):
                 if fail: incoming["cases"][0]["status"] = "skip"
                 selected = work / "run.json"
                 selected.write_text(json.dumps(incoming))
-                report = work / "matrix.json"
+                report = work / ("matrix-fail.json" if fail else "matrix-pass.json")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
                     "--build-report", str(producer), "--artifact", str(producer.parent / "artifacts/qaplet-host.com"),
                     "--loader-dir", str(loaders), "--input-report", str(selected), "--report", str(report)],
@@ -62,14 +62,14 @@ class SDKNativeContract(unittest.TestCase):
         original = json.loads(native.read_text())
         with tempfile.TemporaryDirectory(prefix="qaplet-sdk-replay-") as temp:
             work = Path(temp)
-            def check(selected):
-                report = work / "matrix.json"
+            def check(selected, name):
+                report = work / (name + ".json")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
                     "--build-report", str(producer), "--artifact", str(producer.parent / "artifacts/qaplet-host.com"),
                     *(["--loader-dir", os.environ["QAPLET_SDK_LOADER_DIR"]] if os.environ.get("QAPLET_SDK_LOADER_DIR") else []),
                     "--input-report", str(selected), "--report", str(report)], capture_output=True, text=True, timeout=60)
                 return result.returncode, json.loads(report.read_text())
-            code, value = check(native)
+            code, value = check(native, "actual")
             self.assertEqual(code, 0, value["reason"])
             self.assertEqual(value["coverage"][0]["lifecycle"]["completed_cycles"], 1000)
             shutil.copytree(native.parent / "evidence" / original["report_id"], work / "evidence" / original["report_id"])
@@ -85,7 +85,7 @@ class SDKNativeContract(unittest.TestCase):
                 else:
                     mutation["cases"][0]["status"] = "skip"
                 selected.write_text(json.dumps(mutation))
-                code, value = check(selected)
+                code, value = check(selected, name)
                 self.assertEqual(code, 1, name + ": " + str(value))
                 self.assertTrue(any(word in value["reason"].lower() for word in ("catalog", "lifecycle", "native", "contract")), value)
 

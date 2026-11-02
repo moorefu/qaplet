@@ -294,3 +294,71 @@ This is honest provisional local evidence created while HEAD was b92 with these
 working changes; it is not a producer for the forthcoming frozen commit. Earlier
 provisional local build/run/package/export results remain separately under
 `m1r4-correction/local/`. No original provider report or archive was rewritten.
+
+## Independent m1r5 follow-up
+
+The separate MAIN `out/reviews/m1r5/` packets reviewed beab through160ea7b and
+confirmed all m1r4 paths resolved. Standards reported a hard P3 absolute-deadline
+overflow refusal that changed module identity/storage and a heuristic P3 for
+duplicated preservation test subprocess/receipt code. Spec independently reported
+P2 for standalone SDK matrix raw logs selected through input-report alone. These
+three findings retain their original axes and priorities.
+
+An independent real public matrix probe converged with Spec: actual copied local
+native evidence passed its unrelated-output control, then the collision returned
+status=pass/exit0 and replaced a private stdout log with JSON. The original source
+log retained its SHA. `sdk-matrix-audit/probe.json` preserves that red. The new
+registered raw-root test was red on both OSes; SDK input-report metadata now binds
+its exact evidence/<report_id> directory before any output. All SDK consuming
+operations use the shared observed-input/incomplete-validation final writer;
+build remains a separate producer. The real Ubuntu copied-evidence probe is green
+at `m1r5-correction/actual-matrix-green/probe.json` (control0, collision2, all
+original/private bytes intact). Existing SDK reader tests retain separate output
+files for each successful and rejected validation.
+
+The public C SDK red at `m1r5-correction/deadline-red/run.json` executed all98
+contracts and failed exactly module-budgets. After INVALID_ARGUMENT for an accepted
+boundary timeout, module_count changed2→3, native current1972→2348 and native
+peak1975→2839; result42 remained available. Full raw stderr and all other results
+are retained. The test also covers NULL, zero and explicit boundary options on
+entry, explicit-base eval and ordinary eval, comparing the entire public snapshot
+and prior result before valid tightened controls. Default controls remain in the
+same packaged public test.
+
+The execution driver now prepares the absolute deadline and dispatch budget
+without mutation before input storage or module resolution. Begin commits that
+same prepared budget; base eval passes it into the shared evaluator, and idle
+event pump preparation uses the same rule. The shared ledger still spans pending
+jobs/host waits and subsequent pumps. The public ABI is unchanged.
+
+Preservation tests now share the subprocess/log writer and hash/receipt/refusal
+assertion, retaining every alias/root and unrelated-output control; no structural
+test was added. Behavioral suites pass all ten methods on Windows and Ubuntu,
+with logs `m1r5-refactor-green-{windows,ubuntu}.log`. The affected ordinary Ubuntu
+check passes323 tests with167 explicit ordinary skips plus actual C bootstrap at
+`m1r5-correction/check.json`. Matching required acceptance now has98 methods.
+
+160ea7b Full41533243382 genuinely passed; all nine originals101075206 bytes are
+verified under MAIN `out/m1/ci/selection-fix-full/`, with the original expired
+acquisition attempt also retained. This is prior-candidate proof because current
+C/recipe bytes changed. Its97-method strict suite is not run or relabelled as
+current acceptance. `corrected-final/` remains a prior-candidate prepared tree;
+the next matching closure will use a new sibling and the parent specification
+remains claimed.
+
+The corrected m1r5 local SDK at `m1r5-correction/local/` passes build and all98
+public execution contracts, including every new overflow refusal and valid
+control, plus1000 actual lifecycle cycles. The external package consumer passes
+all eight public C cases. `readers-complete/report.json` and its raw log pass all
+three actual local POSIX reader/hash/mode contracts and both guest export CLI
+contracts (5 tests,24.679s). An initial ignored replay helper chose the wrong
+toolchain directory and failed before testing; its separate
+`readers/setup-failure.json` is retained. No product source changed to accommodate
+that setup correction.
+
+The local SDK SHA is e7a92fb2a36569cd55eb0f5382a869c360cdd50e522b2abf9b2b9d6d0f4c6754,
+recipe2489d34a07b5a86c1efa5c899c6b2f9ffe6173ef5dd89aed2b56ca02948f64ff.
+These local reports honestly retain160ea7b/working-change producer context with
+CI=null and do not replace the next frozen-commit provider closure. All source
+code is now ready for its next freeze; matching Full,98 strict methods, matching
+POSIX replay and independent reviews remain required before final clearance.

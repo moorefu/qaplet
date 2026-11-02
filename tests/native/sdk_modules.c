@@ -122,6 +122,51 @@ static int option_inputs(const char *directory) {
   return 0;
 }
 
+static int option_deadline_refusals(const char *directory) {
+  char path[4096], base[4096], source[4096];
+  CHECK(snprintf(path, sizeof(path), "%s/entry.mjs", directory) < sizeof(path));
+  memset(base, 'a', sizeof(base));
+  memcpy(base, "file:///", 8); base[sizeof(base)-1] = 0;
+  memset(source, ' ', sizeof(source)); memcpy(source + sizeof(source)-2, "42", 2);
+  for (unsigned api = 0; api < 3; ++api) {
+    qaplet_config config = QAPLET_CONFIG_INIT;
+    config.limits.execution_timeout_ms = UINT64_MAX / 1000000;
+    config.limits.event_queue_slots = config.limits.event_payload_bytes = 1;
+    qaplet_runtime *runtime = NULL;
+    qaplet_execution_options tight = QAPLET_EXECUTION_OPTIONS_INIT;
+    tight.timeout_ms = 1000;
+    qaplet_progress progress = QAPLET_PROGRESS_INIT;
+    qaplet_result result = QAPLET_RESULT_INIT;
+    qaplet_snapshot before = QAPLET_SNAPSHOT_INIT, after = QAPLET_SNAPSHOT_INIT;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(qaplet_eval_with_options(runtime, "42", 2, &tight, &progress, NULL) == QAPLET_OK);
+    CHECK(qaplet_get_snapshot(runtime, &before, NULL) == QAPLET_OK);
+    for (unsigned variant = 0; variant < 3; ++variant) {
+      qaplet_execution_options options = QAPLET_EXECUTION_OPTIONS_INIT;
+      if (variant == 2) options.timeout_ms = config.limits.execution_timeout_ms;
+      const qaplet_execution_options *selected = variant ? &options : NULL;
+      qaplet_code code = api == 0 ? qaplet_run_entry_with_options(runtime, path, strlen(path), selected, &progress, NULL) :
+          api == 1 ? qaplet_eval_with_base_and_options(runtime, "42", 2, base, strlen(base), selected, &progress, NULL) :
+          qaplet_eval_with_options(runtime, source, sizeof(source), selected, &progress, NULL);
+      CHECK(code == QAPLET_INVALID_ARGUMENT);
+      CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_OK && result.number == 42);
+      CHECK(qaplet_get_snapshot(runtime, &after, NULL) == QAPLET_OK);
+      if (memcmp(&before, &after, sizeof(before)))
+        fprintf(stderr, "deadline refusal api=%u: modules %llu/%llu; native current %llu/%llu; peak %llu/%llu\n", api,
+            (unsigned long long)before.module_count, (unsigned long long)after.module_count,
+            (unsigned long long)before.native_current_bytes, (unsigned long long)after.native_current_bytes,
+            (unsigned long long)before.native_peak_bytes, (unsigned long long)after.native_peak_bytes);
+      CHECK(!memcmp(&before, &after, sizeof(before)));
+    }
+    qaplet_code code = api == 0 ? qaplet_run_entry_with_options(runtime, path, strlen(path), &tight, &progress, NULL) :
+        api == 1 ? qaplet_eval_with_base_and_options(runtime, "42", 2, base, strlen(base), &tight, &progress, NULL) :
+        qaplet_eval_with_options(runtime, source, sizeof(source), &tight, &progress, NULL);
+    CHECK(code == QAPLET_OK && !settle(runtime, &progress));
+    CHECK(!release(runtime));
+  }
+  return 0;
+}
+
 int sdk_modules(const char *directory, const char *mode) {
   if (!strcmp(mode, "--module-nul") || !strcmp(mode, "--module-cache") ||
       !strcmp(mode, "--module-policy") || !strcmp(mode, "--module-aliases") ||
@@ -134,6 +179,7 @@ int sdk_modules(const char *directory, const char *mode) {
   qaplet_abi abi = QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi) == QAPLET_OK && (abi.capabilities & QAPLET_CAP_FILE_MODULES));
   if (!strcmp(mode, "--module-budgets")) {
+    CHECK(!option_deadline_refusals(directory));
     CHECK(!option_inputs(directory));
     char path[4096];
     config.limits.execution_dispatches = 1000;

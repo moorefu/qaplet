@@ -179,7 +179,9 @@ and every pump. `qaplet_config.limits` configures finite instance maxima;
 `qaplet_eval_with_base_and_options` can only tighten them for that execution.
 The original module/base calls remain ABI 1 default-options conveniences.
 Rejected options preserve the previous result, state and module/source cache;
-the packaged `host-modules.c` exercises invalid structures/over-max values,
+the absolute deadline is prepared before module identity, base or source storage
+can change, including an otherwise valid timeout whose addition would overflow.
+The packaged `host-modules.c` exercises invalid structures/over-max values,
 zero/default options, cached runs, PENDING refusal priority and both tightened
 cross-pump dispatch and host-wait deadlines. NULL or zero
 options inherit the instance maxima. Exhaustion returns `DEADLINE_EXCEEDED` or

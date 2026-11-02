@@ -23,7 +23,7 @@ from input_lock import component, consume_identity, consumption_purpose
 from native_toolchain import recheck
 from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
-from workflow_support import guard_evidence_outputs, workspace
+from workflow_support import guard_evidence_outputs, workspace, write_evidence_report
 
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
@@ -621,8 +621,16 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
-    write_json(args.report, report)
-    print(json.dumps({"status": report["status"], "reason": report["reason"], "report": str(args.report)}))
+    try:
+        if args.operation == "build":
+            write_json(args.report, report)
+        else:
+            write_evidence_report(args.report, report)
+    except ValueError as error:
+        print(json.dumps({"status": "fail", "reason": str(error), "validation_reason": report["reason"],
+                          "report": str(args.report), "report_written": False}))
+        return 1
+    print(json.dumps({"status": report["status"], "reason": report["reason"], "report": str(args.report), "report_written": True}))
     return {"pass": 0, "fail": 1, "blocked": 2}[report["status"]]
 
 
