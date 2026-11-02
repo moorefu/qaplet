@@ -44,6 +44,7 @@ qaplet_code qaplet_execution_begin(qaplet_runtime *runtime, const qaplet_executi
       runtime->snapshot.limits.execution_dispatches;
   runtime->snapshot.execution_dispatches = 0;
   runtime->execution_active = 1;
+  runtime->host_registration_locked = 1;
   runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
   runtime->has_result = 0;
   runtime->execution_code = QAPLET_OK;
@@ -225,6 +226,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (!code) code = qaplet_owner(runtime);
   if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
+  runtime->host_registration_locked = 1;
   if (runtime->snapshot.phase != QAPLET_PHASE_PENDING) {
     progress->phase = runtime->snapshot.phase;
     progress->progressed = 0;

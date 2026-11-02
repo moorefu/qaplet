@@ -9,6 +9,7 @@ typedef union qaplet_allocation qaplet_allocation;
 typedef struct qaplet_rejection qaplet_rejection;
 typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
+typedef struct qaplet_host_record qaplet_host_record;
 struct qaplet_runtime {
   pthread_t owner;
   pthread_mutex_t mutex;
@@ -38,12 +39,17 @@ struct qaplet_runtime {
   uint64_t execution_deadline_ns;
   uint64_t execution_dispatch_limit;
   int execution_active;
+  qaplet_host_record *host_modules;
+  uint64_t host_call_serial, host_active_call;
+  JSValue host_return;
+  int host_return_set, host_registration_locked;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
+qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);
 int qaplet_utf8_valid(const char *, size_t);
 qaplet_code qaplet_values_init(qaplet_runtime *);
 void qaplet_values_reset(qaplet_runtime *);
@@ -54,6 +60,11 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *, qaplet_progress *, uns
 void qaplet_execution_init(qaplet_runtime *);
 void qaplet_execution_dispose(qaplet_runtime *);
 qaplet_code qaplet_modules_init(qaplet_runtime *);
+void *qaplet_native_alloc(qaplet_runtime *, size_t);
+void qaplet_native_free(qaplet_runtime *, void *, size_t);
+qaplet_code qaplet_modules_register_host(qaplet_runtime *, const char *);
+JSModuleDef *qaplet_host_load(qaplet_runtime *, const char *);
+void qaplet_host_dispose(qaplet_runtime *);
 void qaplet_modules_dispose(qaplet_runtime *);
 void qaplet_modules_complete(qaplet_runtime *);
 qaplet_code qaplet_module_exception_code(qaplet_runtime *, JSValueConst);
