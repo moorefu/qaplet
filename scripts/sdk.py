@@ -140,7 +140,8 @@ def build(args, report, directory):
         "-c", distribution / "host-module-policy.c", "-o", work / "module-policy.o"], args.compile_timeout, work, environment)
     link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "module-policy.o", archive],
                   work / "qaplet-host.com", work, environment)
-    publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
+    publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)
     artifact["build_commands"] = identity(output / "qaplet-host.build-commands.log")
     report["artifacts"].append(artifact)
