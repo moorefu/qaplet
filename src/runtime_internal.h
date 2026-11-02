@@ -54,6 +54,7 @@ qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);
+qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);
 int qaplet_utf8_valid(const char *, size_t);
@@ -89,6 +90,8 @@ qaplet_code qaplet_check_execution_options(const qaplet_runtime *, const qaplet_
 qaplet_code qaplet_execution_begin(qaplet_runtime *, const qaplet_execution_options *);
 qaplet_code qaplet_execution_check(qaplet_runtime *);
 qaplet_code qaplet_execution_dispatch(qaplet_runtime *);
+/* Same check/claim as dispatch, while holding the acceptance mutex. */
+qaplet_code qaplet_execution_dispatch_locked(qaplet_runtime *);
 /* Shared first-cause latch. The Runtime mutex must already be held. */
 void qaplet_record_termination_locked(qaplet_runtime *, qaplet_code);
 #endif

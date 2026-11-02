@@ -21,7 +21,7 @@ typedef enum {
   QAPLET_MODULE_RESOLVE = 14, QAPLET_MODULE_LOAD = 15, QAPLET_MODULE_LIMIT = 16,
   QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18,
   QAPLET_HOST_ERROR = 19, QAPLET_NO_HANDLER = 20, QAPLET_QUEUE_FULL = 21,
-  QAPLET_PAYLOAD_TOO_LARGE = 22
+  QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -45,6 +45,7 @@ enum {
   QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_CAP_POD_EVENTS = 1u << 12,
   QAPLET_CAP_RUNTIME_SNAPSHOT = 1u << 16,
+  QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -168,7 +169,7 @@ typedef struct {
 #define QAPLET_HOST_EXPORT_INIT {sizeof(qaplet_host_export), QAPLET_ABI_VERSION, NULL, 0, 0, 0, QAPLET_VALUE_INIT, NULL, NULL}
 #define QAPLET_HOST_MODULE_INIT {sizeof(qaplet_host_module), QAPLET_ABI_VERSION, NULL, 0, NULL, 0, 0, {0}}
 
-/* Global query, POD snapshots and post_event are thread-safe. Other operations
+/* Global query, POD snapshots, post_event and request_stop are thread-safe. Other operations
  * belong to the thread that successfully created the Runtime. Output pointers
  * and diagnostics are borrowed only for the duration of a call. */
 qaplet_code qaplet_query_abi(qaplet_abi *output);
@@ -188,7 +189,7 @@ qaplet_code qaplet_register_host_module(qaplet_runtime *, const qaplet_host_modu
 /* Owner callback only. Validates and synchronously copies the value. No setter
  * means undefined; a second successful setter is BAD_STATE, preserving the first.
  * Outside a callback or with an expired call_id returns BAD_STATE. Query,
- * snapshots, post_event and this setter may reenter a Host callback. */
+ * snapshots, post_event, request_stop and this setter may reenter a Host callback. */
 qaplet_code qaplet_host_set_result(qaplet_runtime *, uint64_t call_id, const qaplet_value *, qaplet_diagnostic *);
 /* Script semantics; retains the instance's global state. source is a borrowed
  * pointer with explicit byte length, strictly validated as UTF-8 before acceptance.
@@ -246,6 +247,17 @@ qaplet_code qaplet_pump(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *
  * including Promises; runnable jobs and unhandled rejections still checkpoint. */
 qaplet_code qaplet_post_event(qaplet_runtime *, uint32_t type, uint64_t token,
                              const void *data, size_t length, qaplet_diagnostic *);
+/* Any thread may irreversibly request stop while the handle remains alive.
+ * OK acknowledges acceptance, independently of event queue capacity. Acceptance,
+ * event posts and owner claims share one order. Ordinary work is then rejected;
+ * claimed work exits cooperatively and unclaimed events/jobs never run again.
+ * Owner interrupt polling or a subsequent pump confirms STOPPED/DONE, returning
+ * EXECUTION_STOPPED (23). No OS wakeup or native-call preemption is promised.
+ * Repeated calls in STOP_REQUESTED/STOPPED/FAILED/CLOSED succeed without changing
+ * state or the first recorded stop/budget/allocation termination reason.
+ * close releases remaining user work without running finally/cleanup JS.
+ * Host must withdraw producers and join in-flight calls before destroy. */
+qaplet_code qaplet_request_stop(qaplet_runtime *, qaplet_diagnostic *);
 /* Set output.buffer/capacity for STRING/BYTES. length is the payload byte count;
  * string payloads have no extra terminator. BUFFER_TOO_SMALL reports length,
  * copies no payload, and preserves the result for retry without re-executing JS.

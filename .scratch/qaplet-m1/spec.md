@@ -2,7 +2,7 @@
 
 **Status:** claimed
 **Confirmed:** 2026-11-02。Q1–Q32 已在 grill-with-docs 中全部确认；用户在本次 to-spec 中明确要求沿用 Q32 测试与证据边界。
-**Execution state:** 正在 `codex/m1-integration` 实施。统一 v3 输入、目标 QuickJS 与 M0-A ESM/Promise 前置已完成；任务 01–03 的最小 Runtime、公开静态 SDK、严格值/诊断与 Promise pump 已合入并经纯 C Host 实际验证。逐票 Ubuntu、Windows x64、ARM64 完整 guest 和原始红绿证据见任务索引。其余任务和完整 M1 验收继续按依赖推进，不以初始闭环代替完整规格通过。
+**Execution state:** 正在 `codex/m1-integration` 实施。统一 v3 输入、目标 QuickJS 与 M0-A ESM/Promise 前置已完成；任务 01–08、10 的 Runtime、公开静态 SDK、严格值/诊断、Promise pump、文件模块/路径策略、Host Module、预算、事件桥及协作停止已合入并经纯 C Host 实际验证。逐票 Ubuntu、Windows x64、ARM64 完整 guest 和原始红绿证据见任务索引。09、12 正在实施，其余任务和完整 M1 验收继续按依赖推进。
 **Baseline:** [已确认设计 Q1–Q32](design.md)、[v1.5 正式 M1](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md#m1--quickjs-engine--通用-c-embed-sdk)、[生命周期 ADR](../../docs/adr/0005-m1-runtime-lifetime-boundary.md)、[模块缓存 ADR](../../docs/adr/0006-m1-frozen-module-identity.md)、[资源终止 ADR](../../docs/adr/0007-m1-cooperative-resource-failure.md)。
 
 ## Problem Statement
