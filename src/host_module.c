@@ -117,7 +117,7 @@ qaplet_code qaplet_register_host_module(qaplet_runtime *runtime, const qaplet_ho
     }
   }
   if (!code) code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
+  if (!code && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->host_registration_locked) code = QAPLET_BAD_STATE;
   for (qaplet_host_record *entry = !code ? runtime->host_modules : NULL; entry; entry = entry->next)
     if (strlen(entry->name) == module->name_length && !memcmp(entry->name, module->name, module->name_length))
@@ -197,7 +197,7 @@ static JSValue trampoline(JSContext *context, JSValueConst self, int argc, JSVal
     qaplet_host_export *item = &entry->exports[index];
     code = item->function(runtime, runtime->host_active_call, argc, arguments, item->userdata);
     runtime->host_active_call = 0;
-    if ((unsigned)code > QAPLET_PAYLOAD_TOO_LARGE) code = QAPLET_HOST_ERROR;
+    if ((unsigned)code > QAPLET_EXECUTION_STOPPED) code = QAPLET_HOST_ERROR;
   }
   for (int i = 0; i <= converted && i < argc; ++i)
     qaplet_native_free(runtime, payloads[i], copies[i].length);

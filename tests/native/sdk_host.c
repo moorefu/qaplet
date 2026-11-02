@@ -11,6 +11,7 @@ int sdk_modules(const char *, const char *);
 int sdk_budgets(void);
 int sdk_events(const char *);
 int sdk_events_entry(const char *);
+int sdk_stop(const char *);
 int sdk_host_modules(const char *);
 int sdk_resources(const char *);
 
@@ -265,6 +266,7 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--promise-values")) return promise_values();
   if (!strcmp(argv[1], "--promises")) return sdk_promises();
   if (!strcmp(argv[1], "--budgets")) return sdk_budgets();
+  if (!strncmp(argv[1], "--stop", 6)) return sdk_stop(argv[1]);
   if (!strncmp(argv[1], "--events", 8)) return sdk_events(argv[1]);
   if (!strcmp(argv[1], "--facts")) {
 #if defined(__aarch64__)

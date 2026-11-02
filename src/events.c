@@ -79,11 +79,14 @@ int qaplet_events_pending(qaplet_runtime *runtime) {
 
 qaplet_code qaplet_events_deliver(qaplet_runtime *runtime, unsigned *claimed) {
   *claimed = 0;
-  qaplet_code code = qaplet_execution_dispatch(runtime);
-  if (code) return code;
   event_slot *copy = (event_slot *)(runtime->event_slots + runtime->event_stride *
       (size_t)runtime->snapshot.limits.event_queue_slots);
   pthread_mutex_lock(&runtime->mutex);
+  qaplet_code code = qaplet_execution_dispatch_locked(runtime);
+  if (code || !runtime->snapshot.queue_depth) {
+    pthread_mutex_unlock(&runtime->mutex);
+    return code;
+  }
   event_slot *slot = (event_slot *)(runtime->event_slots + runtime->event_stride * runtime->event_head);
   memcpy(copy, slot, sizeof(*slot));
   if (slot->length) memcpy(copy->payload, slot->payload, slot->length);

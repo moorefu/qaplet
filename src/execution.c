@@ -4,8 +4,20 @@
 #include <time.h>
 
 void qaplet_record_termination_locked(qaplet_runtime *runtime, qaplet_code code) {
-  if (!runtime->snapshot.termination_reason) runtime->snapshot.termination_reason = code;
-  runtime->snapshot.lifecycle = QAPLET_FAILED;
+  if (runtime->snapshot.termination_reason) return;
+  runtime->snapshot.termination_reason = code;
+  runtime->snapshot.lifecycle = code == QAPLET_EXECUTION_STOPPED ? QAPLET_STOP_REQUESTED : QAPLET_FAILED;
+}
+
+qaplet_code qaplet_request_stop(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic) {
+  qaplet_code code = qaplet_check_diagnostic(diagnostic);
+  if (code) return code;
+  if (!runtime) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  pthread_mutex_lock(&runtime->mutex);
+  if (runtime->snapshot.lifecycle == QAPLET_OPEN)
+    qaplet_record_termination_locked(runtime, QAPLET_EXECUTION_STOPPED);
+  pthread_mutex_unlock(&runtime->mutex);
+  return qaplet_report(diagnostic, QAPLET_OK);
 }
 
 static int monotonic_ns(uint64_t *output) {
@@ -39,6 +51,10 @@ qaplet_code qaplet_execution_begin(qaplet_runtime *runtime, const qaplet_executi
   if (!monotonic_ns(&now)) return QAPLET_BAD_STATE;
   if (duration > UINT64_MAX - now) return QAPLET_INVALID_ARGUMENT;
   pthread_mutex_lock(&runtime->mutex);
+  if (runtime->snapshot.lifecycle != QAPLET_OPEN) {
+    pthread_mutex_unlock(&runtime->mutex);
+    return QAPLET_BAD_STATE;
+  }
   runtime->execution_deadline_ns = now + duration;
   runtime->execution_dispatch_limit = options && options->max_dispatches ? options->max_dispatches :
       runtime->snapshot.limits.execution_dispatches;
@@ -53,8 +69,7 @@ qaplet_code qaplet_execution_begin(qaplet_runtime *runtime, const qaplet_executi
   return QAPLET_OK;
 }
 
-qaplet_code qaplet_execution_check(qaplet_runtime *runtime) {
-  pthread_mutex_lock(&runtime->mutex);
+static qaplet_code execution_check_locked(qaplet_runtime *runtime) {
   uint64_t now;
   if (!runtime->snapshot.termination_reason && runtime->execution_active) {
     /* Clock failure cannot permit unbounded execution. It is an independent
@@ -63,7 +78,12 @@ qaplet_code qaplet_execution_check(qaplet_runtime *runtime) {
     else if (now >= runtime->execution_deadline_ns)
       qaplet_record_termination_locked(runtime, QAPLET_DEADLINE_EXCEEDED);
   }
-  qaplet_code code = runtime->snapshot.termination_reason;
+  return runtime->snapshot.termination_reason;
+}
+
+qaplet_code qaplet_execution_check(qaplet_runtime *runtime) {
+  pthread_mutex_lock(&runtime->mutex);
+  qaplet_code code = execution_check_locked(runtime);
   pthread_mutex_unlock(&runtime->mutex);
   return code;
 }
@@ -76,14 +96,19 @@ static int interrupt_handler(JSRuntime *engine, void *opaque) {
 /* Claim exactly one ready job/event before invoking it. Exact-quota completion
  * is allowed; only trying to schedule further work exhausts the budget. */
 qaplet_code qaplet_execution_dispatch(qaplet_runtime *runtime) {
-  qaplet_code code = qaplet_execution_check(runtime);
-  if (code) return code;
   pthread_mutex_lock(&runtime->mutex);
+  qaplet_code code = qaplet_execution_dispatch_locked(runtime);
+  pthread_mutex_unlock(&runtime->mutex);
+  return code;
+}
+
+qaplet_code qaplet_execution_dispatch_locked(qaplet_runtime *runtime) {
+  qaplet_code code = execution_check_locked(runtime);
+  if (code) return code;
   if (runtime->snapshot.execution_dispatches >= runtime->execution_dispatch_limit)
     qaplet_record_termination_locked(runtime, QAPLET_DISPATCH_LIMIT);
   else ++runtime->snapshot.execution_dispatches;
   code = runtime->snapshot.termination_reason;
-  pthread_mutex_unlock(&runtime->mutex);
   return code;
 }
 
@@ -201,7 +226,9 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
 finished:
   qaplet_execution_check(runtime);
   pthread_mutex_lock(&runtime->mutex);
-  if (runtime->snapshot.lifecycle == QAPLET_FAILED) {
+  if (runtime->snapshot.termination_reason) {
+    if (runtime->snapshot.lifecycle == QAPLET_STOP_REQUESTED)
+      runtime->snapshot.lifecycle = QAPLET_STOPPED;
     runtime->execution_code = runtime->snapshot.termination_reason;
     pending = 0;
   }
@@ -224,8 +251,13 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (code) return code;
   code = qaplet_check_structure(progress, sizeof(*progress));
   if (!code) code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
+  qaplet_lifecycle lifecycle = !code ? qaplet_get_lifecycle(runtime) : QAPLET_CLOSED;
+  if (!code && lifecycle != QAPLET_OPEN && lifecycle != QAPLET_STOP_REQUESTED) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
+  if (qaplet_execution_check(runtime)) {
+    code = qaplet_execution_checkpoint(runtime, progress, 0);
+    return qaplet_report_result(runtime, diagnostic, code);
+  }
   runtime->host_registration_locked = 1;
   uint64_t jobs = 0, events = 0;
   unsigned progressed = 0;
@@ -276,5 +308,9 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
     events += claimed;
     if (claimed) progressed = 1;
   }
+  /* Stop may win after the empty-queue check or before an idle event's begin.
+   * Confirm it at this owner boundary without scheduling another job/event. */
+  if (qaplet_execution_check(runtime))
+    code = qaplet_execution_checkpoint(runtime, progress, progressed);
   return qaplet_report_result(runtime, diagnostic, code);
 }
