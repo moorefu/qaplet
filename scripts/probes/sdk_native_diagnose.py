@@ -55,7 +55,7 @@ def main():
             for iteration in range(args.repeat):
                 name = "qaplet-host." + suffix + "." + str(iteration + 1)
                 command, stdout, stderr = run(report, directory, name,
-                    [*loader, args.artifact.resolve(), *arguments], args.timeout, env=environment, expected=None)
+                    [*loader, args.artifact.resolve(), *arguments], args.timeout, environment=environment, expected=None)
                 passed = command["exit_code"] == 0 and not command["timed_out"] and stdout == output and all(
                     line.startswith("[DEBUG-m1-14-") for line in stderr.splitlines())
                 report["cases"].append({"case_id": name, "status": "pass" if passed else "fail", "command": command,
