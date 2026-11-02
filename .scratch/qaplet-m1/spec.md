@@ -2,7 +2,7 @@
 
 **Status:** claimed
 **Confirmed:** 2026-11-02。Q1–Q32 已在 grill-with-docs 中全部确认；用户在本次 to-spec 中明确要求沿用 Q32 测试与证据边界。
-**Execution state:** 正在 `codex/m1-integration` 实施。统一 v3 输入、目标 QuickJS 与 M0-A ESM/Promise 前置已完成；任务 01–13 的 Runtime、公开静态 SDK、严格值/诊断、Promise pump、文件模块/路径策略、Host Module、预算、事件桥、资源限额、协作停止、完整关闭/释放、共用 Runtime 的最小 CLI、封装 SDK 与包外完整 C 示例已合入并实际验证。逐票 Ubuntu、Windows x64、ARM64 完整 guest 和原始红绿证据见任务索引。14、15 正在并行实施，16 等待两者完整证据；完整 M1 验收继续按依赖推进。
+**Execution state:** 正在 `codex/m1-integration` 收口；父规格保持 claimed，等待最终独立审查。01–15 已解决：统一 Runtime/SDK/CLI/纯 C 应用及五个真实 native、当前 64K 与 M0 Full 均有原始证据。16 在既有严格入口只读汇总成功 Full `41489263809` 的完整闭包，产品源码固定为 `21bd317f4246571f0048789ca97167632c09f924`，评估器另记身份。逐票红绿、变异及当前最终集成判定见任务索引；旧成绩、M2 和发布门禁保持原范围。
 **Baseline:** [已确认设计 Q1–Q32](design.md)、[v1.5 正式 M1](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md#m1--quickjs-engine--通用-c-embed-sdk)、[生命周期 ADR](../../docs/adr/0005-m1-runtime-lifetime-boundary.md)、[模块缓存 ADR](../../docs/adr/0006-m1-frozen-module-identity.md)、[资源终止 ADR](../../docs/adr/0007-m1-cooperative-resource-failure.md)。
 
 ## Problem Statement

@@ -134,8 +134,9 @@ def arm64_page_gaps(native_pages, guest_pages):
 class Evidence:
     """One explicit resolver for original POSIX/Windows paths and moved archives."""
 
-    def __init__(self, manifest, base):
+    def __init__(self, manifest, base, require_transport=False):
         self.base = base
+        self.require_transport = require_transport
         self.mappings = [(normalized(item["source"]), self.local(item["root"]))
                          for item in manifest.get("path_mappings", [])]
         require(len({source for source, _ in self.mappings}) == len(self.mappings), "Ambiguous source-root mappings")
@@ -196,6 +197,8 @@ class Evidence:
         if "sha256" in info:
             require(same(info, measured), "Evidence SHA-256/size mismatch: " + info["path"])
         transport = self.files.get(path)
+        require(not self.require_transport or transport is not None,
+                "Selected evidence is outside verified provider transports: " + str(path))
         if any(path.is_relative_to(root) for root in self.roots):
             require(transport is not None and same(transport, measured), "Unbound/changed transported file: " + str(path))
         self.index[(info["path"], str(path))] = {"original_path": info["path"], "resolved_path": str(path),

@@ -4,7 +4,7 @@
 **Publication baseline:** 每票独立文件；发布时均为 ready-for-agent，当前状态见各票。
 **Spec:** [正式 M1 实施规格](spec.md)。[设计记录](design.md)保留 Q1–Q32，规格与 ADR 是共同合同。
 
-**Implementation:** 集成分支 `codex/m1-integration`；01–13 已解决并合入，14、15 正在并行实施，16 等待两者。当前状态以各票的 Status、Execution state 和验收记录为准，完整 M1 尚未验收。已合入的闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)、[最小 CLI](12-cli-validation.md)及[可分发 SDK/完整 C 示例](13-sdk-validation.md)。工作树清理前保留的逐票原始证据位于主工作区 `out/m1/tickets/NN/out/`，各目录的 `path-mappings.json` 记录原路径及逐文件复制校验结果；01 另记录 ARM64 4K/64K 创建失败修复的红绿证据。
+**Implementation:** 集成分支 `codex/m1-integration`；01–16 已解决，父规格保持 claimed 等待最终独立审查。当前状态以各票和验收记录为准。闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)、[最小 CLI](12-cli-validation.md)、[可分发 SDK/纯 C 应用](13-sdk-validation.md)、[五宿主 Cross](14-cross-host-validation.md)、[当前 64K/Full](15-arm64-full-validation.md)及[严格集成](16-evidence-validation.md)。逐票原始证据保留在主工作区 `out/m1/tickets/NN/out/`，复制收据记录原路径和字节校验；当前最终闭包只选择成功重试 Full `41489263809`，不混入首次失败 Full 或本地 CI=null 报告。
 
 ## 任务与阻塞依赖
 
@@ -48,7 +48,7 @@ Ubuntu 构建 CLI、SDK 分发物与纯 C 示例，其他宿主消费供应制�
 
 16 票共有 80 条验收条件，覆盖规格的全部 60 条用户故事。各票的 Spec stories 记录追溯关系，详细 Q1–Q32 到外部验收的映射沿用规格；既定默认限额、线程/重入、失败缓存、stop/close/destroy 和 Q32 平台门槛不因拆票改变。
 
-M1 设计与规格已确认，本次仅发布任务。M2 的 OS waker/I/O 取消/迟到 completion/完整调度不前移；长期原 ZIP 镜像仍为独立发布门禁，任务发布不签发 release-ready。
+上表保留最初发布结构，当前实施和验收见各票及上方索引。M2 的 OS waker/I/O 取消/迟到 completion/完整调度不前移；长期原 ZIP 镜像仍为独立发布门禁，当前严格证据不签发 release-ready。
 
 ## Context
 
@@ -57,4 +57,6 @@ M1 设计与规格已确认，本次仅发布任务。M2 的 OS waker/I/O 取消
 ## Comments
 
 2026-11-02：按用户确认的拆分发布 01–16，一票一文件；初始仅 01 无阻塞。规格和已完成 M0/对齐任务状态保持原范围。
+
+2026-11-03：[16 严格集成](16-evidence-validation.md)已解决：当前重试原件闭包、五 native/1000 循环、包外 C 应用、64K 和独立 M0 Full 重放通过，85 项严格回归零 skips/errors/failures；父规格仍等待最终独立审查。
 

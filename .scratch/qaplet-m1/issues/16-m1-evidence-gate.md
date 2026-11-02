@@ -4,9 +4,9 @@
 
 **Blocked by:** [14：Cross 合同矩阵与生命周期循环验收](14-cross-host-contracts.md)、[15：ARM64 64K 与相关 Full 门禁验收](15-arm64-64k-full.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** completed；2026-11-03 在 codex/m1-16 完成。最终严格入口 85/85、零 failures/errors/skips，M1 与独立当前 M0 Full 均 pass；Ubuntu 完整检查、当前原件 preflight 和 POSIX 只读回归通过。固定产品 21bd317 的 57 个 recipe blobs/工作字节不变；父规格保持 claimed 等待最终独立审查。
 
 **Execution prerequisites:** 14、15 已完成且提供身份匹配的当前实现、供应原件、原始日志和报告；必需证据缺失不得改成空成功。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 只消费显式选定、身份匹配的 producer/SDK/APE/native/Full 证据，不把预检或计划当执行。
-- [ ] 完整规格合同、Linux 1,000 次和 Cross 每目标 100 次及 64K 关键覆盖都有可审计必需项。
-- [ ] 实际红绿及变异拒绝覆盖缺/重复/冲突项、错提交/SDK/制品哈希、改日志、错页和 skip。
-- [ ] 既有共享入口和证据工具复用，缺必需资源保持失败/未完成，不创建空成功或平行框架。
-- [ ] 最终集成输出明确 M1 实现/验收范围、能力及未覆盖项，保留旧 M0 原结论和 M2/发布门禁分界。
+- [x] 只消费显式选定、身份匹配的 producer/SDK/APE/native/Full 证据，不把预检或计划当执行。
+- [x] 完整规格合同、Linux 1,000 次和 Cross 每目标 100 次及 64K 关键覆盖都有可审计必需项。
+- [x] 实际红绿及变异拒绝覆盖缺/重复/冲突项、错提交/SDK/制品哈希、改日志、错页和 skip。
+- [x] 既有共享入口和证据工具复用，缺必需资源保持失败/未完成，不创建空成功或平行框架。
+- [x] 最终集成输出明确 M1 实现/验收范围、能力及未覆盖项，保留旧 M0 原结论和 M2/发布门禁分界。
 
 ## Validation and evidence
 
@@ -37,4 +37,14 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+## Answer
+
+复用 `check_evidence.py` 增加显式 `m1-evidence` 严格 profile；`m1_gate.py` 使用同一个 Evidence/native/guest/Core 语义边界，按原 API/provider ZIP 绑定当前源码、封装 SDK、三 APE、包外纯 C 编译、五 native、64K 和独立当前 M0 Full。没有下载、产品进程执行、平行 guest/ZIP 框架、CI 伪造或旧 M0 替代。
+
+最终产品固定为 `21bd317f4246571f0048789ca97167632c09f924` / 成功重试 Full `41489263809`。五 native 实际各 1000 循环；Windows 97 required + 1 optional（本次也实际 pass），其他每目标 98 required；64K 98 项、包外应用 8 项、当前 M0 Full 235 项及原离线证明分别通过。
+
+最终 `out/m1-16/accepted-strict-windows.json` 为 85/85、零 failure/error/skip，包含重新打包的语义变异和原 ZIP 不变的 transport 变异；最终 Ubuntu check 310 项及 bootstrap、完整原件 preflight、3 项 POSIX byte/mode 回归通过。loader chmod、deadline、不可覆盖输出、中断计数、审计目标、缺 producer 命令和 timezone 正/负控制均保留实际红绿。所有失败尝试和原始 closure 保留，不以最终摘要覆盖。
+
+详见[16 验收](../16-evidence-validation.md)和[严格入口合同](../../../docs/development/evidence.md#正式-m1-严格入口)。评估器另记源码身份，57 个产品 recipe blob/index/工作字节差异为空。父规格不在本票关闭，M2、物理 64K/性能和长期镜像发布门禁保持独立；`release_ready=false`。
 

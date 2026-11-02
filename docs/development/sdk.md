@@ -330,3 +330,21 @@ from the product recipe. `--expected-commit SHA` additionally requires the exact
 Qaplet producer source commit. Import verifies its selected kernel scope only;
 it never substitutes for native Cross, the original M0/Core/offline Full proof,
 or the deferred original-archive mirror gate. `release_ready` remains false.
+
+The complete read-only M1 join uses the existing strict runner:
+
+```sh
+python3 scripts/check_evidence.py --config out/m1-selection.json \
+  --report out/m1-evidence.json
+```
+
+Select schema 1 / `profile: "m1-evidence"` with an explicit `input_manifest`.
+The [M1 manifest contract](evidence.md#正式-m1-严格入口) selects original provider
+ZIPs, one SDK producer, the external public-only package consumer, exactly five
+native reports, measured 64K coverage and a separate current M0 Full manifest.
+The entry replays actual contracts without executing products or changing loader
+modes; its required mutation regressions cannot skip. `--preflight-only` has a
+distinct scope and performs no mutation regressions. Product and evaluator source
+identities remain separate. The successful current closure uses product commit
+`21bd317f4246571f0048789ca97167632c09f924` / Full `41489263809`; see the
+[integration record](../../.scratch/qaplet-m1/16-evidence-validation.md).

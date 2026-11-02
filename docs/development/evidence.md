@@ -85,3 +85,39 @@ gate 从既有权威 case catalog 检查 17 项 startup（含 ESM/jobs）、20/2
 guest catalog 按实际目标页大小选择：4096 仅需要 Hello/eval + I/O、17 项 startup 和一个 I/O suite；65536 另需 deep payload、facts/suite/shell-header 三条入口。`arm64_page_gaps` 只对已测页集合实施补缺规则：native 65536 可由4096 guest补缺，native 16384 需4096和65536两个guest；该纯调度模型不声明这些硬件已实际执行。
 
 `python scripts/core_gate.py validate-guest --input-manifest FILE --guest-report GUEST --report OUTPUT` 是独立 guest transport/原始语义检查入口。它只消费该页配置所需的 producer，成功时 `status: pass`、`scope: guest-transport`，但 `core.status` 和 `m0_core_status` 都为 `not_run`，不能代替完整 `evaluate`。4K profile 原 lock 只固定 Debian packages；补充 `guests/arm64-derived.lock.json` 将独立从这些 SHA-verified package tar members 解出的 Image/config/compressed kernel 身份固定，并绑定原 lock 摘要/精确 package IDs；错误派生摘要仍拒绝，不从报告任意非空字段恢复通过。原 canonical lock 和已有65536证据不改写。
+
+## 正式 M1 严格入口
+
+仍使用 `scripts/check_evidence.py`，显式选择 `m1-evidence`；原 `m0-evidence` 合同不变：
+
+```json
+{"schema_version": 1, "profile": "m1-evidence", "input_manifest": "m1-inputs.json"}
+```
+
+```sh
+python3 scripts/check_evidence.py --config out/m1-selection.json --report out/m1-evidence.json --preflight-only
+python3 scripts/check_evidence.py --config out/m1-selection.json --report out/m1-evidence.json
+```
+
+`m1-inputs.json` 的完整字段如下；引用和迁移规则沿用上文 `Evidence` 合同。相对选择路径以该 manifest 的父目录解释，原报告路径和日志均不改写。
+
+| 字段 | 必需的真实选择 |
+| --- | --- |
+| `schema_version` / `profile` | `1` / `m1-full` |
+| `product_commit` | 完整 Qaplet 源码 SHA；与 QuickJS `source.commit` 分开 |
+| `provider_catalog` | 原 provider artifacts API JSON，含 ID、真实 name、run/head SHA、原 ZIP digest/size |
+| `transports` / `path_mappings` | 显式原 ZIP 与当前已解包根目录；不能把短本地缓存别名当 provider name |
+| `producer_report` / `distribution_root` | 原 Ubuntu SDK build 报告及其完整供应目录 |
+| `loader_manifest` | 同闭包的 `ape-loaders` helpers.json |
+| `package_consumer` | 实际包外公开 C 编译、链接、审计和八项应用运行报告 |
+| `native_reports` | 恰好五项：Linux x64/ARM64、Windows x64、macOS x64/ARM64 |
+| `sdk_guest` | schema 1 / profile `sdk-guest`，含 `selection` 与 `guest_report`；原生 ARM64 已测 64K 时为 null |
+| `m0_manifest` / `m0_original_manifest` | 只改当前路径的 M0 Full 选择和原 Full provider 内不可改写的 manifest |
+
+入口复用 `ci_evidence` 完整 ZIP/CRC/解包 inventory、`core_gate.Evidence`、SDK producer/package、native、锁定 guest 和原 `core_gate.evaluate`。每条 CI 边必须匹配选定产品提交和 provider ID/name/run；所有执行报告、原始日志、SDK/APE/loader 字节都必须在选定 transport 内。它不下载、构建或运行产品。SDK 的完整公开文件集、隐藏 ARM64 archive、内外两层 ZIP、配方及逐 case SDK/APE、实际命令与 raw output 均重新核对；包外临时源码目录可以已消失，其公开输入仍由封装 ZIP 和实际编译命令审计。
+
+每个 native 重放 98 项 Host/CLI/应用合同和实际 1000 次生命周期；Linux x64 门槛为 1000，其余为 100。Windows 仅 file-symlink fixture 可以按原协议成为可选 blocked，当前成功重试中该可选项也实际通过。原生 ARM64 优先，缺失的 64K 由固定完整系统 TCG 的 98 项补齐。独立当前 M0 Full 保留原六目标、235 项、离线二构建/六二进制/两 helper/14 refusals 语义；旧 M0 或首次失败 Full 不替代本次产品。
+
+`--preflight-only` 明确签发 `evidence-preflight`，不声称运行变异。完整入口必须运行其选定的真实闭包回归；required skip/error/failure、空 catalog、未完成和中断均失败，原始 log、逐项 progress 和实际计数保留。失败时保留已解析 evidence_index；输出路径不得覆盖选择或 provider 原件。评估器与测试源码身份独立于冻结产品的 57 个 recipe 文件，并在严格运行结束重核。
+
+当前可重放选择和实际红绿见 [16 验收](../../.scratch/qaplet-m1/16-evidence-validation.md)。产品源码固定 `21bd317f4246571f0048789ca97167632c09f924`，成功 Full 为 `41489263809`；报告分开给出 `m1`、`m0`/`m0_core_status`、required/optional gaps。M2 OS waker、I/O 取消、迟到 completion、完整调度以及物理 64K/性能均不外推；长期原 ZIP 镜像仍未验收，`release_ready=false`。
