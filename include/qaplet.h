@@ -9,6 +9,7 @@ extern "C" {
 
 #define QAPLET_ABI_VERSION 1u
 #define QAPLET_VALUE_BYTES_MAX (1024u * 1024u)
+#define QAPLET_HOST_ARGUMENTS_MAX 32u
 typedef struct qaplet_runtime qaplet_runtime;
 typedef enum {
   QAPLET_OK = 0, QAPLET_INVALID_ARGUMENT = 1, QAPLET_ABI_MISMATCH = 2,
@@ -18,7 +19,8 @@ typedef enum {
   QAPLET_SOURCE_TOO_LARGE = 10, QAPLET_MEMORY_LIMIT = 11,
   QAPLET_INVALID_UTF8 = 12, QAPLET_VALUE_TOO_LARGE = 13,
   QAPLET_MODULE_RESOLVE = 14, QAPLET_MODULE_LOAD = 15, QAPLET_MODULE_LIMIT = 16,
-  QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18
+  QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18,
+  QAPLET_HOST_ERROR = 19
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -38,6 +40,7 @@ enum {
   QAPLET_CAP_PROMISE_JOBS = 1u << 7,
   QAPLET_CAP_FILE_MODULES = 1u << 8,
   QAPLET_CAP_EXECUTION_BUDGETS = 1u << 9,
+  QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -104,6 +107,42 @@ typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t capabilities;
 } qaplet_abi;
+/* STRING/BYTES data has explicit length; embedded NUL is allowed in strings.
+ * Integers become BigInt, DOUBLE becomes Number. Other fields are ignored. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_value_type type;
+  uint32_t boolean;
+  double number;
+  int64_t signed_integer;
+  uint64_t unsigned_integer;
+  const void *data;
+  size_t length;
+} qaplet_value;
+/* Arguments/data are borrowed until return. Copy anything retained by the Host.
+ * A nonzero return throws an intrinsic Error with a numeric own `code` property.
+ * The runtime/call_id pair is valid for setters only during this callback. */
+typedef qaplet_code (*qaplet_host_function)(qaplet_runtime *, uint64_t call_id,
+    size_t argc, const qaplet_value *argv, void *userdata);
+typedef enum { QAPLET_HOST_CONSTANT, QAPLET_HOST_FUNCTION } qaplet_host_export_kind;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  const char *name;
+  size_t name_length;
+  qaplet_host_export_kind kind;
+  uint32_t reserved;
+  qaplet_value value;
+  qaplet_host_function function;
+  void *userdata;
+} qaplet_host_export;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  const char *name;
+  size_t name_length;
+  const qaplet_host_export *exports;
+  size_t export_count;
+  uint64_t flags, reserved[2];
+} qaplet_host_module;
 #define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
 #define QAPLET_EXECUTION_OPTIONS_INIT {sizeof(qaplet_execution_options), QAPLET_ABI_VERSION, 0, 0, 0, {0}}
@@ -112,12 +151,26 @@ typedef struct {
 #define QAPLET_RESULT_INIT {sizeof(qaplet_result), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, NULL, 0, 0}
 #define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_ABI_INIT {sizeof(qaplet_abi), QAPLET_ABI_VERSION, 0}
+#define QAPLET_VALUE_INIT {sizeof(qaplet_value), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, NULL, 0}
+#define QAPLET_HOST_EXPORT_INIT {sizeof(qaplet_host_export), QAPLET_ABI_VERSION, NULL, 0, 0, 0, QAPLET_VALUE_INIT, NULL, NULL}
+#define QAPLET_HOST_MODULE_INIT {sizeof(qaplet_host_module), QAPLET_ABI_VERSION, NULL, 0, NULL, 0, 0, {0}}
 
 /* Global query and POD snapshots are thread-safe. All remaining operations
  * belong to the thread that successfully created the Runtime. Output pointers
  * and diagnostics are borrowed only for the duration of a call. */
 qaplet_code qaplet_query_abi(qaplet_abi *output);
 qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet_diagnostic *);
+/* Registration copies names, declarations and constants atomically. Names use
+ * a nonempty host: name. Module/export names are strict UTF-8 without NUL.
+ * No replacement/unregister.
+ * First accepted eval/run_entry or valid pump locks registration permanently.
+ * Host function code and userdata must remain valid through close returning. */
+qaplet_code qaplet_register_host_module(qaplet_runtime *, const qaplet_host_module *, qaplet_diagnostic *);
+/* Owner callback only. Validates and synchronously copies the value. No setter
+ * means undefined; a second successful setter is BAD_STATE, preserving the first.
+ * Outside a callback or with an expired call_id returns BAD_STATE. Only query,
+ * snapshots and this setter may reenter the currently implemented owner API. */
+qaplet_code qaplet_host_set_result(qaplet_runtime *, uint64_t call_id, const qaplet_value *, qaplet_diagnostic *);
 /* Script semantics; retains the instance's global state. source is a borrowed
  * pointer with explicit byte length, strictly validated as UTF-8 before acceptance.
  * Supports undefined/null/bool/Number, BigInt in [-2^63,2^64-1], strict UTF-8

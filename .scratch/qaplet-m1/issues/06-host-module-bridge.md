@@ -4,9 +4,9 @@
 
 **Blocked by:** [02：复制结果、严格值类型与安全诊断](02-result-values-diagnostics.md)、[04：文件 ESM、动态 import 与 TLA 闭环](04-file-esm-tla.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implemented_and_validated；2026-11-02，源码 bc99e75；Ubuntu producer 与 Ubuntu/Windows x64、ARM64 64K supplied-byte 全 23 用例通过，见 [验收记录](../06-host-modules-validation.md)。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 注册声明/常量深拷贝，函数代码与 userdata 保留到 close；重名、首次执行后注册、替换/注销拒绝。
-- [ ] 支持完整桥接类型、默认 32 参数和 1 MiB 单值边界，参数仅借用到当前回调返回。
-- [ ] 返回 setter 同步复制，未设为 undefined，重复设置拒绝并保留第一次，回调外使用拒绝。
-- [ ] 宿主普通错误转成带稳定 code 的 JS Error，JS 可捕获；不暴露裸 JSValue/JSContext。
-- [ ] 回调中的危险重入为 BUSY，允许的查询/setter 可用；纯 C/ESM 双向调用有真实证据。
+- [x] 注册声明/常量深拷贝，函数代码与 userdata 保留到 close；重名、首次执行后注册、替换/注销拒绝。
+- [x] 支持完整桥接类型、默认 32 参数和 1 MiB 单值边界，参数仅借用到当前回调返回。
+- [x] 返回 setter 同步复制，未设为 undefined，重复设置拒绝并保留第一次，回调外使用拒绝。
+- [x] 宿主普通错误转成带稳定 code 的 JS Error，JS 可捕获；不暴露裸 JSValue/JSContext。
+- [x] 回调中的危险重入为 BUSY，允许的查询/setter 可用；纯 C/ESM 双向调用有真实证据。
 
 ## Validation and evidence
 
@@ -37,4 +37,20 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+## Answer
+
+2026-11-02：在 `codex/m1-06` 实现公开版本化 C Host module 声明与同步回调，源码提交
+`bc99e75f501fbe4a14a73aff1911e9d8dd1cd26f`。声明先整体校验/复制再公布到原模块注册表；
+严格值桥复用 ticket 02；setter 以 Runtime/唯一回调 ID 识别有效调用，不持有旧回调栈。
+普通 Host Error 有自己的稳定数值 code（HOST_ERROR=19）；真正分配拒绝仍固定永久首因。
+描述、函数代码和 userdata 的保留边界贯穿正常 engine close，未公布 factory 不执行 Host 资源。
+
+已有 `scripts/sdk.py` producer/catalog 分发并构建公开头文件、静态 SDK、纯 C Host 与 ESM fixture；
+`out/m1-06/final/build.json` 和 `final/run.json` 通过，保留所有红绿原始输出/原制品。
+parent 确认同一 SDK/APE 字节在 `final/windows-user-run.json` 与主工作区
+`out/m1/06-guest-final/run.json` 全 23 用例通过（ARM64 完整系统 65536 页）。
+`out/m1-06/check.json` 仓库检查通过。当前 integration `6139b75` 已合并；不等待独立的 05，
+也不把旧输入报告换标为其新候选输入。精确身份、命令、红绿事实与范围见[验收记录](../06-host-modules-validation.md)。
+本票不签发完整 M1 Cross/Full 或 release-ready。
 

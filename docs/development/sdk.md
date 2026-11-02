@@ -8,8 +8,30 @@ Before publication, creation installs only engine intrinsics: no user JavaScript
 Host modules or external native resources run. Failed creation therefore reclaims
 outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
-Query capability bits before using a feature; host modules, events and
-stop are added by subsequent M1 tickets.
+Query capability bits before using a feature; events and stop are added by
+subsequent M1 tickets.
+
+The Host-module capability adds pre-execution `qaplet_register_host_module`.
+Registration validates the complete declaration before publishing an identity;
+it copies UTF-8 names, declarations and constant payloads in native storage.
+Registered `host:` modules share the finite module registry with source ESM.
+The first accepted eval/run or valid pump locks registration; duplicates and
+replacement are rejected. C function code and userdata belong to the Host and
+must remain valid until close returns. Copied descriptors remain alive through
+normal engine finalization. No Host resources run in the unpublished factory.
+
+Callbacks execute synchronously on the owner, with at most 32 strictly bridged
+arguments. Each string/byte value is limited to 1 MiB. Arguments are borrowed
+until callback return; `qaplet_host_set_result` synchronously copies its value.
+An unset return is undefined and a repeated setter preserves the first return.
+The setter uses a Runtime and monotonically unique callback ID, so an expired
+callback never requires dereferencing an old callback stack. Outside/expired
+setters return BAD_STATE; other owner execution operations return BUSY during
+callbacks, while ABI/snapshot queries remain available. Ordinary callback
+errors throw intrinsic JS Errors with an own numeric `code`; HOST_ERROR is 19.
+Actual storage refusals and execution first causes remain permanent even when
+JavaScript catches the thrown error. The distributed `host-host-modules.c` and
+`modules/host-bridge.mjs` exercise this contract through the public header/SDK.
 
 Promise/jobs capability adds explicit owner-driven `qaplet_pump`. An accepted
 eval can return PENDING, and each pump executes at most 256 runnable jobs. Empty

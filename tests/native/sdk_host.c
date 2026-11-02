@@ -9,6 +9,7 @@
 int sdk_promises(void);
 int sdk_modules(const char *, const char *);
 int sdk_budgets(void);
+int sdk_host_modules(const char *);
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public SDK contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -233,6 +234,7 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && !strcmp(argv[1], "--host-modules")) return sdk_host_modules(argv[2]);
   if (argc == 3 && (!strcmp(argv[1], "--modules") || !strncmp(argv[1], "--module-", 9))) return sdk_modules(argv[2], argv[1]);
   if (argc == 1) {
     qaplet_config config = QAPLET_CONFIG_INIT;
