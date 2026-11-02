@@ -277,3 +277,49 @@ static int copied_value_limits(void) {
   puts("value limits: exact 1 MiB strings/bytes; independent copies; metered permanent allocation failure");
   return 0;
 }
+
+static int promise_values(void) {
+  qaplet_config config = QAPLET_CONFIG_INIT;
+  qaplet_runtime *runtime = NULL;
+  qaplet_progress progress = QAPLET_PROGRESS_INIT;
+  qaplet_result result = QAPLET_RESULT_INIT;
+  qaplet_diagnostic diagnostic = QAPLET_DIAGNOSTIC_INIT;
+  char message[64];
+  unsigned char output[8];
+  diagnostic.message=message; diagnostic.capacity=sizeof(message);
+  result.buffer=output; result.capacity=sizeof(output);
+  CHECK(qaplet_create(&config,&runtime,NULL) == QAPLET_OK);
+  const char integer[] = "Promise.resolve(9007199254740993n)";
+  CHECK(qaplet_eval(runtime,integer,sizeof(integer)-1,&progress,NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_DONE);
+  CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_OK && result.type == QAPLET_VALUE_INT64 && result.signed_integer == INT64_C(9007199254740993));
+  const char string[] = "Promise.resolve().then(()=>'A\\0\\u00e9')";
+  CHECK(qaplet_eval(runtime,string,sizeof(string)-1,&progress,NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+  CHECK(qaplet_pump(runtime,&progress,NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_DONE);
+  result.capacity=0;
+  CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_BUFFER_TOO_SMALL && result.length == 4);
+  result.capacity=sizeof(output);
+  CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_OK && result.type == QAPLET_VALUE_STRING && !memcmp(output,"A\0\xc3\xa9",4));
+  const char bytes[] = "Promise.resolve().then(()=>new Uint8Array([9,8]))";
+  CHECK(qaplet_eval(runtime,bytes,sizeof(bytes)-1,&progress,NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+  CHECK(qaplet_pump(runtime,&progress,NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_DONE);
+  CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_OK && result.type == QAPLET_VALUE_BYTES && result.length == 2 && output[0] == 9 && output[1] == 8);
+  const char entry[] = "Promise.resolve().then(()=>{throw new Error('entry safe')})";
+  CHECK(qaplet_eval(runtime,entry,sizeof(entry)-1,&progress,&diagnostic) == QAPLET_OK);
+  CHECK(qaplet_pump(runtime,&progress,&diagnostic) == QAPLET_JS_EXCEPTION && !strcmp(message,"entry safe"));
+  CHECK(qaplet_get_result(runtime,&result,&diagnostic) == QAPLET_JS_EXCEPTION && !strcmp(message,"entry safe"));
+  const char orphan[] = "Promise.reject('orphan safe'); 0";
+  CHECK(qaplet_eval(runtime,orphan,sizeof(orphan)-1,&progress,&diagnostic) == QAPLET_JS_EXCEPTION && !strcmp(message,"orphan safe"));
+  const char unsafe[] = "globalThis.promiseTraps=0; Promise.resolve().then(()=>{throw new Proxy(new Error('unsafe'),{get(){promiseTraps++;throw 1},getOwnPropertyDescriptor(){promiseTraps++;throw 2}})})";
+  CHECK(qaplet_eval(runtime,unsafe,sizeof(unsafe)-1,&progress,&diagnostic) == QAPLET_OK);
+  CHECK(qaplet_pump(runtime,&progress,&diagnostic) == QAPLET_JS_EXCEPTION && !strcmp(message,"JS_EXCEPTION"));
+  const char first[] = "Promise.resolve().then(()=>{throw new Error('later failure')}); throw {get message(){promiseTraps++;throw 1}}";
+  CHECK(qaplet_eval(runtime,first,sizeof(first)-1,&progress,&diagnostic) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+  CHECK(qaplet_pump(runtime,&progress,&diagnostic) == QAPLET_JS_EXCEPTION && !strcmp(message,"JS_EXCEPTION"));
+  const char handled[] = "var safeHeld=Promise.reject(new Error('handled')); Promise.resolve().then(()=>safeHeld.catch(()=>{})); Promise.resolve().then(()=>promiseTraps)";
+  CHECK(qaplet_eval(runtime,handled,sizeof(handled)-1,&progress,&diagnostic) == QAPLET_OK);
+  CHECK(qaplet_pump(runtime,&progress,&diagnostic) == QAPLET_OK && !strcmp(message,"OK"));
+  CHECK(qaplet_get_result(runtime,&result,&diagnostic) == QAPLET_OK && result.number == 0 && !strcmp(message,"OK"));
+  CHECK(qaplet_close(runtime,NULL) == QAPLET_OK && qaplet_destroy(runtime,NULL) == QAPLET_OK);
+  puts("Promise values: exact/copied results; safe rejection diagnostics; first-error and handled checkpoints");
+  return 0;
+}

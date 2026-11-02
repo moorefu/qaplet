@@ -251,6 +251,7 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--bytes")) return byte_values();
   if (!strcmp(argv[1], "--diagnostics")) return safe_diagnostics();
   if (!strcmp(argv[1], "--value-limits")) return copied_value_limits();
+  if (!strcmp(argv[1], "--promise-values")) return promise_values();
   if (!strcmp(argv[1], "--promises")) return sdk_promises();
   if (!strcmp(argv[1], "--facts")) {
 #if defined(__aarch64__)
