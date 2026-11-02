@@ -4,9 +4,9 @@
 
 **Blocked by:** [04：文件 ESM、动态 import 与 TLA 闭环](04-file-esm-tla.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** resolved；已合入 `d792f4b`，combined SDK Ubuntu 34/34、Windows 33 required pass（file-symlink 明确 blocked）、ARM64 64K 34/34；新输入 clean M0 Full/Core 235 项、deep/offline 已实际通过。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] 已有规范身份的加载/链接/求值失败统一保存；同实例不热更新或重试，新的 Runtime 可读修正内容。
-- [ ] 未能规范化的请求不创建失败模块记录；已成功部分图和应用修改不回滚。
-- [ ] 覆盖 symlink 规范化、硬链接不去重、普通文件限制、Windows 本地盘符/大小写的实际行为。
-- [ ] query/fragment、authority、编码分隔符、NUL、UNC/设备路径、CJS/JSON/WASM/bytecode/native 库及未知 scheme 明确拒绝。
-- [ ] 命中缓存不重新收费，失败记录纳入模块计数；每类路径/失败由实际文件和 C Host 验证。
+- [x] 已有规范身份的加载/链接/求值失败统一保存；同实例不热更新或重试，新的 Runtime 可读修正内容。
+- [x] 未能规范化的请求不创建失败模块记录；已成功部分图和应用修改不回滚。
+- [x] 覆盖 symlink 规范化、硬链接不去重、普通文件限制、Windows 本地盘符/大小写的实际行为。
+- [x] query/fragment、authority、编码分隔符、NUL、UNC/设备路径、CJS/JSON/WASM/bytecode/native 库及未知 scheme 明确拒绝。
+- [x] 命中缓存不重新收费，失败记录纳入模块计数；每类路径/失败由实际文件和 C Host 验证。
 
 ## Validation and evidence
 
@@ -38,3 +38,30 @@
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
 
+
+2026-11-02：`codex/m1-05` 已合入 `33ca543` 的 Host modules，最终实现源码
+`eeaadc933344185248dd940493ca3e7672f809d6`。公开 Host 的冻结失败、实际路径与新
+Runtime 修复均已执行；窄 NUL overlay 走 isolated actual source、selected controlled probes、
+pinned、fresh ordinary producer 路线，保留 upstream Commit、首项 ARM64 patch、固定原 ZIP
+和旧缓存。证据与未完成的 Full gate 见 [05 验收记录](../05-module-policy-validation.md)。
+全新 clean Full run `41431796320` 完成前保持 claimed；此前两次 Full 失败不重标为 pass。
+
+## Answer
+
+2026-11-02：完成。实现来源 `c6d41f253914ec46e58375cf59d497c2bbff54b2`，已合入
+最新 integration `d792f4bd0d0c9bdca8da9f84f013827aa553f889`。文件策略、规范失败固定、
+source/alias 冻结、新 Runtime 修复、实际硬链接/软链接与 Windows native drive/case 合同
+均由公开 SDK + 真实 C Host 验证；失败身份占模块数，缓存命中不重复收费。当前公开内建
+`qaplet:events` 的模块数通过 POD snapshot 计入断言。
+
+NUL 通过窄 module-name overlay 在长度丢失前拒绝，普通 bridge NUL 字符串继续成功；
+保留原 upstream Commit/Tree、首项 ARM64 patch、固定 cosmocc 原 ZIP 与旧已验缓存。
+独立 candidate、actual controlled Ubuntu/Windows/ARM64 probes、pinned 与 fresh ordinary
+producer 的全过程及失败原件均保留。稳定模块错误沿用 14–16 与 common codes，能力 bit10。
+
+最终供应 producer `out/m1-05/combined-events-v1/build.json`、SDK/APE 同目录；Ubuntu
+34/34、Windows 33 required、ARM64 64K 34/34 通过。Windows file-symlink 资源实际缺少
+权限，以 blocked/非 required 和原始 exit19712、WinError1314 明确记录，不计入 pass。
+新输入 M0 clean Full run `41431796320` 实际通过；原 Core 报告 235 项、deep/offline 通过。
+详细身份、命令、原始 stdout/stderr、关闭事实、原件与范围见
+[05 验收记录](../05-module-policy-validation.md)。不声明整个 M1 Full 或 release-ready。

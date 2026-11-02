@@ -6,6 +6,12 @@
       "sha256": "6197ebf127147d917470759f603ff614f6eff68fe581a43f2a5dd37a2be26eff",
       "origin": "Qaplet M0 actual ARM64 64K failure at pinned Bellard commit; project-owned portability overlay",
       "reason": "ARM64 malloc returns valid 48-bit pointers; upstream 47-bit NaN boxing truncates bit47 and crashes JS_NewContextRaw. Select the existing full-pointer JSValue representation for ARM64; upstream commit and original tree remain unchanged."
+    },
+    {
+      "path": "patches/0002-module-name-no-nul.patch",
+      "sha256": "5c559b810cd1e280ec3426ad18f64f6ea49068a9edfd8712ed1e9b1ba1317b66",
+      "origin": "Qaplet M1 approved module-name no-NUL contract; project-owned boundary overlay",
+      "reason": "Reject embedded NUL at static and computed dynamic module-name conversions before length is lost to C-string-only host callbacks; preserve ordinary JavaScript strings and property atoms."
     }
   ]
 }

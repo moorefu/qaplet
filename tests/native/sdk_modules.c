@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+int sdk_module_policy(const char *mode);
+
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public module contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
 } } while (0)
@@ -50,6 +52,9 @@ static int release(qaplet_runtime *runtime) {
 }
 
 int sdk_modules(const char *directory, const char *mode) {
+  if (!strcmp(mode, "--module-nul") || !strcmp(mode, "--module-cache") ||
+      !strcmp(mode, "--module-policy") || !strcmp(mode, "--module-aliases") ||
+      !strcmp(mode, "--module-symlinks")) return sdk_module_policy(mode);
   qaplet_config config = QAPLET_CONFIG_INIT;
   qaplet_runtime *runtime = NULL;
   qaplet_progress progress = QAPLET_PROGRESS_INIT;

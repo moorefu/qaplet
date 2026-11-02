@@ -16,7 +16,7 @@ from build_ape import (BuildError, SOURCES, audit, headers, identity, link_porta
                        native_toolchain, prepare_portable_helpers, publish_ape, run, verify_inputs)
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
-from input_lock import component, consume_identity
+from input_lock import component, consume_identity, consumption_purpose
 from native_toolchain import recheck
 from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
@@ -24,7 +24,7 @@ from workflow_support import workspace
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
-          "tests/native/sdk_budgets.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c",
+          "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c",
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
@@ -59,6 +59,11 @@ HOST_CASES = (
     ("module-limits", ["--module-limits", "{modules}"], "module limits: source precheck preserves result; count/cache bounded; close releases: pass\n"),
     ("module-pending", ["--module-pending", "{modules}"], "module pending: unresolved TLA; no progress; BUSY; pending close: pass\n"),
     ("module-budgets", ["--module-budgets", "{modules}"], "module budgets: cumulative TLA jobs; host-wait deadline; module loop interrupted; permanent failure: pass\n"),
+    ("module-nul", ["--module-nul", "{modules}"], "module NUL: computed/static names rejected; existing files intact; ordinary NUL strings preserved: pass\n"),
+    ("module-cache", ["--module-cache", "{modules}"], "module cache: source/load/parse/link/eval/TLA failures frozen; fresh repair; partial effects retained; accounting: pass\n"),
+    ("module-policy", ["--module-policy", "{modules}"], "module policy: URL/path/NUL/format refusals; real ordinary files only; no failed identities for invalid requests: pass\n"),
+    ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual hardlink identities; native Windows drive and OS path case: pass\n"),
+    ("module-symlinks", ["--module-symlinks", "{modules}"], "module symlinks: canonical reuse; frozen retarget; fresh Runtime sees target; target format checked: pass\n"),
     ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
     ("host-modules", ["--host-modules", "{modules}"], "host modules: copied registration; synchronous typed callback; catchable errors; guarded lifetime: pass\n"),
     ("facts", ["--facts"], None),
@@ -97,6 +102,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "tests/native/sdk_values.c", distribution / "host-values.c")
     shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
     shutil.copyfile(ROOT / "tests/native/sdk_modules.c", distribution / "host-modules.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_module_policy.c", distribution / "host-module-policy.c")
     shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
     shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host_modules.c", distribution / "host-host-modules.c")
@@ -143,13 +149,16 @@ def build(args, report, directory):
         "-c", distribution / "host-modules.c", "-o", work / "modules-host.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-budgets-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-budgets.c", "-o", work / "budgets.o"], args.compile_timeout, work, environment)
+    run(report, directory, "host-module-policy-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-module-policy.c", "-o", work / "module-policy.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-host-modules.c", "-o", work / "host-modules.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-events-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-events.c", "-o", work / "events.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", archive],
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", archive],
                   work / "qaplet-host.com", work, environment)
-    publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
+    publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)
     artifact["build_commands"] = identity(output / "qaplet-host.build-commands.log")
     report["artifacts"].append(artifact)
@@ -159,7 +168,7 @@ def build(args, report, directory):
     report["sdk"]["sha256"] = digest([{key: value for key, value in item.items() if key != "path"}
                                        for item in report["sdk"]["components"]])
     verify_inputs(args, report, directory, stage="after")
-    recheck(report["native_toolchain"], original, component("cosmocc"))
+    recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
     if recipe() != files:
         raise BuildError("SDK recipe/source changed during build")
     report.update(status="pass", reason="Static SDK and audited C Host fat APE built on Ubuntu; runtime evidence is separate")
@@ -169,7 +178,7 @@ def consume(args, report, directory):
     if not args.build_report or not args.artifact:
         raise BuildError("Supplied Ubuntu producer report and Host artifact are required", "blocked")
     producer = read_json(args.build_report)
-    consume_identity(producer, report)
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
     check_ci_commit(producer, report)
     if producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build" or producer.get("status") != "pass":
         raise BuildError("Successful qaplet-sdk producer required")
@@ -209,18 +218,30 @@ def consume(args, report, directory):
             expected = json.dumps({"probe": "qaplet-host", "arch": report["host"]["execution_arch"],
                                    "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
-        report["cases"].append({"case_id": "qaplet-host." + suffix, "status": "pass" if passed else "fail",
+        required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")
+        # This supplied Cosmopolitan PE reports exit(77) as 19712 on the measured
+        # Windows host; retain its actual exit and explicit fixture limitation.
+        unavailable = not required and executed["exit_code"] in (77, 77 << 8) and not executed["timed_out"] and not stdout and stderr.startswith("file-symlink fixture unavailable: errno=")
+        status = "pass" if passed else "blocked" if unavailable else "fail"
+        report["cases"].append({"case_id": "qaplet-host." + suffix, "status": status, "required": required,
             "started_at": executed["started_at"], "finished_at": executed["finished_at"],
             "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
             "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
             "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
-            "timeout_seconds": args.timeout, "reason": "Actual public SDK consumer executed supplied APE bytes"})
+            "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
+            "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else ""})
     report["artifacts"][0]["sha256_after"] = sha256(args.artifact)
     if report["artifacts"][0]["sha256_after"] != artifact["sha256"]:
         raise BuildError("Artifact changed during execution")
+    for item in producer["sdk"]["components"]:
+        path = args.artifact.parent / item["file"]
+        if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+            raise BuildError("Supplied SDK component changed during execution: " + item["file"])
     if recipe() != producer["sdk_recipe"]["files"]:
         raise BuildError("Consumer recipe differs from selected SDK producer")
-    report.update(status="pass" if all(item["status"] == "pass" for item in report["cases"]) else "fail",
+    report["required_cases"] = [item["case_id"] for item in report["cases"] if item["required"]]
+    report["unavailable_cases"] = [item["case_id"] for item in report["cases"] if item["status"] == "blocked"]
+    report.update(status="pass" if all(item["status"] == "pass" or not item["required"] and item["status"] == "blocked" for item in report["cases"]) else "fail",
                   reason="Supplied SDK/Host identity and actual public C smoke checked; full M1 matrix not claimed")
 
 
@@ -244,8 +265,9 @@ def main():
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--compile-timeout", type=int, default=300)
     parser.add_argument("--cflag", action="append", default=[])
+    parser.add_argument("--controlled-probe", action="store_true",
+                        help="explicit candidate producer/consumer; ordinary SDK use requires pinned inputs")
     args = parser.parse_args()
-    args.controlled_probe = False
     if not 1 <= args.timeout <= 300 or not 1 <= args.compile_timeout <= 900:
         parser.error("Invalid execution/compile timeout")
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
@@ -253,7 +275,8 @@ def main():
     report = {"schema_version": 1, "report_kind": "qaplet-sdk", "scope": args.operation, "report_id": directory.name,
               "status": "not_run", "reason": "", "started_at": now(), "host": host_facts(), "ci": ci_facts(),
               "commands": [], "cases": [], "artifacts": [], "input_reports": {}, "source": None, "toolchain": None,
-              "build": None, "native_toolchain": None, "evidence_directory": str(directory)}
+              "build": None, "native_toolchain": None, "evidence_directory": str(directory),
+              "controlled_probe": args.controlled_probe}
     try:
         (build if args.operation == "build" else consume)(args, report, directory)
     except BuildError as error:
