@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <time.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <sys/resource.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public stop contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -119,6 +121,8 @@ typedef struct {
   unsigned cpu_reads, stop_calls;
   uint64_t process_first, process_last, self_first, self_last;
   qaplet_code stop_codes[4];
+  int thread_rusage_status, thread_rusage_errno;
+  uint64_t thread_rusage_ns;
 } stop_gate;
 
 static uint64_t nanoseconds(clockid_t clock) {
@@ -132,14 +136,25 @@ static uint64_t nanoseconds(clockid_t clock) {
  * The loop allocates nothing and invokes no C functions after arm. Sleep merely
  * yields the polling worker; elapsed wall time never proves JS started/stopped. */
 static int other_cpu(stop_gate *gate, uint64_t *output) {
-  struct timespec process_time, self_time;
-  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&process_time)) {
+  struct rusage process_usage;
+  struct timespec self_time;
+  /* The supplied Intel macOS libc rejects CLOCK_PROCESS_CPUTIME_ID with
+   * EINVAL. getrusage measures the same user+system process CPU instead. */
+  if (getrusage(RUSAGE_SELF,&process_usage)) {
     gate->clock_failure=1; gate->clock_errno=errno; return 0;
   }
   if (clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) {
-    gate->clock_failure=2; gate->clock_errno=errno; return 0;
+    gate->clock_failure=2; gate->clock_errno=errno;
+    struct rusage thread_usage;
+    gate->thread_rusage_status=getrusage(RUSAGE_THREAD,&thread_usage);
+    gate->thread_rusage_errno=errno;
+    if(!gate->thread_rusage_status) gate->thread_rusage_ns=
+      ((uint64_t)thread_usage.ru_utime.tv_sec+thread_usage.ru_stime.tv_sec)*1000000000+
+      ((uint64_t)thread_usage.ru_utime.tv_usec+thread_usage.ru_stime.tv_usec)*1000;
+    return 0;
   }
-  uint64_t process=(uint64_t)process_time.tv_sec*1000000000+(uint64_t)process_time.tv_nsec;
+  uint64_t process=((uint64_t)process_usage.ru_utime.tv_sec+process_usage.ru_stime.tv_sec)*1000000000+
+      ((uint64_t)process_usage.ru_utime.tv_usec+process_usage.ru_stime.tv_usec)*1000;
   uint64_t self=(uint64_t)self_time.tv_sec*1000000000+(uint64_t)self_time.tv_nsec;
   if (!gate->cpu_reads++) { gate->process_first=process; gate->self_first=self; }
   gate->process_last=process; gate->self_last=self;
@@ -279,13 +294,14 @@ static int running(void) {
       CHECK(!pthread_join(worker,NULL));
       CHECK(gate.arms==1);
     }
-    if(gate.failed || gate.marks || gate.accepted.termination_reason!=QAPLET_EXECUTION_STOPPED) {
-      fprintf(stderr,"[DEBUG-m1-14-stop] variant=%u failed=%d stage=%d marks=%u arms=%u owner_cpu_ns=%llu clock_failure=%d clock_errno=%d reads=%u process=%llu..%llu self=%llu..%llu calls=%u codes=%d,%d,%d,%d accepted=%d/%d/%d\n",
+    if(getenv("QAPLET_M1_NATIVE_DIAG") || gate.failed || gate.marks || gate.accepted.termination_reason!=QAPLET_EXECUTION_STOPPED) {
+      fprintf(stderr,"[DEBUG-m1-14-stop] process_api=getrusage-self variant=%u failed=%d stage=%d marks=%u arms=%u owner_cpu_ns=%llu clock_failure=%d clock_errno=%d reads=%u process=%llu..%llu self=%llu..%llu calls=%u codes=%d,%d,%d,%d accepted=%d/%d/%d thread_rusage=%d/%d/%llu\n",
         variant,gate.failed,gate.failure_stage,gate.marks,gate.arms,(unsigned long long)gate.owner_cpu_ns,
         gate.clock_failure,gate.clock_errno,gate.cpu_reads,(unsigned long long)gate.process_first,(unsigned long long)gate.process_last,
         (unsigned long long)gate.self_first,(unsigned long long)gate.self_last,gate.stop_calls,
         gate.stop_codes[0],gate.stop_codes[1],gate.stop_codes[2],gate.stop_codes[3],
-        gate.accepted.lifecycle,gate.accepted.phase,gate.accepted.termination_reason);
+        gate.accepted.lifecycle,gate.accepted.phase,gate.accepted.termination_reason,
+        gate.thread_rusage_status,gate.thread_rusage_errno,(unsigned long long)gate.thread_rusage_ns);
     }
     CHECK(!gate.failed && !gate.marks && gate.accepted.termination_reason==QAPLET_EXECUTION_STOPPED);
     if (variant<2) CHECK(gate.owner_cpu_ns>=20000000);

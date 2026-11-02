@@ -3,6 +3,7 @@
 """Temporary bounded M1 native diagnosis; never signs Fast/Cross acceptance."""
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import uuid
@@ -46,6 +47,7 @@ def main():
         loader = select_loader(args, report)
         report.update(producer_report=identity(args.build_report), sdk_sha256=producer["sdk"]["sha256"],
                       sdk_recipe_sha256=producer["sdk_recipe"]["sha256"], artifact=identity(args.artifact))
+        environment = dict(os.environ, QAPLET_M1_NATIVE_DIAG="1")
         for suffix, arguments, output in sdk.HOST_CASES:
             if suffix not in ("stop-running", "module-aliases"):
                 continue
@@ -53,10 +55,11 @@ def main():
             for iteration in range(args.repeat):
                 name = "qaplet-host." + suffix + "." + str(iteration + 1)
                 command, stdout, stderr = run(report, directory, name,
-                    [*loader, args.artifact.resolve(), *arguments], args.timeout, expected=None)
-                passed = command["exit_code"] == 0 and not command["timed_out"] and stdout == output and stderr == ""
+                    [*loader, args.artifact.resolve(), *arguments], args.timeout, env=environment, expected=None)
+                passed = command["exit_code"] == 0 and not command["timed_out"] and stdout == output and all(
+                    line.startswith("[DEBUG-m1-14-") for line in stderr.splitlines())
                 report["cases"].append({"case_id": name, "status": "pass" if passed else "fail", "command": command,
-                    "expected": {"exit_code": 0, "stdout": output, "stderr": ""},
+                    "expected": {"exit_code": 0, "stdout": output, "stderr": "Only tagged diagnostic facts; complete native run still requires empty stderr"},
                     "actual": {"exit_code": command["exit_code"], "timed_out": command["timed_out"], "stdout": stdout, "stderr": stderr}})
         report.update(status="pass" if all(case["status"] == "pass" for case in report["cases"]) else "fail",
                       reason="Bounded supplied-Host diagnostic repetitions; required complete native catalog remains separate")

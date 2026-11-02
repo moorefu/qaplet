@@ -264,6 +264,7 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
   char alias[4096],hard[4096],original[4096];
   struct stat lower_facts={0},upper_facts={0};
   int lower_status=-2,upper_status=-2,lower_after_upper_unlink=-2,lower_after_errno=0;
+  int lower_removed=0;
   char *lower_real=NULL,*upper_real=NULL;
   snprintf(alias,sizeof(alias),"%s/alias.js",directory);
   snprintf(hard,sizeof(hard),"%s/hard.js",directory);
@@ -307,18 +308,25 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+3);
     char upper[4096]; snprintf(upper,sizeof(upper),"%s/VALID.js",directory);
     lower_status=lstat(original,&lower_facts); upper_status=lstat(upper,&upper_facts);
+    CHECK(!lower_status && !upper_status);
+    int case_names_alias=lower_facts.st_dev==upper_facts.st_dev && lower_facts.st_ino==upper_facts.st_ino;
     lower_real=realpath(original,NULL); upper_real=realpath(upper,NULL);
     CHECK(!remove_fixture(directory,"VALID.js"));
     struct stat after;
     lower_after_upper_unlink=lstat(original,&after); lower_after_errno=errno;
+    /* File URL identities above still follow OS realpath spelling. Cleanup
+     * instead follows the measured directory entry: case aliases have only
+     * one entry, already removed by the required uppercase unlink. */
+    CHECK(case_names_alias ? lower_after_upper_unlink==-1 && lower_after_errno==ENOENT : !lower_after_upper_unlink);
+    lower_removed=case_names_alias;
   }
   CHECK(!release(runtime));
   CHECK(!unlink(hard));
-  int removed=remove_fixture(directory,"valid.js");
-  if(removed) fprintf(stderr,"[DEBUG-m1-14-alias] lower_stat=%d upper_stat=%d lower_dev_ino=%llu/%llu upper_dev_ino=%llu/%llu lower_after_upper_unlink=%d errno=%d lower_real=%s upper_real=%s\n",
+  int removed=lower_removed ? 0 : remove_fixture(directory,"valid.js");
+  if(getenv("QAPLET_M1_NATIVE_DIAG") || removed) fprintf(stderr,"[DEBUG-m1-14-alias] lower_stat=%d upper_stat=%d lower_dev_ino=%llu/%llu upper_dev_ino=%llu/%llu lower_after_upper_unlink=%d errno=%d lower_real=%s upper_real=%s lower_removed=%d\n",
     lower_status,upper_status,(unsigned long long)lower_facts.st_dev,(unsigned long long)lower_facts.st_ino,
     (unsigned long long)upper_facts.st_dev,(unsigned long long)upper_facts.st_ino,lower_after_upper_unlink,lower_after_errno,
-    lower_real?lower_real:"<absent>",upper_real?upper_real:"<absent>");
+    lower_real?lower_real:"<absent>",upper_real?upper_real:"<absent>",lower_removed);
   free(lower_real); free(upper_real);
   CHECK(!removed && !rmdir(directory));
   puts("module aliases: actual hardlink identities; native Windows drive and OS path case: pass");
