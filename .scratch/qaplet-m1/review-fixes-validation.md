@@ -362,3 +362,46 @@ These local reports honestly retain160ea7b/working-change producer context with
 CI=null and do not replace the next frozen-commit provider closure. All source
 code is now ready for its next freeze; matching Full,98 strict methods, matching
 POSIX replay and independent reviews remain required before final clearance.
+
+## Matching431 Full and explicit UTF8 fixture refinement
+
+The independent m1r6 follow-ups at MAIN `out/reviews/m1r6/` clear the focused
+160ea7b...43193d6 delta: Standards has0 hard/0 actionable Fowler findings; Spec
+has0 findings. Both explicitly resolve their m1r5 findings and retain the earlier
+whole-M1 review chain. These are separate source reviews, not execution results.
+
+Actual Full41542426189 completed success on43193d6e9163aaccece5e3c30d96bcbabd3cd260.
+All nine originals101063369 bytes are independently verified at MAIN
+`out/m1/ci/deadline-fix-collection.json` / `deadline-fix-artifacts.json`; SDKbuild
+13186544967, pagegap13185754966, M0Full13187358260. The actual SDK is
+c44d739fe43589353668cc1245ee31a68a84a0891df3ffcbb2ebfd3ca42eac3d,
+recipe2489d34a07b5a86c1efa5c899c6b2f9ffe6173ef5dd89aed2b56ca02948f64ff,
+sealedZIPdd446de3d5378d9bcf711811cdeb5ac31225ffa5036f16910fb0f53c920f2a63.
+New deadline-final selections restore original provider names by ID and preserve
+the original M0 manifest SHA702ff757ad3c57fd45b4e07507630949ad69b1a0d5fd6a6908c455737829f402.
+Its genuine Ubuntu preflight and matching POSIX3 pass, with no required/optional
+gaps. Its first complete strict attempt executes98 methods with1 failure,0 errors
+and0 skips; this report remains failed. The entire deadline-final tree is closed
+for writes; the parent losslessly compressed it after auditing21978 files and
+3253204999 logical bytes, IDs/link counts/modes/mtimes unchanged.
+
+Before editing, read-only diagnosis isolated Windows fixture decoding. Original
+UTF8 native JSON and the authoritative eval-string-nul catalog containU+1F600;
+default cp936 reading changes it toU+9983/U+69BE before fixture reserialization.
+The backslash and literal0 remain unchanged, and the converted timestamps denote
+the same instant. The same frozen431 public timestamp test passes under UTF8 mode
+(19.719s), falsifying path normalization and timestamp-consumer hypotheses.
+`utf8-diagnosis/diagnosis.json` records codepoints, equal instants and unchanged
+original/retained-clone hashes; all failed helper/setup attempts remain recorded.
+
+The refinement only makes read_text/write_text encoding explicit in the three
+public evidence-fixture modules. It changes no catalog, timestamp assertion,
+consumer or product source. The normal Windows cp936/utf8_mode=0 focused suite
+passes four current-data controls (38.215s): timezone refusal/equivalent positive,
+complete current Full positive, loose guest serial preservation and actual native
+replay/negative cases. Ordinary Ubuntu validation passes323 tests/167 explicit
+ordinary skips plus actual C bootstrap. All57 product blobs still match43193d6
+at `utf8-diagnosis/product-files-unchanged.json`; matching Full41542426189 retains
+that product identity. Fresh test-delta review and a NEW complete98-method strict
+attempt remain required. Next acceptance uses a new utf8-final sibling and the
+parent specification remains claimed.

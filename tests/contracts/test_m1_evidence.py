@@ -81,7 +81,7 @@ def reseal(root, manifest, transport):
             if path.is_file(): output.write(path, path.relative_to(bundle).as_posix())
     transport["archive"] = {"path": str(archive), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
                             "size_bytes": archive.stat().st_size}
-    catalog = json.loads(Path(manifest["provider_catalog"]).read_text())
+    catalog = json.loads(Path(manifest["provider_catalog"]).read_text(encoding="utf-8"))
     provider = next(row for row in catalog["artifacts"] if row["id"] == transport["id"])
     provider.update(digest="sha256:" + transport["archive"]["sha256"], size_in_bytes=transport["archive"]["size_bytes"])
     path = root / "repacked-fixture-provider-catalog.json"
@@ -93,7 +93,7 @@ def repack_sdk(producer, distribution, removed):
     """Rehash all inner package edges so completeness is tested semantically."""
     (distribution / removed).unlink()
     manifest_path = distribution / "sdk/manifest.json"
-    metadata = json.loads(manifest_path.read_text())
+    metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
     metadata["components"] = [row for row in metadata["components"] if row["file"] != removed]
     write(manifest_path, metadata)
     def measured(name):
@@ -163,14 +163,14 @@ def mutate_native(name, incoming, manifest, original):
         case["expected"]["stdout"] = case["actual"]["stdout"] = "forged pass\n"
         selected_path(manifest, command["stdout_log"]).write_bytes(b"forged pass\n")
     elif name in ("duplicate_report_id", "conflicting_report_id"):
-        incoming["report_id"] = json.loads(selected_path(original, original["native_reports"][1]).read_text())["report_id"]
+        incoming["report_id"] = json.loads(selected_path(original, original["native_reports"][1]).read_text(encoding="utf-8"))["report_id"]
         if name == "conflicting_report_id": incoming["reason"] = "Conflicting copy of another report identity"
     else: raise AssertionError(name)
 
 
 def mutation_test(family, name):
     def test(self):
-        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         manifest = json.loads(json.dumps(original))
         with fixture() as root:
             if family == "selection":
@@ -180,7 +180,7 @@ def mutation_test(family, name):
                 elif name == "wrong_product_commit": manifest["product_commit"] = "0" * 40
                 elif name == "historic_m0":
                     path = root / "historic-m0.json"
-                    old = json.loads(Path(manifest["m0_manifest"]).read_text())
+                    old = json.loads(Path(manifest["m0_manifest"]).read_text(encoding="utf-8"))
                     old["producers"]["startup"] = "/historic/M0-only/build-info.json"
                     write(path, old)
                     manifest["m0_manifest"] = str(path)
@@ -201,14 +201,14 @@ def mutation_test(family, name):
                     row["archive"]["path"] = str(path)
                 elif name == "extracted_report_tamper":
                     manifest, row, path = clone_transport(root, manifest, manifest["native_reports"][0])
-                    incoming = json.loads(path.read_text())
+                    incoming = json.loads(path.read_text(encoding="utf-8"))
                     incoming["reason"] = "Extracted-only tamper; original ZIP remains unchanged"
                     write(path, incoming)
                 else: raise AssertionError(name)
             else:
                 reference = manifest["native_reports"][0] if family == "native" else manifest["producer_report"] if family == "sdk" else manifest["sdk_guest"]["guest_report"] if family == "guest" else manifest["package_consumer"]
                 manifest, row, path = clone_transport(root, manifest, reference)
-                incoming = json.loads(path.read_text())
+                incoming = json.loads(path.read_text(encoding="utf-8"))
                 if family == "native": mutate_native(name, incoming, manifest, original)
                 elif family == "sdk":
                     if name == "wrong_source": incoming["sdk_recipe"]["git_commit"] = "0" * 40
@@ -228,7 +228,7 @@ def mutation_test(family, name):
                     else: raise AssertionError(name)
                 elif family == "guest":
                     selection_path = selected_path(manifest, manifest["sdk_guest"]["selection"])
-                    selection = json.loads(selection_path.read_text())
+                    selection = json.loads(selection_path.read_text(encoding="utf-8"))
                     if name == "wrong_sdk_selection": selection["sdk_sha256"] = "0" * 64
                     elif name == "different_producer_selection": selection["producer_report"]["sha256"] = "0" * 64
                     elif name == "wrong_source_selection": selection["qaplet_commit"] = "0" * 40
@@ -250,7 +250,7 @@ def mutation_test(family, name):
                     elif name == "compile_nonzero": compile["exit_code"] = 1
                     elif name == "compile_timeout": compile["timed_out"] = True
                     elif name == "prebuilt_output":
-                        incoming["artifacts"][0]["path"] = json.loads(selected_path(manifest, manifest["producer_report"]).read_text())["artifacts"][2]["path"]
+                        incoming["artifacts"][0]["path"] = json.loads(selected_path(manifest, manifest["producer_report"]).read_text(encoding="utf-8"))["artifacts"][2]["path"]
                     elif name == "missing_build_log": incoming["artifacts"][0].pop("build_commands")
                     elif name == "missing_case": incoming["cases"].pop()
                     elif name == "required_skip": incoming["cases"][0]["status"] = "skip"
@@ -275,13 +275,13 @@ def mutation_test(family, name):
 @unittest.skipUnless(os.environ.get("QAPLET_M1_INPUTS"), "Explicit actual complete M1 closure required")
 class ActualM1Evidence(unittest.TestCase):
     def test_failed_loose_m0_evidence_cannot_replace_a_consumed_raw_log(self):
-        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
-        selected = json.loads(selected_path(original, original["m0_manifest"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
+        selected = json.loads(selected_path(original, original["m0_manifest"]).read_text(encoding="utf-8"))
         for consumer, case_index in (("core", 0), ("core", 1), ("strict", 1)):
             with self.subTest(consumer=consumer, raw_already_read=case_index == 0), fixture() as root:
                 root = root.resolve()
                 manifest = json.loads(json.dumps(selected))
-                producer = json.loads(selected_path(manifest, manifest["producers"]["startup"]).read_text())
+                producer = json.loads(selected_path(manifest, manifest["producers"]["startup"]).read_text(encoding="utf-8"))
                 command = producer["cases"][case_index]["commands"][0]
                 raw = root / "loose-stdout.log"
                 shutil.copyfile(selected_path(manifest, command["stdout_log"]), raw)
@@ -311,7 +311,7 @@ class ActualM1Evidence(unittest.TestCase):
                         "--report", str(output)], capture_output=True, text=True, timeout=60)
                 control_path = root / "unrelated-result.json"
                 control = run(control_path)
-                control_report = json.loads(control_path.read_text())
+                control_report = json.loads(control_path.read_text(encoding="utf-8"))
                 self.assertNotEqual(control.returncode, 0)
                 if consumer == "core":
                     self.assertIn("missing-stderr.log", " ".join(control_report["core"]["errors"]))
@@ -342,20 +342,20 @@ class ActualM1Evidence(unittest.TestCase):
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, destination)
             runner = clone / "scripts/check_evidence.py"
-            original = runner.read_text()
+            original = runner.read_text(encoding="utf-8")
             config = root / "runner-config.json"
             write(config, {"schema_version": 1, "profile": "m1-evidence", "input_manifest": os.environ["QAPLET_M1_INPUTS"]})
             for name, body in (("skip", "self.skipTest('required fixture skip')"),
                                ("error", "raise RuntimeError('required fixture error')"),
                                ("interrupt", "raise KeyboardInterrupt()"), ("empty", "pass")):
                 with self.subTest(name=name):
-                    (clone / "tests/contracts/test_m1_evidence.py").write_text("import unittest\nclass Required(unittest.TestCase):\n def test_required(self):\n  " + body + "\n")
+                    (clone / "tests/contracts/test_m1_evidence.py").write_text("import unittest\nclass Required(unittest.TestCase):\n def test_required(self):\n  " + body + "\n", encoding="utf-8")
                     modules = 'M1_MODULES = ()' if name == "empty" else 'M1_MODULES = ("test_m1_evidence",)'
-                    runner.write_text(re.sub(r'^M1_MODULES = .*$', modules, original, flags=re.MULTILINE))
+                    runner.write_text(re.sub(r'^M1_MODULES = .*$', modules, original, flags=re.MULTILINE), encoding="utf-8")
                     report = root / ("runner-" + name + ".json")
                     process = subprocess.run([sys.executable, str(runner), "--config", str(config), "--report", str(report)],
                         capture_output=True, text=True, timeout=300)
-                    value = json.loads(report.read_text())
+                    value = json.loads(report.read_text(encoding="utf-8"))
                     self.assertNotEqual(process.returncode, 0, name)
                     self.assertEqual(value["status"], "fail")
                     self.assertFalse(value["release_ready"])
@@ -368,13 +368,13 @@ class ActualM1Evidence(unittest.TestCase):
         with fixture() as root:
             config = root / "config.json"
             config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence",
-                "input_manifest": os.environ["QAPLET_M1_INPUTS"]}))
+                "input_manifest": os.environ["QAPLET_M1_INPUTS"]}), encoding="utf-8")
             report = root / "result.json"
             report.write_text("previous unrelated result", encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/check_evidence.py"),
                 "--config", str(config), "--report", str(report), "--preflight-only"],
                 capture_output=True, text=True, timeout=300)
-            value = json.loads(report.read_text())
+            value = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(result.returncode, 0, value.get("reason", result.stderr))
             self.assertEqual(value["m1"]["status"], "pass")
             self.assertEqual(value["m0_core_status"], "pass")
@@ -383,7 +383,7 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertFalse(value["release_ready"])
 
     def test_missing_target_is_rejected(self):
-        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         manifest["native_reports"].pop()
         with fixture() as root:
             process, value = cli(root, manifest)
@@ -391,10 +391,10 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertIn("five", value["reason"])
 
     def test_repacked_native_required_command_must_finish_within_its_recorded_deadline(self):
-        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         with fixture() as root:
             manifest, transport, path = clone_transport(root, manifest, manifest["native_reports"][0])
-            incoming = json.loads(path.read_text())
+            incoming = json.loads(path.read_text(encoding="utf-8"))
             case = next(row for row in incoming["cases"] if row["case_id"] == "qaplet-host.lifetime")
             case["timeout_seconds"] = case["commands"][0]["timeout_seconds"] = 0.000001
             write(path, incoming)
@@ -404,7 +404,7 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertIn("deadline", value["reason"].lower())
 
     def test_report_output_cannot_replace_a_selected_immutable_input(self):
-        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         with fixture() as root:
             manifest, transport, path = clone_transport(root, manifest, manifest["native_reports"][0])
             before = path.read_bytes()
@@ -417,12 +417,12 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before, "Strict output replaced original selected report")
 
     def test_report_output_cannot_replace_selected_original_archives_including_m0(self):
-        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         for nested in (False, True):
             with self.subTest(nested_m0=nested), fixture() as root:
                 root = root.resolve()
                 manifest = json.loads(json.dumps(original))
-                selected = json.loads(selected_path(manifest, manifest["m0_manifest"]).read_text()) if nested else manifest
+                selected = json.loads(selected_path(manifest, manifest["m0_manifest"]).read_text(encoding="utf-8")) if nested else manifest
                 provider = Path(selected["transports"][0]["archive"]["path"])
                 before = hashlib.sha256(provider.read_bytes()).hexdigest()
                 archive = root / "cloned-provider-original.zip"
@@ -447,10 +447,10 @@ class ActualM1Evidence(unittest.TestCase):
                 self.assertFalse((root / "evidence").exists(), "Collision began evidence execution")
 
     def test_repacked_sdk_audit_must_inspect_its_selected_cpu_sidecar(self):
-        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         with fixture() as root:
             manifest, transport, path = clone_transport(root, manifest, manifest["producer_report"])
-            producer = json.loads(path.read_text())
+            producer = json.loads(path.read_text(encoding="utf-8"))
             producer["artifacts"][0]["audit"]["commands"][0]["argv"][-1] = producer["artifacts"][1]["headers"]["sidecars"][0]["path"]
             write(path, producer)
             reseal(root, manifest, transport)
@@ -459,10 +459,10 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertIn("inspection target", value["reason"].lower())
 
     def test_repacked_sdk_build_requires_actual_execution_commands(self):
-        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        manifest = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         with fixture() as root:
             manifest, transport, path = clone_transport(root, manifest, manifest["producer_report"])
-            producer = json.loads(path.read_text())
+            producer = json.loads(path.read_text(encoding="utf-8"))
             producer["commands"] = []
             write(path, producer)
             reseal(root, manifest, transport)
@@ -471,11 +471,11 @@ class ActualM1Evidence(unittest.TestCase):
             self.assertIn("producer execution", value["reason"].lower())
 
     def test_repacked_native_timestamps_compare_instants_across_timezones(self):
-        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))
         for equivalent in (False, True):
             with self.subTest(equivalent_instant=equivalent), fixture() as root:
                 manifest, transport, path = clone_transport(root, json.loads(json.dumps(original)), original["native_reports"][0])
-                incoming = json.loads(path.read_text())
+                incoming = json.loads(path.read_text(encoding="utf-8"))
                 case = incoming["cases"][0]
                 for field in ("started_at", "finished_at"):
                     instant = datetime.fromisoformat(case[field])
@@ -489,7 +489,7 @@ class ActualM1Evidence(unittest.TestCase):
 
 
 for family, names in (("native", NATIVE_MUTATIONS), ("sdk", SDK_MUTATIONS), ("guest", GUEST_MUTATIONS), ("external", EXTERNAL_MUTATIONS), ("selection", SELECTION_MUTATIONS)):
-    if family == "guest" and os.environ.get("QAPLET_M1_INPUTS") and json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text())["sdk_guest"] is None:
+    if family == "guest" and os.environ.get("QAPLET_M1_INPUTS") and json.loads(Path(os.environ["QAPLET_M1_INPUTS"]).read_text(encoding="utf-8"))["sdk_guest"] is None:
         continue  # No guest branch is selected when the actual native kernel is 64K.
     for name in names:
         setattr(ActualM1Evidence, "test_" + family + "_" + name, mutation_test(family, name))

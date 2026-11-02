@@ -27,19 +27,19 @@ class SDKNativeContract(unittest.TestCase):
                 if path.is_file(): path.chmod(0o640)
             before = {str(path): (path.stat().st_mode, hashlib.sha256(path.read_bytes()).hexdigest())
                       for path in loaders.rglob("*") if path.is_file()}
-            original = json.loads(native.read_text())
+            original = json.loads(native.read_text(encoding="utf-8"))
             shutil.copytree(native.parent / "evidence", work / "evidence")
             for fail in (False, True):
                 incoming = json.loads(json.dumps(original))
                 if fail: incoming["cases"][0]["status"] = "skip"
                 selected = work / "run.json"
-                selected.write_text(json.dumps(incoming))
+                selected.write_text(json.dumps(incoming), encoding="utf-8")
                 report = work / ("matrix-fail.json" if fail else "matrix-pass.json")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
                     "--build-report", str(producer), "--artifact", str(producer.parent / "artifacts/qaplet-host.com"),
                     "--loader-dir", str(loaders), "--input-report", str(selected), "--report", str(report)],
                     capture_output=True, text=True, timeout=60)
-                self.assertEqual(result.returncode, 1 if fail else 0, report.read_text()[-1500:])
+                self.assertEqual(result.returncode, 1 if fail else 0, report.read_text(encoding="utf-8")[-1500:])
                 self.assertEqual(before, {str(path): (path.stat().st_mode, hashlib.sha256(path.read_bytes()).hexdigest())
                     for path in loaders.rglob("*") if path.is_file()}, "Evidence consumption changed supplied loader")
 
@@ -49,7 +49,7 @@ class SDKNativeContract(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk.py"), "matrix",
                 "--profile", "fast", "--report", str(report)], capture_output=True, text=True, timeout=30)
             self.assertTrue(report.is_file(), result.stdout + result.stderr)
-            value = json.loads(report.read_text())
+            value = json.loads(report.read_text(encoding="utf-8"))
             self.assertNotEqual(result.returncode, 0)
             self.assertNotEqual(value["status"], "pass")
             self.assertFalse(value["release_ready"])
@@ -59,7 +59,7 @@ class SDKNativeContract(unittest.TestCase):
     def test_actual_native_contracts_replay_and_missing_case_is_rejected(self):
         native = Path(os.environ["QAPLET_SDK_NATIVE_REPORT"])
         producer = Path(os.environ["QAPLET_SDK_BUILD_REPORT"])
-        original = json.loads(native.read_text())
+        original = json.loads(native.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="qaplet-sdk-replay-") as temp:
             work = Path(temp)
             def check(selected, name):
@@ -68,7 +68,7 @@ class SDKNativeContract(unittest.TestCase):
                     "--build-report", str(producer), "--artifact", str(producer.parent / "artifacts/qaplet-host.com"),
                     *(["--loader-dir", os.environ["QAPLET_SDK_LOADER_DIR"]] if os.environ.get("QAPLET_SDK_LOADER_DIR") else []),
                     "--input-report", str(selected), "--report", str(report)], capture_output=True, text=True, timeout=60)
-                return result.returncode, json.loads(report.read_text())
+                return result.returncode, json.loads(report.read_text(encoding="utf-8"))
             code, value = check(native, "actual")
             self.assertEqual(code, 0, value["reason"])
             self.assertEqual(value["coverage"][0]["lifecycle"]["completed_cycles"], 1000)
@@ -84,7 +84,7 @@ class SDKNativeContract(unittest.TestCase):
                     mutation["host"]["execution_mode"] = "emulated-system"
                 else:
                     mutation["cases"][0]["status"] = "skip"
-                selected.write_text(json.dumps(mutation))
+                selected.write_text(json.dumps(mutation), encoding="utf-8")
                 code, value = check(selected, name)
                 self.assertEqual(code, 1, name + ": " + str(value))
                 self.assertTrue(any(word in value["reason"].lower() for word in ("catalog", "lifecycle", "native", "contract")), value)
