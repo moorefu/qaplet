@@ -4,9 +4,9 @@
 
 **Blocked by:** [04：文件 ESM、动态 import 与 TLA 闭环](04-file-esm-tla.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** claimed；2026-11-02 在 `codex/m1-05` 独立 worktree 开始公开 SDK/Host 红绿验证。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
