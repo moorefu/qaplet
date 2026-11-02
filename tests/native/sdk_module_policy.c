@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Public-header-only Host: mutable fixtures are process-local, never SDK files. */
 #include "qaplet.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,6 +118,14 @@ static int frozen_failures(qaplet_runtime *runtime, const char *directory, const
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==count);
   CHECK(!write_source(directory,"later.js","globalThis.laterAnswer=42;"));
   CHECK(entry(runtime,directory,"later.js")==QAPLET_OK && !number(runtime,"laterAnswer",NULL,42));
+  qaplet_config bounded=QAPLET_CONFIG_INIT; bounded.limits.module_count=1;
+  CHECK(!write_source(directory,"count-failure.js","export const = 1;"));
+  CHECK(qaplet_create(&bounded,&fresh,NULL)==QAPLET_OK);
+  CHECK(entry(fresh,directory,"count-failure.js")==QAPLET_JS_EXCEPTION);
+  CHECK(entry(fresh,directory,"valid.js")==QAPLET_MODULE_LIMIT);
+  CHECK(entry(fresh,directory,"count-failure.js")==QAPLET_JS_EXCEPTION);
+  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1 && snapshot.lifecycle==QAPLET_OPEN);
+  CHECK(!release(fresh)); CHECK(!remove_fixture(directory,"count-failure.js"));
   CHECK(!release(runtime));
   for(unsigned i=0;i<4;++i) CHECK(!remove_fixture(directory,names[i]));
   const char *extra[]={"valid.js","link-dep.js","link.js","nonfile.js","later.js"};
@@ -189,12 +198,14 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
   return 0;
 }
 
-static int aliases(qaplet_runtime *runtime,const char *directory,const char *base) {
-  char alias[4096],hard[4096],original[4096];
-  snprintf(alias,sizeof(alias),"%s/alias.js",directory);
-  snprintf(hard,sizeof(hard),"%s/hard.js",directory);
-  snprintf(original,sizeof(original),"%s/valid.js",directory);
-  CHECK(!symlink("valid.js",alias));
+static int symlinks(qaplet_runtime *runtime,const char *directory,const char *base) {
+  char alias[4096]; snprintf(alias,sizeof(alias),"%s/alias.js",directory);
+  if (symlink("valid.js",alias)) {
+    int reason=errno;
+    CHECK(!release(runtime)); CHECK(!remove_fixture(directory,"valid.js") && !rmdir(directory));
+    fprintf(stderr,"file-symlink fixture unavailable: errno=%d\n",reason);
+    return base[8] && base[9]==':' && (reason==EPERM || reason==EACCES || reason==ENOSYS || reason==EOPNOTSUPP) ? 77 : 1;
+  }
   CHECK(entry(runtime,directory,"alias.js")==QAPLET_OK);
   qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1);
@@ -204,6 +215,30 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
   CHECK(!unlink(alias) && !symlink("other.js",alias));
   CHECK(entry(runtime,directory,"alias.js")==QAPLET_OK);
   CHECK(!number(runtime,"validRuns===1 && typeof otherRuns==='undefined' ? 42:0",NULL,42));
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1 && snapshot.source_cache_bytes==bytes);
+  qaplet_config config=QAPLET_CONFIG_INIT; qaplet_runtime *fresh=NULL;
+  CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK && entry(fresh,directory,"alias.js")==QAPLET_OK);
+  CHECK(!number(fresh,"otherRuns",NULL,42)); CHECK(!release(fresh));
+  CHECK(!unlink(alias));
+  CHECK(!write_source(directory,"bad.cjs","globalThis.unsupportedTarget=1;"));
+  CHECK(!symlink("bad.cjs",alias));
+  CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK && entry(fresh,directory,"alias.js")==QAPLET_UNSUPPORTED);
+  CHECK(qaplet_get_snapshot(fresh,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==0);
+  CHECK(!release(fresh)); CHECK(!release(runtime));
+  CHECK(!unlink(alias));
+  CHECK(!remove_fixture(directory,"bad.cjs") && !remove_fixture(directory,"valid.js") && !remove_fixture(directory,"other.js") && !rmdir(directory));
+  puts("module symlinks: canonical reuse; frozen retarget; fresh Runtime sees target; target format checked: pass");
+  return 0;
+}
+
+static int aliases(qaplet_runtime *runtime,const char *directory,const char *base) {
+  char alias[4096],hard[4096],original[4096];
+  snprintf(alias,sizeof(alias),"%s/alias.js",directory);
+  snprintf(hard,sizeof(hard),"%s/hard.js",directory);
+  snprintf(original,sizeof(original),"%s/valid.js",directory);
+  qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==1);
+  uint64_t bytes=snapshot.source_cache_bytes;
   CHECK(!link(original,hard));
   CHECK(entry(runtime,directory,"hard.js")==QAPLET_OK);
   CHECK(!number(runtime,"validRuns",NULL,2));
@@ -235,13 +270,10 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==3);
     CHECK(!remove_fixture(directory,"VALID.js"));
   }
-  qaplet_config config=QAPLET_CONFIG_INIT; qaplet_runtime *fresh=NULL;
-  CHECK(qaplet_create(&config,&fresh,NULL)==QAPLET_OK && entry(fresh,directory,"alias.js")==QAPLET_OK);
-  CHECK(!number(fresh,"otherRuns",NULL,42)); CHECK(!release(fresh));
   CHECK(!release(runtime));
-  CHECK(!unlink(alias) && !unlink(hard));
-  CHECK(!remove_fixture(directory,"valid.js") && !remove_fixture(directory,"other.js") && !rmdir(directory));
-  puts("module aliases: actual symlink/hardlink; frozen alias; fresh target; native drive and OS case identity: pass");
+  CHECK(!unlink(hard));
+  CHECK(!remove_fixture(directory,"valid.js") && !rmdir(directory));
+  puts("module aliases: actual hardlink identities; native Windows drive and OS path case: pass");
   return 0;
 }
 
@@ -264,6 +296,7 @@ int sdk_module_policy(const char *mode) {
   if (!strcmp(mode, "--module-cache")) return frozen_failures(runtime, directory, base);
   if (!strcmp(mode, "--module-policy")) return path_refusals(runtime, directory, base);
   if (!strcmp(mode, "--module-aliases")) return aliases(runtime, directory, base);
+  if (!strcmp(mode, "--module-symlinks")) return symlinks(runtime, directory, base);
   if (!strcmp(mode, "--module-nul")) {
     CHECK(!number(runtime, "import('./valid.js'+String.fromCharCode(0)+'suffix').then(()=>1,()=>42)", base, 42));
     CHECK(!write_source(directory, "static.js", "import './valid.js\\0suffix';"));

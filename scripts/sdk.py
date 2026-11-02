@@ -56,7 +56,8 @@ HOST_CASES = (
     ("module-nul", ["--module-nul", "{modules}"], "module NUL: computed/static names rejected; existing files intact; ordinary NUL strings preserved: pass\n"),
     ("module-cache", ["--module-cache", "{modules}"], "module cache: source/load/parse/link/eval/TLA failures frozen; fresh repair; partial effects retained; accounting: pass\n"),
     ("module-policy", ["--module-policy", "{modules}"], "module policy: URL/path/NUL/format refusals; real ordinary files only; no failed identities for invalid requests: pass\n"),
-    ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual symlink/hardlink; frozen alias; fresh target; native drive and OS case identity: pass\n"),
+    ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual hardlink identities; native Windows drive and OS path case: pass\n"),
+    ("module-symlinks", ["--module-symlinks", "{modules}"], "module symlinks: canonical reuse; frozen retarget; fresh Runtime sees target; target format checked: pass\n"),
     ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
     ("host-modules", ["--host-modules", "{modules}"], "host modules: copied registration; synchronous typed callback; catchable errors; guarded lifetime: pass\n"),
     ("facts", ["--facts"], None),
@@ -208,12 +209,16 @@ def consume(args, report, directory):
             expected = json.dumps({"probe": "qaplet-host", "arch": report["host"]["execution_arch"],
                                    "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
-        report["cases"].append({"case_id": "qaplet-host." + suffix, "status": "pass" if passed else "fail",
+        required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")
+        unavailable = not required and executed["exit_code"] == 77 and not executed["timed_out"] and not stdout and stderr.startswith("file-symlink fixture unavailable: errno=")
+        status = "pass" if passed else "blocked" if unavailable else "fail"
+        report["cases"].append({"case_id": "qaplet-host." + suffix, "status": status, "required": required,
             "started_at": executed["started_at"], "finished_at": executed["finished_at"],
             "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
             "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
             "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
-            "timeout_seconds": args.timeout, "reason": "Actual public SDK consumer executed supplied APE bytes"})
+            "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
+            "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else ""})
     report["artifacts"][0]["sha256_after"] = sha256(args.artifact)
     if report["artifacts"][0]["sha256_after"] != artifact["sha256"]:
         raise BuildError("Artifact changed during execution")
@@ -223,7 +228,9 @@ def consume(args, report, directory):
             raise BuildError("Supplied SDK component changed during execution: " + item["file"])
     if recipe() != producer["sdk_recipe"]["files"]:
         raise BuildError("Consumer recipe differs from selected SDK producer")
-    report.update(status="pass" if all(item["status"] == "pass" for item in report["cases"]) else "fail",
+    report["required_cases"] = [item["case_id"] for item in report["cases"] if item["required"]]
+    report["unavailable_cases"] = [item["case_id"] for item in report["cases"] if item["status"] == "blocked"]
+    report.update(status="pass" if all(item["status"] == "pass" or not item["required"] and item["status"] == "blocked" for item in report["cases"]) else "fail",
                   reason="Supplied SDK/Host identity and actual public C smoke checked; full M1 matrix not claimed")
 
 
