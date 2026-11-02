@@ -405,3 +405,62 @@ at `utf8-diagnosis/product-files-unchanged.json`; matching Full41542426189 retai
 that product identity. Fresh test-delta review and a NEW complete98-method strict
 attempt remain required. Next acceptance uses a new utf8-final sibling and the
 parent specification remains claimed.
+
+## Final matching acceptance and handoff
+
+The new `out/review-fixes/utf8-final/` attempt passes all98 required methods with
+0 failures,0 errors and0 skips; regression log duration527.499s, complete command
+duration540.818s. The formerly failing equivalent-timestamp control passes under
+normal Windows cp936 without a UTF8-mode override. The original failed
+deadline-final attempt remains failed and unchanged. Neither timestamp nor
+catalog checks were weakened.
+
+The product is43193d6e9163aaccece5e3c30d96bcbabd3cd260 and the fixture suite is
+6eaa53d6c06691144723085928f66aebf01e944c. All57 recipe blobs still match the exact
+product commit before and after acceptance. Actual Full41542426189, provider
+catalog/verified collection, SDKc44d739fe43589353668cc1245ee31a68a84a0891df3ffcbb2ebfd3ca42eac3d,
+recipe2489d34a07b5a86c1efa5c899c6b2f9ffe6173ef5dd89aed2b56ca02948f64ff and
+sealedZIPdd446de3d5378d9bcf711811cdeb5ac31225ffa5036f16910fb0f53c920f2a63
+retain their original matching identities. The summary verifies current source
+and regression digests again; no producer report or original archive is rewritten.
+
+Accepted configurations and reports, relative to the fix worktree:
+
+- Ubuntu config: `out/review-fixes/utf8-final/selection/config.json`; Windows
+  config: `out/review-fixes/utf8-final/selection/config-windows.json`.
+- Genuine Ubuntu positive: `out/review-fixes/utf8-final/preflight-ubuntu.json`
+  (evidence-preflight only); matching POSIX report/log:
+  `out/review-fixes/utf8-final/native-ubuntu.{json,log}` (3 required tests,16.560s).
+- Full strict: `out/review-fixes/utf8-final/strict-windows.json`, SHA
+  091919c7a8e66be51d0e23e79965f38347c1503f730ae7570569f6b376125373.
+  Its raw log is `evidence/0317a23370e541f39600b41bd52526ee/regressions.log`
+  beneath utf8-final, with98/98 and no required skips.
+- Source/product identities: `out/review-fixes/utf8-final/product-files-before.json`
+  and `product-files-after.json`; both57/changed=[]/product431, with fixture
+  evaluator6eaa53d. `acceptance-summary.json` binds the reports, configs,
+  derivation, current originals and prior failed attempt.
+
+The verified closure includes five native targets with1000 actual lifecycle
+cycles each, complete98-case SDK catalogs (Windows97 required plus its actually
+successful optional symlink case), public external C8, actual65536-page system
+guest98 and independent current M0 Full235. Required and optional gaps are both
+empty. release_ready=false remains intentional; M2 OS wakers/full scheduling,
+physical64K/performance and the deferred release mirror are not claimed.
+
+Independent m1r7 review packets cover431...6eaa53d and preserve the earlier review
+chain. Standards reports0 hard/0 actionable Fowler/source regressions; Spec
+reports0 findings. Both confirm all63 changes only make fixture text I/O explicitly
+UTF8 and retain the controls' semantics. They remain separate axes and do not
+replace the genuine execution results above. Ordinary Ubuntu validation remains
+323 tests/167 explicit unselected-data or platform skips plus actual C bootstrap;
+those ordinary skips are separate from this zero-skip strict acceptance.
+
+The current integration tip beab3190c7b298dc1b5729396a3897bf216e5bf2 was merged into
+the fix branch after acceptance; Git reported Already up to date. This final
+record is aggregate-only and changes no tested product/evaluator/fixture source.
+The ENTIRE fix-worktree `out/` tree is now CLOSED FOR WRITES, including every
+historical failed attempt, helper, selection, proof, diagnostic, fixture and final
+report; all validation child processes have completed. No cleanup is performed
+by this implementer. Parent fresh merge, independently verified preservation and
+cleanup, followed by a new relocated main98 replay, remain dispatcher work. The
+parent specification stays claimed until that work is complete.
