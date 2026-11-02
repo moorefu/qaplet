@@ -605,7 +605,7 @@ def main():
         {"build": build, "run": consume, "package-consume": package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status="fail", reason=str(error))
     report["finished_at"] = now()
     write_json(args.report, report)
