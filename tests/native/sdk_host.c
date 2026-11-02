@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
+int sdk_promises(void);
+
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public SDK contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
 } } while (0)
@@ -242,6 +244,7 @@ int main(int argc, char **argv) {
   if (!strcmp(argv[1], "--creation")) return creation();
   if (!strcmp(argv[1], "--resources")) return resources();
   if (!strcmp(argv[1], "--abi")) return abi_contract();
+  if (!strcmp(argv[1], "--promises")) return sdk_promises();
   if (!strcmp(argv[1], "--facts")) {
 #if defined(__aarch64__)
     const char *arch = "aarch64";

@@ -4,9 +4,9 @@
 
 **Blocked by:** [01：纯 C Host 的最小 Runtime 闭环](01-runtime-c-host.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；2026-11-02 在 `codex/m1-03` 独立 worktree 领取，基于已验任务 01 集成提交 `e07c227`，按公开 SDK / 纯 C Host 边界执行 TDD。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
