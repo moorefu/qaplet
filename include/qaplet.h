@@ -20,7 +20,8 @@ typedef enum {
   QAPLET_INVALID_UTF8 = 12, QAPLET_VALUE_TOO_LARGE = 13,
   QAPLET_MODULE_RESOLVE = 14, QAPLET_MODULE_LOAD = 15, QAPLET_MODULE_LIMIT = 16,
   QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18,
-  QAPLET_HOST_ERROR = 19
+  QAPLET_HOST_ERROR = 19, QAPLET_NO_HANDLER = 20, QAPLET_QUEUE_FULL = 21,
+  QAPLET_PAYLOAD_TOO_LARGE = 22
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -41,6 +42,7 @@ enum {
   QAPLET_CAP_FILE_MODULES = 1u << 8,
   QAPLET_CAP_EXECUTION_BUDGETS = 1u << 9,
   QAPLET_CAP_HOST_MODULES = 1u << 11,
+  QAPLET_CAP_POD_EVENTS = 1u << 12,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -53,6 +55,7 @@ typedef struct {
   uint64_t engine_heap_bytes, engine_stack_bytes, native_storage_bytes, source_bytes;
   uint64_t module_count, source_cache_bytes;
   uint64_t execution_timeout_ms, execution_dispatches;
+  uint64_t event_queue_slots, event_payload_bytes;
 } qaplet_limits;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -102,6 +105,8 @@ typedef struct {
   uint64_t native_current_bytes, native_peak_bytes;
   uint64_t module_count, source_cache_bytes;
   uint64_t execution_dispatches;
+  uint64_t queue_depth, queue_peak;
+  uint64_t events_accepted, events_rejected, events_consumed, events_dropped;
 } qaplet_snapshot;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -143,19 +148,19 @@ typedef struct {
   size_t export_count;
   uint64_t flags, reserved[2];
 } qaplet_host_module;
-#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0}
+#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
 #define QAPLET_EXECUTION_OPTIONS_INIT {sizeof(qaplet_execution_options), QAPLET_ABI_VERSION, 0, 0, 0, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
 #define QAPLET_PROGRESS_INIT {sizeof(qaplet_progress), QAPLET_ABI_VERSION, 0, 0, 0}
 #define QAPLET_RESULT_INIT {sizeof(qaplet_result), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, NULL, 0, 0}
-#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0}
+#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_ABI_INIT {sizeof(qaplet_abi), QAPLET_ABI_VERSION, 0}
 #define QAPLET_VALUE_INIT {sizeof(qaplet_value), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, NULL, 0}
 #define QAPLET_HOST_EXPORT_INIT {sizeof(qaplet_host_export), QAPLET_ABI_VERSION, NULL, 0, 0, 0, QAPLET_VALUE_INIT, NULL, NULL}
 #define QAPLET_HOST_MODULE_INIT {sizeof(qaplet_host_module), QAPLET_ABI_VERSION, NULL, 0, NULL, 0, 0, {0}}
 
-/* Global query and POD snapshots are thread-safe. All remaining operations
+/* Global query, POD snapshots and post_event are thread-safe. Other operations
  * belong to the thread that successfully created the Runtime. Output pointers
  * and diagnostics are borrowed only for the duration of a call. */
 qaplet_code qaplet_query_abi(qaplet_abi *output);
@@ -168,8 +173,8 @@ qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet
 qaplet_code qaplet_register_host_module(qaplet_runtime *, const qaplet_host_module *, qaplet_diagnostic *);
 /* Owner callback only. Validates and synchronously copies the value. No setter
  * means undefined; a second successful setter is BAD_STATE, preserving the first.
- * Outside a callback or with an expired call_id returns BAD_STATE. Only query,
- * snapshots and this setter may reenter the currently implemented owner API. */
+ * Outside a callback or with an expired call_id returns BAD_STATE. Query,
+ * snapshots, post_event and this setter may reenter a Host callback. */
 qaplet_code qaplet_host_set_result(qaplet_runtime *, uint64_t call_id, const qaplet_value *, qaplet_diagnostic *);
 /* Script semantics; retains the instance's global state. source is a borrowed
  * pointer with explicit byte length, strictly validated as UTF-8 before acceptance.
@@ -201,13 +206,27 @@ qaplet_code qaplet_eval_with_base(qaplet_runtime *, const char *source, size_t l
  * NULL options inherit instance limits. Options cannot increase those limits. */
 qaplet_code qaplet_eval_with_options(qaplet_runtime *, const char *source, size_t length,
                                     const qaplet_execution_options *, qaplet_progress *, qaplet_diagnostic *);
-/* Runs at most 256 jobs, without sleeping. Empty jobs with an unsettled entry
+/* Runs at most 256 jobs and 32 events, without sleeping. Jobs settle before the
+ * next event is claimed. Existing executions share their ledger with events;
+ * idle events and their runnable jobs own independent cross-pump ledgers.
+ * Empty jobs with an unsettled entry
  * remain PENDING with progressed=0. Rejections are judged only after a complete
  * jobs checkpoint. Ordinary errors settle remaining jobs before DONE, preserving
  * state and allowing a new execution. An inactive pump reports no progress and
- * OK; get_result retains the completed outcome until the next accepted eval.
+ * OK; get_result retains the completed outcome until the next accepted execution.
  * Outputs and diagnostic buffers are borrowed only for this call. */
 qaplet_code qaplet_pump(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *);
+/* Any thread, including a Host callback, may submit copied POD while the handle
+ * remains alive. A successful call has copied all bytes into a fixed queue slot;
+ * it does not acknowledge delivery. NULL data is valid only at length zero.
+ * Zero limits select 256 slots and 1024 payload bytes. Invalid input/oversize is
+ * rejected before lifecycle, then NO_HANDLER/QUEUE_FULL; refusal never enqueues.
+ * JS imports qaplet:events and calls onEvent(fn) exactly once. Owner pump invokes
+ * fn({type: Number, token: BigInt, payload: independent Uint8Array}) in FIFO
+ * acceptance order. uint64 token zero is valid. The return value is ignored,
+ * including Promises; runnable jobs and unhandled rejections still checkpoint. */
+qaplet_code qaplet_post_event(qaplet_runtime *, uint32_t type, uint64_t token,
+                             const void *data, size_t length, qaplet_diagnostic *);
 /* Set output.buffer/capacity for STRING/BYTES. length is the payload byte count;
  * string payloads have no extra terminator. BUFFER_TOO_SMALL reports length,
  * copies no payload, and preserves the result for retry without re-executing JS.

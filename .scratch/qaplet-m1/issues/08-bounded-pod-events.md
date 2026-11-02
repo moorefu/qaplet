@@ -4,9 +4,9 @@
 
 **Blocked by:** [06：Qaplet Host Module 的同步调用闭环](06-host-module-bridge.md)、[07：跨 pump 的执行期限与总调度量](07-execution-budgets.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** in_progress；由 implement_08 在 codex/m1-08 领取，公开 SDK / supplied C Host 边界实施及验收。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -35,6 +35,8 @@
 [正式 M1 规格](../spec.md) · [已确认设计](../design.md) · [任务索引与依赖](../README.md) · [开发入口](../../../docs/development.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-02：implement_08 已确认工作树包含集成基线 33ca5439，读取 implement-spec/TDD、规格 Q23–Q27、ADR 0005–0007 及开发合同；按已确认 Q32 seam 执行公开 SDK / supplied C Host red→green。
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
 

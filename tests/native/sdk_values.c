@@ -242,6 +242,11 @@ static int copied_value_limits(void) {
   qaplet_abi abi = QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi) == QAPLET_OK && (abi.capabilities & QAPLET_CAP_COPIED_VALUES));
   CHECK(qaplet_create(&config,&runtime,NULL) == QAPLET_OK);
+  CHECK(qaplet_close(runtime,NULL) == QAPLET_OK);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL) == QAPLET_OK);
+  uint64_t closed_base = snapshot.native_current_bytes;
+  CHECK(qaplet_destroy(runtime,NULL) == QAPLET_OK);
+  CHECK(qaplet_create(&config,&runtime,NULL) == QAPLET_OK);
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL) == QAPLET_OK);
   uint64_t base = snapshot.native_current_bytes;
   unsigned char *output = malloc(QAPLET_VALUE_BYTES_MAX);
@@ -262,7 +267,7 @@ static int copied_value_limits(void) {
   result.buffer=output; result.capacity=QAPLET_VALUE_BYTES_MAX;
   CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_OK);
   CHECK(qaplet_close(runtime,NULL) == QAPLET_OK);
-  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL) == QAPLET_OK && snapshot.native_current_bytes == base && snapshot.engine_current_bytes == 0);
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL) == QAPLET_OK && snapshot.native_current_bytes == closed_base && snapshot.engine_current_bytes == 0);
   CHECK(output[0] == 255 && output[QAPLET_VALUE_BYTES_MAX-1] == 255);
   CHECK(qaplet_get_result(runtime,&result,NULL) == QAPLET_BAD_STATE);
   CHECK(qaplet_destroy(runtime,NULL) == QAPLET_OK);

@@ -124,7 +124,8 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
   if (!code) output->capabilities = QAPLET_CAP_LIFECYCLE | QAPLET_CAP_SYNC_SCRIPT |
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
-      QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_HOST_MODULES;
+      QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_HOST_MODULES |
+      QAPLET_CAP_POD_EVENTS;
   return code;
 }
 
@@ -147,6 +148,10 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   if (!limits.source_cache_bytes) limits.source_cache_bytes = 32u * 1024 * 1024;
   if (!limits.execution_timeout_ms) limits.execution_timeout_ms = 30000;
   if (!limits.execution_dispatches) limits.execution_dispatches = 100000;
+  if (!limits.event_queue_slots) limits.event_queue_slots = 256;
+  if (!limits.event_payload_bytes) limits.event_payload_bytes = 1024;
+  code = qaplet_events_check_limits(&limits);
+  if (code) return qaplet_report(diagnostic, code);
   if (limits.execution_timeout_ms > UINT64_MAX / 1000000)
     return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   if (limits.engine_heap_bytes > SIZE_MAX || limits.engine_stack_bytes > SIZE_MAX ||
@@ -179,9 +184,12 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   }
   qaplet_execution_init(runtime);
+  runtime->event_handler = JS_UNDEFINED;
   JS_SetContextOpaque(runtime->context, runtime);
   code = qaplet_modules_init(runtime);
+  if (!code) code = qaplet_events_init(runtime);
   if (code) {
+    qaplet_events_dispose(runtime);
     qaplet_modules_dispose(runtime);
     qaplet_execution_dispose(runtime);
     free(runtime->initial_cwd);
@@ -297,6 +305,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   code = qaplet_owner(runtime);
   if (code) return qaplet_report(diagnostic, code);
   if (runtime->snapshot.lifecycle != QAPLET_CLOSED) {
+    qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);
     qaplet_modules_dispose(runtime);
     qaplet_values_dispose(runtime);

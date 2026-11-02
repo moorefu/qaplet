@@ -182,7 +182,7 @@ static qaplet_module *find_module(qaplet_runtime *runtime, const char *url) {
 static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const char *name, int root) {
   char *path = NULL, *directory = NULL;
   qaplet_code code = QAPLET_MODULE_RESOLVE;
-  if (!root && !strncmp(name, "host:", 5)) {
+  if (!root && (!strncmp(name, "host:", 5) || !strcmp(name, "qaplet:events"))) {
     qaplet_module *entry = find_module(runtime, name);
     if (entry) return entry;
     module_throw(runtime, QAPLET_MODULE_RESOLVE);
@@ -276,8 +276,9 @@ static void save_failure(qaplet_runtime *runtime, qaplet_module *entry, JSValueC
 static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return -1; }
   if (!JS_IsUndefined(entry->compiled)) return 0;
-  if (!strncmp(entry->url, "host:", 5)) {
-    JSModuleDef *module = qaplet_host_load(runtime, entry->url);
+  if (!strncmp(entry->url, "host:", 5) || !strcmp(entry->url, "qaplet:events")) {
+    JSModuleDef *module = !strcmp(entry->url, "qaplet:events") ?
+        qaplet_events_load(runtime) : qaplet_host_load(runtime, entry->url);
     if (!module) goto failure;
     entry->compiled = JS_DupValue(runtime->context, JS_MKPTR(JS_TAG_MODULE, module));
     return 0;
@@ -359,7 +360,7 @@ qaplet_code qaplet_modules_init(qaplet_runtime *runtime) {
   free(cwd);
   if (!runtime->initial_cwd) return QAPLET_MEMORY_LIMIT;
   JS_SetModuleLoaderFunc2(runtime->engine, normalize_module, load_module, check_attributes, runtime);
-  return QAPLET_OK;
+  return qaplet_modules_register_host(runtime, "qaplet:events");
 }
 
 qaplet_code qaplet_modules_register_host(qaplet_runtime *runtime, const char *name) {
