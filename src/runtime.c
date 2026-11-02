@@ -180,8 +180,8 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   if (code) {
     qaplet_modules_dispose(runtime);
     qaplet_execution_dispose(runtime);
-    JS_FreeContext(runtime->context);
-    JS_FreeRuntime(runtime->engine);
+    free(runtime->initial_cwd);
+    discard_unpublished_engine(runtime);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
     return qaplet_report(diagnostic, code);
@@ -292,6 +292,7 @@ qaplet_code qaplet_destroy(qaplet_runtime *runtime, qaplet_diagnostic *diagnosti
   code = qaplet_owner(runtime);
   if (!code && runtime->snapshot.lifecycle != QAPLET_CLOSED) code = QAPLET_BAD_STATE;
   if (!code) {
+    free(runtime->initial_cwd);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
   }

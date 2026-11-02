@@ -123,9 +123,9 @@ int sdk_promises(void) {
   CHECK(qaplet_pump(runtime, &progress, NULL) == QAPLET_BAD_STATE);
   CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
   /* Outstanding jobs/rejections are released rather than executed on close. */
-  uint64_t native_baseline = snapshot.native_current_bytes;
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK);
+  uint64_t native_baseline = snapshot.native_current_bytes;
   const char outstanding[] = "Promise.reject(new Error('discard on close')); var outstanding=Promise.resolve(); "
       "for(let i=0;i<600;++i) outstanding=outstanding.then(()=>{}); outstanding";
   CHECK(qaplet_eval(runtime, outstanding, sizeof(outstanding) - 1, &progress, NULL) == QAPLET_OK);

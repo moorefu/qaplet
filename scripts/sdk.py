@@ -29,6 +29,8 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/ex
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
           "scripts/quickjs_source.py", "scripts/workflow_support.py", "tests/native/sdk_modules.c",
           "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
+RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
+                if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 HOST_CASES = (
     ("scalar", [], "scalar: 42; closed: true\n"),
     ("state", ["--state"], "state: 40 -> 42 -> exception -> 43; fresh: true\n"),
@@ -45,6 +47,10 @@ HOST_CASES = (
     ("promise-values", ["--promise-values"], "Promise values: exact/copied results; safe rejection diagnostics; first-error and handled checkpoints\n"),
     ("promises", ["--promises"], "promises: explicit pump; bounded jobs; checkpoints; failure reuse; pending close: pass\n"),
     ("modules", ["--modules", "{modules}"], "modules: real static graph; completed result: pass\n"),
+    ("module-async", ["--module-async", "{modules}"], "module async: static/dynamic imports; TLA; cycle; namespace then untouched: pass\n"),
+    ("module-identity", ["--module-identity", "{modules}"], "module identity: fixed cwd; first metadata; canonical reuse; explicit Script base: pass\n"),
+    ("module-limits", ["--module-limits", "{modules}"], "module limits: source precheck preserves result; count/cache bounded; close releases: pass\n"),
+    ("module-pending", ["--module-pending", "{modules}"], "module pending: unresolved TLA; no progress; BUSY; pending close: pass\n"),
     ("facts", ["--facts"], None),
 )
 
@@ -177,7 +183,7 @@ def consume(args, report, directory):
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
-        arguments = [str(args.artifact.parent / "sdk/modules") if value == "{modules}" else value for value in arguments]
+        arguments = [str(args.artifact.parent.resolve() / "sdk/modules") if value == "{modules}" else value for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
                                       [*loader, args.artifact, *arguments], args.timeout, expected=None)
         if suffix == "facts":

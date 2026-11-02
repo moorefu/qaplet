@@ -104,6 +104,7 @@ static char *url_path(qaplet_runtime *runtime, const char *url) {
     path[output++] = value;
   }
   path[output] = 0;
+  if (!qaplet_utf8_valid(path, output)) goto invalid;
   /* Cosmopolitan's native Windows drive syntax is /C/path. */
   if (IsWindows() && output >= 4 && path[0] == '/' && isalpha((unsigned char)path[1]) &&
       path[2] == ':' && path[3] == '/') {
@@ -145,8 +146,8 @@ static char *path_url(qaplet_runtime *runtime, const char *path) {
   return copy;
 }
 
-/* Lexical normalization gives successful aliases a key reusable before another
- * realpath, even after the caller edits or removes the already loaded file. */
+/* Preserve dot components for realpath: collapsing link/../ lexically would
+ * change filesystem meaning. Successful request spellings are frozen aliases. */
 static char *absolute_path(qaplet_runtime *runtime, const char *base, const char *name) {
   size_t base_length = strlen(base), name_length = strlen(name);
   if (base_length > SIZE_MAX - name_length - 2) return NULL;
@@ -157,24 +158,6 @@ static char *absolute_path(qaplet_runtime *runtime, const char *base, const char
   else snprintf(joined, capacity, "%s/%s", base, name);
   if (IsWindows())
     for (size_t i = 0; joined[i]; ++i) if (joined[i] == '\\') joined[i] = '/';
-  size_t input = 0, output = 0;
-  while (joined[input]) {
-    while (joined[input] == '/') ++input;
-    size_t start = input;
-    while (joined[input] && joined[input] != '/') ++input;
-    size_t length = input - start;
-    if (!length || (length == 1 && joined[start] == '.')) continue;
-    if (length == 2 && joined[start] == '.' && joined[start + 1] == '.') {
-      while (output && joined[output - 1] != '/') --output;
-      if (output) --output;
-    } else {
-      joined[output++] = '/';
-      memmove(joined + output, joined + start, length);
-      output += length;
-    }
-  }
-  if (!output) joined[output++] = '/';
-  joined[output] = 0;
   char *copy = native_string(runtime, joined);
   native_free(runtime, joined, capacity);
   return copy;
@@ -218,18 +201,21 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
   if (directory) native_free(runtime, directory, strlen(directory) + 1);
   if (!path) { module_throw(runtime, code); return NULL; }
   if (!supported_path(path)) { code = QAPLET_UNSUPPORTED; goto failed; }
-  char *lexical = absolute_path(runtime, "/", path);
-  native_free(runtime, path, strlen(path) + 1);
-  path = lexical;
-  if (!path) { module_throw(runtime, QAPLET_MEMORY_LIMIT); return NULL; }
   char *alias_url = path_url(runtime, path);
   if (!alias_url) goto failed;
+  qaplet_module *canonical = find_module(runtime, alias_url);
+  if (canonical) {
+    native_free(runtime, alias_url, strlen(alias_url) + 1);
+    native_free(runtime, path, strlen(path) + 1);
+    if (canonical->code && !root) { JS_Throw(runtime->context, JS_DupValue(runtime->context, canonical->failure)); return NULL; }
+    return canonical;
+  }
   for (qaplet_module_alias *alias = runtime->module_aliases; alias; alias = alias->next) {
     if (!strcmp(alias->url, alias_url)) {
       qaplet_module *entry = alias->module;
       native_free(runtime, alias_url, strlen(alias_url) + 1);
       native_free(runtime, path, strlen(path) + 1);
-      if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return NULL; }
+      if (entry->code && !root) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return NULL; }
       return entry;
     }
   }
@@ -263,7 +249,7 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
   if (!alias) { native_free(runtime, alias_url, strlen(alias_url) + 1); goto failed; }
   alias->url = alias_url; alias->module = entry;
   alias->next = runtime->module_aliases; runtime->module_aliases = alias;
-  if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return NULL; }
+  if (entry->code && !root) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return NULL; }
   return entry;
 failed:
   if (path) native_free(runtime, path, strlen(path) + 1);
@@ -278,6 +264,7 @@ static void save_failure(qaplet_runtime *runtime, qaplet_module *entry, JSValueC
 }
 
 static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
+  if (entry->code) { JS_Throw(runtime->context, JS_DupValue(runtime->context, entry->failure)); return -1; }
   if (!JS_IsUndefined(entry->compiled)) return 0;
   char *path = url_path(runtime, entry->url);
   if (!path) { module_throw(runtime, QAPLET_MODULE_LOAD); goto failure; }
@@ -311,6 +298,7 @@ static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   pthread_mutex_lock(&runtime->mutex);
   runtime->snapshot.source_cache_bytes += length;
   pthread_mutex_unlock(&runtime->mutex);
+  if (!qaplet_utf8_valid(source, length)) { module_throw(runtime, QAPLET_INVALID_UTF8); goto failure; }
   JSValue value = JS_Eval(runtime->context, source, length, entry->url, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
   if (JS_IsException(value)) goto failure;
   entry->compiled = value;
@@ -377,8 +365,8 @@ void qaplet_modules_dispose(qaplet_runtime *runtime) {
     native_free(runtime, alias->url, strlen(alias->url) + 1);
     native_free(runtime, alias, sizeof(*alias));
   }
-  if (runtime->initial_cwd) native_free(runtime, runtime->initial_cwd, strlen(runtime->initial_cwd) + 1);
-  runtime->initial_cwd = NULL;
+  /* The immutable factory cwd snapshot belongs to the handle, like the limits.
+   * Keep it in the CLOSED native baseline and release it with destroy. */
   pthread_mutex_lock(&runtime->mutex);
   runtime->snapshot.module_count = runtime->snapshot.source_cache_bytes = 0;
   pthread_mutex_unlock(&runtime->mutex);
@@ -400,6 +388,7 @@ qaplet_code qaplet_run_entry(qaplet_runtime *runtime, const char *path, size_t l
   if (code) return code;
   code = qaplet_check_structure(progress, sizeof(*progress));
   if (!code && (!path || !length || length == SIZE_MAX || memchr(path, 0, length))) code = QAPLET_INVALID_ARGUMENT;
+  if (!code && !qaplet_utf8_valid(path, length)) code = QAPLET_INVALID_UTF8;
   if (!code) code = qaplet_owner(runtime);
   if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
@@ -415,20 +404,38 @@ qaplet_code qaplet_run_entry(qaplet_runtime *runtime, const char *path, size_t l
     JS_FreeValue(runtime->context, error);
     return qaplet_report(diagnostic, code);
   }
+  /* A root's source-size refusal is discoverable before accepting execution.
+   * Preserve the previous result while freezing the known identity's failure. */
+  if (!entry->code && !entry->source) {
+    char *native = url_path(runtime, entry->url);
+    struct stat status;
+    if (native && !stat(native, &status) && S_ISREG(status.st_mode) && status.st_size >= 0 &&
+        ((uint64_t)status.st_size > runtime->snapshot.limits.source_bytes ||
+         (uint64_t)status.st_size > runtime->snapshot.limits.source_cache_bytes - runtime->snapshot.source_cache_bytes)) {
+      module_throw(runtime, QAPLET_SOURCE_TOO_LARGE);
+      JSValue error = JS_GetException(runtime->context);
+      save_failure(runtime, entry, error);
+      JS_FreeValue(runtime->context, error);
+      native_free(runtime, native, strlen(native) + 1);
+      return qaplet_report(diagnostic, QAPLET_SOURCE_TOO_LARGE);
+    }
+    if (native) native_free(runtime, native, strlen(native) + 1);
+  }
   pthread_mutex_lock(&runtime->mutex);
   runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
   runtime->has_result = 0;
   runtime->execution_code = QAPLET_OK;
-  runtime->result = (qaplet_result)QAPLET_RESULT_INIT;
   runtime->module_execution = 1;
   runtime->active_module = entry;
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_values_reset(runtime);
   JSValue value = JS_EXCEPTION;
   if (!compile_module(runtime, entry))
     value = JS_EvalFunction(runtime->context, JS_DupValue(runtime->context, entry->compiled));
   if (JS_IsException(value)) {
     JSValue error = JS_GetException(runtime->context);
     save_failure(runtime, entry, error);
+    qaplet_capture_exception(runtime, error);
     code = entry->code;
     JS_FreeValue(runtime->context, error);
   } else if ((int)JS_PromiseState(runtime->context, value) >= 0)
@@ -436,7 +443,7 @@ qaplet_code qaplet_run_entry(qaplet_runtime *runtime, const char *path, size_t l
   JS_FreeValue(runtime->context, value);
   runtime->execution_code = code;
   code = qaplet_execution_checkpoint(runtime, progress, 1);
-  return qaplet_report(diagnostic, code);
+  return qaplet_report_result(runtime, diagnostic, code);
 }
 
 qaplet_code qaplet_eval_with_base(qaplet_runtime *runtime, const char *source, size_t length,
@@ -446,9 +453,12 @@ qaplet_code qaplet_eval_with_base(qaplet_runtime *runtime, const char *source, s
   if (code) return code;
   code = qaplet_check_structure(progress, sizeof(*progress));
   if (!code && (!base || !base_length || base_length == SIZE_MAX || memchr(base, 0, base_length))) code = QAPLET_INVALID_ARGUMENT;
+  if (!code && (!source && length)) code = QAPLET_INVALID_ARGUMENT;
+  if (!code && (!qaplet_utf8_valid(base, base_length) || !qaplet_utf8_valid(source, length))) code = QAPLET_INVALID_UTF8;
   if (!code) code = qaplet_owner(runtime);
   if (!code && runtime->snapshot.lifecycle != QAPLET_OPEN) code = QAPLET_BAD_STATE;
   if (!code && runtime->snapshot.phase == QAPLET_PHASE_PENDING) code = QAPLET_BUSY;
+  if (!code && length > runtime->snapshot.limits.source_bytes) code = QAPLET_SOURCE_TOO_LARGE;
   if (code) return qaplet_report(diagnostic, code);
   char *copy = native_alloc(runtime, base_length + 1);
   if (!copy) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
