@@ -35,8 +35,7 @@ static void *native_alloc(qaplet_runtime *runtime, size_t size) {
     if (runtime->snapshot.native_current_bytes > runtime->snapshot.native_peak_bytes)
       runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
   } else {
-    if (!runtime->snapshot.termination_reason) runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-    runtime->snapshot.lifecycle = QAPLET_FAILED;
+    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
   }
   pthread_mutex_unlock(&runtime->mutex);
   return value;
@@ -58,6 +57,8 @@ static char *native_string(qaplet_runtime *runtime, const char *value) {
 }
 
 static JSValue module_throw(qaplet_runtime *runtime, qaplet_code code) {
+  qaplet_code termination = qaplet_execution_check(runtime);
+  if (termination) code = termination;
   JS_ThrowTypeError(runtime->context, "%s", code == QAPLET_MODULE_RESOLVE ? "Module resolution failed" :
       code == QAPLET_MODULE_LIMIT ? "Module count limit" : code == QAPLET_SOURCE_TOO_LARGE ?
       "Module source limit" : code == QAPLET_UNSUPPORTED ? "Unsupported module request" : "Module loading failed");
@@ -284,8 +285,7 @@ static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
   if (!source) {
     fclose(file);
     pthread_mutex_lock(&runtime->mutex);
-    if (!runtime->snapshot.termination_reason) runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-    runtime->snapshot.lifecycle = QAPLET_FAILED;
+    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
     pthread_mutex_unlock(&runtime->mutex);
     module_throw(runtime, QAPLET_MEMORY_LIMIT); goto failure;
   }
@@ -421,24 +421,25 @@ qaplet_code qaplet_run_entry(qaplet_runtime *runtime, const char *path, size_t l
     }
     if (native) native_free(runtime, native, strlen(native) + 1);
   }
-  pthread_mutex_lock(&runtime->mutex);
-  runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
-  runtime->has_result = 0;
-  runtime->execution_code = QAPLET_OK;
+  code = qaplet_execution_begin(runtime, NULL);
+  if (code) return qaplet_report(diagnostic, code);
   runtime->module_execution = 1;
   runtime->active_module = entry;
-  pthread_mutex_unlock(&runtime->mutex);
-  qaplet_values_reset(runtime);
-  JSValue value = JS_EXCEPTION;
-  if (!compile_module(runtime, entry))
+  JSValue value = JS_UNDEFINED;
+  if (compile_module(runtime, entry)) value = JS_EXCEPTION;
+  else if (!(code = qaplet_execution_check(runtime)))
     value = JS_EvalFunction(runtime->context, JS_DupValue(runtime->context, entry->compiled));
+  qaplet_code termination = qaplet_execution_check(runtime);
+  if (termination) code = termination;
   if (JS_IsException(value)) {
     JSValue error = JS_GetException(runtime->context);
-    save_failure(runtime, entry, error);
-    qaplet_capture_exception(runtime, error);
-    code = entry->code;
+    if (!code) {
+      save_failure(runtime, entry, error);
+      qaplet_capture_exception(runtime, error);
+      code = entry->code;
+    }
     JS_FreeValue(runtime->context, error);
-  } else if ((int)JS_PromiseState(runtime->context, value) >= 0)
+  } else if (!code && (int)JS_PromiseState(runtime->context, value) >= 0)
     runtime->entry_promise = JS_DupValue(runtime->context, value);
   JS_FreeValue(runtime->context, value);
   runtime->execution_code = code;
@@ -465,7 +466,10 @@ qaplet_code qaplet_eval_with_base(qaplet_runtime *runtime, const char *source, s
   memcpy(copy, base, base_length);
   char *path = url_path(runtime, copy);
   native_free(runtime, copy, base_length + 1);
-  if (!path) return qaplet_report(diagnostic, QAPLET_MODULE_RESOLVE);
+  if (!path) {
+    code = qaplet_execution_check(runtime);
+    return qaplet_report(diagnostic, code ? code : QAPLET_MODULE_RESOLVE);
+  }
   char *absolute = absolute_path(runtime, "/", path);
   native_free(runtime, path, strlen(path) + 1);
   char *url = absolute ? path_url(runtime, absolute) : NULL;

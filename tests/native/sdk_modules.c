@@ -57,6 +57,52 @@ int sdk_modules(const char *directory, const char *mode) {
   qaplet_snapshot snapshot = QAPLET_SNAPSHOT_INIT;
   qaplet_abi abi = QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi) == QAPLET_OK && (abi.capabilities & QAPLET_CAP_FILE_MODULES));
+  if (!strcmp(mode, "--module-budgets")) {
+    char path[4096];
+    config.limits.execution_dispatches = 300;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(snprintf(path, sizeof(path), "%s/job-budget.mjs", directory) < sizeof(path));
+    CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+    CHECK(qaplet_pump(runtime, &progress, NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.execution_dispatches == 256);
+    CHECK(qaplet_pump(runtime, &progress, NULL) == QAPLET_DISPATCH_LIMIT && progress.phase == QAPLET_PHASE_DONE);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.execution_dispatches == 300 &&
+          snapshot.lifecycle == QAPLET_FAILED && snapshot.termination_reason == QAPLET_DISPATCH_LIMIT);
+    CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_DISPATCH_LIMIT);
+    CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_BAD_STATE);
+    CHECK(!release(runtime));
+    config = (qaplet_config)QAPLET_CONFIG_INIT;
+    config.limits.execution_timeout_ms = 100;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(snprintf(path, sizeof(path), "%s/pending.mjs", directory) < sizeof(path));
+    CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_OK && progress.phase == QAPLET_PHASE_PENDING);
+    usleep(150000);
+    CHECK(qaplet_pump(runtime, &progress, NULL) == QAPLET_DEADLINE_EXCEEDED && progress.phase == QAPLET_PHASE_DONE && !progress.progressed);
+    CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_DEADLINE_EXCEEDED);
+    CHECK(!release(runtime));
+    config = (qaplet_config)QAPLET_CONFIG_INIT;
+    config.limits.execution_timeout_ms = 20;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(snprintf(path, sizeof(path), "%s/loop.mjs", directory) < sizeof(path));
+    CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_DEADLINE_EXCEEDED && progress.phase == QAPLET_PHASE_DONE);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_FAILED &&
+          snapshot.termination_reason == QAPLET_DEADLINE_EXCEEDED);
+    CHECK(!release(runtime));
+    config = (qaplet_config)QAPLET_CONFIG_INIT;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK);
+    uint64_t baseline = snapshot.native_current_bytes;
+    CHECK(!release(runtime));
+    CHECK(snprintf(path, sizeof(path), "%s/entry.mjs", directory) < sizeof(path));
+    config.limits.native_storage_bytes = baseline + strlen(path) + 1;
+    CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
+    CHECK(qaplet_run_entry(runtime, path, strlen(path), &progress, NULL) == QAPLET_MEMORY_LIMIT);
+    CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_FAILED &&
+          snapshot.termination_reason == QAPLET_MEMORY_LIMIT);
+    CHECK(!release(runtime));
+    puts("module budgets: cumulative TLA jobs; host-wait deadline; module loop interrupted; permanent failure: pass");
+    return 0;
+  }
   if (!strcmp(mode, "--module-identity")) {
     char saved[4096];
     CHECK(getcwd(saved, sizeof(saved)) && !chdir(directory));

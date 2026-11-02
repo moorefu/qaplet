@@ -36,6 +36,8 @@ previous completed result. Close releases registry/source/engine references;
 the immutable cwd configuration stays in the CLOSED handle's native baseline
 until destroy. The SDK distribution includes the actual `sdk/modules` source
 fixtures used by the public C Host, so supplied consumers need no rebuild.
+File runs and Script imports with an explicit base start the same execution
+ledger as ordinary eval, including TLA jobs, host waits and module body loops.
 Execution budgets use one absolute monotonic deadline (default 30,000 ms) and
 one cumulative dispatch limit (default 100,000 jobs), preserved across PENDING
 and every pump. `qaplet_config.limits` configures finite instance maxima;
