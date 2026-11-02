@@ -4,9 +4,9 @@
 
 **Blocked by:** [09：完整资源配置、计量与永久分配失败](09-resource-limits-failures.md)、[10：饱和与运行中的协作式停止](10-cooperative-stop.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；基于已合入 09、10 的 `32d455e55522ba5b8fdfb3b600d013435e6fb6f0`，按已确认 Q32 公开 SDK / 纯 C Host 边界执行红绿验证。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 
@@ -37,4 +37,6 @@
 ## Comments
 
 2026-11-02：用户以 `ok` 确认 16 票拆分及阻塞依赖，按 to-tickets 发布为 ready-for-agent。本票尚未执行；满足阻塞依赖后才可领取。
+
+2026-11-02：`codex/m1-11` 已确认继承当前 integration；09、10 均已 resolved 并合入，领取本票。测试 seam 沿用 Q32：公开 C SDK、供应静态 SDK 的 public-header-only C Host 及既有 producer/consumer，覆盖关闭期间生产者、绑定存活、半初始化回滚及终止竞争。
 
