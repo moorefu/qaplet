@@ -4,9 +4,9 @@
 
 **Blocked by:** [03：Promise 与 jobs 的显式分步执行](03-promise-job-pump.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；2026-11-02 在 codex/m1-04 领取，公开 SDK/C Host 文件 ESM 垂直切片进行中。
 
 **Execution prerequisites:** Ubuntu 构建环境与固定输入可用，且已合入本票所列阻塞任务；使用仓库约定的共享输入/缓存与现有构建、证据入口。
 

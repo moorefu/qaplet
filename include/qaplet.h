@@ -14,7 +14,8 @@ typedef enum {
   QAPLET_WRONG_THREAD = 3, QAPLET_BUSY = 4, QAPLET_BAD_STATE = 5,
   QAPLET_UNSUPPORTED = 6, QAPLET_JS_EXCEPTION = 7,
   QAPLET_VALUE_TYPE_UNSUPPORTED = 8, QAPLET_BUFFER_TOO_SMALL = 9,
-  QAPLET_SOURCE_TOO_LARGE = 10, QAPLET_MEMORY_LIMIT = 11
+  QAPLET_SOURCE_TOO_LARGE = 10, QAPLET_MEMORY_LIMIT = 11,
+  QAPLET_MODULE_RESOLVE = 14, QAPLET_MODULE_LOAD = 15, QAPLET_MODULE_LIMIT = 16
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -30,6 +31,7 @@ enum {
   QAPLET_CAP_SCALAR_RESULT = 1u << 2, QAPLET_CAP_OWNER_THREAD = 1u << 3,
   QAPLET_CAP_POD_SNAPSHOT = 1u << 4, QAPLET_CAP_RESOURCE_BASE = 1u << 5,
   QAPLET_CAP_PROMISE_JOBS = 1u << 7,
+  QAPLET_CAP_FILE_MODULES = 1u << 8,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -40,6 +42,7 @@ enum {
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t engine_heap_bytes, engine_stack_bytes, native_storage_bytes, source_bytes;
+  uint64_t module_count, source_cache_bytes;
 } qaplet_limits;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -76,17 +79,18 @@ typedef struct {
   qaplet_limits limits;
   uint64_t engine_current_bytes, engine_peak_bytes;
   uint64_t native_current_bytes, native_peak_bytes;
+  uint64_t module_count, source_cache_bytes;
 } qaplet_snapshot;
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t capabilities;
 } qaplet_abi;
-#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0}
+#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
 #define QAPLET_PROGRESS_INIT {sizeof(qaplet_progress), QAPLET_ABI_VERSION, 0, 0, 0}
 #define QAPLET_RESULT_INIT {sizeof(qaplet_result), QAPLET_ABI_VERSION, 0, 0, 0, 0}
-#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0}
+#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0, 0, 0}
 #define QAPLET_ABI_INIT {sizeof(qaplet_abi), QAPLET_ABI_VERSION, 0}
 
 /* Global query and POD snapshots are thread-safe. All remaining operations
@@ -100,6 +104,16 @@ qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet
  * An accepted execution with runnable jobs or an unsettled Promise is PENDING.
  * While PENDING, another eval is BUSY and get_result is BAD_STATE. */
 qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* Run source ESM using the cwd captured at creation. Relative imports use the
+ * importing file. Canonical identities/source bytes remain until close and a
+ * module body is evaluated once. import.meta.url/main are initialized once.
+ * Completed runs have undefined results without converting the namespace. */
+qaplet_code qaplet_run_entry(qaplet_runtime *, const char *path, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* Script evaluation with an explicit absolute file URL filename for relative
+ * dynamic import. The base need not exist. Ordinary eval has no relative base. */
+qaplet_code qaplet_eval_with_base(qaplet_runtime *, const char *source, size_t length,
+                                 const char *base_url, size_t base_length,
+                                 qaplet_progress *, qaplet_diagnostic *);
 /* Runs at most 256 jobs, without sleeping. Empty jobs with an unsettled entry
  * remain PENDING with progressed=0. Rejections are judged only after a complete
  * jobs checkpoint. Ordinary errors settle remaining jobs before DONE, preserving

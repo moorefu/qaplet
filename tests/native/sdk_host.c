@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 int sdk_promises(void);
+int sdk_modules(const char *);
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public SDK contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -228,6 +229,7 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && !strcmp(argv[1], "--modules")) return sdk_modules(argv[2]);
   if (argc == 1) {
     qaplet_config config = QAPLET_CONFIG_INIT;
     qaplet_runtime *runtime = NULL;

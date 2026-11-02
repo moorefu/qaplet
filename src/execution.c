@@ -81,8 +81,8 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
     else {
       JSValue value = JS_PromiseResult(runtime->context, runtime->entry_promise);
       if (!runtime->execution_code)
-        runtime->execution_code = state == JS_PROMISE_REJECTED ? QAPLET_JS_EXCEPTION :
-            qaplet_store_scalar(runtime, value);
+        runtime->execution_code = state == JS_PROMISE_REJECTED ? qaplet_module_exception_code(runtime, value) :
+            (runtime->module_execution ? QAPLET_OK : qaplet_store_scalar(runtime, value));
       JS_FreeValue(runtime->context, value);
     }
   }
@@ -94,6 +94,7 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
     clear_rejections(runtime);
     if (runtime->execution_code) pending = 0;
     if (!pending) {
+      qaplet_modules_complete(runtime);
       JS_FreeValue(runtime->context, runtime->entry_promise);
       runtime->entry_promise = JS_UNDEFINED;
     }
@@ -141,8 +142,8 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
     ++executed;
     if (status < 0) {
       JSValue exception = JS_GetException(context);
+      if (!runtime->execution_code) runtime->execution_code = qaplet_module_exception_code(runtime, exception);
       JS_FreeValue(context, exception);
-      if (!runtime->execution_code) runtime->execution_code = QAPLET_JS_EXCEPTION;
     }
   }
   code = qaplet_execution_checkpoint(runtime, progress, executed != 0);

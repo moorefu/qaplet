@@ -22,11 +22,12 @@ from nightly_toolchain import write_json
 from startup import check_ci_commit, ci_facts, measured_host, select_loader
 from workflow_support import workspace
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_promises.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
-          "scripts/quickjs_source.py", "scripts/workflow_support.py")
+          "scripts/quickjs_source.py", "scripts/workflow_support.py", "tests/native/sdk_modules.c",
+          "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
 HOST_CASES = (
     ("scalar", [], "scalar: 42; closed: true\n"),
     ("state", ["--state"], "state: 40 -> 42 -> exception -> 43; fresh: true\n"),
@@ -36,6 +37,7 @@ HOST_CASES = (
     ("resources", ["--resources"], "resources: source precheck; heap failure permanent; stack exception reusable\n"),
     ("abi", ["--abi"], "ABI: version/flags/tails/short structures; bounded diagnostics: pass\n"),
     ("promises", ["--promises"], "promises: explicit pump; bounded jobs; checkpoints; failure reuse; pending close: pass\n"),
+    ("modules", ["--modules", "{modules}"], "modules: real static graph; completed result: pass\n"),
     ("facts", ["--facts"], None),
 )
 
@@ -70,6 +72,8 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host.c", distribution / "host-contract.c")
     shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_modules.c", distribution / "host-modules.c")
+    shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -96,7 +100,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
@@ -108,7 +112,9 @@ def build(args, report, directory):
         "-c", distribution / "host-contract.c", "-o", work / "embed.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-promises-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-promises.c", "-o", work / "promises.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", archive],
+    run(report, directory, "host-modules-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-modules.c", "-o", work / "modules-host.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)
@@ -163,6 +169,7 @@ def consume(args, report, directory):
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
+        arguments = [str(args.artifact.parent / "sdk/modules") if value == "{modules}" else value for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
                                       [*loader, args.artifact, *arguments], args.timeout, expected=None)
         if suffix == "facts":
