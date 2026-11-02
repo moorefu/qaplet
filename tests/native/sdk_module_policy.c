@@ -325,8 +325,8 @@ int sdk_module_policy(const char *mode) {
   CHECK(!write_source(directory, "valid.js", "globalThis.validRuns=(globalThis.validRuns||0)+1; globalThis.baseUrl=import.meta.url; export const answer=42;"));
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   qaplet_snapshot initial=QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_snapshot(runtime,&initial,NULL)==QAPLET_OK && initial.module_count==1 && !initial.source_cache_bytes);
-  declared_modules=initial.module_count; /* Declared qaplet:events identity, from the public snapshot. */
+  CHECK(qaplet_get_snapshot(runtime,&initial,NULL)==QAPLET_OK && initial.module_count==2 && !initial.source_cache_bytes);
+  declared_modules=initial.module_count; /* Declared qaplet:events/runtime identities, from the public snapshot. */
   CHECK(entry(runtime, directory, "valid.js") == QAPLET_OK);
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   qaplet_result result = QAPLET_RESULT_INIT;

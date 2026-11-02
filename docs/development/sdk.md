@@ -207,6 +207,41 @@ directory and link the archive. The producer compiles the distributed
 packaging the Host APE. Its scalar case follows the minimal example; additional
 cases check the currently implemented SDK contracts.
 
+Runtime-snapshot capability (bit 16) adds `qaplet_config.argv/argc` and optional
+`cwd/cwd_length`. Every argument is an explicit-length strict UTF-8 string,
+including ordinary embedded NUL, bounded by `limits.bridge_value_bytes`.
+The factory copies the strings and native
+directory base; later buffer edits and process `chdir` do not change them.
+NULL/zero cwd captures the native OS cwd; an explicit cwd must name an absolute
+native directory. Paths reject NUL and invalid UTF-8. `qaplet:runtime` exports
+the primitive cwd and a frozen argv array. Both this builtin and `qaplet:events`
+reserve module identities from creation, so the minimum module capacity is two.
+The immutable native snapshot belongs to the handle until destroy.
+
+The same Ubuntu producer also delivers audited `qaplet.com`, both CPU sidecars
+and maps, with the shared helper notices and loader. The supplied consumer
+checks the complete distribution before and after running both public products.
+`--cli-artifact` can explicitly select the sibling CLI; its default is
+`qaplet.com` next to the supplied Host. Neither consumer compiles.
+
+CLI syntax is `qaplet run <file> [-- args...]` and
+`qaplet eval --source <text>`, plus `--help` and `--version`. The runtime argv
+contains only the application arguments after `--`. Optional `--timeout-ms N`
+and `--max-dispatches N` precede the command and configure the same finite SDK
+instance budgets; zero selects its defaults. Run uses source ESM and prints no
+namespace. Eval uses Script and prints only the copied SDK value: scalar text,
+raw UTF-8 string bytes, or `0x`-prefixed lowercase hex bytes, then a newline.
+It never converts an arbitrary JS object for display or diagnostics.
+
+The CLI owns no external event producers. PENDING with a no-progress pump
+therefore immediately prints `UNSETTLED_ENTRY` and closes the Runtime. SDK Hosts
+keep the original PENDING/no-progress contract and may later supply an event.
+Raw OS exits are 0 for success, 1 for execution/budget/unsettled failure, and 2
+for CLI arguments. On Windows the CLI performs SDK close/destroy and flushes
+stdio before an explicit native `ExitProcess`, avoiding the supplied libc's
+shifted POSIX-wait-status exit path. CLI evidence compares raw UTF-8 log bytes,
+including NUL, and preserves the actual OS exit without normalization.
+
 The existing v3 lock continues to identify the unchanged supplier/M0 recipes.
 Each SDK producer additionally binds all SDK and shared recipe files, effective
 compile/link/archive settings, exact static archive components and final Host

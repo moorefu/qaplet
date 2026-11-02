@@ -31,6 +31,8 @@ struct qaplet_runtime {
   qaplet_code execution_code;
   qaplet_rejection *rejections;
   char *initial_cwd;
+  qaplet_string *initial_argv;
+  size_t initial_argc;
   qaplet_module *modules, *active_module;
   qaplet_module_alias *module_aliases;
   JSValue module_exception;
@@ -64,12 +66,15 @@ qaplet_code qaplet_report_result(qaplet_runtime *, qaplet_diagnostic *, qaplet_c
 qaplet_code qaplet_execution_checkpoint(qaplet_runtime *, qaplet_progress *, unsigned);
 void qaplet_execution_init(qaplet_runtime *);
 void qaplet_execution_dispose(qaplet_runtime *);
-qaplet_code qaplet_modules_init(qaplet_runtime *);
+qaplet_code qaplet_modules_init(qaplet_runtime *, const qaplet_config *);
+qaplet_code qaplet_check_runtime_config(const qaplet_config *);
+void qaplet_runtime_snapshot_dispose(qaplet_runtime *);
 void *qaplet_native_alloc(qaplet_runtime *, size_t);
 void qaplet_native_free(qaplet_runtime *, void *, size_t);
 qaplet_code qaplet_modules_register_host(qaplet_runtime *, const char *);
 JSModuleDef *qaplet_host_load(qaplet_runtime *, const char *);
 JSModuleDef *qaplet_events_load(qaplet_runtime *);
+JSModuleDef *qaplet_runtime_load(qaplet_runtime *);
 qaplet_code qaplet_events_init(qaplet_runtime *);
 void qaplet_events_dispose(qaplet_runtime *);
 int qaplet_events_pending(qaplet_runtime *);

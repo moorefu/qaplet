@@ -81,7 +81,7 @@ static int queue(void) {
   qaplet_snapshot snapshot = QAPLET_SNAPSHOT_INIT;
   unsigned char data[1025] = {0};
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
-  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 1 &&
+  CHECK(qaplet_get_snapshot(runtime, &snapshot, NULL) == QAPLET_OK && snapshot.module_count == 2 &&
         snapshot.limits.event_queue_slots == 256 && snapshot.limits.event_payload_bytes == 1024);
   CHECK(qaplet_post_event(runtime, 0, 0, NULL, 1, NULL) == QAPLET_INVALID_ARGUMENT);
   CHECK(qaplet_post_event(runtime, 0, 0, data, 1025, NULL) == QAPLET_PAYLOAD_TOO_LARGE);
@@ -140,7 +140,7 @@ static int queue(void) {
   CHECK(qaplet_post_event(runtime, 0, 0, data, 4, NULL) == QAPLET_PAYLOAD_TOO_LARGE);
   CHECK(qaplet_post_event(runtime, 0, 0, NULL, 1, NULL) == QAPLET_INVALID_ARGUMENT);
   CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
-  config = (qaplet_config)QAPLET_CONFIG_INIT; config.limits.module_count = 1;
+  config = (qaplet_config)QAPLET_CONFIG_INIT; config.limits.module_count = 2;
   CHECK(qaplet_create(&config, &runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_register_host_module(runtime, &late, NULL) == QAPLET_MODULE_LIMIT);
   CHECK(!check_js(runtime,"import('qaplet:events').then(m=>typeof m.onEvent==='function')"));
