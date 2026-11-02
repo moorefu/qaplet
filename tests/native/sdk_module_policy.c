@@ -6,10 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "libc/nt/runtime.h"
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "public module policy failed at line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+
+static int native_windows;
 
 static int write_source(const char *directory, const char *name, const char *source) {
   char path[4096];
@@ -193,7 +197,7 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
   CHECK(!write_source(directory,"plain","globalThis.extensionless=42;"));
   CHECK(entry(runtime,directory,"plain")==QAPLET_OK && !number(runtime,"extensionless",NULL,42));
   char fifo[4096]; snprintf(fifo,sizeof(fifo),"%s/pipe.js",directory);
-  if(base[8] && base[9]!=':') {
+  if(!native_windows) {
     /* The supplied libc's mknod returns ENOSYS. Use the actual native fixture
      * utility (Ubuntu coreutils or the retained guest BusyBox), without a shell. */
     pid_t child=fork(); CHECK(child>=0);
@@ -217,12 +221,16 @@ static int path_refusals(qaplet_runtime *runtime, const char *directory, const c
 }
 
 static int symlinks(qaplet_runtime *runtime,const char *directory,const char *base) {
+  (void)base;
   char alias[4096]; snprintf(alias,sizeof(alias),"%s/alias.js",directory);
-  if (symlink("valid.js",alias)) {
-    int reason=errno;
+  int created=symlink("valid.js",alias), create_errno=errno;
+  unsigned winerror=native_windows ? GetLastError() : 0;
+  struct stat link_stat;
+  int observed=lstat(alias,&link_stat), reason=observed ? errno : create_errno;
+  if (created || observed || !S_ISLNK(link_stat.st_mode)) {
     CHECK(!release(runtime)); CHECK(!remove_fixture(directory,"valid.js") && !rmdir(directory));
-    fprintf(stderr,"file-symlink fixture unavailable: errno=%d\n",reason);
-    return base[8] && base[9]==':' && (reason==EPERM || reason==EACCES || reason==ENOSYS || reason==EOPNOTSUPP) ? 77 : 1;
+    fprintf(stderr,"file-symlink fixture unavailable: errno=%d symlink_result=%d lstat=%d winerror=%u\n",reason,created,observed,winerror);
+    return native_windows && (winerror==1314 || reason==EPERM || reason==EACCES || reason==ENOSYS || reason==EOPNOTSUPP) ? 77 : 1;
   }
   CHECK(entry(runtime,directory,"alias.js")==QAPLET_OK);
   qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
@@ -261,7 +269,7 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
   CHECK(entry(runtime,directory,"hard.js")==QAPLET_OK);
   CHECK(!number(runtime,"validRuns",NULL,2));
   CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==2 && snapshot.source_cache_bytes==2*bytes);
-  if(base[8] && base[9]==':') {
+  if(native_windows) {
     /* Actual Windows native drive spelling and OS realpath casing. */
     char native[4096],canonical[4096];
     size_t j=0;
@@ -279,8 +287,13 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     /* Windows APIs determine returned filename case; no SDK-wide lowercase identity. */
     CHECK(!number(runtime,"baseUrl[8]===baseUrl[8].toUpperCase() ? 42:0",NULL,42));
     strcpy(native+j-8,"VALID.JS");
+    char *original_case=realpath(original,NULL), *requested_case=realpath(native,NULL);
+    CHECK(original_case && requested_case);
+    int distinct_case=strcmp(original_case,requested_case)!=0;
     CHECK(request(runtime,native)==QAPLET_OK);
-    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==2);
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==(distinct_case?3:2));
+    CHECK(!number(runtime,"validRuns",NULL,distinct_case?3:2));
+    free(original_case); free(requested_case);
   } else {
     CHECK(!write_source(directory,"VALID.js","globalThis.caseDistinct=42;"));
     CHECK(entry(runtime,directory,"VALID.js")==QAPLET_OK);
@@ -296,7 +309,12 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
 }
 
 int sdk_module_policy(const char *mode) {
-  char temporary[] = "/tmp/qaplet-module-policy-XXXXXX";
+  struct utsname facts; CHECK(!uname(&facts));
+  native_windows=!strcmp(facts.sysname,"Windows");
+  const char *temporary_root=native_windows ? getenv("TEMP") : "/tmp";
+  CHECK(temporary_root && *temporary_root);
+  char temporary[8192];
+  CHECK(snprintf(temporary,sizeof(temporary),"%s/qaplet-module-policy-XXXXXX",temporary_root)<sizeof(temporary));
   char *directory = mkdtemp(temporary);
   qaplet_config config = QAPLET_CONFIG_INIT;
   qaplet_runtime *runtime = NULL;
@@ -313,6 +331,7 @@ int sdk_module_policy(const char *mode) {
   result.buffer = base; result.capacity = sizeof(base) - 1;
   CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_OK && result.type == QAPLET_VALUE_STRING);
   base[result.length] = 0;
+  if(native_windows) CHECK(!strncmp(base,"file:///",8) && base[8]>='A' && base[8]<='Z' && base[9]==':' && base[10]=='/');
   if (!strcmp(mode, "--module-cache")) return frozen_failures(runtime, directory, base);
   if (!strcmp(mode, "--module-policy")) return path_refusals(runtime, directory, base);
   if (!strcmp(mode, "--module-aliases")) return aliases(runtime, directory, base);

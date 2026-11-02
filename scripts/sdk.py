@@ -210,7 +210,9 @@ def consume(args, report, directory):
                                    "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")
-        unavailable = not required and executed["exit_code"] == 77 and not executed["timed_out"] and not stdout and stderr.startswith("file-symlink fixture unavailable: errno=")
+        # This supplied Cosmopolitan PE reports exit(77) as 19712 on the measured
+        # Windows host; retain its actual exit and explicit fixture limitation.
+        unavailable = not required and executed["exit_code"] in (77, 77 << 8) and not executed["timed_out"] and not stdout and stderr.startswith("file-symlink fixture unavailable: errno=")
         status = "pass" if passed else "blocked" if unavailable else "fail"
         report["cases"].append({"case_id": "qaplet-host." + suffix, "status": status, "required": required,
             "started_at": executed["started_at"], "finished_at": executed["finished_at"],
