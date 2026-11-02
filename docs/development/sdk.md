@@ -278,3 +278,55 @@ compile/link/archive settings, exact static archive components and final Host
 bytes. `sdk_recipe.sha256` and `sdk.sha256` are separate identities; runtime
 results in `run` reports retain both. An SDK build or local smoke does not certify
 the full M1 Cross/Full matrix or release readiness.
+
+`sdk.py run` runs the complete 98-case Host/CLI/application catalog and the
+actual public lifetime loop (1,000 create/close/destroy cycles). It records the
+Linux x64 minimum of 1,000 and other native target minimum of 100; the current
+Host executes 1,000 on every target. The known Windows file-symlink fixture
+remains explicitly optional/blocked only for its measured 77/19712 exit.
+
+`sdk.py matrix --profile fast|cross --build-report BUILD --artifact HOST
+--loader-dir LOADERS --input-report RUN` independently consumes supplied native
+evidence. Repeat `--input-report`, or select roots containing `run.json` using
+`--input-dir`. Fast requires native Linux x64; Cross requires all five native
+targets. The consumer checks the authoritative catalog, raw output and exits,
+argv, intervals and deadlines, measured host/loader, SDK/package/APE/producer
+joins and actual lifecycle totals. Missing, skipped, timed-out, translated or
+guest execution cannot complete native Cross. Explicit original-path mappings
+and evaluator source identities are retained. CI augments the existing native
+jobs and explicitly transports hidden SDK files. Full/strict/release gates
+remain separate.
+
+For a measured missing ARM64 kernel configuration, export the same verified
+distribution and run the existing locked full-system guest:
+
+```sh
+python3 scripts/sdk_guest.py export --build-report out/sdk/build.json \
+  --distribution out/sdk/artifacts --page-size 65536 \
+  --manifest out/sdk-64k/payload.json --selection out/sdk-64k/selection.json \
+  --report out/sdk-64k/export.json
+python3 scripts/arm64_guest.py run --cache /main/checkout/.cache/guests \
+  --page-size 65536 --manifest out/sdk-64k/payload.json \
+  --timeout 900 --command-timeout 60 --report out/sdk-64k/guest.json
+python3 scripts/sdk_guest.py import --selection out/sdk-64k/selection.json \
+  --guest-report out/sdk-64k/guest.json --report out/sdk-64k/import.json
+```
+
+Export verifies the current SDK product recipe, complete ZIP/distribution,
+public components, three executable slices and producer-derived ARM64 loader.
+It emits all 98 required public cases; export success has
+`evidence_verified=false`. Import and its read-only `verify` alias replay the
+locked system/TCG command, kernel/config and signed-input identities, actual
+serial CPU/page facts, original raw logs, before/after payload hashes, cleanup
+and the authoritative process catalog. Guest results remain
+`execution_mode=emulated-system`. Native coverage takes priority; qemu-user and
+cross compilation supply no kernel coverage.
+
+Moved/offline evidence uses `--input-manifest FILE`, with schema 1,
+`profile: "sdk-guest"`, explicit `selection` and `guest_report` references,
+and optional `path_mappings`/`transports` in the shared `core_gate.Evidence`
+format. Reports retain original paths and evaluator source identities separately
+from the product recipe. `--expected-commit SHA` additionally requires the exact
+Qaplet producer source commit. Import verifies its selected kernel scope only;
+it never substitutes for native Cross, the original M0/Core/offline Full proof,
+or the deferred original-archive mirror gate. `release_ready` remains false.

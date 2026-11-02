@@ -4,9 +4,9 @@
 
 **Blocked by:** [13：可分发 SDK 包与完整纯 C 示例](13-sdk-distribution-c-example.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started；尚未领取、实现或验收。
+**Execution state:** implementing；已确认 13 合入祖先，按已确认 Q32 边界实施 SDK guest 导出/导入与实际 64K/Full 验收。
 
 **Execution prerequisites:** 匹配的新制品、ARM64 64K 原生环境或固定完整系统 guest，以及当前 Full 所需的受影响输入和实际运行资源。
 

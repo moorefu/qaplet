@@ -260,6 +260,7 @@ static int symlinks(qaplet_runtime *runtime,const char *directory,const char *ba
 
 static int aliases(qaplet_runtime *runtime,const char *directory,const char *base) {
   char alias[4096],hard[4096],original[4096];
+  int lower_removed=0;
   snprintf(alias,sizeof(alias),"%s/alias.js",directory);
   snprintf(hard,sizeof(hard),"%s/hard.js",directory);
   snprintf(original,sizeof(original),"%s/valid.js",directory);
@@ -300,11 +301,23 @@ static int aliases(qaplet_runtime *runtime,const char *directory,const char *bas
     CHECK(entry(runtime,directory,"VALID.js")==QAPLET_OK);
     CHECK(!number(runtime,"caseDistinct",NULL,42));
     CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.module_count==declared_modules+3);
+    char upper[4096]; snprintf(upper,sizeof(upper),"%s/VALID.js",directory);
+    struct stat lower_facts,upper_facts;
+    CHECK(!lstat(original,&lower_facts) && !lstat(upper,&upper_facts));
+    int case_names_alias=lower_facts.st_dev==upper_facts.st_dev && lower_facts.st_ino==upper_facts.st_ino;
     CHECK(!remove_fixture(directory,"VALID.js"));
+    struct stat after;
+    int lower_after_upper_unlink=lstat(original,&after), lower_after_errno=errno;
+    /* File URL identities above still follow OS realpath spelling. Cleanup
+     * instead follows the measured directory entry: case aliases have only
+     * one entry, already removed by the required uppercase unlink. */
+    CHECK(case_names_alias ? lower_after_upper_unlink==-1 && lower_after_errno==ENOENT : !lower_after_upper_unlink);
+    lower_removed=case_names_alias;
   }
   CHECK(!release(runtime));
   CHECK(!unlink(hard));
-  CHECK(!remove_fixture(directory,"valid.js") && !rmdir(directory));
+  int removed=lower_removed ? 0 : remove_fixture(directory,"valid.js");
+  CHECK(!removed && !rmdir(directory));
   puts("module aliases: actual hardlink identities; native Windows drive and OS path case: pass");
   return 0;
 }

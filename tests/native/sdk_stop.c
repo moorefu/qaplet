@@ -5,6 +5,8 @@
 #include <string.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
   fprintf(stderr, "public stop contract failed at line %d: %s\n", __LINE__, #condition); return 1; \
@@ -113,6 +115,8 @@ typedef struct {
   uint64_t owner_cpu_ns;
   uint64_t callback_hold_ns;
   qaplet_snapshot accepted;
+  int observer_ready;
+  uint64_t cpu_margin_ns;
 } stop_gate;
 
 static uint64_t nanoseconds(clockid_t clock) {
@@ -121,20 +125,76 @@ static uint64_t nanoseconds(clockid_t clock) {
   return (uint64_t)time.tv_sec*1000000000+(uint64_t)time.tv_nsec;
 }
 
-/* Only this worker and the owner exist. Subtract this worker's thread CPU from
- * process CPU to observe owner progress after the JS arm callback has returned.
- * The loop allocates nothing and invokes no C functions after arm. Sleep merely
- * yields the polling worker; elapsed wall time never proves JS started/stopped. */
+/* Only this worker and the owner exist. Where available, subtract this worker's
+ * thread CPU from process CPU after the JS arm callback has returned. The loop
+ * allocates nothing and invokes no C functions after arm. Elapsed wall time
+ * alone never proves JS started/stopped. */
+static int process_cpu(uint64_t *output) {
+  struct rusage process_usage;
+  /* The supplied Intel macOS libc rejects CLOCK_PROCESS_CPUTIME_ID with
+   * EINVAL. getrusage measures the same user+system process CPU instead. */
+  if (getrusage(RUSAGE_SELF,&process_usage)) return 0;
+  *output=((uint64_t)process_usage.ru_utime.tv_sec+process_usage.ru_stime.tv_sec)*1000000000+
+      ((uint64_t)process_usage.ru_utime.tv_usec+process_usage.ru_stime.tv_usec)*1000;
+  return 1;
+}
+
+/* 1: precise observation; 0: process query failed; -1: use the conservative
+ * backend because this supplied host has no usable per-thread CPU clock. */
 static int other_cpu(uint64_t *output) {
-  struct timespec process_time, self_time;
-  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&process_time) ||
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) return 0;
-  uint64_t process=(uint64_t)process_time.tv_sec*1000000000+(uint64_t)process_time.tv_nsec;
+  uint64_t process;
+  struct timespec self_time;
+  if(!process_cpu(&process)) return 0;
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID,&self_time)) return -1;
   uint64_t self=(uint64_t)self_time.tv_sec*1000000000+(uint64_t)self_time.tv_nsec;
   /* A fresh process can have zero measured CPU, especially with native clock
    * granularity. The clock return status, rather than its value, proves success. */
   *output=process>self ? process-self : 0;
   return 1;
+}
+
+/* With exactly owner+worker, owner CPU >= process CPU - worker CPU, and the
+ * worker cannot consume more CPU than the encompassing monotonic interval.
+ * Bracket CPU reads inside wall reads and subtract an additional margin for
+ * both user/system timeval endpoints and the measured wall-clock resolution.
+ * A busy sampler needs actual parallel owner CPU; time alone cannot pass. */
+static int cpu_bound_window(stop_gate *gate, int control) {
+  uint64_t start_wall=nanoseconds(CLOCK_MONOTONIC), start_cpu;
+  if(!start_wall || !process_cpu(&start_cpu)) return 0;
+  uint64_t until=start_wall+2000000000;
+  do {
+    uint64_t current_cpu;
+    if(!process_cpu(&current_cpu)) return 0;
+    uint64_t end_wall=nanoseconds(CLOCK_MONOTONIC);
+    if(end_wall<start_wall || current_cpu<start_cpu) return 0;
+    uint64_t wall=end_wall-start_wall, delta=current_cpu-start_cpu;
+    uint64_t upper=wall+gate->cpu_margin_ns;
+    uint64_t lower=delta>upper ? delta-upper : 0;
+    if(control) {
+      /* While arm holds the owner in C, worker activity cannot prove owner
+       * JS progress. First observe real worker CPU across a complete window. */
+      if(lower>=20000000) return 0;
+      if(delta>=20000000 && wall>=gate->cpu_margin_ns+40000000) return 1;
+    } else {
+      gate->owner_cpu_ns=lower;
+      if(lower>=20000000) return 1;
+    }
+    if(end_wall>=until) break;
+  } while(1);
+  return 0;
+}
+
+static int prepare_cpu_bound(stop_gate *gate) {
+  struct timespec resolution;
+  long ticks=sysconf(_SC_CLK_TCK);
+  if(ticks<=0 || ticks>1000000000 || clock_getres(CLOCK_MONOTONIC,&resolution)) return 0;
+  if(resolution.tv_sec<0 || resolution.tv_sec>1 || resolution.tv_nsec<0 || resolution.tv_nsec>=1000000000) return 0;
+  uint64_t wall_resolution=(uint64_t)resolution.tv_sec*1000000000+resolution.tv_nsec;
+  if(!wall_resolution) return 0;
+  uint64_t quantum=(1000000000+(uint64_t)ticks-1)/ticks;
+  if(quantum<1000) quantum=1000;
+  gate->cpu_margin_ns=4*quantum+2*wall_resolution;
+  return gate->cpu_margin_ns<1000000000 && cpu_bound_window(gate,1);
 }
 
 static qaplet_code arm(qaplet_runtime *runtime, uint64_t call, size_t argc,
@@ -146,6 +206,7 @@ static qaplet_code arm(qaplet_runtime *runtime, uint64_t call, size_t argc,
   gate->entered=1;
   pthread_cond_broadcast(&gate->condition);
   if (!gate->mode) while (!gate->released) pthread_cond_wait(&gate->condition,&gate->mutex);
+  if (gate->mode==1) while (!gate->observer_ready) pthread_cond_wait(&gate->condition,&gate->mutex);
   pthread_mutex_unlock(&gate->mutex);
   if (!gate->mode) {
     if (gate->callback_hold_ns) {
@@ -172,10 +233,19 @@ static void *stop_worker(void *opaque) {
   pthread_mutex_unlock(&gate->mutex);
   if (gate->mode==1) {
     uint64_t start=0, until=nanoseconds(CLOCK_MONOTONIC)+2000000000;
-    if (!other_cpu(&start)) gate->failed=1;
-    do {
+    int precise=other_cpu(&start);
+    if(precise<0) {
+      if(!prepare_cpu_bound(gate)) gate->failed=1;
+    } else if(!precise) gate->failed=1;
+    pthread_mutex_lock(&gate->mutex);
+    gate->observer_ready=1;
+    pthread_cond_broadcast(&gate->condition);
+    pthread_mutex_unlock(&gate->mutex);
+    if(precise<0) {
+      if(!gate->failed && !cpu_bound_window(gate,0)) gate->failed=1;
+    } else if(!gate->failed) do {
       uint64_t current;
-      if (!other_cpu(&current)) { gate->failed=1; break; }
+      if (other_cpu(&current)!=1) { gate->failed=1; break; }
       if (current>=start) gate->owner_cpu_ns=current-start;
       if (gate->owner_cpu_ns>=20000000) break;
       struct timespec yield={0,1000000}; nanosleep(&yield,NULL);

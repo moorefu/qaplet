@@ -218,6 +218,40 @@ def check_tier_transport(workflow):
     sealing = [step for step in build if "scripts/ci_tiers.py seal-offline" in step.get("run", "")]
     require(len(sealing) == 1 and sealing[0].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
             sealing[0]["run"] == "python scripts/ci_tiers.py seal-offline --offline-report out/m0/offline/offline-integrity.json --report out/m0/offline/transport-receipt.json", "Full must retain actual offline helper bytes and recipe receipt")
+    sdk_fast = [
+        "python scripts/sdk.py build --output-dir out/sdk/artifacts --report out/sdk/build.json",
+        "python scripts/sdk.py run --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/sdk/fast/run.json",
+        "python scripts/sdk.py package-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --output-dir out/sdk/external --loader-dir out/m0/loaders --report out/sdk/package-consume.json",
+        "python scripts/sdk.py matrix --profile fast --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-report out/sdk/fast/run.json --report out/sdk/fast-matrix.json",
+    ]
+    require([step["run"] for step in build if "scripts/sdk.py" in step.get("run", "")] == sdk_fast,
+            "Fast must build, execute, externally consume and verify the complete SDK lifecycle contract")
+    uploads = [step for step in build if step.get("with", {}).get("name") == "m1-sdk-build-${{ github.sha }}"]
+    require(len(uploads) == 1 and uploads[0].get("if") == "${{ always() }}" and
+            uploads[0]["with"].get("path") == "out/sdk/" and uploads[0]["with"].get("include-hidden-files") is True and
+            uploads[0]["with"].get("if-no-files-found") == "error", "SDK upload must preserve hidden ARM64 archive and all failure evidence")
+    native = jobs["native-startup"]["steps"]
+    require(any(step.get("with", {}) == {"name": "m1-sdk-build-${{ github.sha }}", "path": "out/sdk"} for step in native),
+            "Native jobs must download the same SDK producer bytes")
+    sdk_native = [step for step in native if "scripts/sdk.py" in step.get("run", "")]
+    require(len(sdk_native) == 1 and sdk_native[0].get("if") == "${{ !cancelled() }}" and sdk_native[0]["run"] ==
+            "python scripts/sdk.py run --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/sdk-native/${{ matrix.runner }}/run.json",
+            "Five existing native jobs must execute supplied SDK contracts on their measured host")
+    require(any(step.get("if") == "${{ always() }}" and step.get("with", {}).get("name") == "m1-sdk-native-${{ matrix.runner }}-${{ github.sha }}"
+                for step in native), "Native SDK failures/raw logs must be uploaded")
+    sdk_matrix = [step for step in jobs["startup-matrix"]["steps"] if "scripts/sdk.py matrix" in step.get("run", "")]
+    require(len(sdk_matrix) == 1 and sdk_matrix[0].get("if") == "${{ !cancelled() }}" and sdk_matrix[0]["run"] ==
+            "python scripts/sdk.py matrix --profile cross --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-dir out/sdk-native --report out/sdk-matrix/matrix.json",
+            "Cross must retain missing/failed SDK targets through the shared native matrix CLI")
+    sdk_guest = [step for step in jobs["arm64-page-gaps"]["steps"] if "scripts/sdk_guest.py" in step.get("run", "") or
+                 "/sdk/payload.json --timeout" in step.get("run", "")]
+    require([step["run"] for step in sdk_guest] == [
+        "python scripts/sdk_guest.py export --build-report out/sdk/build.json --distribution out/sdk/artifacts --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --report out/page-gaps/${{ matrix.page_size }}/sdk/export.json",
+        "python scripts/arm64_guest.py run --cache .cache/guests --page-size 65536 --manifest out/page-gaps/${{ matrix.page_size }}/sdk/payload.json --timeout 900 --command-timeout 60 --report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json",
+        "python scripts/sdk_guest.py import --selection out/page-gaps/${{ matrix.page_size }}/sdk/selection.json --guest-report out/page-gaps/${{ matrix.page_size }}/sdk/guest.json --report out/page-gaps/${{ matrix.page_size }}/sdk/import.json"],
+        "Full must execute and independently import the actual changed SDK on the missing locked 64K kernel")
+    require(all(step.get("if") == "${{ !cancelled() && matrix.page_size == 65536 }}" for step in sdk_guest),
+            "SDK guest execution must preserve native-first missing-64K selection and retain failures")
     core = jobs["full-core"]
     require(core.get("needs") == ["tier-plan", "build", "native-startup", "arm64-page-gaps", "startup-matrix"] and core.get("runs-on") == "ubuntu-24.04", "Full Core must await all selected same-commit jobs")
     require([step["run"] for step in core["steps"] if "run" in step] == [
