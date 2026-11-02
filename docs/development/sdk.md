@@ -10,6 +10,26 @@ outstanding backing blocks directly, without traversing a partial engine graph.
 Published instances use normal Context/Runtime finalization during close.
 Query capability bits before using a feature.
 
+Close accepts OPEN (including PENDING), STOP_REQUESTED, STOPPED and FAILED on
+the owner outside JS/Host callbacks; callback reentry returns BUSY. It first
+closes event acceptance, drops raw queued events and retained JS references,
+then finalizes the Context/Runtime while copied Host bindings still exist.
+Only after native engine release does it publish CLOSED. It runs no user jobs,
+finally blocks or FinalizationRegistry cleanup and never waits for producers.
+The current release APIs (`JS_FreeContext`, `JS_FreeRuntime`, native frees)
+return no cleanup failure; a future detectable cleanup error belongs to the
+close call diagnostic and must not replace the recorded execution first cause.
+
+The CLOSED control handle, fixed configuration and mutex remain valid until
+destroy. Producers may still query snapshots, receive BAD_STATE for valid
+posts, or issue idempotent stop; input errors retain their validation priority.
+The Host withdraws producers and joins every in-flight call before owner
+destroy. Neither future calls nor stale pointers can be detected after release.
+Host code/userdata/resources stay Host-owned and valid through close returning;
+the Host may then release them and finally destroy the drained handle.
+`host-close.c` exercises all closure states, observed producer overlap, raw
+queued work suppression and actual allocation/stop competition in both orders.
+
 The Host-module capability adds pre-execution `qaplet_register_host_module`.
 Registration validates the complete declaration before publishing an identity;
 it copies UTF-8 names, declarations and constant payloads in native storage.

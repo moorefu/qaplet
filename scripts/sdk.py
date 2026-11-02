@@ -26,7 +26,7 @@ from workflow_support import workspace
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_values.c", "tests/native/sdk_promises.c",
           "tests/native/sdk_budgets.c", "tests/native/sdk_module_policy.c", "tests/native/sdk_host_modules.c", "tests/native/sdk_events.c", "tests/native/sdk_resources.c", "tests/native/sdk_stop.c",
-          "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "tests/native/sdk_close.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
           "scripts/quickjs_source.py", "scripts/workflow_support.py", "tests/native/sdk_modules.c",
@@ -35,6 +35,9 @@ RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "te
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 RECIPE += ("tests/native/sdk_runtime.c", "src/cli.c")
 HOST_CASES = (
+    ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
+    ("close-concurrent", ["--close-concurrent"], "close concurrent: producer overlap observed; post/snapshot/stop stable; CLOSED calls drained before destroy: pass\n"),
+    ("close-competition", ["--close-competition"], "close competition: actual allocation refusal and worker stop in both recorded orders; first cause survives close: pass\n"),
     ("runtime", ["--runtime", "{modules}"], "runtime snapshot: fixed read-only argv/cwd; public factory: pass\n"),
     ("cli-contract", ["--cli-contract", "{modules}"], "CLI contrast: shared Script/ESM/cache/rejection/results/budgets; SDK pending preserved: pass\n"),
     ("resource-storage", ["--resource-storage"], "resource storage: actual SDK source-copy refusal permanent; bounded accounting; fresh recovery: pass\n"),
@@ -169,6 +172,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "tests/native/sdk_runtime.c", distribution / "host-runtime.c")
     shutil.copyfile(ROOT / "tests/native/sdk_resources.c", distribution / "host-resources.c")
     shutil.copyfile(ROOT / "tests/native/sdk_stop.c", distribution / "host-stop.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_close.c", distribution / "host-close.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -223,7 +227,9 @@ def build(args, report, directory):
         "-c", distribution / "host-resources.c", "-o", work / "resources.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-stop-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-stop.c", "-o", work / "stop.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "runtime-host.o", work / "resources.o", work / "stop.o", archive],
+    run(report, directory, "host-close-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-close.c", "-o", work / "close.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "modules-host.o", work / "budgets.o", work / "host-modules.o", work / "events.o", work / "module-policy.o", work / "runtime-host.o", work / "resources.o", work / "stop.o", work / "close.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))

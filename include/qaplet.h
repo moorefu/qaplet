@@ -279,10 +279,21 @@ qaplet_code qaplet_request_stop(qaplet_runtime *, qaplet_diagnostic *);
  * objects are inspected. Getters, proxies and conversion hooks are never run. */
 qaplet_code qaplet_get_result(qaplet_runtime *, qaplet_result *, qaplet_diagnostic *);
 qaplet_code qaplet_get_snapshot(qaplet_runtime *, qaplet_snapshot *, qaplet_diagnostic *);
-/* close releases execution resources, keeps a queryable CLOSED handle, and is
- * idempotent. destroy requires CLOSED and is called exactly once by the owner.
+/* Owner may close OPEN (including PENDING), STOP_REQUESTED, STOPPED or FAILED
+ * when no JS/Host callback is executing; dangerous reentry returns BUSY.
+ * Close shuts event acceptance before releasing raw queued work and JS refs,
+ * retains copied Host bindings through engine finalization, then publishes
+ * CLOSED. It runs no user jobs/finally/cleanup JS and does not wait for workers.
+ * Host function code/userdata must remain valid until close returns.
+ * A queryable CLOSED handle and its synchronization survive until destroy;
+ * valid posts are BAD_STATE, snapshots remain available, repeated stop/close
+ * succeed without repeating cleanup or replacing the execution first cause.
+ * Any detectable close error is a separate call diagnostic, not a new first
+ * termination reason. Current engine/native release APIs return no cleanup error.
+ * destroy requires CLOSED and is called exactly once by the owner.
  * Before destroy the host must withdraw producers and join all in-flight calls.
- * After successful destroy every alias is invalid. */
+ * The SDK cannot detect future calls or dangling pointers. After successful
+ * destroy every alias is invalid. A failed create never publishes a handle. */
 qaplet_code qaplet_close(qaplet_runtime *, qaplet_diagnostic *);
 qaplet_code qaplet_destroy(qaplet_runtime *, qaplet_diagnostic *);
 #ifdef __cplusplus
