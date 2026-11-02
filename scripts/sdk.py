@@ -23,7 +23,7 @@ from startup import check_ci_commit, ci_facts, measured_host, select_loader
 from workflow_support import workspace
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c",
-          "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_promises.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "examples/embed.c", "tests/native/sdk_host.c", "tests/native/sdk_promises.c", "tests/native/sdk_budgets.c", "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
           "scripts/quickjs_source.py", "scripts/workflow_support.py")
@@ -36,6 +36,7 @@ HOST_CASES = (
     ("resources", ["--resources"], "resources: source precheck; heap failure permanent; stack exception reusable\n"),
     ("abi", ["--abi"], "ABI: version/flags/tails/short structures; bounded diagnostics: pass\n"),
     ("promises", ["--promises"], "promises: explicit pump; bounded jobs; checkpoints; failure reuse; pending close: pass\n"),
+    ("budgets", ["--budgets"], "budgets: finite defaults; monotonic loop interruption: pass\n"),
     ("facts", ["--facts"], None),
 )
 
@@ -70,6 +71,7 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
     shutil.copyfile(ROOT / "tests/native/sdk_host.c", distribution / "host-contract.c")
     shutil.copyfile(ROOT / "tests/native/sdk_promises.c", distribution / "host-promises.c")
+    shutil.copyfile(ROOT / "tests/native/sdk_budgets.c", distribution / "host-budgets.c")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
@@ -108,7 +110,9 @@ def build(args, report, directory):
         "-c", distribution / "host-contract.c", "-o", work / "embed.o"], args.compile_timeout, work, environment)
     run(report, directory, "host-promises-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
         "-c", distribution / "host-promises.c", "-o", work / "promises.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", archive],
+    run(report, directory, "host-budgets-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+        "-c", distribution / "host-budgets.c", "-o", work / "budgets.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [work / "embed.o", work / "promises.o", work / "budgets.o", archive],
                   work / "qaplet-host.com", work, environment)
     publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     artifact = audit(args, report, directory, tree, "qaplet-host", output)

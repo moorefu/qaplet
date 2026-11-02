@@ -28,7 +28,9 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
     "SOURCE_TOO_LARGE", "MEMORY_LIMIT"
   };
   if (diagnostic) {
-    const char *message = code <= QAPLET_MEMORY_LIMIT ? messages[code] : "UNKNOWN";
+    const char *message = code <= QAPLET_MEMORY_LIMIT ? messages[code] :
+        code == QAPLET_DEADLINE_EXCEEDED ? "DEADLINE_EXCEEDED" :
+        code == QAPLET_DISPATCH_LIMIT ? "DISPATCH_LIMIT" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;

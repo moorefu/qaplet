@@ -12,9 +12,7 @@ union qaplet_allocation {
 typedef qaplet_allocation allocation;
 
 static void memory_failure(qaplet_runtime *runtime) {
-  if (runtime->snapshot.termination_reason == QAPLET_OK)
-    runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-  runtime->snapshot.lifecycle = QAPLET_FAILED;
+  qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
 }
 
 static void *engine_malloc(JSMallocState *state, size_t size) {
@@ -144,6 +142,10 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   if (!limits.engine_stack_bytes) limits.engine_stack_bytes = 1024u * 1024;
   if (!limits.native_storage_bytes) limits.native_storage_bytes = 16u * 1024 * 1024;
   if (!limits.source_bytes) limits.source_bytes = 4u * 1024 * 1024;
+  if (!limits.execution_timeout_ms) limits.execution_timeout_ms = 30000;
+  if (!limits.execution_dispatches) limits.execution_dispatches = 100000;
+  if (limits.execution_timeout_ms > UINT64_MAX / 1000000)
+    return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   if (limits.engine_heap_bytes > SIZE_MAX || limits.engine_stack_bytes > SIZE_MAX ||
       limits.native_storage_bytes > SIZE_MAX || limits.source_bytes >= SIZE_MAX)
     return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
@@ -204,11 +206,15 @@ qaplet_code qaplet_eval(qaplet_runtime *runtime, const char *source, size_t leng
   runtime->snapshot.native_current_bytes += length + 1;
   if (runtime->snapshot.native_current_bytes > runtime->snapshot.native_peak_bytes)
     runtime->snapshot.native_peak_bytes = runtime->snapshot.native_current_bytes;
-  runtime->snapshot.phase = QAPLET_PHASE_RUNNING;
-  runtime->has_result = 0;
-  runtime->execution_code = QAPLET_OK;
-  runtime->result = (qaplet_result)QAPLET_RESULT_INIT;
   pthread_mutex_unlock(&runtime->mutex);
+  code = qaplet_execution_begin(runtime);
+  if (code) {
+    free(copy);
+    pthread_mutex_lock(&runtime->mutex);
+    runtime->snapshot.native_current_bytes -= length + 1;
+    pthread_mutex_unlock(&runtime->mutex);
+    return qaplet_report(diagnostic, code);
+  }
   if (length) memcpy(copy, source, length);
   copy[length] = 0;
   JSValue value = JS_Eval(runtime->context, copy, length, "<eval>", JS_EVAL_TYPE_GLOBAL);

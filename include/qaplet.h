@@ -14,7 +14,8 @@ typedef enum {
   QAPLET_WRONG_THREAD = 3, QAPLET_BUSY = 4, QAPLET_BAD_STATE = 5,
   QAPLET_UNSUPPORTED = 6, QAPLET_JS_EXCEPTION = 7,
   QAPLET_VALUE_TYPE_UNSUPPORTED = 8, QAPLET_BUFFER_TOO_SMALL = 9,
-  QAPLET_SOURCE_TOO_LARGE = 10, QAPLET_MEMORY_LIMIT = 11
+  QAPLET_SOURCE_TOO_LARGE = 10, QAPLET_MEMORY_LIMIT = 11,
+  QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -40,6 +41,7 @@ enum {
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t engine_heap_bytes, engine_stack_bytes, native_storage_bytes, source_bytes;
+  uint64_t execution_timeout_ms, execution_dispatches;
 } qaplet_limits;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -81,7 +83,7 @@ typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t capabilities;
 } qaplet_abi;
-#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0}
+#define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
 #define QAPLET_PROGRESS_INIT {sizeof(qaplet_progress), QAPLET_ABI_VERSION, 0, 0, 0}
