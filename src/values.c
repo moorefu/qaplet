@@ -92,8 +92,7 @@ static qaplet_code copy_result(qaplet_runtime *runtime, const void *bytes, size_
   uint64_t available = runtime->snapshot.limits.native_storage_bytes - runtime->snapshot.native_current_bytes;
   unsigned char *copy = length <= available ? malloc(length) : NULL;
   if (!copy) {
-    if (runtime->snapshot.termination_reason == QAPLET_OK) runtime->snapshot.termination_reason = QAPLET_MEMORY_LIMIT;
-    runtime->snapshot.lifecycle = QAPLET_FAILED;
+    qaplet_record_termination_locked(runtime, QAPLET_MEMORY_LIMIT);
     pthread_mutex_unlock(&runtime->mutex);
     return QAPLET_MEMORY_LIMIT;
   }

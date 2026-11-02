@@ -35,6 +35,7 @@ enum {
   QAPLET_CAP_POD_SNAPSHOT = 1u << 4, QAPLET_CAP_RESOURCE_BASE = 1u << 5,
   QAPLET_CAP_COPIED_VALUES = 1u << 6,
   QAPLET_CAP_PROMISE_JOBS = 1u << 7,
+  QAPLET_CAP_EXECUTION_BUDGETS = 1u << 9,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
 };
 
@@ -53,6 +54,13 @@ typedef struct {
   qaplet_limits limits;
   uint64_t reserved[4];
 } qaplet_config;
+/* Zero fields inherit the finite instance limits. Nonzero values may only
+ * tighten them. flags and reserved must be zero. Never retained after a call. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t flags, timeout_ms, max_dispatches;
+  uint64_t reserved[4];
+} qaplet_execution_options;
 typedef struct {
   uint32_t struct_size, abi_version;
   qaplet_code code;
@@ -86,6 +94,7 @@ typedef struct {
   qaplet_limits limits;
   uint64_t engine_current_bytes, engine_peak_bytes;
   uint64_t native_current_bytes, native_peak_bytes;
+  uint64_t execution_dispatches;
 } qaplet_snapshot;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -93,10 +102,11 @@ typedef struct {
 } qaplet_abi;
 #define QAPLET_LIMITS_INIT {sizeof(qaplet_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0}
 #define QAPLET_CONFIG_INIT {sizeof(qaplet_config), QAPLET_ABI_VERSION, 0, QAPLET_LIMITS_INIT, {0}}
+#define QAPLET_EXECUTION_OPTIONS_INIT {sizeof(qaplet_execution_options), QAPLET_ABI_VERSION, 0, 0, 0, {0}}
 #define QAPLET_DIAGNOSTIC_INIT {sizeof(qaplet_diagnostic), QAPLET_ABI_VERSION, 0, 0, NULL, 0, 0}
 #define QAPLET_PROGRESS_INIT {sizeof(qaplet_progress), QAPLET_ABI_VERSION, 0, 0, 0}
 #define QAPLET_RESULT_INIT {sizeof(qaplet_result), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, NULL, 0, 0}
-#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0}
+#define QAPLET_SNAPSHOT_INIT {sizeof(qaplet_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, QAPLET_LIMITS_INIT, 0, 0, 0, 0, 0}
 #define QAPLET_ABI_INIT {sizeof(qaplet_abi), QAPLET_ABI_VERSION, 0}
 
 /* Global query and POD snapshots are thread-safe. All remaining operations
@@ -116,6 +126,14 @@ qaplet_code qaplet_create(const qaplet_config *, qaplet_runtime **output, qaplet
  * thenables are not inspected. Runnable jobs or an unsettled entry yield PENDING.
  * While PENDING, another eval is BUSY and get_result is BAD_STATE. */
 qaplet_code qaplet_eval(qaplet_runtime *, const char *source, size_t length, qaplet_progress *, qaplet_diagnostic *);
+/* qaplet_eval is the default-options convenience call. An accepted execution
+ * has one absolute CLOCK_MONOTONIC deadline (default 30000 ms), including host
+ * waits, and one cumulative dispatch limit (default 100000 jobs/events).
+ * Exhaustion permanently FAILS the Runtime even if JS catches an exception.
+ * Checks are cooperative; arbitrary native calls/GC are not hard-preempted.
+ * NULL options inherit instance limits. Options cannot increase those limits. */
+qaplet_code qaplet_eval_with_options(qaplet_runtime *, const char *source, size_t length,
+                                    const qaplet_execution_options *, qaplet_progress *, qaplet_diagnostic *);
 /* Runs at most 256 jobs, without sleeping. Empty jobs with an unsettled entry
  * remain PENDING with progressed=0. Rejections are judged only after a complete
  * jobs checkpoint. Ordinary errors settle remaining jobs before DONE, preserving
