@@ -134,7 +134,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_WORK | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -358,6 +358,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   if (qaplet_get_lifecycle(runtime) != QAPLET_CLOSED) {
+    qaplet_work_close(runtime);
     qaplet_loop_shutdown(runtime);
     qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);

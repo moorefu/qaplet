@@ -141,6 +141,7 @@ void qaplet_wake_locked(qaplet_runtime *runtime) {
 
 void qaplet_loop_shutdown(qaplet_runtime *runtime) {
   if (!runtime->m2_enabled) return;
+  qaplet_work_shutdown(runtime);
   pthread_mutex_lock(&runtime->mutex);
   runtime->loop_closed = 1;
   runtime->keepalive_tokens = 0;
@@ -303,7 +304,7 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   qaplet_query_abi(&abi);
   pthread_mutex_lock(&runtime->mutex);
   value.capabilities = runtime->m2_enabled ? abi.capabilities : abi.capabilities &
-    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT);
+    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_WORK);
   value.lifecycle = runtime->snapshot.lifecycle;
   value.phase = runtime->snapshot.phase;
   value.termination_reason = runtime->snapshot.termination_reason;
@@ -397,10 +398,10 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
         qaplet_control_failure_locked(runtime, got < 0 ? errno : EIO);
       runtime->wake_pending = 0;
     }
-    if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth) {
+    if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth || qaplet_work_ready_locked(runtime)) {
       pthread_mutex_unlock(&runtime->mutex); continue;
     }
-    if (!runtime->keepalive_tokens) {
+    if (!runtime->keepalive_tokens && !runtime->work_snapshot.pending_handoffs) {
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
@@ -482,9 +483,11 @@ qaplet_code qaplet_quiesce(qaplet_runtime *runtime, uint64_t wait,
     else { now += wait * 1000000; deadline.tv_sec = now / 1000000000; deadline.tv_nsec = now % 1000000000; }
   }
   if (code) { pthread_mutex_unlock(&runtime->mutex); qaplet_driver_set(runtime, 0); return qaplet_report(diagnostic, code); }
+  qaplet_work_reap_locked(runtime);
   int pending = runtime->native_state != QAPLET_NATIVE_QUIESCENT;
   while (pending && wait && !runtime->cleanup_reason) {
     int error = pthread_cond_timedwait(&runtime->native_condition, &runtime->mutex, &deadline);
+    qaplet_work_reap_locked(runtime);
     pending = runtime->native_state != QAPLET_NATIVE_QUIESCENT;
     if (error == ETIMEDOUT) break;
     if (error) {

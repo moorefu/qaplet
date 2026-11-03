@@ -297,6 +297,11 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       code = qaplet_execution_checkpoint(runtime, progress, progressed);
       if (code || JS_IsJobPending(runtime->engine)) break;
     }
+    if (events < runtime->snapshot.limits.pump_events) {
+      unsigned completed=qaplet_work_handoff(runtime,runtime->snapshot.limits.pump_events-events);
+      events+=completed;
+      if (completed) progressed=1;
+    }
     if (events == runtime->snapshot.limits.pump_events || !qaplet_events_pending(runtime)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
