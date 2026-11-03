@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** local_verified_cross_pending
+**Execution state:** completed；当前配方五原生及实际 ARM64 64K 已经独立严格重放，仅完成真实 OS 探针及已测子集。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -22,7 +22,7 @@
 - [x] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。
 - [x] 验证 UTF-8、Unicode、分块输入/输出和非法数据，不能用替换解码或剥离控制字符当作逐字节证明。
 - [x] 观察取消/关闭与共享模式、借用端点的影响，明确安全可用及 UNSUPPORTED 的范围。
-- [ ] 受控设施、失败历史、供应字节及各适用目标原始证据完整；不增加面向用户的完整 PTY 创建 API。
+- [x] 受控设施、失败历史、供应字节及各适用目标原始证据完整；不增加面向用户的完整 PTY 创建 API。
 
 ## Blocking details
 
@@ -59,6 +59,8 @@
 当前仍为 claimed；第五条适用目标原件完整性待集成 Cross/Full，不以本地成功或旧 M0 成绩 resolved。未修改公共 workflow/ci_tiers/README，也未修改 M0 配方/源。
 
 最终 producer 绑定已提交实现 `4044c7e`，原件位于本 worktree `out/m2/tty/verified/`；逐一核对 source/recipe 字节与当前源码一致。最终三目标再次全部通过，两宿主各 7 项 CLI（含 5 种真实 guest 反向变体）全部通过。Ubuntu 当前源码完整 `make check` 352 项回归成功，其中 179 项执行通过、173 项既有条件 skipped；本票显式合同 0 skipped。只读 Git 路径映射前后共享 `.git/config` 摘要不变，原始 18 项路径失败和所有历史失败保留。
+
+2026-11-03：Mac 模式/resize、Windows fixture 及架构别名修复经独立合并 `73e84df` 进入集成。[Full 41616881692](https://github.com/moorefu/qaplet/actions/runs/41616881692) 绑定 `0e4ba214cdb7bd6e103cfade9fba748cbd8f85fa`，整体 completed/success。独立只读重放五原生 97 项（四个 POSIX 各 19、Windows 21）及实际 64K 19 项，共 116 项通过；同 APE、源码/配方/CI、实际原生 loader、ConPTY raw controller 动作与完整模式恢复、真实 guest serial/4 suite/8 payload/清理、29 个 provider 原 ZIP 均重核。严格报告在主 `out/qaplet-m2/full-0e4ba21/verify/tty-native-replayed-v2.json`、`tty64k-replayed.json`、`guest-transport-replayed.json` 和 `04-05-acceptance-check.json`。这是原执行证据的重放，不计新 native 执行；Windows 非法及补充平面输入继续为实测 UNSUPPORTED，fd0 与显式 native Console route 的区别、旧 Mac 失败及原 CI setup errno 未证实的边界均保留。按本票范围 resolved，不宣称完整 PTY API 或父 M2 完成。
 
 2026-11-03：当前集成 `196cd75` 的真实 Full `41607608424` 在两 Mac 的完整模式恢复/resize 及 Windows stdin setup 上失败，旧本地成绩不能替代。fresh 修复提交 `fe37a634efb366f6be601319391a3683b0fc1d76` 保持完整模式比较，增加 Darwin 非消费性队列处理、独立 resize PTY/self-pipe/退出前查询、受控双就绪取消、自有 stdin fixture-root 与分步 errno，并仅规范架构已知别名而保留 raw。新同摘要 Ubuntu producer 的 Linux 19/19、Windows 21/21、实际完整系统 ARM64 64K 19/19 通过；两宿主公开 CLI 各 8/8、0 skipped，原负向和八类 guest 反向变体保留。全部新证据在 fresh worktree 的 `out/m2-05-fix/`，细节见[验证记录新增节](../05-tty-validation.md#196cd75-full-失败后的独立修复)。
 

@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** awaiting_cross；独立实现和本地 Linux/Windows/实际 ARM64 64K 已完成，macOS 两目标及 Linux ARM64 native 待统一 Cross，尚未 resolved。
+**Execution state:** completed；当前配方五原生及实际 ARM64 64K 已经独立严格重放，本票仅完成真实 OS 探针，不代表后续 ProcessHost 产品或父 M2 完成。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -22,7 +22,7 @@
 - [x] pipe/inherit/ignore 均有真实子进程结果，退出与 EOF 两种顺序可区分。
 - [x] 加入额外 waker、文件和描述符 fixture，证明仅授权 stdio 可继承，内部传递元信息不造成句柄泄漏或 EOF 悬挂。
 - [x] 真实强制终止并 reap 直接子进程，保留 native exit/signal/error，覆盖创建失败和重复回收。
-- [ ] Ubuntu producer、各适用宿主与实际 64K 的探针结果保持身份和原始日志，不宣称整树或优雅终止能力。
+- [x] Ubuntu producer、各适用宿主与实际 64K 的探针结果保持身份和原始日志，不宣称整树或优雅终止能力。
 
 ## Blocking details
 
@@ -58,3 +58,5 @@
 2026-11-03：领取独立 worktree `codex/m2-04-process`，确认集成祖先并合入 `8fd870e`。按已确认 T01/T02 公开 CLI/原生探针 seam 执行真实 red/green；产物与旧 M0 配方隔离。
 
 2026-11-03：独立 `m2-process.com`、无 CRT Windows PE child 与公开 CLI 合同完成。Ubuntu producer 和同摘要 Linux 13 项、Windows 18 项、实际 ARM64 64K 13 项均通过；Windows CLI 9/9、Ubuntu 8 过及唯一 Windows 专属项不适用。保留 posix_spawn 的真实环境差分、trace duplicate 导致的 EOF 挂起、HANDLE 数值复用误判和修正后的正向继承控制。上述勾选仅覆盖已测本地三目标，不代表完整 Cross；原始报告、失败历史、准确 CLI、SHA 和边界见[中文证据](../04-process-validation.md)。合入 `0460f71`，原件 out 保留，未 push。
+
+2026-11-03：Windows fixture/cwd 修复经独立合并 `87fe34f` 进入集成。[Full 41616881692](https://github.com/moorefu/qaplet/actions/runs/41616881692) 绑定 `0e4ba214cdb7bd6e103cfade9fba748cbd8f85fa`，整体 completed/success。独立只读重放五原生 70 项（四个 POSIX 各 13、Windows 18）及实际 64K 13 项，共 83 项通过；29 个 provider ZIP 的原始摘要/长度、源码/配方/CI、同 APE、Windows 实际 PE child、原生 loader、真实 guest serial/4 suite/8 payload/清理均重核。原件及严格报告见主 `out/qaplet-m2/full-0e4ba21/verify/process-native-replayed-v2.json`、`process64k-replayed.json`、`guest-transport-replayed.json` 和 `04-05-acceptance-check.json`。本次是原生执行证据的只读重放，不计新 native 执行；原 Full 的具体失败 syscall/errno 仍不以本地受控故障替代，旧失败保持可查。按本票范围 resolved，不外推整树清理、优雅终止或未来产品支持。
