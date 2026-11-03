@@ -98,7 +98,9 @@ class M2WakerContract(unittest.TestCase):
                                      "--artifact", producer.parent / "artifacts/m2-waker.com", *options,
                                      "--report", work / "report.json"], capture_output=True, text=True, timeout=60)
             report = json.loads((work / "report.json").read_text(encoding="utf-8"))
-            self.assertEqual(result.returncode, 0, report["reason"])
+            failures = [{"case_id": case["case_id"], "actual": case["actual"]}
+                        for case in report["cases"] if case["status"] != "pass"]
+            self.assertEqual(result.returncode, 0, {"reason": report["reason"], "failed_cases": failures})
             cases = {case["case_id"]: case for case in report["cases"]}
             self.assertTrue(all(case["status"] == "pass" for case in cases.values()))
             self.assertEqual(cases["waker.blocked"]["actual"]["timeout_ms"], -1)

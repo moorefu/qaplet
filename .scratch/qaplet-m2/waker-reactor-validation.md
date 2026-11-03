@@ -129,4 +129,10 @@ Ubuntu 使用既有固定输入和主树物理 `.cache/` 构建，新 APE 为 97
 
 新 Linux / Windows 公开 CLI 各 6 tests 通过、0 skipped，耗时 4.197s / 5.415s；含真实供应物正常执行及新增拒绝夹具事实、改字节启动前拒绝、缺输入 blocked、输出碰撞拒绝、外层 deadline 真实回收、真实 guest 证据的四类拒绝变体。原件为 `contracts-linux.log`、`contracts-windows.log`；`build-info.json`、`artifacts/`、`linux.json`、`windows.json`、`payload-64k.json`、`export-64k.json`、`guest-64k.json`、`arm64-64k.json` 与全部 `evidence/` 保留在新输出目录。
 
-纯只读 Windows `preflight-windows.json` 通过；WSL 直接读取 Windows worktree `.git` 路径失败的首次预检单独保存在 `preflight.json`，不是探针失败。最终仓库检查与合入点由后续同分支记录补充。本票仍待新 macOS 原生及适用 Full，尚不能 resolved。
+纯只读 Windows `preflight-windows.json` 通过；WSL 直接读取 Windows worktree `.git` 路径失败的首次预检单独保存在 `preflight.json`，不是探针失败。提交 `ec180f1` 后合入 integration tip `af6c0ff`，merge 为 `445763b`；仅在新 ignored 输出目录放置当前 worktree 的只读 Git 路径映射，fixture 的 init/config/写操作仍使用真实 Git，不设全局 GIT_DIR、不改共享配置。
+
+合入后的第一次 `dev.py check` 真实失败，原件 `check.json` / `check/command-0.stderr.log` 保留：345 tests / 92.270s、169 skipped，唯一失败为真实供应物 CLI 单测，consumer 原因为 `Real OS probe did not complete every required case`。旧单测的 TemporaryDirectory 已自动清理当次原始 report，笼统断言没有保留具体失败 case；因此不能归因为 connect 夹具、计时或宿主负载，也不能宣称这次未归因失败已修复。
+
+为避免再次丢失诊断，CLI 单测现在在失败消息中保留所有非 pass 的 case_id / actual，没有改任何通过判据。相同环境立即重放通过；诊断循环 `repeat_probe.py` 保留 `repeat/000.json` 至 `099.json` 及各自 raw evidence，100 次实际公开 CLI 全通过，waker.blocked 的实测等待为 100.068–105.964ms。这些重放没有把首次失败改写成绿灯或已确诊原因。
+
+带诊断的第二次完整 Ubuntu `dev.py check` 通过，原件为 `check-diagnosed.json` 与 `check-diagnosed/`：input-lock / CI 合同通过，345 tests / 85.320s、169 skipped，随后实际系统 C bootstrap 通过。普通检查未供应范围的 skips 不签发完整产品验收；02 的六项专门 CLI 合同均执行。本票仍待新 macOS 原生及适用 Full，保留上述未归因本地失败历史，尚不能 resolved。

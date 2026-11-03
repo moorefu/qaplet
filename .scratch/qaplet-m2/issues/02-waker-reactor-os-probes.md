@@ -62,3 +62,5 @@
 2026-11-03：正式补齐 19 项并完成三个本地实际目标及两平台 CLI 全验收；合并 integration tip `791af3d`，将本票保留为 awaiting_cross。验收记录包含全部输入/配方/供应物身份、原始日志位置、失败历史、Windows backend 差异与尚未执行目标，不将局部通过冒充整个父验收组完成。
 
 2026-11-03：首次集成 Full `41599033541` 的两 macOS 均为 18 pass / 1 fail，唯一失败为 `socket.connect-error`；保存原件通过不变 consumer 重放仍红。修复分支 `codex/m2-02-macos-fix` 仅在真实 nonblocking connect 前实测释放 loopback 端口预留，记录关闭和目标端口，未改 consumer 或等待时限。Apple XNU 源码支持 bound 未 listen 端点会丢弃报文的假设，尚未由新 macOS 原生执行确认因果。新 APE `c1507c60f6800e45847fef05bb7a5cc1d4a5a110fb65dda221d93746beb630b7` 在本地 Linux/Windows/实际 ARM64 64K 各 19/19、两平台各 6 项公开 CLI 合同通过；原件及候选修复边界见 [02 验收记录](../waker-reactor-validation.md#首次-full-macos-失败与最小夹具修复)。本票继续 awaiting_cross，不以旧 trace 重放或局部回归签发新 macOS 通过。
+
+2026-11-03：合入最新 integration tip `af6c0ff`。第一次完整 Ubuntu check 的真实供应物单测出现一次未归因失败，原笼统断言及临时目录清理未留下具体失败 case；保留首跑红灯，新增非 pass case / actual 失败诊断。相同环境随后 100 次公开 CLI 均通过，第二次完整 check 的 345 tests（169 skipped）及真实 C bootstrap 通过。未扩大时限或放宽判据，不把未复现的首次红灯称为已确诊/已修复；具体边界见验收记录，本票仍 awaiting_cross。
