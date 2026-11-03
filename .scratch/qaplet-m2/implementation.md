@@ -19,11 +19,11 @@
 
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
-| 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | `0945484` 已集成，待 Cross |
-| 02 | `codex/m2-02-waker` | `.cache/worktrees/m2-02` | `8fd870e` 已集成，待 Cross |
-| 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | `dfac18d` 已集成，待 Cross |
-| 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | 实施中 |
-| 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | 实施中 |
+| 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
+| 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | `.cache/worktrees/m2-02` / `m2-02-fix` | `9a390f9` 候选已集成，待新 Mac/Cross |
+| 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
+| 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | `a64afa6` 已集成，待 Cross |
+| 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | `0460f71` 已集成，待 Cross |
 | 06–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
@@ -65,6 +65,14 @@
 首次 Full 在两台 macOS 的 `socket.connect-error` 失败，其余五原生 SDK、stdio 及实际 64K/旧 M0 Full 步骤均已有成功原件；仍须严格消费，不以步骤成功替代验收。失败原件及可复验重放位于 `out/qaplet-m2/initial-cross/HANDOFF.md`。已分派独立 `codex/m2-02-macos-fix`；04/05 继续实施。为避免未完成的独立票成为 02 修复的虚构前置，暂将公共 CI 恢复为字节匹配 `5fb999f` 的两探针版本；四探针准备提交 `c338ca9` 保留，待 04/05 源码就绪再恢复执行。
 
 暂退预备入口后的 Ubuntu 仓库检查通过：`out/qaplet-m2/check-two-probe-replay.json`（345 项、171 项需显式输入未执行）。旧失败保持失败；当前未关闭 01–03 或放行依赖。
+
+后续独立只读重放已完成：`out/qaplet-m2/initial-cross/verify/VERIFICATION.md` 与 `summary.json` 记录五原生 SDK、实际 64K 105 项、包外 8 项、受控故障夹具 1 项/4 阶段、五原生 stdio 各 19 项及实际 64K 19 项，以及当前 M0 Full 六目标 235 项。01、03 自身范围无独立阻塞，按逐票范围完成并勾选其验收；02 的两台 Mac 失败和整个 run 的 failure 均保留，父 M2 仍未完成。Windows SDK 本次实际 105 项全通过，其既有 required 目录为 104（可选 symlink 本次也通过）。
+
+Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merger 集成。候选关闭预留端口后再测真实非阻塞连接错误，consumer/判据/timeout 不变；旧 Mac trace 仍红，Linux/Windows/64K 各 19 项和 100 次 CLI 通过，首轮本地检查一项未归因失败及后续完整检查成功都保留。04/05 本地原件仍各自绑定源树原始配方；04 部分源文件在主树按既有属性检出为 LF，并清理一行尾随空白，所以必须由接下来的当前配方 Full 重新取得成绩。
+
+04、05 代码均已就绪，已恢复 `c338ca9` 的四探针编排，准备对当前集成重新执行 Full。05 全部输出已保存/核验 820 文件、143,245,848 逻辑字节；Mac 候选输出保存/核验 436 文件、23,857,384 逻辑字节，收据分别为主 `store-05-*.json`、`store-02-macos-fix-*.json`。
+
+五票当前集成的 Ubuntu 仓库检查通过：`out/qaplet-m2/check-five-ticket-integration.json`，361 项总数中 178 项实际执行通过、183 项因需外部显式输入而跳过，C bootstrap 通过；`git diff --check` 无问题。下一次 Full 将使用主树当前 LF 源码及清理后的配方，不继承 04/05 本地旧源字节的签发身份。
 
 ## 一次性测试入口修复
 

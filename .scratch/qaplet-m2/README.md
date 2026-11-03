@@ -11,9 +11,9 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 
 | 票号 | 独立任务 | 直接 blocker | Status |
 |---|---|---|---|
-| 01 | [M2 Runtime 的可选创建与兼容生命周期](issues/01-runtime-opt-in-compatibility.md) | 无 | ready-for-agent |
+| 01 | [M2 Runtime 的可选创建与兼容生命周期](issues/01-runtime-opt-in-compatibility.md) | 无 | resolved |
 | 02 | [唤醒与 Socket 等待的真实 OS 探针](issues/02-waker-reactor-os-probes.md) | 无 | ready-for-agent |
-| 03 | [Pipe 与借用标准流的可取消接入探针](issues/03-pipe-stdio-cancel-os-probes.md) | 无 | ready-for-agent |
+| 03 | [Pipe 与借用标准流的可取消接入探针](issues/03-pipe-stdio-cancel-os-probes.md) | 无 | resolved |
 | 04 | [子进程参数、stdio 与继承隔离探针](issues/04-process-inheritance-os-probes.md) | 无 | ready-for-agent |
 | 05 | [真实终端租约、resize 与 Console 文本探针](issues/05-tty-console-os-probes.md) | 无 | ready-for-agent |
 | 06 | [等待中的 Runtime 接收事件与停止](issues/06-wait-events-keepalive-stop.md) | [01](issues/01-runtime-opt-in-compatibility.md)、[02](issues/02-waker-reactor-os-probes.md) | ready-for-agent |

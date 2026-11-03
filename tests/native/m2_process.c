@@ -481,7 +481,7 @@ static void windows_native(const char *program, const char *cwd) {
       CreateProcess(app, command, 0, 0, true, 0x80000 | 0x400 | 0x08000000, block, widecwd, &startup.StartupInfo, &process);
   unsigned create_error = created ? 0 : GetLastError();
   if (created) ++live_children;
-  
+
   if (initialized) DeleteProcThreadAttributeList(startup.lpAttributeList);
   free(startup.lpAttributeList);
   for (int i = 0; i < 3; ++i) if (handles[i]) cleanup_ok &= CloseHandle(handles[i]);

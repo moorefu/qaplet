@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Execution state:** implemented_pending_cross；2026-11-03 公开 SDK 与本地 Ubuntu/Windows 供应物合同已实现并实测，完整 Cross/Full 尚待集成分支取得，未标 accepted/resolved。
+**Execution state:** completed；2026-11-03 本票的 M2 空实例及 M1 兼容生命周期已实现并完成独立原件重放，见[实施记录](../implementation.md)。初次 Full 的 02 macOS 探针失败单独保留，父 M2 仍在实施。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 旧头文件消费者与 M1 创建、值桥、模块、事件和关闭合同保持兼容；旧布局、错误数值和 reserved 含义不变。
-- [ ] 独立 M2 创建配置、实例能力及快照可用；只声明本票实际实现的子集，未实现能力不以成功占位符提供。
-- [ ] 完整调用范围的 owner/重入保护成立；空实例 run_once(0)、无进展 pump、CLOSED 查询和 destroy 前置条件可由公开接口验收。
-- [ ] 空实例 close 与原生清理状态分开表达；后续原生保留所需边界先建立，不能在 CLOSED 后重新写回 FAILED。
-- [ ] 有限默认配置、结构大小/版本/未知字段拒绝和逐阶段创建失败回滚可实测，失败不发布半成品。
+- [x] 旧头文件消费者与 M1 创建、值桥、模块、事件和关闭合同保持兼容；旧布局、错误数值和 reserved 含义不变。
+- [x] 独立 M2 创建配置、实例能力及快照可用；只声明本票实际实现的子集，未实现能力不以成功占位符提供。
+- [x] 完整调用范围的 owner/重入保护成立；空实例 run_once(0)、无进展 pump、CLOSED 查询和 destroy 前置条件可由公开接口验收。
+- [x] 空实例 close 与原生清理状态分开表达；后续原生保留所需边界先建立，不能在 CLOSED 后重新写回 FAILED。
+- [x] 有限默认配置、结构大小/版本/未知字段拒绝和逐阶段创建失败回滚可实测，失败不发布半成品。
 
 ## Blocking details
 
@@ -52,9 +52,12 @@
 
 ## Comments
 
+
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 
 2026-11-03：已领取票据。按父规格 T01/T02 已确认边界，以公开 SDK 纯 C Host 测试 M2 独立创建、配置、实例能力、空实例驱动、owner/重入与 CLOSED/native 状态；以冻结的 M1 公共头文件消费者验证旧布局/数值及值桥、模块、事件、关闭合同。首条新接口红灯日志：`out/m2-01/red-empty.log`。复杂资源取消、等待 backend 与跨平台总验收保持后续票据原范围。
 
 2026-11-03：本地实现完成。Ubuntu 正常供应目录 105/105，Windows 同字节 104 pass + 1 已知可选 symlink blocked，包外普通消费者 8/8、独立受控系统故障消费者及 Ubuntu 完整 check 通过。完整命令、候选配方/SDK 身份、红绿、原始失败和剩余范围见 [实施记录](../01-runtime-validation.md)。等待集成分支 Cross/Full，验收复选框暂不勾选；后续原生资源必须沿已建立 retain/quiesce 边界接入，空实例成绩不证明已有资源回收或 OS backend 支持。
+
+2026-11-03（集成验收）：提交 `5fb999f`、run `41599033541` 的五原生 SDK、实际 64K 105 项、包外 8 项、独立系统故障夹具及当前 M0 Full 235 项均已按原始 ZIP/日志/输入身份只读重放。结果见主 `out/qaplet-m2/initial-cross/verify/VERIFICATION.md`，本票按空实例及兼容生命周期范围完成；该 run 整体 failure（02 的两台 macOS connect-error）及父规格未完成事实均保留。
