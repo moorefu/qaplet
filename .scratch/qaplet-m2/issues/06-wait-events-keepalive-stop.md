@@ -4,9 +4,9 @@
 
 **Blocked by:** [01 · M2 Runtime 的可选创建与兼容生命周期](01-runtime-opt-in-compatibility.md)、[02 · 唤醒与 Socket 等待的真实 OS 探针](02-waker-reactor-os-probes.md)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross
+**Execution state:** completed；当前修复源码五原生、实际 64K、包外 SDK 及独立故障原件已严格重放，本票范围完成。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -62,4 +62,6 @@
 无法证明的 close 责任独立计量并保持 CLOSED/CLEANING/destroy BUSY，不重关复用 FD。
 上方勾选表示本票子合同实现与本地验收，完整平台 Cross/Full/64K 仍待统一签发，
 保持 claimed / awaiting_cross；不将后续资源或最终 T03 全混合范围标为完成。
+
+2026-11-03：两项定向修复经独立 merger 合入 `b97b09c` / `bd14a1e`。[Full 41632318680](https://github.com/moorefu/qaplet/actions/runs/41632318680) 固定源码 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`，整体 completed/success；独立严格重算 SDK 五原生各 112（560）、实际 64K 112、包外应用 8、独立故障夹具 1 及当前 M0 Full 235 全部通过。63 RECIPE 原字节、SDK 双架构 archive/密封 ZIP/三 APE、实际 loader/CI/宿主、29 provider 原 ZIP/12 嵌套供应物/11 job 原日志、新 SDK journal 731 条及 26 payload 前后摘要/清理均核验，见主 `out/qaplet-m2/full-bd14a1e/HANDOFF.md`、`verify/scope-summary.json` 与 root `06-acceptance-check-002.json`。root 首个附加检查把包外 case_count 的标量 8 当数组使用，修正检查器后通过，原检查器失败保留，不是产品失败。旧 1708 缺 START 的 Full 和初始化 close 拒绝红灯均保留；原丢失层级仍 unproven。新创建诊断明确记录 setup/control/cleanup 原始值及 INCOMPLETE，不把未知资源视为已释放；旧 M1 ABI/入口保留。只读重放不计新 native 执行，既有 1,000 M1 循环不冒充最终 T03 全混合。按本票范围 resolved，放行 07/09/10/13；父 M2 继续 in_progress。
 

@@ -4,9 +4,9 @@
 
 **Blocked by:** [06 · 等待中的 Runtime 接收事件与停止](06-wait-events-keepalive-stop.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -53,4 +53,6 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-03：06 自身当前五原生及实际 64K 严格验收已完成，领取 `codex/m2-07-timers` / `.cache/worktrees/m2-07`，使用 fresh implementer 按已确认公开 SDK/JS/CLI seam 做 TDD。并行能力位协调：timer 使用 bit 19，保留全部既有 ABI 数值；需求及父规格不变。
 
