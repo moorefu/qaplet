@@ -245,6 +245,7 @@ def package_consume(args, report, directory):
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -268,6 +269,19 @@ def package_consume(args, report, directory):
             "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
     else:
         example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+        artifact = output / "qaplet-work-host.com"
+        for suffix, arguments, expected in HOST_CASES:
+            if not suffix.startswith("m2-work-"):
+                continue
+            executed, stdout, stderr = run(report, directory, "qaplet-work-host." + suffix,
+                [*loader, artifact, *arguments], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": "qaplet-work-host." + suffix, "required": True,
+                "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "timeout_seconds": args.timeout, "reason": "Public WorkPool C Host compiled outside both source checkouts from sealed supplied SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -376,6 +390,26 @@ def compile_m2_faults(args, report, directory, tree, helpers, sdk, work, output)
                 consumption_purpose("build", args.controlled_probe)))
     artifact = audit(args, report, directory, tree, "qaplet-m2-faults", output)
     artifact["build_commands"] = identity(output / "qaplet-m2-faults.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_work_host(args, report, directory, tree, helpers, sdk, work, output):
+    """Run the public WorkPool seam in a real package-only C application."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "host-work.c"
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-work-host.build-commands.log"))
+    report["external_work_consumer"] = {"source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False}
+    run(report, directory, "work-host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "host.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-host", [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-work-host.com", work, environment)
+    publish_ape(work, output, "qaplet-work-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-work-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-work-host.build-commands.log")
     report["artifacts"].append(artifact)
 
 

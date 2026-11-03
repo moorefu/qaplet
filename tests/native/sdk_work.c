@@ -107,6 +107,19 @@ static void wait_entered(gate *g,unsigned count,int fast) {
   pthread_mutex_unlock(&g->mutex);
 }
 static int destroy_gate(gate *g) { CHECK(!pthread_cond_destroy(&g->condition) && !pthread_mutex_destroy(&g->mutex)); return 0; }
+typedef struct { qaplet_runtime *runtime; int passed; } foreign_call;
+static void *foreign_work(void *opaque) {
+  foreign_call *call=opaque;qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="foreign";h.name_length=7;h.function=quick;
+  qaplet_work_task task=QAPLET_WORK_TASK_INIT;qaplet_work_result result=QAPLET_WORK_RESULT_INIT;
+  qaplet_work_snapshot snapshot=QAPLET_WORK_SNAPSHOT_INIT;
+  call->passed=qaplet_register_work_handler(call->runtime,&h,NULL)==QAPLET_WRONG_THREAD &&
+    qaplet_work_submit(call->runtime,"foreign",7,NULL,0,&task,NULL)==QAPLET_WRONG_THREAD &&
+    qaplet_work_copy_result(call->runtime,&task,&result,NULL)==QAPLET_WRONG_THREAD &&
+    qaplet_work_release(call->runtime,&task,NULL)==QAPLET_WRONG_THREAD &&
+    qaplet_get_work_snapshot(call->runtime,&snapshot,NULL)==QAPLET_OK;
+  return NULL;
+}
 static int registration_contract(void) {
   qaplet_config base=QAPLET_CONFIG_INIT; qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
   qaplet_runtime *runtime=NULL,*legacy=NULL;
@@ -114,6 +127,8 @@ static int registration_contract(void) {
   CHECK(qaplet_create(&base,&legacy,NULL)==QAPLET_OK);
   qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.worker_threads && !stats.handlers);
+  foreign_call call={runtime,0};pthread_t foreign;
+  CHECK(!pthread_create(&foreign,NULL,foreign_work,&call) && !pthread_join(foreign,NULL) && call.passed);
   qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
   h.name="a";h.name_length=1;h.function=quick;h.input_bytes=1;h.output_bytes=1;
   CHECK(qaplet_register_work_handler(legacy,&h,NULL)==QAPLET_UNSUPPORTED);
