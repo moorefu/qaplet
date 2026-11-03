@@ -271,7 +271,7 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     return qaplet_report_result(runtime, diagnostic, code);
   }
   runtime->host_registration_locked = 1;
-  uint64_t jobs = 0, events = 0;
+  uint64_t jobs = 0, events = 0, deliveries = 0;
   unsigned progressed = 0;
   for (;;) {
     if (runtime->execution_active) {
@@ -297,16 +297,22 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       code = qaplet_execution_checkpoint(runtime, progress, progressed);
       if (code || JS_IsJobPending(runtime->engine)) break;
     }
-    if (events < runtime->snapshot.limits.pump_events) {
-      unsigned completed=qaplet_work_handoff(runtime,runtime->snapshot.limits.pump_events-events);
-      events+=completed;
-      if (completed) progressed=1;
-    }
-    if (events == runtime->snapshot.limits.pump_events || !qaplet_events_pending(runtime)) {
+    int event_ready=events<runtime->snapshot.limits.pump_events && qaplet_events_pending(runtime);
+    pthread_mutex_lock(&runtime->mutex);
+    int work_ready=qaplet_work_ready_locked(runtime);
+    pthread_mutex_unlock(&runtime->mutex);
+    if ((runtime->m2_enabled && deliveries==32) || (!event_ready && !work_ready)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
       progress->code = QAPLET_OK;
       break;
+    }
+    if (work_ready && (!event_ready || runtime->ready_cursor==0)) {
+      unsigned completed=qaplet_work_handoff(runtime,1);
+      deliveries+=completed;
+      if (completed) { progressed=1;runtime->ready_cursor=1; }
+      if (qaplet_execution_check(runtime)) break;
+      continue;
     }
     /* A pending entry owns its ledger. Otherwise one event plus its runnable
      * jobs owns a fresh independent ledger, which stays active across pumps. */
@@ -325,7 +331,8 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     code = qaplet_events_deliver(runtime, &claimed);
     if (code && !runtime->execution_code) runtime->execution_code = code;
     events += claimed;
-    if (claimed) progressed = 1;
+    deliveries += claimed;
+    if (claimed) { progressed = 1;runtime->ready_cursor=0; }
   }
   /* Stop may win after the empty-queue check or before an idle event's begin.
    * Confirm it at this owner boundary without scheduling another job/event. */

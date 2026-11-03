@@ -70,6 +70,7 @@ struct qaplet_runtime {
   unsigned char *event_slots;
   size_t event_stride, event_storage_size, event_head;
   int event_handler_ready, event_accepting;
+  unsigned ready_cursor;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);

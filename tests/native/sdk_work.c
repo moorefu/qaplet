@@ -125,6 +125,10 @@ static int registration_contract(void) {
   qaplet_runtime *runtime=NULL,*legacy=NULL;
   CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
   CHECK(qaplet_create(&base,&legacy,NULL)==QAPLET_OK);
+  qaplet_abi abi=QAPLET_ABI_INIT;qaplet_m2_snapshot capabilities=QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_query_abi(&abi)==QAPLET_OK && (abi.capabilities & QAPLET_CAP_M2_WORK));
+  CHECK(qaplet_get_m2_snapshot(runtime,&capabilities,NULL)==QAPLET_OK && (capabilities.capabilities & QAPLET_CAP_M2_WORK));
+  CHECK(qaplet_get_m2_snapshot(legacy,&capabilities,NULL)==QAPLET_OK && !(capabilities.capabilities & QAPLET_CAP_M2_WORK));
   qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.worker_threads && !stats.handlers);
   foreign_call call={runtime,0};pthread_t foreign;
@@ -437,6 +441,52 @@ static int completion_contract(void) {
   puts("M2 work completion: explicit handler concurrency; saturated business queue cannot lose native records; worker publication retains ref; owner handoff; exact results: pass");
   return 0;
 }
+static int request_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.worker_threads=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_work_task a=QAPLET_WORK_TASK_INIT,b=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&a,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&b,NULL)==QAPLET_OK);
+  CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK);release_gate(&g);
+  pthread_mutex_lock(&g.mutex);while (!g.exited) pthread_cond_wait(&g.condition,&g.mutex);unsigned cancelled=g.observed_cancel;pthread_mutex_unlock(&g.mutex);
+  CHECK(cancelled);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_EXECUTION_STOPPED);
+  CHECK(!finish(runtime));
+  CHECK(g.entered==1 && g.exited==1 && !destroy_gate(&g));
+  puts("M2 work stop request: cooperative marker observes accepted stop before owner drive; queued worker claim shares stop order; no late callback: pass");
+  return 0;
+}
+static int scheduling_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="quick";h.name_length=5;h.function=quick;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  const char source[]="import('qaplet:events').then(m=>m.onEvent(()=>{}))";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,source,sizeof(source)-1,&progress,NULL)==QAPLET_OK);
+  while (progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_post_event(runtime,1,0,NULL,0,NULL)==QAPLET_OK);
+  qaplet_work_task tasks[32]={{0}};
+  for (unsigned i=0;i<32;++i) CHECK(qaplet_work_submit(runtime,"quick",5,NULL,0,&tasks[i],NULL)==QAPLET_OK);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (stats.completed<32);
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.progressed);
+  qaplet_snapshot events=QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_snapshot(runtime,&events,NULL)==QAPLET_OK && events.events_consumed==1);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==1);
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.progressed);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs);
+  CHECK(!finish(runtime) && !destroy_gate(&g));
+  puts("M2 work scheduling: native completions and business events share bounded delivery fairly; jobs checkpoints precede each handoff; cursor survives pumps: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
   if (!strcmp(mode,"--m2-work-file")) return file_contract();
   if (!strcmp(mode,"--m2-work-registration")) return registration_contract();
@@ -448,6 +498,8 @@ int sdk_work(const char *mode) {
   if (!strcmp(mode,"--m2-work-limits")) return limits_contract();
   if (!strcmp(mode,"--m2-work-completion")) return completion_contract();
   if (!strcmp(mode,"--m2-work-retention")) return retention_contract();
+  if (!strcmp(mode,"--m2-work-scheduling")) return scheduling_contract();
+  if (!strcmp(mode,"--m2-work-stop-request")) return request_contract();
   return 2;
 }
 #ifdef SDK_STANDALONE

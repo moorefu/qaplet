@@ -88,6 +88,8 @@ HOST_CASES = (
     ("m2-work-limits", ["--m2-work-limits"], "M2 work limits: real default 8MiB subquota within 16MiB total; simultaneous native metadata/data preflight; retained data charged; count independent; no permanent capacity failure: pass\n"),
     ("m2-work-completion", ["--m2-work-completion"], "M2 work completion: explicit handler concurrency; saturated business queue cannot lose native records; worker publication retains ref; owner handoff; exact results: pass\n"),
     ("m2-work-retention", ["--m2-work-retention"], "M2 work retention: STOPPED preserves terminal C results; logical release invalidates token while physical buffers stay charged; close retires only after native exit: pass\n"),
+    ("m2-work-scheduling", ["--m2-work-scheduling"], "M2 work scheduling: native completions and business events share bounded delivery fairly; jobs checkpoints precede each handoff; cursor survives pumps: pass\n"),
+    ("m2-work-stop-request", ["--m2-work-stop-request"], "M2 work stop request: cooperative marker observes accepted stop before owner drive; queued worker claim shares stop order; no late callback: pass\n"),
     ("m2-work-file", ["--m2-work-file"], "M2 work file: copied declaration/input; real bounded bytes; independent completion; retry result; ordinary errno; release; joined cleanup: pass\n"),
     ("m2-wait", ["--m2-wait"], "M2 wait: finite timeout; explicit keepalive; idle cleanup: pass\n"),
     ("m2-wait-concurrent", ["--m2-wait-concurrent"], "M2 concurrent wait: copied events; last token; owner stop; real blocked interval; joined cleanup: pass\n"),

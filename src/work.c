@@ -140,7 +140,7 @@ static void *worker_main(void *opaque) {
   pthread_mutex_lock(&runtime->mutex);
   qaplet_work_pool *pool=runtime->work_pool;
   for (;;) {
-    work_task *task=pool->stopping ? NULL : next_task(runtime);
+    work_task *task=pool->stopping || runtime->snapshot.lifecycle!=QAPLET_OPEN ? NULL : next_task(runtime);
     if (!task) {
       if (pool->stopping) break;
       int error=pthread_cond_wait(&runtime->native_condition,&runtime->mutex);
@@ -156,6 +156,10 @@ static void *worker_main(void *opaque) {
     qaplet_code code=handler->function(&context,task->data,task->input_length,&output,handler->userdata);
     pthread_mutex_lock(&runtime->mutex);
     task->physical=0; --handler->running; --runtime->work_snapshot.running;
+    if (!task->cancelled && runtime->snapshot.lifecycle!=QAPLET_OPEN) {
+      task->cancelled=1;task->state=QAPLET_WORK_CANCELLED;task->length=0;
+      ++runtime->work_snapshot.retained_results;increment(&runtime->work_snapshot.cancelled);
+    }
     if (!task->cancelled) {
       if (output.length>handler->output_bytes) { code=QAPLET_VALUE_TOO_LARGE; output.length=0; }
       task->code=code; task->length=output.length;
@@ -334,7 +338,7 @@ qaplet_code qaplet_work_release(qaplet_runtime *runtime,const qaplet_work_task *
 int qaplet_work_cancelled(qaplet_work_context *context) {
   if (!context) return 1;
   pthread_mutex_lock(&context->runtime->mutex);
-  int result=context->task->cancelled;
+  int result=context->task->cancelled || context->runtime->snapshot.lifecycle!=QAPLET_OPEN;
   pthread_mutex_unlock(&context->runtime->mutex);
   return result;
 }
