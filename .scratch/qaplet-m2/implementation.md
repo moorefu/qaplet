@@ -22,15 +22,18 @@
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
 | 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
-| 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | `a64afa6` 已集成，待 Cross |
-| 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | `0460f71` 已集成，待 Cross |
-| 06–27 | 待分派 | 待创建 | 等待各自直接 blocker |
+| 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | `.cache/worktrees/m2-04-fix` | Windows 候选修复本地/64K 通过，补完整检查及当前 Cross |
+| 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | `.cache/worktrees/m2-05-fix` | Mac/Windows 候选修复本地/64K 通过，补完整检查及当前 Cross |
+| 06 | `codex/m2-06-wait` | `.cache/worktrees/m2-06` | in_progress，独立 SDK 首轮通过，继续事件/停止/故障清理 |
+| 07–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
 
 `out/qaplet-m2/context.json` 记录实际上下文：Ubuntu、Linux x86_64、WSL2 kernel `6.6.87.2-microsoft-standard-WSL2`、4096 页、uid/gid 1000、构建允许。该报告只证明执行环境，不证明产品合同通过。
 
 `out/qaplet-m2/guest-inputs.json`：现有固定 64K guest 输入经离线签名、长度及摘要核验通过，`qemu-system-aarch64` 已安装；尚不表示新探针已经执行。
+
+04/05 候选修复的完整本地检查曾因 D 盘可用空间低于既有 4 GiB 门槛失败，保留原失败，没有降低阈值。确认无活动构建后，对静态派生 `.cache/build/sdk` 执行标准 NTFS `compact /C /S /I /Q`（不使用 `/EXE`），4,783 个文件压缩前后长度与 SHA-256 全部相同，目录无 reparse 项，缓存位置与原件均保留。`out/qaplet-m2/cache-compression-before.json`、`cache-compression-compact.log` 与 `cache-compression-verified.json` 记录可用空间从 4,011,765,760 增至 4,862,255,104 字节；该收据只证明环境恢复，04/05 完整检查仍需重跑。
 
 ## 公共 CI 接入
 
