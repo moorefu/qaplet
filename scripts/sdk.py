@@ -39,10 +39,14 @@ HOST_UNITS = (
     ("tests/native/sdk_resources.c", "host-resources.c", "resources.o", "host-resources-compile"),
     ("tests/native/sdk_stop.c", "host-stop.c", "stop.o", "host-stop-compile"),
     ("tests/native/sdk_close.c", "host-close.c", "close.o", "host-close-compile"),
+    ("tests/native/sdk_m1_compat.c", "host-m1-compat.c", "m1-compat.o", "host-m1-compat-compile"),
+    ("tests/native/sdk_m2_faults.c", "m2-faults.c", None, None),
+    ("tests/fixtures/sdk/m1-qaplet.h", "m1-qaplet.h", None, None),
+    ("tests/native/sdk_m2_runtime.c", "host-m2-runtime.c", "m2-runtime.o", "host-m2-runtime-compile"),
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -64,7 +68,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 98303, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 229375, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -72,6 +76,13 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 98303, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-close", ["--m2-close"], "M2 close: STOP_REQUESTED/STOPPED/FAILED; first cause retained; CLOSED never revived; quiesce retry: pass\n"),
+    ("m1-frozen-header", ["--m1-compat", "{modules}"], "M1 frozen header: new SDK link; values/modules/events; pending close; old ABI/errors/reserved: pass\n"),
+    ("m2-drive", ["--m2-drive"], "M2 drive: ready jobs; independent progress/reason; idle result retained; unsettled entry; no implicit close: pass\n"),
+    ("m2-configuration", ["--m2-configuration"], "M2 configuration: explicit capabilities; finite copied defaults; sizes/version/tails; invalid combinations: pass\n"),
+    ("m2-owner", ["--m2-owner"], "M2 owner: foreign calls refused; pump/run_once/run guard; safe POD/control/setter; CLOSED query: pass\n"),
+    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; unpublished null failures; fresh recovery and cleanup: pass\n"),
+    ("m2-runtime", ["--m2-runtime"], "M2 runtime: explicit empty instance; idle drive; CLOSED/native quiescent; destroy: pass\n"),
     ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
     ("close-concurrent", ["--close-concurrent"], "close concurrent: producer overlap observed; post/snapshot/stop stable; CLOSED calls drained before destroy: pass\n"),
     ("close-competition", ["--close-competition"], "close competition: actual allocation refusal and worker stop in both recorded orders; first cause survives close: pass\n"),
@@ -209,10 +220,24 @@ def package_consume(args, report, directory):
     helpers = prepare_portable_helpers(args, report, directory, tree)
     report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
                   package=producer["package"])
-    compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+    if args.operation == "fault-consume":
+        compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+    else:
+        compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
-    example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-m2-faults.com"
+        if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+        executed, stdout, stderr = run(report, directory, "qaplet-m2-faults.system-boundary",
+            [*loader, artifact], args.timeout, expected=None)
+        expected = "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\n"
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
+            "required": True, "controlled_system_fixture": True, "command": executed,
+            "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
+    else:
+        example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -229,7 +254,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -297,6 +322,30 @@ def check_package(producer, supplied, check_archive=True):
     if manifest["targets"] != [{"architecture": arch, **expected[name]} for arch, name in
             (("x86_64", "sdk/lib/libqaplet.a"), ("aarch64", "sdk/lib/.aarch64/libqaplet.a"))]:
         raise BuildError("Both target static archives must match manifest")
+
+
+def compile_m2_faults(args, report, directory, tree, helpers, sdk, work, output):
+    """Separate supplied-archive system fixture; never a normal product case."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "m2-faults.c"
+    symbols = ("pthread_mutex_init", "pthread_mutex_destroy", "pthread_condattr_init", "pthread_condattr_destroy",
+               "pthread_condattr_setclock", "pthread_cond_init", "pthread_cond_destroy", "clock_gettime")
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-m2-faults.build-commands.log"))
+    report["external_consumer"]["source"] = str(source)
+    report["controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
+        "scope": "four system initialization refusals and whole-call guard; not OS backend support"}
+    run(report, directory, "m2-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-m2-faults", [work / "faults.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-m2-faults.com", work, environment,
+        libraries=(*("-Wl,--wrap=" + name for name in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, "qaplet-m2-faults", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-m2-faults", output)
+    artifact["build_commands"] = identity(output / "qaplet-m2-faults.build-commands.log")
+    report["artifacts"].append(artifact)
 
 
 def compile_example(args, report, directory, tree, helpers, sdk, work, output):
@@ -384,7 +433,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
@@ -568,7 +617,7 @@ def consume(args, report, directory):
 def main():
     cache = Path(workspace(ROOT)["cache_root"])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run", "package-consume", "matrix"))
+    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "matrix"))
     parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
     parser.add_argument("--input-report", type=Path, action="append", default=[])
     parser.add_argument("--input-dir", type=Path, action="append", default=[])
@@ -597,7 +646,7 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     if args.operation != "build":
         try:
-            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation == "package-consume" else [])],
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume") else [])],
                 [args.build_report, args.loader_manifest, *args.input_report],
                 [*([args.artifact.resolve().parent] if args.artifact else []),
                  *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
@@ -615,7 +664,7 @@ def main():
             from sdk_matrix import matrix
             matrix(args, report, directory)
         else:
-            {"build": build, "run": consume, "package-consume": package_consume}[args.operation](args, report, directory)
+            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:

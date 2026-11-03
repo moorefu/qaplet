@@ -356,3 +356,42 @@ distinct scope and performs no mutation regressions. Product and evaluator sourc
 identities remain separate. The successful current closure uses product commit
 `21bd317f4246571f0048789ca97167632c09f924` / Full `41489263809`; see the
 [integration record](../../.scratch/qaplet-m1/16-evidence-validation.md).
+
+## M2 显式空实例增量
+
+`qaplet_create` 保持 M1 布局、reserved 和旧模式。新增的
+`qaplet_create_m2(base, m2, output, diagnostic)` 使用独立 `qaplet_m2_config`
+和 `qaplet_m2_limits`，0 选择规格的有限默认值。`qaplet_query_abi` 查询库能力；
+`qaplet_get_m2_snapshot` 查询当前实例启用的能力、两套有效限额、生命周期、
+执行阶段与原生清理状态，CLOSED 后仍可查询。M1 实例不取得 M2 能力。
+
+当前 `QAPLET_CAP_M2_RUNTIME` 只覆盖显式空实例创建、已有就绪 jobs/events 的驱动、
+独立原生清理状态及空实例 quiesce。它不签发 timer、Reactor/OS 等待、WorkPool、
+process 或 stdio 支持。配置中的后续资源容量不会启用对应资源或创建线程。
+
+`qaplet_run_once` 执行一轮有界就绪工作，`qaplet_run` 持续推进至自然空闲、
+错误、停止或没有可推进来源的 PENDING 入口。`qaplet_drive_result` 分开返回
+进展、阶段、code 和原因；单独悬挂 Promise 返回 `UNSETTLED_ENTRY` 原因，旧
+`qaplet_pump` 仍保持 PENDING/progressed=0。空实例即使给出正等待预算也立即空闲。
+无进展推进不替换最近结果；整个 pump/run/run_once/quiesce 调用受重入保护。
+
+M2 close 释放 JS 并保留 CLOSED 句柄；`qaplet_quiesce` 仅接受 CLOSED，0 检查，
+有限等待可重试，不执行 JS。空实例立即达到 `QAPLET_NATIVE_QUIESCENT`。后续原生
+provider 必须保留物理清理责任直到退出/join 与存储退休后才能解除；未清理时
+destroy 返回 BUSY。宿主仍须撤下并 join 外部生产者，不能用原生 quiescent 推断
+未来外部调用已经停止。
+
+当前供应目录包含 105 项普通公开合同，并以冻结 `m1-qaplet.h` 编译独立旧头文件
+消费者验证新 archive。`scripts/sdk.py fault-consume` 则从同一供应 ZIP 包外编译
+`m2-faults.c`，以显式系统符号包装运行四个初始化失败阶段、资源回滚及
+PENDING/CLOSED 整段驱动拒绝检查；其独立 scope、源码身份、链接参数和
+`controlled_system_fixture` 标记不混入普通产品目录。示例：
+
+```sh
+python3 scripts/sdk.py fault-consume --build-report out/sdk/build.json \
+  --artifact out/sdk/artifacts/qaplet-host.com \
+  --output-dir out/sdk/fault-artifacts --loader-dir /path/to/supplied/loaders \
+  --report out/sdk/fault-consume.json
+```
+
+该增量的本地成绩与未完成矩阵见 [票据 01 实施记录](../../.scratch/qaplet-m2/01-runtime-validation.md)。

@@ -16,6 +16,12 @@ typedef struct {
 struct qaplet_runtime {
   pthread_t owner;
   pthread_mutex_t mutex;
+  pthread_cond_t native_condition;
+  uint64_t native_retained;
+  int driver_active, m2_enabled;
+  qaplet_m2_limits m2_limits;
+  qaplet_native_state native_state;
+  qaplet_code cleanup_reason;
   JSRuntime *engine;
   JSContext *context;
   qaplet_allocation *engine_allocations;
@@ -57,6 +63,16 @@ qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);
+qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *);
+qaplet_code qaplet_m2_configure(const qaplet_m2_config *, const qaplet_limits *, qaplet_m2_limits *);
+void qaplet_driver_set(qaplet_runtime *, int);
+/* Providers retain before publishing accepted native work and release only
+ * after physical exit/join and all resource data retirement. Releasing a
+ * logical result is not sufficient. No provider may retain after close. */
+qaplet_code qaplet_native_retain(qaplet_runtime *);
+void qaplet_native_release(qaplet_runtime *);
+/* Internal ready-work drive; caller holds the whole-call owner guard. */
+qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *);
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);

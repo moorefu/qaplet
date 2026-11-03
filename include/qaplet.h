@@ -46,6 +46,9 @@ enum {
   QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_CAP_POD_EVENTS = 1u << 12,
   QAPLET_CAP_RUNTIME_SNAPSHOT = 1u << 16,
+  /* Explicit M2 factory, empty-loop drive and separate native cleanup state.
+   * Does not advertise timer, OS waiting, work, process or stdio support. */
+  QAPLET_CAP_M2_RUNTIME = 1u << 17,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -173,6 +176,81 @@ typedef struct {
 #define QAPLET_VALUE_INIT {sizeof(qaplet_value), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, NULL, 0}
 #define QAPLET_HOST_EXPORT_INIT {sizeof(qaplet_host_export), QAPLET_ABI_VERSION, NULL, 0, 0, 0, QAPLET_VALUE_INIT, NULL, NULL}
 #define QAPLET_HOST_MODULE_INIT {sizeof(qaplet_host_module), QAPLET_ABI_VERSION, NULL, 0, NULL, 0, 0, {0}}
+
+/* M2 structures are independent: no M1 layout or reserved field changes.
+ * Capacities describe the finite configuration, not available resource APIs.
+ * Query capabilities before using a feature; this release enables only the
+ * empty M2 Runtime. No thread, OS wait backend or standard stream is acquired. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t worker_threads, helper_threads, worker_stack_bytes, helper_stack_bytes;
+  uint64_t work_handlers, handler_concurrency, timers, reactor_registrations;
+  uint64_t native_handles, processes, keepalive_tokens, operations;
+  uint64_t operation_data_bytes, work_input_bytes, work_output_bytes, io_block_bytes;
+  uint64_t process_arguments, process_data_bytes, pump_io_bytes;
+} qaplet_m2_limits;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t flags;
+  qaplet_m2_limits limits;
+  uint64_t reserved[4];
+} qaplet_m2_config;
+typedef enum {
+  QAPLET_NATIVE_RUNNING, QAPLET_NATIVE_CLEANING, QAPLET_NATIVE_QUIESCENT
+} qaplet_native_state;
+typedef enum {
+  QAPLET_DRIVE_IDLE, QAPLET_DRIVE_PROGRESS, QAPLET_DRIVE_WAIT_TIMEOUT,
+  QAPLET_DRIVE_UNSETTLED_ENTRY, QAPLET_DRIVE_ERROR, QAPLET_DRIVE_STOPPED,
+  QAPLET_DRIVE_QUIESCENT
+} qaplet_drive_reason;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_phase phase;
+  uint32_t progressed;
+  qaplet_code code;
+  qaplet_drive_reason reason;
+} qaplet_drive_result;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t capabilities;
+  qaplet_lifecycle lifecycle;
+  qaplet_phase phase;
+  qaplet_code termination_reason, cleanup_reason;
+  qaplet_native_state native_state;
+  uint32_t driving;
+  qaplet_limits limits;
+  qaplet_m2_limits m2_limits;
+  uint64_t engine_current_bytes, engine_peak_bytes;
+  uint64_t native_current_bytes, native_peak_bytes;
+} qaplet_m2_snapshot;
+#define QAPLET_M2_LIMITS_INIT {sizeof(qaplet_m2_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define QAPLET_M2_CONFIG_INIT {sizeof(qaplet_m2_config), QAPLET_ABI_VERSION, 0, QAPLET_M2_LIMITS_INIT, {0}}
+#define QAPLET_DRIVE_RESULT_INIT {sizeof(qaplet_drive_result), QAPLET_ABI_VERSION, 0, 0, 0, 0}
+#define QAPLET_M2_SNAPSHOT_INIT {sizeof(qaplet_m2_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, QAPLET_LIMITS_INIT, QAPLET_M2_LIMITS_INIT, 0, 0, 0, 0}
+
+/* Explicit opt-in; base retains exactly the M1 configuration contract.
+ * Failure stores NULL in output and releases every unpublished resource. */
+qaplet_code qaplet_create_m2(const qaplet_config *base, const qaplet_m2_config *,
+                            qaplet_runtime **output, qaplet_diagnostic *);
+/* Any thread, including CLOSED. M1 handles report their M1 capability set and
+ * zero M2 limits; querying does not enable M2. Output must have the full size. */
+qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *, qaplet_m2_snapshot *, qaplet_diagnostic *);
+/* M2 owner-only drives. max_wait_ms is finite (0 never waits). An empty
+ * instance returns IDLE immediately, even for a positive wait budget. These
+ * calls do not provide an OS waiting capability. An unresolvable entry Promise
+ * returns reason UNSETTLED_ENTRY, code OK and phase PENDING; pump keeps its M1
+ * no-progress behavior. run continues ready work until idle/error/stop.
+ * An idle call preserves the last completed result. No call closes the Runtime. */
+qaplet_code qaplet_run_once(qaplet_runtime *, uint64_t max_wait_ms,
+                           qaplet_drive_result *, qaplet_diagnostic *);
+qaplet_code qaplet_run(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
+/* M2 owner, CLOSED only, no JS. Zero only checks. Native cleanup is separate
+ * from lifecycle; an empty instance is immediately QUIESCENT after close.
+ * Future resource capabilities must finish physical cleanup before quiescence.
+ * destroy returns BUSY while managed native cleanup is incomplete. External
+ * producers must still be withdrawn and joined before final destroy. */
+qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
+                          qaplet_drive_result *, qaplet_diagnostic *);
 
 /* Global query, POD snapshots, post_event and request_stop are thread-safe. Other operations
  * belong to the thread that successfully created the Runtime. Output pointers

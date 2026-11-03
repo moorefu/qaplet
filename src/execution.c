@@ -4,7 +4,7 @@
 #include <time.h>
 
 void qaplet_record_termination_locked(qaplet_runtime *runtime, qaplet_code code) {
-  if (runtime->snapshot.termination_reason) return;
+  if (runtime->snapshot.lifecycle == QAPLET_CLOSED || runtime->snapshot.termination_reason) return;
   runtime->snapshot.termination_reason = code;
   runtime->snapshot.lifecycle = code == QAPLET_EXECUTION_STOPPED ? QAPLET_STOP_REQUESTED : QAPLET_FAILED;
 }
@@ -247,6 +247,15 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   qaplet_lifecycle lifecycle = !code ? qaplet_get_lifecycle(runtime) : QAPLET_CLOSED;
   if (!code && lifecycle != QAPLET_OPEN && lifecycle != QAPLET_STOP_REQUESTED) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
+  qaplet_driver_set(runtime, 1);
+  code = qaplet_pump_ready(runtime, progress, diagnostic);
+  qaplet_driver_set(runtime, 0);
+  return code;
+}
+
+qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress,
+                             qaplet_diagnostic *diagnostic) {
+  qaplet_code code = QAPLET_OK;
   if (qaplet_execution_check(runtime)) {
     code = qaplet_execution_checkpoint(runtime, progress, 0);
     return qaplet_report_result(runtime, diagnostic, code);

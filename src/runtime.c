@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* Own allocation headers keep accounting independent of libc usable-size APIs. */
 union qaplet_allocation {
@@ -116,7 +117,7 @@ static void discard_unpublished_engine(qaplet_runtime *runtime) {
 qaplet_code qaplet_owner(qaplet_runtime *runtime) {
   if (!runtime) return QAPLET_INVALID_ARGUMENT;
   if (!pthread_equal(runtime->owner, pthread_self())) return QAPLET_WRONG_THREAD;
-  if (runtime->snapshot.phase == QAPLET_PHASE_RUNNING) return QAPLET_BUSY;
+  if (runtime->driver_active || runtime->snapshot.phase == QAPLET_PHASE_RUNNING) return QAPLET_BUSY;
   return QAPLET_OK;
 }
 
@@ -133,12 +134,17 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
 qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
                          qaplet_diagnostic *diagnostic) {
+  return qaplet_create_internal(config, NULL, output, diagnostic);
+}
+
+qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_config *m2,
+                                  qaplet_runtime **output, qaplet_diagnostic *diagnostic) {
   if (output) *output = NULL;
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
@@ -175,14 +181,36 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
       limits.bridge_value_bytes >= SIZE_MAX || limits.host_arguments > INT_MAX ||
       limits.host_arguments > SIZE_MAX / (sizeof(qaplet_result) + sizeof(qaplet_value) + sizeof(void *)))
     return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  qaplet_m2_limits m2_limits = QAPLET_M2_LIMITS_INIT;
+  if (m2) {
+    code = qaplet_m2_configure(m2, &limits, &m2_limits);
+    if (code) return qaplet_report(diagnostic, code);
+  }
   if (limits.native_storage_bytes < sizeof(qaplet_runtime))
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   qaplet_runtime *runtime = calloc(1, sizeof(*runtime));
   if (!runtime) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   runtime->owner = pthread_self();
+  runtime->m2_enabled = m2 != NULL;
+  runtime->m2_limits = m2_limits;
+  runtime->native_state = QAPLET_NATIVE_RUNNING;
   if (pthread_mutex_init(&runtime->mutex, NULL)) {
     free(runtime);
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
+  }
+  if (runtime->m2_enabled) {
+    pthread_condattr_t attributes;
+    int error = pthread_condattr_init(&attributes);
+    if (!error) {
+      error = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+      if (!error) error = pthread_cond_init(&runtime->native_condition, &attributes);
+      pthread_condattr_destroy(&attributes);
+    }
+    if (error) {
+      pthread_mutex_destroy(&runtime->mutex);
+      free(runtime);
+      return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
+    }
   }
   runtime->snapshot = (qaplet_snapshot)QAPLET_SNAPSHOT_INIT;
   runtime->snapshot.limits = limits;
@@ -196,6 +224,7 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
   }
   if (!runtime->context || runtime->snapshot.lifecycle == QAPLET_FAILED || qaplet_values_init(runtime)) {
     discard_unpublished_engine(runtime);
+    if (runtime->m2_enabled) pthread_cond_destroy(&runtime->native_condition);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
@@ -212,6 +241,7 @@ qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
     qaplet_execution_dispose(runtime);
     qaplet_runtime_snapshot_dispose(runtime);
     discard_unpublished_engine(runtime);
+    if (runtime->m2_enabled) pthread_cond_destroy(&runtime->native_condition);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
     return qaplet_report(diagnostic, code);
@@ -301,6 +331,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   if (code) return code;
   code = qaplet_owner(runtime);
   if (code) return qaplet_report(diagnostic, code);
+  qaplet_driver_set(runtime, 1);
   if (qaplet_get_lifecycle(runtime) != QAPLET_CLOSED) {
     qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);
@@ -316,8 +347,10 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
     pthread_mutex_lock(&runtime->mutex);
     runtime->snapshot.lifecycle = QAPLET_CLOSED;
     runtime->snapshot.phase = QAPLET_PHASE_IDLE;
+    runtime->native_state = runtime->native_retained ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
     pthread_mutex_unlock(&runtime->mutex);
   }
+  qaplet_driver_set(runtime, 0);
   return qaplet_report(diagnostic, QAPLET_OK);
 }
 
@@ -325,9 +358,16 @@ qaplet_code qaplet_destroy(qaplet_runtime *runtime, qaplet_diagnostic *diagnosti
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
   code = qaplet_owner(runtime);
-  if (!code && runtime->snapshot.lifecycle != QAPLET_CLOSED) code = QAPLET_BAD_STATE;
   if (!code) {
+    pthread_mutex_lock(&runtime->mutex);
+    if (runtime->snapshot.lifecycle != QAPLET_CLOSED) code = QAPLET_BAD_STATE;
+    else if (runtime->m2_enabled && runtime->native_state != QAPLET_NATIVE_QUIESCENT) code = QAPLET_BUSY;
+    pthread_mutex_unlock(&runtime->mutex);
+  }
+  if (!code) {
+    qaplet_driver_set(runtime, 1);
     qaplet_runtime_snapshot_dispose(runtime);
+    if (runtime->m2_enabled) pthread_cond_destroy(&runtime->native_condition);
     pthread_mutex_destroy(&runtime->mutex);
     free(runtime);
   }

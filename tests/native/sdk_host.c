@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 int sdk_promises(void);
+int sdk_m2_runtime(const char *);
+int sdk_m1_compat(const char *);
 int sdk_modules(const char *, const char *);
 int sdk_budgets(void);
 int sdk_events(const char *);
@@ -243,6 +245,7 @@ static int abi_contract(void) {
 
 int main(int argc, char **argv) {
   extern int sdk_runtime(const char *), sdk_cli_contract(const char *);
+  if (argc == 3 && !strcmp(argv[1], "--m1-compat")) return sdk_m1_compat(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--runtime")) return sdk_runtime(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--cli-contract")) return sdk_cli_contract(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--events-entry")) return sdk_events_entry(argv[2]);
@@ -258,6 +261,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc != 2) return 2;
+  if (!strncmp(argv[1], "--m2-", 5)) return sdk_m2_runtime(argv[1]);
   if (!strcmp(argv[1], "--state")) return state();
   if (!strcmp(argv[1], "--lifetime")) return lifetime();
   if (!strcmp(argv[1], "--owner")) return owner();

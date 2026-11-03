@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Execution state:** not_started
+**Execution state:** implemented_pending_cross；2026-11-03 公开 SDK 与本地 Ubuntu/Windows 供应物合同已实现并实测，完整 Cross/Full 尚待集成分支取得，未标 accepted/resolved。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -54,3 +54,7 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+
+2026-11-03：已领取票据。按父规格 T01/T02 已确认边界，以公开 SDK 纯 C Host 测试 M2 独立创建、配置、实例能力、空实例驱动、owner/重入与 CLOSED/native 状态；以冻结的 M1 公共头文件消费者验证旧布局/数值及值桥、模块、事件、关闭合同。首条新接口红灯日志：`out/m2-01/red-empty.log`。复杂资源取消、等待 backend 与跨平台总验收保持后续票据原范围。
+
+2026-11-03：本地实现完成。Ubuntu 正常供应目录 105/105，Windows 同字节 104 pass + 1 已知可选 symlink blocked，包外普通消费者 8/8、独立受控系统故障消费者及 Ubuntu 完整 check 通过。完整命令、候选配方/SDK 身份、红绿、原始失败和剩余范围见 [实施记录](../01-runtime-validation.md)。等待集成分支 Cross/Full，验收复选框暂不勾选；后续原生资源必须沿已建立 retain/quiesce 边界接入，空实例成绩不证明已有资源回收或 OS backend 支持。

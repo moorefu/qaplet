@@ -54,7 +54,7 @@ class ActualSDKGuestExport(unittest.TestCase):
                 "--report", str(directory / "export.json")], capture_output=True, text=True, timeout=60)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             payload = json.loads((directory / "payload.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(payload["commands"]), 98)
+            self.assertEqual(len(payload["commands"]), 105)
             commands = {item["case_id"] for item in payload["commands"]}
             self.assertTrue({"qaplet-host.module-async", "qaplet-host.promises", "qaplet-host.resource-refusals",
                              "qaplet-host.stop-running", "qaplet-host.events-threads", "qaplet-host.close-concurrent",
@@ -138,7 +138,7 @@ class ActualSDKGuestImport(unittest.TestCase):
             self.assertTrue(actual["evidence_verified"])
             self.assertEqual(actual["page_size"], 65536)
             self.assertEqual(actual["execution_mode"], "emulated-system")
-            self.assertEqual(len(actual["cases"]), 98)
+            self.assertEqual(len(actual["cases"]), 105)
             self.assertFalse(actual["release_ready"])
 
     def test_user_mode_emulator_cannot_claim_system_kernel_coverage(self):
