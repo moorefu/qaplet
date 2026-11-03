@@ -14,6 +14,20 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    def test_creation_fault_fixture_is_required_separately_from_normal_sdk(self):
+        value = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
+        steps = value["jobs"]["build"]["steps"]
+        value["jobs"]["build"]["steps"] = [step for step in steps
+            if "scripts/sdk.py fault-consume" not in step.get("run", "")]
+        with tempfile.TemporaryDirectory(prefix="qaplet-creation-fault-ci-") as temp:
+            work = Path(temp)
+            path = work / "workflow.json"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            checked = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
+                "--workflow", str(path), "--report", str(work / "report.json")],
+                capture_output=True, text=True, timeout=20)
+            self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
+
     def test_m2_probes_require_distributed_native_and_guest_execution(self):
         original = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="qaplet-m2-ci-") as temp:
