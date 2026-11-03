@@ -4,9 +4,9 @@
 
 **Blocked by:** [01 · M2 Runtime 的可选创建与兼容生命周期](01-runtime-opt-in-compatibility.md)、[02 · 唤醒与 Socket 等待的真实 OS 探针](02-waker-reactor-os-probes.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 

@@ -16,6 +16,7 @@ qaplet_code qaplet_request_stop(qaplet_runtime *runtime, qaplet_diagnostic *diag
   pthread_mutex_lock(&runtime->mutex);
   if (runtime->snapshot.lifecycle == QAPLET_OPEN)
     qaplet_record_termination_locked(runtime, QAPLET_EXECUTION_STOPPED);
+  qaplet_wake_locked(runtime);
   pthread_mutex_unlock(&runtime->mutex);
   return qaplet_report(diagnostic, QAPLET_OK);
 }
@@ -49,7 +50,12 @@ qaplet_code qaplet_execution_prepare(qaplet_runtime *runtime, const qaplet_execu
   if (code) return code;
   uint64_t timeout = options && options->timeout_ms ? options->timeout_ms : runtime->snapshot.limits.execution_timeout_ms;
   uint64_t now, duration = timeout * 1000000;
-  if (!monotonic_ns(&now)) return QAPLET_BAD_STATE;
+  if (runtime->m2_enabled) {
+    pthread_mutex_lock(&runtime->mutex);
+    int valid = qaplet_clock_locked(runtime, &now);
+    pthread_mutex_unlock(&runtime->mutex);
+    if (!valid) return QAPLET_CONTROL_FAILURE;
+  } else if (!monotonic_ns(&now)) return QAPLET_BAD_STATE;
   if (duration > UINT64_MAX - now) return QAPLET_INVALID_ARGUMENT;
   budget->deadline_ns = now + duration;
   budget->dispatch_limit = options && options->max_dispatches ? options->max_dispatches :
@@ -81,7 +87,8 @@ static qaplet_code execution_check_locked(qaplet_runtime *runtime) {
   if (!runtime->snapshot.termination_reason && runtime->execution_active) {
     /* Clock failure cannot permit unbounded execution. It is an independent
      * control failure, never inferred from an engine exception. */
-    if (!monotonic_ns(&now)) qaplet_record_termination_locked(runtime, QAPLET_BAD_STATE);
+    if (runtime->m2_enabled ? !qaplet_clock_locked(runtime, &now) : !monotonic_ns(&now))
+      qaplet_record_termination_locked(runtime, runtime->m2_enabled ? QAPLET_CONTROL_FAILURE : QAPLET_BAD_STATE);
     else if (now >= runtime->execution_deadline_ns)
       qaplet_record_termination_locked(runtime, QAPLET_DEADLINE_EXCEEDED);
   }
@@ -235,6 +242,7 @@ finished:
   progress->progressed = progressed;
   progress->code = pending ? QAPLET_OK : runtime->execution_code;
   pthread_mutex_unlock(&runtime->mutex);
+  if (runtime->m2_enabled && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) qaplet_loop_shutdown(runtime);
   return progress->code;
 }
 
@@ -245,7 +253,8 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   code = qaplet_check_structure(progress, sizeof(*progress));
   if (!code) code = qaplet_owner(runtime);
   qaplet_lifecycle lifecycle = !code ? qaplet_get_lifecycle(runtime) : QAPLET_CLOSED;
-  if (!code && lifecycle != QAPLET_OPEN && lifecycle != QAPLET_STOP_REQUESTED) code = QAPLET_BAD_STATE;
+  if (!code && lifecycle != QAPLET_OPEN && lifecycle != QAPLET_STOP_REQUESTED &&
+      !(runtime->m2_enabled && lifecycle != QAPLET_CLOSED)) code = QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   code = qaplet_pump_ready(runtime, progress, diagnostic);

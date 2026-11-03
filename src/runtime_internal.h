@@ -10,6 +10,7 @@ typedef struct qaplet_rejection qaplet_rejection;
 typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
+typedef struct { uint64_t generation; int active; } qaplet_keepalive_slot;
 typedef struct {
   uint64_t deadline_ns, dispatch_limit;
 } qaplet_execution_budget;
@@ -22,6 +23,14 @@ struct qaplet_runtime {
   qaplet_m2_limits m2_limits;
   qaplet_native_state native_state;
   qaplet_code cleanup_reason;
+  uint64_t runtime_id, clock_last_ns;
+  qaplet_keepalive_slot *keepalives;
+  size_t keepalive_storage_size;
+  int wake_fd[2], wake_pending, loop_closed;
+  uint64_t native_handles, native_handles_peak, reactor_registrations, reactor_registrations_peak;
+  uint64_t native_uncertain_handles;
+  uint64_t keepalive_tokens, keepalive_tokens_peak, wake_requests, wake_signals, wait_calls;
+  int control_error;
   JSRuntime *engine;
   JSContext *context;
   qaplet_allocation *engine_allocations;
@@ -66,6 +75,13 @@ qaplet_code qaplet_owner(qaplet_runtime *);
 qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *);
 qaplet_code qaplet_m2_configure(const qaplet_m2_config *, const qaplet_limits *, qaplet_m2_limits *);
 void qaplet_driver_set(qaplet_runtime *, int);
+qaplet_code qaplet_loop_init(qaplet_runtime *);
+void qaplet_loop_shutdown(qaplet_runtime *);
+/* Requires mutex. Never invokes JS. A wake fault cannot undo accepted state. */
+void qaplet_wake_locked(qaplet_runtime *);
+void qaplet_control_failure_locked(qaplet_runtime *, int);
+/* Requires mutex; monotonic failures/backwards time permanently latch failure. */
+int qaplet_clock_locked(qaplet_runtime *, uint64_t *);
 /* Providers retain before publishing accepted native work and release only
  * after physical exit/join and all resource data retirement. Releasing a
  * logical result is not sufficient. No provider may retain after close. */

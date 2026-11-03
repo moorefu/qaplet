@@ -65,6 +65,7 @@ qaplet_code qaplet_post_event(qaplet_runtime *runtime, uint32_t type, uint64_t t
     if (runtime->snapshot.events_accepted != UINT64_MAX) ++runtime->snapshot.events_accepted;
     if (++runtime->snapshot.queue_depth > runtime->snapshot.queue_peak)
       runtime->snapshot.queue_peak = runtime->snapshot.queue_depth;
+    qaplet_wake_locked(runtime);
   }
   pthread_mutex_unlock(&runtime->mutex);
   return qaplet_report(diagnostic, code);
