@@ -101,7 +101,7 @@ void qaplet_timers_dispose(qaplet_runtime *);
 int qaplet_timers_pending(qaplet_runtime *);
 /* Requires acceptance mutex. No JS; deadline includes unref if loop is alive. */
 int qaplet_timers_ref_locked(qaplet_runtime *);
-uint64_t qaplet_timers_deadline_locked(qaplet_runtime *);
+int qaplet_timers_deadline_locked(qaplet_runtime *, uint64_t *);
 qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *);
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);

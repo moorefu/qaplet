@@ -113,9 +113,10 @@ qaplet_code qaplet_get_timer_snapshot(qaplet_runtime *runtime, qaplet_timer_snap
   else {
     value.current = runtime->timer_count; value.peak = runtime->timer_peak;
     value.reserved_bytes = runtime->timers ? runtime->timer_storage_size : 0;
-    uint64_t now = 0, deadline = qaplet_timers_deadline_locked(runtime);
+    uint64_t now = 0, deadline;
+    int scheduled = qaplet_timers_deadline_locked(runtime, &deadline);
     if (runtime->timer_count && !qaplet_clock_locked(runtime, &now)) code = QAPLET_CONTROL_FAILURE;
-    if (deadline != UINT64_MAX) {
+    if (scheduled) {
       uint64_t delta = deadline > now ? deadline - now : 0;
       value.next_timeout_ms = delta / 1000000 + (delta % 1000000 != 0);
     }
@@ -134,17 +135,19 @@ int qaplet_timers_ref_locked(qaplet_runtime *runtime) {
     if (runtime->timers[i].state && runtime->timers[i].referenced) return 1;
   return 0;
 }
-uint64_t qaplet_timers_deadline_locked(qaplet_runtime *runtime) {
-  uint64_t deadline = UINT64_MAX;
+int qaplet_timers_deadline_locked(qaplet_runtime *runtime, uint64_t *deadline) {
+  int found = 0;
   if (runtime->timers) for (uint64_t i = 0; i < runtime->m2_limits.timers; ++i)
-    if (runtime->timers[i].state == 1 && runtime->timers[i].deadline < deadline) deadline = runtime->timers[i].deadline;
-  return deadline;
+    if (runtime->timers[i].state == 1 && (!found || runtime->timers[i].deadline < *deadline)) {
+      *deadline = runtime->timers[i].deadline; found = 1;
+    }
+  return found;
 }
 int qaplet_timers_pending(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);
-  uint64_t now;
+  uint64_t now, deadline;
   int pending = runtime->timer_count && runtime->snapshot.lifecycle == QAPLET_OPEN &&
-    qaplet_clock_locked(runtime, &now) && qaplet_timers_deadline_locked(runtime) <= now;
+    qaplet_clock_locked(runtime, &now) && qaplet_timers_deadline_locked(runtime, &deadline) && deadline <= now;
   pthread_mutex_unlock(&runtime->mutex);
   return pending;
 }

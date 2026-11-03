@@ -412,9 +412,11 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
     }
     uint64_t before, duration = continuous ? UINT64_MAX : remaining;
     if (!qaplet_clock_locked(runtime, &before)) { pthread_mutex_unlock(&runtime->mutex); continue; }
-    uint64_t timer_deadline = qaplet_timers_deadline_locked(runtime);
-    if (timer_deadline <= before) { pthread_mutex_unlock(&runtime->mutex); continue; }
-    if (timer_deadline != UINT64_MAX && duration > timer_deadline - before) duration = timer_deadline - before;
+    uint64_t timer_deadline;
+    if (qaplet_timers_deadline_locked(runtime, &timer_deadline)) {
+      if (timer_deadline <= before) { pthread_mutex_unlock(&runtime->mutex); continue; }
+      if (duration > timer_deadline - before) duration = timer_deadline - before;
+    }
     if (runtime->execution_active) {
       if (before >= runtime->execution_deadline_ns) { pthread_mutex_unlock(&runtime->mutex); continue; }
       uint64_t until_deadline = runtime->execution_deadline_ns - before;

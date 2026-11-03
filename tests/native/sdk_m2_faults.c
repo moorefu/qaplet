@@ -334,6 +334,10 @@ static int timer_faults(void) {
   }
   qaplet_runtime *runtime = NULL;
   CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
+  timer_clock = UINT64_MAX - 1000000;
+  CHECK(qaplet_timer_create(runtime, 1, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
+  CHECK(qaplet_get_timer_snapshot(runtime, &timers, NULL) == QAPLET_OK && timers.next_timeout_ms == 1);
+  CHECK(qaplet_timer_cancel(runtime, &timer, NULL) == QAPLET_OK);
   timer_clock = UINT64_MAX - 500000;
   timer = (qaplet_timer){7, 8, 9};
   CHECK(qaplet_timer_create(runtime, 1, timer_observed, &calls, &timer, NULL) == QAPLET_INVALID_ARGUMENT && timer.runtime_id == 7);
