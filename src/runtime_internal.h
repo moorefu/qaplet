@@ -10,6 +10,7 @@ typedef struct qaplet_rejection qaplet_rejection;
 typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
+typedef struct qaplet_timer_slot qaplet_timer_slot;
 typedef struct { uint64_t generation; int active; } qaplet_keepalive_slot;
 typedef struct {
   uint64_t deadline_ns, dispatch_limit;
@@ -20,6 +21,10 @@ struct qaplet_runtime {
   pthread_cond_t native_condition;
   uint64_t native_retained;
   int driver_active, m2_enabled;
+  qaplet_timer_slot *timers;
+  size_t timer_storage_size;
+  uint64_t timer_count, timer_peak, timer_sequence;
+  int timer_callback_active;
   qaplet_m2_limits m2_limits;
   qaplet_native_state native_state;
   qaplet_code cleanup_reason;
@@ -88,7 +93,16 @@ int qaplet_clock_locked(qaplet_runtime *, uint64_t *);
 qaplet_code qaplet_native_retain(qaplet_runtime *);
 void qaplet_native_release(qaplet_runtime *);
 /* Internal ready-work drive; caller holds the whole-call owner guard. */
-qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *);
+qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *, int automatic);
+/* CLI-only automatic drive, returning at entry completion before a new ledger. */
+qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
+qaplet_code qaplet_timers_init(qaplet_runtime *);
+void qaplet_timers_dispose(qaplet_runtime *);
+int qaplet_timers_pending(qaplet_runtime *);
+/* Requires acceptance mutex. No JS; deadline includes unref if loop is alive. */
+int qaplet_timers_ref_locked(qaplet_runtime *);
+uint64_t qaplet_timers_deadline_locked(qaplet_runtime *);
+qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *);
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);
@@ -110,6 +124,7 @@ qaplet_code qaplet_modules_register_host(qaplet_runtime *, const char *);
 JSModuleDef *qaplet_host_load(qaplet_runtime *, const char *);
 JSModuleDef *qaplet_events_load(qaplet_runtime *);
 JSModuleDef *qaplet_runtime_load(qaplet_runtime *);
+JSModuleDef *qaplet_timers_load(qaplet_runtime *);
 qaplet_code qaplet_events_init(qaplet_runtime *);
 void qaplet_events_dispose(qaplet_runtime *);
 int qaplet_events_pending(qaplet_runtime *);

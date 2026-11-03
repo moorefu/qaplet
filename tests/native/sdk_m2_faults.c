@@ -15,6 +15,8 @@
 static int failure, mutexes, attributes, conditions, observe, observed, invalid_reentry;
 static qaplet_runtime *watched;
 static int inject_poll, live_sockets;
+static uint64_t timer_clock;
+static int advance_timer_clock;
 static int creation_listener = -1, listener_close_attempts;
 static qaplet_keepalive held;
 static int sockets[32];
@@ -79,6 +81,11 @@ ssize_t __wrap_recv(int fd, void *data, size_t size, int flags) {
   return __real_recv(fd, data, size, flags);
 }
 int __wrap_poll(struct pollfd *fds, nfds_t count, int timeout) {
+  if (advance_timer_clock && timeout >= 0) {
+    timer_clock += (uint64_t)timeout * 1000000;
+    for (nfds_t i = 0; i < count; ++i) fds[i].revents = 0;
+    return 0;
+  }
   if (failure == 6) { errno = EIO; return -1; }
   if (inject_poll && watched) {
     inject_poll = 0;
@@ -135,6 +142,10 @@ int __wrap_pthread_cond_destroy(pthread_cond_t *condition) {
 int __wrap_clock_gettime(clockid_t clock, struct timespec *now) {
   if (failure == 8) { errno = EIO; return -1; }
   if (failure == 9) { now->tv_sec = 0; now->tv_nsec = 0; return 0; }
+  if (timer_clock && clock == CLOCK_MONOTONIC) {
+    now->tv_sec = timer_clock / 1000000000; now->tv_nsec = timer_clock % 1000000000;
+    return 0;
+  }
   if (observe && watched) {
     int mode = observe; observe = 0;
     qaplet_drive_result result = QAPLET_DRIVE_RESULT_INIT;
@@ -297,6 +308,58 @@ static int wait_faults(void) {
   }
   return 0;
 }
+static void timer_observed(qaplet_runtime *runtime, const qaplet_timer *timer, void *opaque) {
+  (void)runtime; (void)timer; ++*(unsigned *)opaque;
+}
+static int timer_faults(void) {
+  qaplet_config base = QAPLET_CONFIG_INIT;
+  qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
+  qaplet_timer timer = QAPLET_TIMER_INIT;
+  qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
+  qaplet_timer_snapshot timers = QAPLET_TIMER_SNAPSHOT_INIT;
+  qaplet_m2_diagnostic detail = QAPLET_M2_DIAGNOSTIC_INIT;
+  unsigned calls = 0;
+  for (int mode = 8; mode <= 9; ++mode) {
+    qaplet_runtime *runtime = NULL;
+    CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
+    CHECK(qaplet_timer_create(runtime, 1000, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
+    failure = mode;
+    CHECK(qaplet_run(runtime, &drive, NULL) == QAPLET_CONTROL_FAILURE && !calls);
+    failure = 0;
+    CHECK(qaplet_get_timer_snapshot(runtime, &timers, NULL) == QAPLET_OK && !timers.current && !timers.reserved_bytes);
+    CHECK(qaplet_get_m2_diagnostic(runtime, &detail, NULL) == QAPLET_OK && detail.primary_reason == QAPLET_CONTROL_FAILURE && detail.primary_error == EIO);
+    CHECK(qaplet_close(runtime, NULL) == QAPLET_OK);
+    CHECK(qaplet_quiesce(runtime, 0, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_QUIESCENT);
+    CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  }
+  qaplet_runtime *runtime = NULL;
+  CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
+  timer_clock = UINT64_MAX - 500000;
+  timer = (qaplet_timer){7, 8, 9};
+  CHECK(qaplet_timer_create(runtime, 1, timer_observed, &calls, &timer, NULL) == QAPLET_INVALID_ARGUMENT && timer.runtime_id == 7);
+  CHECK(qaplet_close(runtime, NULL) == QAPLET_OK); timer_clock = 0;
+  CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
+  timer_clock = 1000000000; advance_timer_clock = 1;
+  CHECK(qaplet_timer_create(runtime, 5, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
+  CHECK(qaplet_run_once(runtime, 2, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT && !calls);
+  CHECK(qaplet_run_once(runtime, 100, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_PROGRESS && calls == 1);
+  CHECK(qaplet_close(runtime, NULL) == QAPLET_OK); timer_clock = 0; advance_timer_clock = 0;
+  CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  base.limits.execution_timeout_ms = 3;
+  CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
+  timer_clock = 1000000000; advance_timer_clock = 1;
+  qaplet_progress progress = QAPLET_PROGRESS_INIT;
+  const char pending[] = "new Promise(()=>{})";
+  CHECK(qaplet_eval(runtime, pending, sizeof(pending)-1, &progress, NULL) == QAPLET_OK);
+  CHECK(qaplet_timer_create(runtime, 5, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
+  CHECK(qaplet_run_once(runtime, 100, &drive, NULL) == QAPLET_DEADLINE_EXCEEDED && calls == 1);
+  CHECK(qaplet_get_timer_snapshot(runtime, &timers, NULL) == QAPLET_OK && !timers.current && !timers.reserved_bytes);
+  CHECK(qaplet_close(runtime, NULL) == QAPLET_OK); timer_clock = 0; advance_timer_clock = 0;
+  CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  CHECK(!live_sockets && !mutexes && !attributes && !conditions);
+  return 0;
+}
 int main(void) {
   qaplet_config base = QAPLET_CONFIG_INIT;
   qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
@@ -324,9 +387,11 @@ int main(void) {
   CHECK(qaplet_destroy(watched, NULL) == QAPLET_OK);
   CHECK(!mutexes && !attributes && !conditions);
   watched = NULL;
+  CHECK(!timer_faults());
   CHECK(!wait_faults());
   puts("controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass");
   puts("controlled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass");
   puts("controlled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass");
+  puts("controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass");
   return 0;
 }

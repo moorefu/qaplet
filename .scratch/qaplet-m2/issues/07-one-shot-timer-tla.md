@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 公开最小 timer 接口从注册到 owner 回调可真实运行，零延迟不在注册栈同步执行。
-- [ ] 严格拒绝非安全整数、隐式转换和 deadline 溢出，资源身份校验 Runtime 与 generation。
-- [ ] 入口 DONE 后 ref timer 仍可驱动；仅 Promise 或 unref-only 资源不构成持续等待，显式 pump 可推进就绪工作。
-- [ ] 最近 timer、max_wait 和活跃入口期限共同限制等待；TLA、重复 pump/wake 不重置执行账本。
-- [ ] timer 取消、stop 和 close 不留下回调或资源；单调时钟失败/倒退的受控结果不延长期限。
+- [x] 公开最小 timer 接口从注册到 owner 回调可真实运行，零延迟不在注册栈同步执行。
+- [x] 严格拒绝非安全整数、隐式转换和 deadline 溢出，资源身份校验 Runtime 与 generation。
+- [x] 入口 DONE 后 ref timer 仍可驱动；仅 Promise 或 unref-only 资源不构成持续等待，显式 pump 可推进就绪工作。
+- [x] 最近 timer、max_wait 和活跃入口期限共同限制等待；TLA、重复 pump/wake 不重置执行账本。
+- [x] timer 取消、stop 和 close 不留下回调或资源；单调时钟失败/倒退的受控结果不延长期限。
 
 ## Blocking details
 
@@ -55,4 +55,6 @@
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-03：06 自身当前五原生及实际 64K 严格验收已完成，领取 `codex/m2-07-timers` / `.cache/worktrees/m2-07`，使用 fresh implementer 按已确认公开 SDK/JS/CLI seam 做 TDD。并行能力位协调：timer 使用 bit 19，保留全部既有 ABI 数值；需求及父规格不变。
+
+2026-11-03：本地纵向红绿实现与合同记录见 [07 验证记录](../07-timer-validation.md)。独立 timer snapshot 不扩大既有快照；CLI 私有 entry-drive 在完整入口检查点交还并保存入口结果。当前保持 claimed / awaiting_cross，由 root 合并后统一签发当前 Cross/Full/实际 64K，不据本地通过 resolved 本票或父规格。
 
