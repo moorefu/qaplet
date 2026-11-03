@@ -6,6 +6,7 @@
 void qaplet_record_termination_locked(qaplet_runtime *runtime, qaplet_code code) {
   if (runtime->snapshot.lifecycle == QAPLET_CLOSED || runtime->snapshot.termination_reason) return;
   runtime->snapshot.termination_reason = code;
+  if (code == QAPLET_CONTROL_FAILURE) runtime->primary_error = runtime->control_error;
   runtime->snapshot.lifecycle = code == QAPLET_EXECUTION_STOPPED ? QAPLET_STOP_REQUESTED : QAPLET_FAILED;
 }
 

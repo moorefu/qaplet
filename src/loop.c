@@ -20,16 +20,28 @@ void qaplet_control_failure_locked(qaplet_runtime *runtime, int error) {
   qaplet_record_termination_locked(runtime, QAPLET_CONTROL_FAILURE);
 }
 
+static void cleanup_failure_locked(qaplet_runtime *runtime, int error) {
+  if (!runtime->cleanup_reason) {
+    runtime->cleanup_reason = QAPLET_CONTROL_FAILURE;
+    runtime->cleanup_error = error ? error : EIO;
+  }
+}
+
+static void clock_failure_locked(qaplet_runtime *runtime, int error) {
+  if (runtime->snapshot.lifecycle == QAPLET_CLOSED) cleanup_failure_locked(runtime, error);
+  else qaplet_control_failure_locked(runtime, error);
+}
+
 int qaplet_clock_locked(qaplet_runtime *runtime, uint64_t *output) {
   struct timespec now;
   if (clock_gettime(CLOCK_MONOTONIC, &now) || now.tv_sec < 0 || now.tv_nsec < 0 ||
       now.tv_nsec >= 1000000000 || (uint64_t)now.tv_sec > (UINT64_MAX - now.tv_nsec) / 1000000000) {
-    qaplet_control_failure_locked(runtime, errno ? errno : EIO);
+    clock_failure_locked(runtime, errno ? errno : EIO);
     return 0;
   }
   *output = (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec;
   if (*output < runtime->clock_last_ns) {
-    qaplet_control_failure_locked(runtime, EIO);
+    clock_failure_locked(runtime, EIO);
     return 0;
   }
   runtime->clock_last_ns = *output;
@@ -62,8 +74,7 @@ static void close_socket(qaplet_runtime *runtime, int *fd) {
   int error = close(owned) ? errno : 0;
   if (error) {
     ++runtime->native_uncertain_handles;
-    if (!runtime->cleanup_reason) runtime->cleanup_reason = QAPLET_CONTROL_FAILURE;
-    if (!runtime->control_error) runtime->control_error = error;
+    cleanup_failure_locked(runtime, error);
   }
 }
 
@@ -251,7 +262,27 @@ qaplet_code qaplet_create_m2(const qaplet_config *base, const qaplet_m2_config *
     qaplet_code code = qaplet_check_diagnostic(diagnostic);
     return code ? code : qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   }
-  return qaplet_create_internal(base, config, output, diagnostic);
+  return qaplet_create_internal(base, config, output, diagnostic, NULL);
+}
+
+qaplet_code qaplet_create_m2_with_diagnostic(const qaplet_config *base, const qaplet_m2_config *config,
+                                          qaplet_runtime **output, qaplet_m2_diagnostic *detail,
+                                          qaplet_diagnostic *diagnostic) {
+  if (output) *output = NULL;
+  qaplet_code code = qaplet_check_diagnostic(diagnostic);
+  if (code) return code;
+  code = qaplet_check_structure(detail, sizeof(*detail));
+  if (code) return qaplet_report(diagnostic, code);
+  qaplet_m2_diagnostic value = QAPLET_M2_DIAGNOSTIC_INIT;
+  value.native_state = QAPLET_NATIVE_QUIESCENT;
+  code = config ? qaplet_create_internal(base, config, output, diagnostic, &value) :
+    qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  value.primary_reason = code;
+  value.creation_rollback = !code ? QAPLET_ROLLBACK_NONE :
+    value.native_uncertain_handles ? QAPLET_ROLLBACK_INCOMPLETE : QAPLET_ROLLBACK_COMPLETE;
+  if (!code) value.native_state = QAPLET_NATIVE_RUNNING;
+  memcpy((char *)detail + 8, (char *)&value + 8, sizeof(value) - 8);
+  return code;
 }
 
 void qaplet_driver_set(qaplet_runtime *runtime, int active) {
@@ -296,6 +327,33 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   pthread_mutex_unlock(&runtime->mutex);
   memcpy((char *)output + 8, (char *)&value + 8, sizeof(value) - 8);
   return qaplet_report(diagnostic, QAPLET_OK);
+}
+
+qaplet_code qaplet_get_m2_diagnostic(qaplet_runtime *runtime, qaplet_m2_diagnostic *output,
+                                    qaplet_diagnostic *diagnostic) {
+  qaplet_code code = qaplet_check_diagnostic(diagnostic);
+  if (code) return code;
+  code = qaplet_check_structure(output, sizeof(*output));
+  if (!code && !runtime) code = QAPLET_INVALID_ARGUMENT;
+  if (code) return qaplet_report(diagnostic, code);
+  qaplet_m2_diagnostic value = QAPLET_M2_DIAGNOSTIC_INIT;
+  pthread_mutex_lock(&runtime->mutex);
+  if (!runtime->m2_enabled) code = QAPLET_UNSUPPORTED;
+  else {
+    value.primary_reason = runtime->snapshot.termination_reason;
+    value.primary_error_domain = runtime->primary_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+    value.primary_error = runtime->primary_error;
+    value.control_error_domain = runtime->control_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+    value.control_error = runtime->control_error;
+    value.cleanup_reason = runtime->cleanup_reason;
+    value.cleanup_error_domain = runtime->cleanup_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+    value.cleanup_error = runtime->cleanup_error;
+    value.native_state = runtime->native_state;
+    value.native_uncertain_handles = runtime->native_uncertain_handles;
+  }
+  pthread_mutex_unlock(&runtime->mutex);
+  if (!code) memcpy((char *)output + 8, (char *)&value + 8, sizeof(value) - 8);
+  return qaplet_report(diagnostic, code);
 }
 
 static qaplet_code drive_preflight(qaplet_runtime *runtime, uint64_t wait,
@@ -430,7 +488,7 @@ qaplet_code qaplet_quiesce(qaplet_runtime *runtime, uint64_t wait,
     pending = runtime->native_state != QAPLET_NATIVE_QUIESCENT;
     if (error == ETIMEDOUT) break;
     if (error) {
-      if (!runtime->cleanup_reason) runtime->cleanup_reason = QAPLET_CONTROL_FAILURE;
+      cleanup_failure_locked(runtime, error);
       break;
     }
     uint64_t observed;
