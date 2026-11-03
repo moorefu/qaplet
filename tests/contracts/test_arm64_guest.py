@@ -1,5 +1,6 @@
 """Full-system guest CLI contracts; no mocked kernel or page measurements."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -110,6 +111,57 @@ class ARM64GuestContract(unittest.TestCase):
             report = json.loads((work / "report.json").read_text(encoding="utf-8"))
             self.assertIn("Duplicate", report["reason"])
             self.assertEqual(report["commands"], [])
+
+
+@unittest.skipUnless(sys.platform == "linux" and os.environ.get("QAPLET_GUEST_CACHE"),
+                     "Explicit locked guest cache required for controlled QEMU boundary fixture")
+class GuestTransportContract(unittest.TestCase):
+    def run_fixture(self, mode):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        work = Path(temporary.name)
+        payload = work / "probe"
+        payload.write_bytes(b"controlled boundary fixture")
+        manifest = work / "manifest.json"
+        manifest.write_text(json.dumps({"schema_version": 1, "page_size": 65536,
+            "files": [{"path": str(payload), "guest_path": "/payload/probe",
+                       "sha256": hashlib.sha256(payload.read_bytes()).hexdigest()}],
+            "commands": [{"case_id": "probe", "argv": ["/payload/probe"],
+                "expected_exit_code": 7, "expected_stdout": "fixture\n", "expected_stderr": ""}]}), encoding="utf-8")
+        executable = work / "qemu-boundary-fixture"
+        executable.write_bytes((ROOT / "tests/contracts/guest_transport_fixture.py").read_bytes())
+        executable.chmod(0o755)
+        process = subprocess.run([sys.executable, str(CLI), "run", "--manifest", str(manifest),
+            "--qemu", str(executable), "--cache", os.environ["QAPLET_GUEST_CACHE"],
+            "--report", str(work / "report.json")], capture_output=True, text=True, timeout=60,
+            env={**os.environ, "QAPLET_TRANSPORT_FIXTURE": mode})
+        return process, json.loads((work / "report.json").read_text(encoding="utf-8"))
+
+    def test_complete_guest_journal_survives_a_missing_console_start_record(self):
+        # The QEMU process is a controlled system fixture. This tests transport
+        # behavior through the public CLI, not kernel or product execution.
+        process, report = self.run_fixture("console-loss")
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(report["cases"][0]["started_at"], "2026-11-03T10:55:26Z")
+        self.assertEqual(report["qemu"]["protocol"]["transport"], "virtio-serial-journal")
+        console = Path(report["qemu"]["serial_log"]["path"]).read_bytes()
+        journal = Path(report["qemu"]["protocol"]["log"]["path"]).read_bytes()
+        self.assertNotIn(b" CASE probe START ", console)
+        self.assertIn(b" CASE probe START 2026-11-03T10:55:26Z\n", journal)
+
+    def test_invalid_guest_journal_or_qemu_exit_cannot_claim_success(self):
+        for mode, reason in (("missing-start", "Missing complete guest execution"),
+                             ("duplicate-start", "Duplicate guest command field"),
+                             ("missing-done", "did not complete cleanly"),
+                             ("bad-footer", "journal SHA-256/length mismatch"),
+                             ("false-success", "failed expected exit contract"),
+                             ("missing-channel", "qemu-evidence.log"),
+                             ("qemu-fail", "did not complete cleanly")):
+            with self.subTest(mode=mode):
+                process, report = self.run_fixture(mode)
+                self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+                self.assertEqual(report["status"], "fail")
+                self.assertIn(reason, report["reason"])
 
 
 if __name__ == "__main__":

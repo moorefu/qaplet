@@ -9,9 +9,20 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def selected_path(manifest, reference):
+    original = str(reference["path"] if isinstance(reference, dict) else reference).replace("\\", "/")
+    candidates = [row for row in manifest.get("path_mappings", [])
+                  if original == row["source"] or original.startswith(row["source"].rstrip("/") + "/")]
+    if candidates:
+        row = max(candidates, key=lambda entry: len(entry["source"]))
+        return Path(row["root"]) / original[len(row["source"]):].lstrip("/")
+    return Path(original)
 
 
 class CoreGateCLI(unittest.TestCase):
@@ -29,13 +40,13 @@ class CoreGateCLI(unittest.TestCase):
             directory = Path(temporary)
             producer = directory / "producer.json"
             manifest = directory / "inputs.json"
-            output = directory / "gate.json"
             manifest.write_text(json.dumps({"schema_version": 1, "profile": "full",
                                             "producers": {"startup": str(producer)},
                                             "startup_reports": [], "io_reports": [], "pages64k_reports": [],
                                             "offline_report": None, "offline_recipe_comparison": None}), encoding="utf-8")
             for changed, reason in mutations:
                 with self.subTest(ci=changed):
+                    output = directory / ("gate-" + uuid.uuid4().hex + ".json")
                     producer.write_text(json.dumps(dict(original, ci=changed)), encoding="utf-8")
                     result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "evaluate",
                                              "--input-manifest", str(manifest), "--report", str(output)],
@@ -71,16 +82,36 @@ class CoreGateCLI(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("QAPLET_GATE_MANIFEST"), "Explicit real full-matrix evidence required")
 class ActualCoreEvidence(unittest.TestCase):
+    def selection(self):
+        manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
+        for group in ("startup_reports", "io_reports", "pages64k_reports"):
+            manifest[group] = [str(selected_path(manifest, reference)) for reference in manifest[group]]
+        manifest["producers"] = {name: str(selected_path(manifest, reference))
+                                 for name, reference in manifest["producers"].items()}
+        for field in ("offline_report", "offline_recipe_comparison"):
+            manifest[field] = str(selected_path(manifest, manifest[field]))
+        # The mutations below target native Linux x64 semantics. Full manifests
+        # may list the guest first; select by measured host rather than order.
+        def native_order(reference):
+            host = json.loads(Path(reference).read_text(encoding="utf-8"))["host"]
+            return (host["execution_mode"] != "native", host["os"] != "Linux", host["execution_arch"] != "x86_64")
+        manifest["startup_reports"].sort(key=native_order)
+        first = json.loads(Path(manifest["startup_reports"][0]).read_text(encoding="utf-8"))["host"]
+        self.assertEqual((first["execution_mode"], first["os"], first["execution_arch"]), ("native", "Linux", "x86_64"))
+        return manifest
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
-        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
+        self.manifest = self.selection()
 
     def evaluate(self):
         manifest = self.directory / "inputs.json"
         manifest.write_text(json.dumps(self.manifest), encoding="utf-8")
-        output = self.directory / "gate.json"
+        # Rejected readers intentionally preserve an existing report. Every
+        # mutation needs a fresh result, never a stale prior failure or pass.
+        output = self.directory / ("gate-" + uuid.uuid4().hex + ".json")
         process = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "evaluate",
                                   "--input-manifest", str(manifest), "--report", str(output)],
                                  capture_output=True, text=True, timeout=120)
@@ -188,7 +219,7 @@ class ActualCoreEvidence(unittest.TestCase):
             "no-commands": lambda report: report["cases"][0].update(commands=[]),
             "path-traversal": lambda report: report["cases"][0]["commands"][0].update(stdout_log="../unrelated.stdout.log"),
         }
-        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
+        original = self.selection()
         for name, mutate in mutations.items():
             with self.subTest(injection=name):
                 self.manifest = json.loads(json.dumps(original))
@@ -202,7 +233,7 @@ class ActualCoreEvidence(unittest.TestCase):
         code, result = self.evaluate()
         self.assertNotEqual(code, 0)
         self.assertIn("Missing required target", " ".join(result["core"]["errors"]))
-        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
+        self.manifest = self.selection()
         self.manifest["startup_reports"].append(self.manifest["startup_reports"][0])
         code, result = self.evaluate()
         self.assertNotEqual(code, 0)
@@ -286,7 +317,8 @@ class ActualCoreEvidence(unittest.TestCase):
             guest = json.loads(guest_path.read_text(encoding="utf-8"))
             old_guest_sha = hashlib.sha256(guest_path.read_bytes()).hexdigest()
             old = guest["qemu"]["serial_log"].copy()
-            serial = next(root.rglob(old["path"].rsplit("/", 1)[-1]))
+            serial = selected_path(self.manifest, old)
+            self.assertTrue(serial.is_relative_to(root))
             token = "QAPLET_" + guest["report_id"].replace("-", "")
             raw = serial.read_bytes()
             raw = b"\n".join(line for line in raw.split(b"\n") if not line.startswith((token + " DONE ").encode()))

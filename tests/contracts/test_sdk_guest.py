@@ -17,6 +17,42 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 
 
+# Independent public coverage floor: all pre-existing contracts plus the six
+# wait contracts. Later catalog additions may extend this set without changing
+# the export transport checks or silently dropping an established refusal.
+REQUIRED_EXPORTED_CASES = frozenset("""
+qaplet-host.m2-wait qaplet-host.m2-wait-concurrent qaplet-host.m2-wait-tokens
+qaplet-host.m2-wait-deadline qaplet-host.m2-wait-budget qaplet-host.m2-wait-events
+qaplet-host.m2-close qaplet-host.m1-frozen-header qaplet-host.m2-drive
+qaplet-host.m2-configuration qaplet-host.m2-owner qaplet-host.m2-creation qaplet-host.m2-runtime
+qaplet-host.close-states qaplet-host.close-concurrent qaplet-host.close-competition
+qaplet-host.runtime qaplet-host.cli-contract qaplet-host.resource-storage
+qaplet-host.resource-configuration qaplet-host.resource-bridge qaplet-host.resource-slices
+qaplet-host.resource-refusals qaplet-host.stop qaplet-host.stop-running qaplet-host.stop-ordering
+qaplet-host.stop-causes qaplet-host.events qaplet-host.events-queue qaplet-host.events-scheduling
+qaplet-host.events-threads qaplet-host.events-budgets qaplet-host.events-entry
+qaplet-host.scalar qaplet-host.state qaplet-host.lifetime qaplet-host.owner qaplet-host.creation
+qaplet-host.resources qaplet-host.abi qaplet-host.integers qaplet-host.strings qaplet-host.bytes
+qaplet-host.diagnostics qaplet-host.value-limits qaplet-host.promise-values qaplet-host.promises
+qaplet-host.modules qaplet-host.module-async qaplet-host.module-identity qaplet-host.module-limits
+qaplet-host.module-pending qaplet-host.module-budgets qaplet-host.module-nul qaplet-host.module-cache
+qaplet-host.module-policy qaplet-host.module-aliases qaplet-host.module-symlinks
+qaplet-host.budgets qaplet-host.host-modules qaplet-host.facts
+qaplet.help qaplet.version qaplet.eval-number qaplet.eval-undefined qaplet.eval-null qaplet.eval-bool
+qaplet.eval-signed qaplet.eval-unsigned qaplet.eval-string-nul qaplet.eval-bytes qaplet.eval-object
+qaplet.eval-thenable qaplet.eval-script qaplet.eval-esm-refused qaplet.eval-promise
+qaplet.eval-rejection qaplet.eval-checkpoint qaplet.eval-diagnostic-getter qaplet.eval-unsettled
+qaplet.eval-no-base qaplet.eval-runtime qaplet.eval-unknown-builtin qaplet.run-argv
+qaplet.run-cache-namespace qaplet.run-rejection qaplet.run-unsettled qaplet.run-query
+qaplet.run-directory qaplet.run-missing qaplet.eval-dispatch-budget qaplet.run-dispatch-budget
+qaplet.eval-deadline qaplet.run-deadline qaplet.args-empty qaplet.args-implicit-source
+qaplet.args-missing-source qaplet.args-source-tail qaplet.args-missing-file qaplet.args-empty-file
+qaplet.args-missing-separator qaplet.args-invalid-budget qaplet.args-overflow-budget
+qaplet-example.abi qaplet-example.application qaplet-example.rejection qaplet-example.queue-full
+qaplet-example.deadline qaplet-example.missing qaplet-example.arguments qaplet-example.metadata
+""".split())
+
+
 @contextmanager
 def fixture():
     retained = os.environ.get("QAPLET_SDK_GUEST_TEST_OUT")
@@ -46,6 +82,9 @@ def selected_path(inputs_path, inputs, reference):
 class ActualSDKGuestExport(unittest.TestCase):
     def test_exports_the_complete_supplied_public_contract_catalog(self):
         producer = Path(os.environ["QAPLET_SDK_BUILD"])
+        original = json.loads(producer.read_text(encoding="utf-8"))
+        if original.get("ci") is not None and os.environ.get("GITHUB_ACTIONS") != "true":
+            self.skipTest("Positive export of a CI producer requires matching actual CI; local identity stays null")
         with fixture() as temporary:
             directory = Path(temporary)
             process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "export",
@@ -54,14 +93,44 @@ class ActualSDKGuestExport(unittest.TestCase):
                 "--report", str(directory / "export.json")], capture_output=True, text=True, timeout=60)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             payload = json.loads((directory / "payload.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(payload["commands"]), 105)
+            exported = json.loads((directory / "export.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(payload["commands"]), exported["command_count"])
             commands = {item["case_id"] for item in payload["commands"]}
-            self.assertTrue({"qaplet-host.module-async", "qaplet-host.promises", "qaplet-host.resource-refusals",
-                             "qaplet-host.stop-running", "qaplet-host.events-threads", "qaplet-host.close-concurrent",
-                             "qaplet-example.application", "qaplet.run-deadline"} <= commands)
+            self.assertEqual(len(commands), len(payload["commands"]))
+            self.assertLessEqual(REQUIRED_EXPORTED_CASES, commands)
             selection = json.loads((directory / "selection.json").read_text(encoding="utf-8"))
             self.assertEqual(selection["report_kind"], "qaplet-sdk-guest-selection")
-            self.assertEqual(selection["sdk_sha256"], json.loads(producer.read_text(encoding="utf-8"))["sdk"]["sha256"])
+            self.assertEqual(selection["sdk_sha256"], original["sdk"]["sha256"])
+            self.assertEqual(selection["sdk_recipe_sha256"], original["sdk_recipe"]["sha256"])
+            self.assertEqual(selection["qaplet_commit"], original["sdk_recipe"]["git_commit"])
+            self.assertEqual(selection["input_lock"], original["input_lock"])
+            self.assertEqual(selection["package"], original["package"])
+            self.assertEqual(selection["producer_report"]["sha256"], hashlib.sha256(producer.read_bytes()).hexdigest())
+            self.assertEqual(selection["producer_report"]["size_bytes"], producer.stat().st_size)
+            self.assertEqual(selection["manifest"]["sha256"], hashlib.sha256((directory / "payload.json").read_bytes()).hexdigest())
+            self.assertEqual(selection["manifest"]["size_bytes"], (directory / "payload.json").stat().st_size)
+            self.assertFalse(exported["evidence_verified"])
+            self.assertFalse(exported["release_ready"])
+
+    @unittest.skipIf(os.environ.get("GITHUB_ACTIONS") == "true", "Local CI-null refusal requires actual local execution")
+    def test_local_export_cannot_borrow_a_supplied_producers_ci_identity(self):
+        producer = Path(os.environ["QAPLET_SDK_BUILD"])
+        original = json.loads(producer.read_text(encoding="utf-8"))
+        if original.get("ci") is None:
+            self.skipTest("Actual CI SDK producer required for local identity refusal")
+        with fixture() as temporary:
+            directory = Path(temporary)
+            process = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_guest.py"), "export",
+                "--build-report", str(producer), "--distribution", str(producer.parent / "artifacts"),
+                "--manifest", str(directory / "payload.json"), "--selection", str(directory / "selection.json"),
+                "--report", str(directory / "export.json")], capture_output=True, text=True, timeout=60)
+            exported = json.loads((directory / "export.json").read_text(encoding="utf-8"))
+            self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+            self.assertIn("complete run, commit, runner and image identities", exported["reason"])
+            self.assertIsNone(exported["ci"])
+            self.assertFalse(exported["evidence_verified"])
+            self.assertFalse((directory / "payload.json").exists())
+            self.assertFalse((directory / "selection.json").exists())
 
     def test_report_cannot_replace_the_selected_original_producer(self):
         producer = Path(os.environ["QAPLET_SDK_BUILD"])
