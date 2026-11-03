@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Confirmed:** 2026-11-03。用户逐轮确认 Q1–Q52，并在 Q53 明确确认共同理解、结束 grilling；本次 to-spec 将已确认决策整理为实施合同。
-**Execution state:** not_started。规格就绪不表示 M2 已实现、OS ABI 已验收或平台已支持。
+**Execution state:** in_progress。2026-11-03 用户调用 `/implement-spec`；当前逐票实现及缺口见[实施记录](implementation.md)。规格就绪或部分代码集成不表示完整 M2、OS ABI 或平台已验收。
 **Baseline:** [v1.5 正式 M2](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md#m2--loop--reactor--workpool--process--sdk-event-bridge)、[已完成 M1](../qaplet-m1/spec.md)、[M1 最终集成与证据](../qaplet-m1/final-review-validation.md)、[阶段边界 ADR 0004](../../docs/adr/0004-v15-platform-baseline.md)、[M1 生命周期 ADR 0005](../../docs/adr/0005-m1-runtime-lifetime-boundary.md)、[M1 资源终止 ADR 0007](../../docs/adr/0007-m1-cooperative-resource-failure.md)。
 **Testing boundary:** 直接沿用本次已确认 Q14、Q49 及 Q53 总体确认；公开产品边界为最小 CLI、包外纯 C Host；真实 backend 探针和受控系统故障夹具补充 OS 事实，不重复访谈。
 
@@ -494,9 +494,11 @@ Runtime 生命周期沿用 OPEN / STOP_REQUESTED / STOPPED / FAILED / CLOSED，�
 - [M0 I/O 基线](../qaplet-m0/native-io-validation.md)已证明其声明范围内的 readiness、pipe、私有 PTY/ConPTY、argv、退出/reap。它没有证明 M2 waker、完整取消、fd generation、迟到完成、真实标准流类型矩阵或句柄继承白名单。
 - M1 ADR 0005 的旧模式合同保留；M2 模式新增 native quiescent 屏障和新绑定保留期，不把旧同步 userdata 的保留期悄悄延长。ADR 0007 的预算与首因原则继续有效，CLOSED 后回收不复活生命周期。
 - 后续实施遵循[开发入口](../../docs/development.md)、[本地 tracker](../../docs/agents/issue-tracker.md)和[独立审查材料](../../docs/agents/review.md)。拆票应围绕可独立验收的纵向行为和真实阻塞依赖，不把本规格章节直接当成水平组件任务。
-- 当前仅发布规格并同步入口；没有实施票或 M2 产品验收成绩。实际新增 C 声明、编码、内部布局及探针实现由本合同驱动，不需要重新选择已经确认的产品边界。
+- 规格发布时仅同步入口，没有实施票或 M2 产品验收成绩；随后已发布 27 票并开始实施，当前状态见[任务索引](README.md)与[实施记录](implementation.md)。实际新增 C 声明、编码、内部布局及探针实现由本合同驱动，不重新选择已经确认的产品边界。
 
 ## Comments
 
 2026-11-03：用户确认 Q1–Q53 后调用 to-spec；依据已确认的测试边界直接发布为 ready-for-agent。本次仅整理接口合同、生命周期边界、资源默认值与验收标准；M1 父规格和既有产品/证据保持原范围。
+
+2026-11-03：用户调用 `/implement-spec` 后开始实施，执行状态更新为 in_progress；合同决策及验收标准不变。部分实现和本地成绩不代表父规格完成。
 

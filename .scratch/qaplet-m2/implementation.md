@@ -19,9 +19,9 @@
 
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
-| 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | 代码及本地闭环完成，待集成及 Cross |
+| 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | `0945484` 已集成，待 Cross |
 | 02 | `codex/m2-02-waker` | `.cache/worktrees/m2-02` | `8fd870e` 已集成，待 Cross |
-| 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | 代码及本地闭环完成，待集成及 Cross |
+| 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | `dfac18d` 已集成，待 Cross |
 | 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | 实施中 |
 | 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | 实施中 |
 | 06–27 | 待分派 | 待创建 | 等待各自直接 blocker |
@@ -49,6 +49,12 @@
 02 的同一 APE 在 Linux x64、Windows x64、实际 ARM64 64K guest 各 19/19 通过，两原生目标的 CLI 合同各 6/6 通过。macOS 两目标和 Linux ARM64 native 尚待远程 Cross；票保持 `awaiting_cross`。[逐项原件与后端结论](waker-reactor-validation.md)保留 Windows failed-connect 的 `poll` / `select` 差异。
 
 02 输出已停止写入。主工作区 `out/qaplet-m2/tickets/02/` 已保存完整去重归档；`store-02-plan.json`、`store-02-created.json`、`store-02-verified.json` 记录 308 文件、53,224,414 逻辑字节及完整原件核验。源 worktree 仍保留，保存收据不单独授权删除。
+
+01 的 SDK 空实例及兼容生命周期、03 的 pipe/stdio 真实探针已分别通过独立机械合并进入集成分支。01 本地正常 SDK 目录 Ubuntu 105/105、Windows 104 pass + 1 既有可选 symlink blocked；包外消费者和 Ubuntu 独立故障夹具通过。03 在 Linux x64、Windows x64、实际 ARM64 64K guest 各 19/19，Linux/Windows 的 CLI 合同各 4/4，通过后的限制及首次失败仍见[01](01-runtime-validation.md)、[03](03-stdio-validation.md)。三票尚未放行完整 Cross 或依赖。
+
+01 初次保存核验 1,213 文件、202,193,960 逻辑字节，03 保存核验 359 文件、57,679,949 逻辑字节，收据在主 `out/qaplet-m2/store-01-*.json` 与 `store-03-*.json`。01 合并后另增加一份 1,251 字节的窄 CI 收据，因此保留初始归档，再将含该收据的最终输出树保存至 `tickets/01-after-merge/`；清理前以最终保存及遗漏输出审计为准。
+
+01 合并后保存及原件核验已通过（1,214 文件、202,195,211 逻辑字节）。三票首次集成的 Ubuntu `scripts/dev.py check` 通过：`out/qaplet-m2/check-initial-integration.json`，345 项工具合同、171 项因需显式输入而未执行，bootstrap 通过。当前代码准备推送 `codex/m2-integration` 执行实际 Full；本地检查不替代平台矩阵。
 
 ## 一次性测试入口修复
 
