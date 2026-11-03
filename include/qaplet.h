@@ -275,7 +275,9 @@ typedef void (*qaplet_timer_callback)(qaplet_runtime *, const qaplet_timer *, vo
 /* One-shot, default ref, owner-only M2 resource. delay_ms is a nonnegative
  * safe integer (<= 2^53-1) and its absolute nanosecond deadline must fit.
  * The callback is never synchronous with create. Code/userdata stay borrowed
- * until callback return, successful cancellation, or owner terminal cleanup.
+ * through callback return, even after self-cancellation. For an unclaimed
+ * timer the borrow ends at cancellation or owner terminal cleanup. The callback
+ * borrows its token pointer only during the call; a value copy may be retained.
  * Timer operations may reenter owner JS/Host/timer callbacks; eval, nested
  * drives, close and destroy remain forbidden there. Output changes on success
  * only. Completion/cancel/stop/close invalidate the identity. A callback's own

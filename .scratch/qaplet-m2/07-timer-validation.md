@@ -60,3 +60,32 @@ argparse 的 `--` 分隔在编译前拒绝；严格 JS fixture 最初误读 Bool
 最终提交、配方逐文件 Git blob/LF 核验、Ubuntu SDK、Linux/Windows 同字节消费、
 包外纯 C/系统故障、普通 dev check 的原件与结果将在执行后追加，不预填成功。
 没有 push、整体 Standards/Spec 审查、父规格 resolved 或 release-ready 声明。
+
+## 冻结后边界与保留候选
+
+`7233e24` 的 66 项 RECIPE 与 Git blob 原字节相同、全 LF；首个完整 dev check
+通过。冻结核对发现 `UINT64_MAX` 合法 deadline 被当作空集合 sentinel。
+`exact-deadline-real-red/` 在公开 snapshot 的最近毫秒断言真实失败；
+`exact-deadline-green/` 将内部查询改为独立存在标志后通过。最初的
+`exact-deadline-red/` 夹具先调到更大时刻再往回调，实际命中了倒退保护，
+不算这个缺陷的独立红灯。`006508e` 提交修复后再次核验全部 66 输入，
+`recipe-blobs.json` 保存该轮，早期收据另存 `recipe-blobs-7233e24.json`。
+
+`final/build.json` 是 `7233e24` 的候选；`verified/build.json` 是 `006508e` 的
+候选，不是最终选择。后者两宿主实际执行完整 126 项，timer/CLI 新项全部通过，
+共同在旧 `m2-creation` 断言失败：新增 timer 元数据原生总预算预检正确返回
+RESOURCE_LIMIT，旧 fixture 只允许 MEMORY_LIMIT。Linux 为 125 pass/1 fail；
+Windows 为 124 pass/1 fail/1 optional blocked（真实 symlink 权限不足）。
+该轮 `verified/package-consume.json` 包外 C 应用 8 项通过，仍只保留原供应范围。
+
+`c00d7ec` 精确扩展该 fixture：只在 native 分支允许并单独计数元数据预检
+RESOURCE_LIMIT，实际 heap/native 分配拒绝仍必须 MEMORY_LIMIT，三类拒绝
+及成功都必须出现；逐失败用公开诊断验证空句柄、原始 primary_reason、完整
+回滚、QUIESCENT、无 cleanup/uncertain 句柄。`creation-metadata-green-fixed/`
+通过；此前 `creation-metadata-green/` 反馈 runner 给 standalone main 多传了
+fixture 参数，在产品执行前以 exit 2 拒绝，保留原件且不算产品红灯。
+
+`dev-check-final.json` 对 `006508e` 的普通检查通过：368 tests / 89.194 秒，
+191 条件 skip，真实系统 C bootstrap pass。两次 dev 的默认原日志在 out/dev；
+`dev-evidence/` 保存全部 36 文件逐字节副本，`dev-evidence-map.json` 记录
+原路径、保存路径、SHA/长度与一致收据；没有改写原报告的真实日志路径。
