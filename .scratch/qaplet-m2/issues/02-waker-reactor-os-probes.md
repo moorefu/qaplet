@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross；独立实现与本地 Linux/Windows/实际 ARM64 64K 验收完成，macOS 两目标及 Linux ARM64 原生等待统一 Cross，尚未 resolved。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -19,10 +19,10 @@
 ## Acceptance criteria
 
 - [ ] 使用固定输入和供应探针字节，记录各适用目标的 OS、CPU、页大小、执行方式和逐项原始结果。
-- [ ] 真实阻塞等待能被跨线程通知打断；覆盖合并/多余通知、关闭竞争和控制失败，不用固定短轮询冒充 wake。
-- [ ] 验证 Socket readiness、错误、HUP/EOF、非阻塞 connect、半关闭及复用，不把平台 revents 常量当成统一值。
-- [ ] 用明确交接覆盖检查前、准备睡眠及已等待顺序；辅助线程方案有实例可实施的有限数量和取消边界。
-- [ ] 未完成、失败或头文件存在均不能签发已验；探针与产品支持范围及输入身份分开记录。
+- [x] 真实阻塞等待能被跨线程通知打断；覆盖合并/多余通知、关闭竞争和控制失败，不用固定短轮询冒充 wake。当前三个实际目标逐项通过，其余目标仍待 Cross。
+- [x] 验证 Socket readiness、错误、HUP/EOF、非阻塞 connect、半关闭及复用，不把平台 revents 常量当成统一值。Windows 失败 connect 的 poll 限制及显式 select 分路单独保留。
+- [x] 用明确交接覆盖检查前、准备睡眠及已等待顺序；辅助线程方案有实例可实施的有限数量和取消边界。
+- [x] 未完成、失败或头文件存在均不能签发已验；探针与产品支持范围及输入身份分开记录。
 
 ## Blocking details
 
@@ -31,6 +31,8 @@
 ## Validation and evidence
 
 本票的纵向边界是 Ubuntu producer、供应原生探针、真实 OS 操作与结构化 consumer 报告。先实测再选择 backend，保留成功、失败、能力限制和实际资源清理；探针结果不自动成为产品支持声明。
+
+实施及逐目标原件见 [02 验收记录](../waker-reactor-validation.md)。正式源提交 `804f521`，同一 APE `35bf4ffb75ec41476daa99d84ae145995a202eaa789ed91f91f2906c8a5642f9` 在 Linux x64 / Windows x64 / ARM64 实际 64K guest 各 19 项通过；Linux / Windows 各 6 项公开 CLI 合同全部通过，0 skipped。macOS 两目标及 Linux ARM64 native 缺口保持可见。
 
 使用明确接受结果和可控 producer/owner 交接复现竞态，不用随机 sleep 猜顺序。受控系统故障夹具与正常产品分别记录输入及配方；外部 supervisor 超时表示未完成，不能证明产品已成功停止或清理。
 
@@ -56,3 +58,5 @@
 
 
 2026-11-03：实施分支 `codex/m2-02-waker`，基于 integration 基线 `5685bb6`。采用独立 `scripts/m2_waker.py` / `tests/native/m2_waker.c` 与公开 CLI 合同；Ubuntu 构建、供应同字节消费。初测 Linux 18 项通过；Windows 正常用户上下文发现失败 connect 的 poll 差异，已以显式 select 分路实测，正式重建及其他目标验证进行中。受限 Windows main 前超时、旧 M0 对照与正常用户执行分开保留，不计为产品失败或通过。
+
+2026-11-03：正式补齐 19 项并完成三个本地实际目标及两平台 CLI 全验收；合并 integration tip `791af3d`，将本票保留为 awaiting_cross。验收记录包含全部输入/配方/供应物身份、原始日志位置、失败历史、Windows backend 差异与尚未执行目标，不将局部通过冒充整个父验收组完成。
