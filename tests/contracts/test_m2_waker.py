@@ -98,7 +98,9 @@ class M2WakerContract(unittest.TestCase):
                                      "--artifact", producer.parent / "artifacts/m2-waker.com", *options,
                                      "--report", work / "report.json"], capture_output=True, text=True, timeout=60)
             report = json.loads((work / "report.json").read_text(encoding="utf-8"))
-            self.assertEqual(result.returncode, 0, report["reason"])
+            failures = [{"case_id": case["case_id"], "actual": case["actual"]}
+                        for case in report["cases"] if case["status"] != "pass"]
+            self.assertEqual(result.returncode, 0, {"reason": report["reason"], "failed_cases": failures})
             cases = {case["case_id"]: case for case in report["cases"]}
             self.assertTrue(all(case["status"] == "pass" for case in cases.values()))
             self.assertEqual(cases["waker.blocked"]["actual"]["timeout_ms"], -1)
@@ -107,6 +109,13 @@ class M2WakerContract(unittest.TestCase):
             self.assertEqual(cases["waker.redundant"]["actual"]["observed"], 0)
             self.assertEqual(cases["waker.redundant"]["actual"]["poll"], 1)
             self.assertEqual(cases["socket.reuse"]["actual"]["same_descriptor"], True)
+            refusal = cases["socket.connect-error"]["actual"]
+            self.assertTrue(refusal.get("reserve_closed_before_connect"), refusal)
+            self.assertGreater(refusal.get("target_port", 0), 0, refusal)
+            self.assertTrue(refusal["connection_failed"], refusal)
+            self.assertEqual(refusal["connect"], -1)
+            self.assertNotEqual(refusal["socket_error"], 0)
+            self.assertTrue(refusal["poll"] == 1 or refusal["select"] > 0, refusal)
             self.assertFalse(report["product_support_verified"])
 
     def test_missing_supplied_bytes_are_blocked_without_compilation(self):
