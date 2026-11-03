@@ -176,12 +176,28 @@
           "run": "python scripts/m2_stdio.py build --output-dir out/m2-probes/stdio/artifacts --report out/m2-probes/stdio/build-info.json"
         },
         {
+          "name": "Ubuntu-build independent M2 process and inheritance probes",
+          "run": "python scripts/m2_process.py build --output-dir out/m2-probes/process/artifacts --report out/m2-probes/process/build-info.json"
+        },
+        {
+          "name": "Ubuntu-build independent M2 terminal and Console probes",
+          "run": "python scripts/m2_tty.py build --output-dir out/m2-probes/tty/artifacts --report out/m2-probes/tty/build-info.json"
+        },
+        {
           "name": "Execute M2 Linux Fast waker and socket facts",
           "run": "python scripts/m2_waker.py run --build-report out/m2-probes/waker/build-info.json --artifact out/m2-probes/waker/artifacts/m2-waker.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/waker.json"
         },
         {
           "name": "Execute M2 Linux Fast pipe cancellation and borrowing facts",
           "run": "python scripts/m2_stdio.py run --build-report out/m2-probes/stdio/build-info.json --artifact out/m2-probes/stdio/artifacts/m2-stdio.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/stdio.json"
+        },
+        {
+          "name": "Execute M2 Linux Fast process and inheritance facts",
+          "run": "python scripts/m2_process.py run --build-report out/m2-probes/process/build-info.json --artifact out/m2-probes/process/artifacts/m2-process.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/process.json"
+        },
+        {
+          "name": "Execute M2 Linux Fast terminal lease and byte facts",
+          "run": "python scripts/m2_tty.py run --build-report out/m2-probes/tty/build-info.json --artifact out/m2-probes/tty/artifacts/m2-tty.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/tty.json"
         },
         {
           "name": "Install tracing for actual disconnected Full rebuild",
@@ -335,6 +351,16 @@
           "name": "Measure M2 native pipe cancellation and safe borrowing facts",
           "if": "${{ !cancelled() }}",
           "run": "python scripts/m2_stdio.py run --build-report out/m2-probes/stdio/build-info.json --artifact out/m2-probes/stdio/artifacts/m2-stdio.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/m2-probes-native/${{ matrix.runner }}/stdio.json"
+        },
+        {
+          "name": "Measure M2 native process arguments and authorized inheritance",
+          "if": "${{ !cancelled() }}",
+          "run": "python scripts/m2_process.py run --build-report out/m2-probes/process/build-info.json --artifact out/m2-probes/process/artifacts/m2-process.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/m2-probes-native/${{ matrix.runner }}/process.json"
+        },
+        {
+          "name": "Measure M2 native terminal lease and Console boundaries",
+          "if": "${{ !cancelled() }}",
+          "run": "python scripts/m2_tty.py run --build-report out/m2-probes/tty/build-info.json --artifact out/m2-probes/tty/artifacts/m2-tty.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/m2-probes-native/${{ matrix.runner }}/tty.json"
         },
         {
           "name": "Retain every native M2 probe observation and cleanup log",
@@ -587,9 +613,19 @@
           "run": "python scripts/m2_stdio.py guest-manifest --build-report out/m2-probes/stdio/build-info.json --artifact out/m2-probes/stdio/artifacts/m2-stdio.com --loader out/m2-probes/stdio/artifacts/ape-aarch64.elf --page-size 65536 --manifest out/page-gaps/65536/m2/stdio-payload.json --report out/page-gaps/65536/m2/stdio-export.json"
         },
         {
+          "name": "Export M2 process probes to the actual 64K kernel",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/m2_process.py guest-manifest --build-report out/m2-probes/process/build-info.json --artifact out/m2-probes/process/artifacts/m2-process.com --loader out/m2-probes/process/artifacts/ape-aarch64.elf --page-size 65536 --manifest out/page-gaps/65536/m2/process-payload.json --report out/page-gaps/65536/m2/process-export.json"
+        },
+        {
+          "name": "Export M2 terminal probes to the actual 64K kernel",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/m2_tty.py guest-manifest --build-report out/m2-probes/tty/build-info.json --artifact out/m2-probes/tty/artifacts/m2-tty.com --loader out/m2-probes/tty/artifacts/ape-aarch64.elf --page-size 65536 --manifest out/page-gaps/65536/m2/tty-payload.json --report out/page-gaps/65536/m2/tty-export.json"
+        },
+        {
           "name": "Merge independent M2 probe payloads without changing producer bytes",
           "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
-          "run": "python scripts/arm64_guest.py merge-manifests --page-size 65536 --input-manifest out/page-gaps/65536/m2/waker-payload.json --input-manifest out/page-gaps/65536/m2/stdio-payload.json --manifest out/page-gaps/65536/m2/payload.json --report out/page-gaps/65536/m2/merged.json"
+          "run": "python scripts/arm64_guest.py merge-manifests --page-size 65536 --input-manifest out/page-gaps/65536/m2/waker-payload.json --input-manifest out/page-gaps/65536/m2/stdio-payload.json --input-manifest out/page-gaps/65536/m2/process-payload.json --input-manifest out/page-gaps/65536/m2/tty-payload.json --manifest out/page-gaps/65536/m2/payload.json --report out/page-gaps/65536/m2/merged.json"
         },
         {
           "name": "Execute current M2 probes on the locked actual 64K guest",
@@ -605,6 +641,16 @@
           "name": "Independently verify M2 guest pipe and stdio semantics",
           "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
           "run": "python scripts/m2_stdio.py import-guest --build-report out/m2-probes/stdio/build-info.json --artifact out/m2-probes/stdio/artifacts/m2-stdio.com --guest-report out/page-gaps/65536/m2/guest.json --report out/page-gaps/65536/m2/stdio.json"
+        },
+        {
+          "name": "Independently verify M2 guest process and inheritance semantics",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/m2_process.py import-guest --build-report out/m2-probes/process/build-info.json --artifact out/m2-probes/process/artifacts/m2-process.com --guest-report out/page-gaps/65536/m2/guest.json --report out/page-gaps/65536/m2/process.json"
+        },
+        {
+          "name": "Independently verify M2 guest terminal lease semantics",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "run": "python scripts/m2_tty.py import-guest --build-report out/m2-probes/tty/build-info.json --artifact out/m2-probes/tty/artifacts/m2-tty.com --guest-report out/page-gaps/65536/m2/guest.json --report out/page-gaps/65536/m2/tty.json"
         },
         {
           "name": "Retain guest failures, serial bytes and semantic reports",
