@@ -395,6 +395,8 @@ C Embed SDK 的拟议通用入口为 `qaplet_runtime_create`、`register_host_mo
 
 ## 7. Host Kernel：Redis ae 哲学的事件模型
 
+**M2 合同状态（2026-11-03）**：已确认的阶段边界、调度、保活、接口及验收以[正式 M2 规格](../../.scratch/qaplet-m2/spec.md)为准；该规格为 ready-for-agent，尚未实现或取得新增 OS 证明。下文架构图和 C/运行伪码保留为总体设计参考；其中 nextTick、beforeExit/exit 与完整 Node 时序属于 M3，不能由伪码推导为 M2 已支持。
+
 ### 7.1 “一个 loop 就是一个 loop”的精确定义
 
 Loop 负责时序、调度、存活和退出，不负责 HTTP/FS/DNS 业务语义。Reactor 只报告 OS fd/handle 的 readiness；TimerHeap 维护单调时钟 deadline；WorkerPool 处理阻塞任务；CompletionQueue 统一把完成事件交给 Loop。不能以给所有 API 包 Promise 的方式掩盖实际阻塞。
@@ -996,7 +998,7 @@ jobs:
 - ARM64 ELF 最小段对齐、16K/64K 内核加载、TLS register 和 Windows ARM64 非原生模式；不以 qemu-user 成功替代真实 64KB kernel。
 - Darwin PTY 关闭/恢复及 HUP、终端尺寸；进程结束时恢复所有 raw/cursor ownership。
 - Windows `poll()` 对 SOCKET/HANDLE/pipe 的差别、非阻塞 connect、连接半关闭、read/write 粒度和 64KB granularity。
-- 子进程：APE 调用另一 APE、原生 EXE、带空格/Unicode 命令、shell=false、stdin EPIPE、stdout/stderr 并发、取消和进程树清理。
+- 子进程：APE 调用另一 APE、原生 EXE、带空格/Unicode 命令、shell=false、stdin EPIPE、stdout/stderr 并发及取消。正式 M2 验收直接子进程终止/reap 与 stdio 结束；完整进程树清理另定后续能力。
 
 ### 14.4 Node 差分与真实应用验收
 
@@ -1005,6 +1007,8 @@ jobs:
 **真实项目阶段选择**：Clack、Terminal-Kit、几款无需原生 addon 的包（如 commander/chalk）、离线诊断 CLI、HTTP/SSE 应用、`fs + child_process` 工具，以及一个通过通用 Embed SDK 运行 JS/QJB 的 C Host 示例。增加复杂性后可尝试 Ink（React/Yoga/WASM 不应作为首发门槛）。所有样本固定源码版本、lockfile、运行命令、报错与修改量。
 
 ### 14.5 稳定性测试与优先性能指标
+
+**阶段边界**：以下为首发总体目标；[正式 M2](../../.scratch/qaplet-m2/spec.md)要求五原生目标和实际 64K 的新合同、循环及混合异步验收，Linux/Windows Full 各补 10,000 次混合生命周期和 1 小时交替长测。24h 发布 soak 仍归 M8，不能由 M2 成绩替代。
 
 - **首发基础功能**：单 Runtime 运行 24h idle/event-loop、重复 create/destroy 10,000 次、低内存、100～256 TCP 空闲连接（逐步扩展）；GC 压力、取消、异常后再次运行。
 - **IO fairness**：多个小/大 HTTP 流并发、SSE 长连接、网络抖动/断网、DNS 超时、慢速 FS、阻塞 CPU 任务；不能出现 nextTick 饥饿或不可取消的无界 queue。
@@ -1110,7 +1114,7 @@ Release 默认在预热、已验证依赖的离线环境中构建；SBOM（SPDX/
 
 ### M1 — QuickJS Engine + 通用 C Embed SDK
 
-**规格状态（2026-11-02）**：用户已确认 [M1 设计 Q1–Q32](../../.scratch/qaplet-m1/design.md)并确认共同理解达成，grilling 完成；[正式 M1 实施规格](../../.scratch/qaplet-m1/spec.md)已发布为 ready-for-agent，沿用 Q32 的测试与证据边界。以下仍为目标合同，正式 M1/SDK 尚未实现或验收；公开 C 声明和枚举数值由规格驱动的实现头文件落实，逐票工作由后续拆票承接。[ADR 0005](../adr/0005-m1-runtime-lifetime-boundary.md)、[0006](../adr/0006-m1-frozen-module-identity.md)、[0007](../adr/0007-m1-cooperative-resource-failure.md)分别记录生命周期、模块缓存及资源终止取舍。
+**规格状态（2026-11-03）**：[M1 设计 Q1–Q32](../../.scratch/qaplet-m1/design.md)及[正式实施规格](../../.scratch/qaplet-m1/spec.md)已实现并 resolved；产品源码 43193d6e9163aaccece5e3c30d96bcbabd3cd260 对应成功 Full 41542426189，[最终集成记录](../../.scratch/qaplet-m1/final-review-validation.md)保留五原生宿主、实际 64K、包外 C 消费者和 98 项严格回归。以下合同及原阶段门槛保留；M2 新增行为须取得自身证据。[ADR 0005](../adr/0005-m1-runtime-lifetime-boundary.md)、[0006](../adr/0006-m1-frozen-module-identity.md)、[0007](../adr/0007-m1-cooperative-resource-failure.md)分别记录生命周期、模块缓存及资源终止取舍。
 
 **前置**：统一 v3 锁、目标 QuickJS 升级与新增 M0-A ESM/Promise 已通过；新配方仍须取得自身证据。
 
@@ -1134,9 +1138,16 @@ Release 默认在预热、已验证依赖的离线环境中构建；SBOM（SPDX/
 
 ### M2 — Loop / Reactor / WorkPool / Process / SDK Event Bridge
 
-实现 Scheduler、TimerHeap/ref-unref、waker、通用 `poll` Reactor/CompletionQueue、有界 WorkPool、基础 ProcessHost 与 TTY/stdio、SDK 通用 POD 消息交接。Windows 根据 M0-C 探针选择 HANDLE/Socket 分路，不得假设单一个 `poll` 语义。
+**规格状态（2026-11-03）**：用户已确认 Q1–Q53 并确认共同理解；[正式 M2 实施规格](../../.scratch/qaplet-m2/spec.md)已发布为 ready-for-agent，尚未实现或验收。测试入口沿用本次 Q14/Q49：最小 CLI、包外纯 C Host，辅以真实 backend 探针和受控系统故障夹具。
 
-**门槛**：无 socket 独占线程和 busy-spin；跨线程不会调用 `JS_*`；队列满、销毁、取消、fd generation、迟到 completion、重复 close/stop 无 UAF/死锁；Linux/Windows 真机语义差分。
+- **驱动与保活**：每 Runtime 独立 Scheduler/TimerHeap/Reactor/WorkPool；固定 owner 显式 pump、run_once/run，旧 pump 不主动等待。入口 DONE、循环空闲、JS CLOSED 和原生清理完成分开。Promise 本身不保活，默认 ref 资源及显式宿主令牌决定自动等待，unref 不取消资源。
+- **调度与预算**：完整 Promise jobs 检查点之间轮转完成、timer、immediate 和业务事件；配额 yield 不提前插入其他回调。保留 M1 绝对执行期限与累计账本，Runtime 可长期存活；等待上限不承诺 native/析构硬抢占。
+- **接口与交接**：最小 qaplet:* timer/work/process/stdio 和独立 M2 创建配置/快照；M1 ABI、旧创建行为不变。业务满队列立即拒绝，原生操作接受前预留完成及数据容量；wake 可合并、无丢唤醒，接受后 wake 故障不变成假拒绝。可选原生通知接入宿主循环。
+- **原生能力**：命名 work 执行前注册，复制输入、有界输出，默认处理器串行；资源以 Runtime 身份/generation 防迟到复用。Process 使用显式路径、argv/env/cwd 快照、受控 stdio 继承，仅管理直接子进程；退出/reap 与 EOF 分开。基础 TTY 提供租约、尺寸和恢复，Console 按真实探针声明 UTF-8/VT 子集。
+- **取消与清理**：逻辑取消与物理退出分离。owner 确认 stop/FAILED 即启动原生取消；close 释放 JS 并发布 CLOSED，quiesce 只推进原生回收，未清理 destroy 为 BUSY。新 work 绑定保留至原生清理完成，通知钩子还须覆盖外部在途调用；宿主最终撤下生产者并 join。
+- **有限默认值**：worker 2、辅助线程上限 4、处理器 64、timer/immediate 1,024、Reactor 注册和原生句柄各 256、子进程 32、宿主令牌 64、work/I/O 操作 128。操作数据预留 8 MiB 包含在原生总额 16 MiB 内；线程请求栈各 1 MiB 单独计量。完整默认表及操作/等待预算见规格。
+
+**门槛**：Ubuntu 构建、其他宿主消费供应制品；五原生目标及实际 ARM64 64K 均验证新合同，至少 1,000 次生命周期及 100 次混合异步。Linux/Windows Full 各补 10,000 次混合生命周期与 1 小时交替长测，24h 发布 soak 留 M8。Windows Socket/HANDLE/Pipe/Console 分路须真实探针；无 socket 独占线程、短轮询空转、跨线程 JS 访问、UAF 或死锁。缺失/失败/跳过的必需证据不签发通过，旧 M0/M1 成绩不外推 M2。
 
 ### M3 — Node 核心 API / ESM-CJS / Package Resolver / TTY
 
@@ -1401,7 +1412,7 @@ docs/
 
 ## 22. 本计划所依赖的主要源码与规范索引
 
-本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针。任务 01–05 已完成：统一 v3 迁移、目标 QuickJS 与 M0-A ESM/Promise 增量已晋级 pinned；[04](../../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)记录所验输入的六目标 Core、页补缺及严格回归，[05](../../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)记录 Fast/Cross/Full 实际执行。后续配方变化须重新验收其新输入。06 原件镜像发布门禁由用户暂缓，release-ready 仍未满足；正式 M1/SDK 尚未实现。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
+本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针。任务 01–05 已完成：统一 v3 迁移、目标 QuickJS 与 M0-A ESM/Promise 增量已晋级 pinned；[04](../../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)记录所验输入的六目标 Core、页补缺及严格回归，[05](../../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)记录 Fast/Cross/Full 实际执行。后续配方变化须重新验收其新输入。06 原件镜像发布门禁由用户暂缓，release-ready 仍未满足；[正式 M1/SDK 已完成](../../.scratch/qaplet-m1/final-review-validation.md)，[正式 M2 规格](../../.scratch/qaplet-m2/spec.md)已就绪、尚未实施。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
 
 ### QuickJS / Cosmopolitan / APE
 
