@@ -230,6 +230,7 @@ qaplet_code qaplet_check_structure(const void *value, size_t known) {
 }
 
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *diagnostic) {
+  if (qaplet_in_notify) return QAPLET_BUSY;
   if (!diagnostic) return QAPLET_OK;
   qaplet_code code = qaplet_check_structure(diagnostic, sizeof(*diagnostic));
   if (code) return code;

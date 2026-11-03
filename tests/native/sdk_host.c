@@ -261,6 +261,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc != 2) return 2;
+  if (!strncmp(argv[1], "--m2-notify", 11)) { extern int sdk_notify(const char *); return sdk_notify(argv[1]); }
   if (!strncmp(argv[1], "--m2-wait", 9)) { extern int sdk_wait(const char *); return sdk_wait(argv[1]); }
   if (!strncmp(argv[1], "--m2-", 5)) return sdk_m2_runtime(argv[1]);
   if (!strcmp(argv[1], "--state")) return state();

@@ -51,6 +51,7 @@ enum {
   /* Explicit M2 factory and separate native cleanup state. */
   QAPLET_CAP_M2_RUNTIME = 1u << 17,
   QAPLET_CAP_M2_WAIT = 1u << 18,
+  QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -273,6 +274,39 @@ typedef struct { uint64_t runtime_id, slot, generation; } qaplet_keepalive;
 #define QAPLET_M2_CONFIG_INIT {sizeof(qaplet_m2_config), QAPLET_ABI_VERSION, 0, QAPLET_M2_LIMITS_INIT, {0}}
 #define QAPLET_DRIVE_RESULT_INIT {sizeof(qaplet_drive_result), QAPLET_ABI_VERSION, 0, 0, 0, 0}
 #define QAPLET_M2_SNAPSHOT_INIT {sizeof(qaplet_m2_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, QAPLET_LIMITS_INIT, QAPLET_M2_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+typedef void (*qaplet_notify_function)(void *userdata);
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_notify_function function;
+  void *userdata;
+  uint64_t flags, reserved[2];
+} qaplet_host_notify;
+#define QAPLET_HOST_NOTIFY_INIT {sizeof(qaplet_host_notify), QAPLET_ABI_VERSION, NULL, NULL, 0, {0}}
+/* Owner, OPEN M2, once before first execution/valid pump. Copies the declaration;
+ * a non-NULL function is required. No replacement or unregister. The native
+ * function runs synchronously on any publishing thread, outside SDK locks.
+ * It must return promptly, never block, execute JS or call any SDK operation
+ * (SDK reentry returns BUSY). Use a nonblocking Host-owned notification facility.
+ * Hints may merge or be redundant; inspect authoritative state on the owner.
+ * The internal waker remains independent. No SDK wait fd/HANDLE is exported.
+ * Event acceptance, stop, token release, explicit wake and native cleanup can
+ * notify; a hint does not assert business completion or keep the loop alive.
+ * Code/userdata remain Host-owned: retain until native QUIESCENT AND all external
+ * producers/calls have been withdrawn/joined. close never waits for a hook.
+ * In-flight hooks keep cleanup pending and destroy BUSY; quiesce may be retried.
+ * Fixed control storage is charged from creation; dispatch allocates nothing. */
+qaplet_code qaplet_set_host_notify(qaplet_runtime *, const qaplet_host_notify *, qaplet_diagnostic *);
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint32_t installed, reserved;
+  uint64_t inflight, inflight_peak;
+} qaplet_notify_snapshot;
+#define QAPLET_NOTIFY_SNAPSHOT_INIT {sizeof(qaplet_notify_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0}
+/* Any thread, including CLOSED. Native leases, never business event counts.
+ * Zero inflight does not prove absence of future external calls. Full output
+ * size required; M1 handles return UNSUPPORTED. No callback pointer is exposed. */
+qaplet_code qaplet_get_notify_snapshot(qaplet_runtime *, qaplet_notify_snapshot *, qaplet_diagnostic *);
 
 /* Explicit opt-in; base retains exactly the M1 configuration contract.
  * Failure stores NULL in output and attempts all feasible unpublished cleanup.

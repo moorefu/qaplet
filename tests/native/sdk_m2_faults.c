@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "controlled M2 contract line %d: %s\n", __LINE__, #c); return 1; } } while (0)
 static int failure, mutexes, attributes, conditions, observe, observed, invalid_reentry;
 static qaplet_runtime *watched;
@@ -18,6 +19,10 @@ static int inject_poll, live_sockets;
 static int creation_listener = -1, listener_close_attempts;
 static qaplet_keepalive held;
 static int sockets[32];
+static pthread_mutex_t notify_gate_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t notify_gate_condition = PTHREAD_COND_INITIALIZER;
+static int notify_entered, notify_continue, notify_fds[2], notify_mode;
+static _Thread_local int stall_notify;
 int __real_socket(int, int, int);
 int __real_accept(int, struct sockaddr *, socklen_t *);
 int __real_close(int);
@@ -71,6 +76,15 @@ int __wrap_close(int fd) {
   return rc;
 }
 ssize_t __wrap_send(int fd, const void *data, size_t size, int flags) {
+  if (stall_notify && size == 1 && *(const char *)data == 'N') {
+    /* Pause at the Host's notification syscall, not inside SDK or Host code.
+     * Normal Host hooks have no gate and never block; this recipe is distinct. */
+    pthread_mutex_lock(&notify_gate_mutex);
+    notify_entered = 1;
+    pthread_cond_broadcast(&notify_gate_condition);
+    while (!notify_continue) pthread_cond_wait(&notify_gate_condition, &notify_gate_mutex);
+    pthread_mutex_unlock(&notify_gate_mutex);
+  }
   if (failure == 5) { errno = EIO; return -1; }
   return __real_send(fd, data, size, flags);
 }
@@ -149,11 +163,15 @@ int __wrap_clock_gettime(clockid_t clock, struct timespec *now) {
   }
   return __real_clock_gettime(clock, now);
 }
+static void ignored_notify(void *unused) { (void)unused; }
 static int setup(void) {
   qaplet_config base = QAPLET_CONFIG_INIT;
   qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   CHECK(qaplet_create_m2(&base, &config, &watched, NULL) == QAPLET_OK);
+  qaplet_host_notify hook = QAPLET_HOST_NOTIFY_INIT;
+  hook.function = ignored_notify;
+  CHECK(qaplet_set_host_notify(watched, &hook, NULL) == QAPLET_OK);
   const char source[] = "globalThis.seen=0;import('qaplet:events').then(m=>m.onEvent(e=>{seen++;}))";
   CHECK(qaplet_eval(watched, source, sizeof(source)-1, &progress, NULL) == QAPLET_OK);
   while (progress.phase == QAPLET_PHASE_PENDING) CHECK(qaplet_pump(watched, &progress, NULL) == QAPLET_OK);
@@ -297,6 +315,110 @@ static int wait_faults(void) {
   }
   return 0;
 }
+static void controlled_notify(void *userdata) {
+  int fd = *(int *)userdata;
+  if (send(fd, "N", 1, MSG_NOSIGNAL) != 1) invalid_reentry = 1;
+}
+static void *overlapping_notification(void *unused) {
+  (void)unused;
+  stall_notify = 1;
+  qaplet_code code = notify_mode ? qaplet_wake(watched, NULL) : qaplet_post_event(watched, 1, 1, "x", 1, NULL);
+  if (code != QAPLET_OK) invalid_reentry = 1;
+  return NULL;
+}
+static int notify_channel(void) {
+  struct sockaddr_in address = {0}; socklen_t length = sizeof(address);
+  address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  int listener = socket(AF_INET, SOCK_STREAM, 0);
+  CHECK(listener >= 0 && !bind(listener, (void *)&address, length));
+  CHECK(!getsockname(listener, (void *)&address, &length) && !listen(listener, 1));
+  notify_fds[1] = socket(AF_INET, SOCK_STREAM, 0);
+  CHECK(notify_fds[1] >= 0 && !connect(notify_fds[1], (void *)&address, length));
+  notify_fds[0] = accept(listener, NULL, NULL);
+  CHECK(notify_fds[0] >= 0 && !close(listener));
+  int flags = fcntl(notify_fds[1], F_GETFL);
+  CHECK(flags >= 0 && !fcntl(notify_fds[1], F_SETFL, flags | O_NONBLOCK));
+  return 0;
+}
+static int notification_overlap(void) {
+  for (notify_mode = 0; notify_mode < 2; ++notify_mode) {
+    qaplet_config base = QAPLET_CONFIG_INIT;
+    qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
+    qaplet_host_notify hook = QAPLET_HOST_NOTIFY_INIT;
+    qaplet_notify_snapshot notifications = QAPLET_NOTIFY_SNAPSHOT_INIT;
+    qaplet_m2_snapshot snapshot = QAPLET_M2_SNAPSHOT_INIT;
+    qaplet_snapshot events = QAPLET_SNAPSHOT_INIT;
+    qaplet_progress progress = QAPLET_PROGRESS_INIT;
+    qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
+    CHECK(!notify_channel());
+    CHECK(qaplet_create_m2(&base, &config, &watched, NULL) == QAPLET_OK);
+    hook.function = controlled_notify; hook.userdata = &notify_fds[1];
+    CHECK(qaplet_set_host_notify(watched, &hook, NULL) == QAPLET_OK);
+    const char source[] = "import('qaplet:events').then(m=>m.onEvent(()=>{throw Error('must not run')}))";
+    CHECK(qaplet_eval(watched, source, sizeof(source)-1, &progress, NULL) == QAPLET_OK);
+    while (progress.phase == QAPLET_PHASE_PENDING) CHECK(qaplet_pump(watched, &progress, NULL) == QAPLET_OK);
+    if (notify_mode) CHECK(qaplet_close(watched, NULL) == QAPLET_OK);
+    notify_entered = notify_continue = 0;
+    pthread_t producer;
+    CHECK(!pthread_create(&producer, NULL, overlapping_notification, NULL));
+    pthread_mutex_lock(&notify_gate_mutex);
+    while (!notify_entered) pthread_cond_wait(&notify_gate_condition, &notify_gate_mutex);
+    pthread_mutex_unlock(&notify_gate_mutex);
+    CHECK(qaplet_get_notify_snapshot(watched, &notifications, NULL) == QAPLET_OK && notifications.inflight == 1);
+    CHECK(qaplet_close(watched, NULL) == QAPLET_OK);
+    CHECK(qaplet_get_m2_snapshot(watched, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_CLOSED && snapshot.native_state == QAPLET_NATIVE_CLEANING && !snapshot.engine_current_bytes && !snapshot.native_handles && !snapshot.native_uncertain_handles);
+    CHECK(qaplet_quiesce(watched, 0, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT);
+    CHECK(qaplet_quiesce(watched, 1, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT);
+    CHECK(qaplet_destroy(watched, NULL) == QAPLET_BUSY);
+    CHECK(qaplet_get_snapshot(watched, &events, NULL) == QAPLET_OK && events.events_consumed == 0 && events.events_dropped == (notify_mode ? 0 : 1));
+    pthread_mutex_lock(&notify_gate_mutex);
+    notify_continue = 1; pthread_cond_broadcast(&notify_gate_condition);
+    pthread_mutex_unlock(&notify_gate_mutex);
+    CHECK(!pthread_join(producer, NULL) && !invalid_reentry);
+    CHECK(qaplet_get_notify_snapshot(watched, &notifications, NULL) == QAPLET_OK && !notifications.inflight && notifications.inflight_peak >= 1);
+    CHECK(qaplet_quiesce(watched, 100, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_QUIESCENT);
+    CHECK(qaplet_destroy(watched, NULL) == QAPLET_OK);
+    watched = NULL;
+    CHECK(!close(notify_fds[0]) && !close(notify_fds[1]));
+    CHECK(!live_sockets && !mutexes && !conditions && !attributes);
+  }
+  puts("controlled HostNotify: accepted event/close and CLOSED wake overlap; JS released; inflight retained; finite quiesce retry; destroy BUSY; producer joined; drained cleanup: pass");
+  return 0;
+}
+static void forbidden_notify_reentry(void *userdata) {
+  qaplet_runtime *runtime = userdata;
+  qaplet_abi abi = QAPLET_ABI_INIT;
+  qaplet_progress progress = QAPLET_PROGRESS_INIT;
+  qaplet_m2_snapshot snapshot = QAPLET_M2_SNAPSHOT_INIT;
+  qaplet_notify_snapshot notifications = QAPLET_NOTIFY_SNAPSHOT_INIT;
+  qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
+  if (qaplet_query_abi(&abi) != QAPLET_BUSY ||
+      qaplet_get_m2_snapshot(runtime, &snapshot, NULL) != QAPLET_BUSY ||
+      qaplet_get_notify_snapshot(runtime, &notifications, NULL) != QAPLET_BUSY ||
+      qaplet_eval(runtime, "throw Error()", 13, &progress, NULL) != QAPLET_BUSY ||
+      qaplet_pump(runtime, &progress, NULL) != QAPLET_BUSY ||
+      qaplet_run_once(runtime, 0, &drive, NULL) != QAPLET_BUSY ||
+      qaplet_run(runtime, &drive, NULL) != QAPLET_BUSY ||
+      qaplet_post_event(runtime, 0, 0, NULL, 0, NULL) != QAPLET_BUSY ||
+      qaplet_request_stop(runtime, NULL) != QAPLET_BUSY || qaplet_wake(runtime, NULL) != QAPLET_BUSY ||
+      qaplet_close(runtime, NULL) != QAPLET_BUSY || qaplet_quiesce(runtime, 0, &drive, NULL) != QAPLET_BUSY ||
+      qaplet_destroy(runtime, NULL) != QAPLET_BUSY) invalid_reentry = 1;
+}
+static int notification_reentry(void) {
+  qaplet_config base = QAPLET_CONFIG_INIT;
+  qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
+  qaplet_host_notify hook = QAPLET_HOST_NOTIFY_INIT;
+  qaplet_m2_snapshot snapshot = QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_create_m2(&base, &config, &watched, NULL) == QAPLET_OK);
+  hook.function = forbidden_notify_reentry; hook.userdata = watched;
+  CHECK(qaplet_set_host_notify(watched, &hook, NULL) == QAPLET_OK);
+  /* Deliberately invalid Host code tests refusal, not permitted hook behavior. */
+  CHECK(qaplet_wake(watched, NULL) == QAPLET_OK && !invalid_reentry);
+  CHECK(qaplet_get_m2_snapshot(watched, &snapshot, NULL) == QAPLET_OK && snapshot.lifecycle == QAPLET_OPEN);
+  CHECK(!dispose() && !invalid_reentry);
+  puts("controlled HostNotify reentry: deliberately invalid hook receives BUSY for SDK queries/control/drives/close; no JS or stop mutation: pass");
+  return 0;
+}
 int main(void) {
   qaplet_config base = QAPLET_CONFIG_INIT;
   qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
@@ -324,6 +446,8 @@ int main(void) {
   CHECK(qaplet_destroy(watched, NULL) == QAPLET_OK);
   CHECK(!mutexes && !attributes && !conditions);
   watched = NULL;
+  CHECK(!notification_overlap());
+  CHECK(!notification_reentry());
   CHECK(!wait_faults());
   puts("controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass");
   puts("controlled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass");
