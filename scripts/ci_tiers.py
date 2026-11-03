@@ -105,7 +105,7 @@ def check_workflow(workflow):
         if name in ("build", "tier-plan"):
             continue
         for step in job.get("steps", []):
-            if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders|m2_waker|m2_stdio|m2_process|m2_tty)\.py\s+build|cosmocc", step.get("run", "")):
+            if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders|m2_waker|m2_stdio)\.py\s+build|cosmocc", step.get("run", "")):
                 raise ValueError("Test job must consume distributed bytes without recompilation: " + name)
     native = workflow["jobs"].get("native-startup", {})
     rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
@@ -182,7 +182,7 @@ def check_m2_probe_transport(workflow):
     require(any(step.get("if") == guest_if and step.get("with") ==
                 {"name": supplier, "path": "out/m2-probes"} for step in guest),
             "Missing 64K validation must download the same M2 supplier")
-    for name in ("waker", "stdio", "process", "tty"):
+    for name in ("waker", "stdio"):
         prefix = "python scripts/m2_" + name + ".py "
         base = "out/m2-probes/" + name
         inputs = " --build-report " + base + "/build-info.json --artifact " + base + "/artifacts/m2-" + name + ".com"
@@ -202,7 +202,7 @@ def check_m2_probe_transport(workflow):
               "--manifest out/page-gaps/65536/m2/payload.json" in step["run"]]
     require(len(merged) == 1 and merged[0].get("if") == guest_if and all(
                 "--input-manifest out/page-gaps/65536/m2/" + name + "-payload.json" in merged[0]["run"]
-                for name in ("waker", "stdio", "process", "tty")), "64K must execute every independent M2 probe payload")
+                for name in ("waker", "stdio")), "64K must execute both independent M2 probe payloads")
     require(any(step.get("if") == guest_if and step.get("run") ==
                 "python scripts/arm64_guest.py run --cache .cache/guests --page-size 65536 --manifest out/page-gaps/65536/m2/payload.json --timeout 300 --command-timeout 60 --report out/page-gaps/65536/m2/guest.json"
                 for step in guest), "M2 probes need actual full-system 64K execution before semantic import")

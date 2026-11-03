@@ -56,11 +56,15 @@
 
 01 合并后保存及原件核验已通过（1,214 文件、202,195,211 逻辑字节）。三票首次集成的 Ubuntu `scripts/dev.py check` 通过：`out/qaplet-m2/check-initial-integration.json`，345 项工具合同、171 项因需显式输入而未执行，bootstrap 通过；本地检查不替代平台矩阵。
 
-首次实际 Full 为 [41599033541](https://github.com/moorefu/qaplet/actions/runs/41599033541)，实际 push 提交 `5fb999fda5b671bbf559ea66db2d91741355123b`。原始 API、任务日志及 ZIP 收集/离线核验收据集中于 `out/qaplet-m2/initial-cross/`；截至本记录仍在运行，正常 SDK、包外消费、独立故障夹具及 02/03 Linux Fast 步骤已成功，具体 case 及跨宿主完成度仍待原件重核。
+首次实际 Full 为 [41599033541](https://github.com/moorefu/qaplet/actions/runs/41599033541)，实际 push 提交 `5fb999fda5b671bbf559ea66db2d91741355123b`，最终 `completed/failure`。原始 API、任务日志及 ZIP 收集/离线核验收据集中于 `out/qaplet-m2/initial-cross/`；正常 SDK、包外消费、独立故障夹具及 02/03 Linux Fast 步骤已成功，具体合同及跨宿主完成度仍须原件重核。
 
 04/05 已给出独立 `m2_process.py` / `m2_tty.py` 的供应与 guest 接口，公共 CI 已准备同样的 build/Fast/五原生/64K 路径；删除任一 probe 的必需路径或在 consumer 重编译共 16 种损坏，通过公开 CI CLI 的红绿合同验证。新入口待实际实现集成后才推送执行，不将编排就绪当作 OS 通过。
 
 四探针公共编排的 Ubuntu 仓库检查已通过：`out/qaplet-m2/check-all-probe-ci.json`，345 项、171 项需显式输入而未执行；本次仅准备编排，当前远程 Full 仍严格绑定先前两探针版本 `5fb999f`。
+
+首次 Full 在两台 macOS 的 `socket.connect-error` 失败，其余五原生 SDK、stdio 及实际 64K/旧 M0 Full 步骤均已有成功原件；仍须严格消费，不以步骤成功替代验收。失败原件及可复验重放位于 `out/qaplet-m2/initial-cross/HANDOFF.md`。已分派独立 `codex/m2-02-macos-fix`；04/05 继续实施。为避免未完成的独立票成为 02 修复的虚构前置，暂将公共 CI 恢复为字节匹配 `5fb999f` 的两探针版本；四探针准备提交 `c338ca9` 保留，待 04/05 源码就绪再恢复执行。
+
+暂退预备入口后的 Ubuntu 仓库检查通过：`out/qaplet-m2/check-two-probe-replay.json`（345 项、171 项需显式输入未执行）。旧失败保持失败；当前未关闭 01–03 或放行依赖。
 
 ## 一次性测试入口修复
 

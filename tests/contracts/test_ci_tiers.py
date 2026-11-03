@@ -33,7 +33,7 @@ class CITiersContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-m2-ci-") as temp:
             work = Path(temp)
             mutations = []
-            for script in ("m2_waker.py", "m2_stdio.py", "m2_process.py", "m2_tty.py"):
+            for script in ("m2_waker.py", "m2_stdio.py"):
                 for job in ("build", "native-startup", "arm64-page-gaps"):
                     value = json.loads(json.dumps(original))
                     value["jobs"][job]["steps"] = [step for step in value["jobs"][job]["steps"]
