@@ -110,6 +110,8 @@ Windows 原始 libc fd0 在普通 suite 与 ConPTY 内仍为 `other`，显式 Se
 
 Ubuntu `candidate/make-check.json` 已实际执行 362 项，180 项既有外部输入条件 skipped；本票 8 项均执行通过。全入口未通过：30 个 failure（含 subtest）和 1 个 error 都发生在 Nightly fixture 获取前的既有磁盘门槛；当时 D 盘可用 `4167704576` bytes，小于该入口默认 `4294967296` bytes。Linux ext4、C 盘并不缺同等空间，但源码盘 D 仍是必测输入。未降低阈值、修改 cache 布局、设置全局 GIT_DIR、修改共享 core.worktree 或删除原件。仅当前 worktree 的只读 Git 查询使用已记录适配器，其他 fixture 原样透传，worktree 仅允许 list；共享 `.git/config` 前后 SHA-256 均为 `18de2af639cb0d28809b71bfa845293181862452ac47bab3e6d7ea3296422b19`。空间门槛恢复后须以新报告路径重跑必需检查。
 
+随后 coordinator 以标准 NTFS `/C` 压缩静态 SDK 编译缓存恢复空间，主工作区 `out/qaplet-m2/cache-compression-verified.json` 记录 4783 个文件内容摘要全部不变、无 reparse，D 盘可用恢复为 `4862255104` bytes。没有改变产品、配方、既有 4GiB 阈值或缓存物理目录。保留上述首轮失败，在同一新 producer/真实 64K guest 输入下补跑既有 `python3 scripts/dev.py check --output-dir out/m2-05-fix/check-after-space --report out/m2-05-fix/candidate/dev-check-entry.json`；`candidate/dev-check-after-space.json` 绑定环境收据与旧失败报告，`dev-check-entry.json` 记录实际 Ubuntu checkout、主工作区 `.cache`、预检和执行命令。补检 **pass**：362 项中 182 项执行通过、180 项既有外部条件 skipped，本票 8 项均执行；统一锁审计、CI 静态合同和真实系统 C bootstrap 全部 pass。原始 stdout/stderr 在 `check-after-space/command-0.*.log`，共享 Git config 前后摘要仍不变。完成后合并最新集成文档点 `1e1908f`，没有产品变化或额外制品重构。当前本地必需检查已通过；新 Mac native/当前集成 Full 仍保持下述缺口。
+
 `diagnosis/replay_current.py` 再用修复树 consumer 读取冻结原件，`raw-replay-after.json` 仍将两 Mac 的 10 项真实失败和 Windows 的缺三项保留为 fail；不能把 consumer 别名修复算成新 OS 执行。新增 POSIX lifetime/取消合同也拒绝缺这些事实的旧 Linux raw，不以旧成功补齐新配方。
 
 票保持 **claimed / local_verified_cross_pending**，`product_support_verified=false`。当前没有新 Mac x64/ARM64 原生执行，原 CI 的 Windows setup errno 也仍未知；新集成 Full 必须重新供应当前配方并验证五原生及实际 64K，不能据本地修复关闭本票。

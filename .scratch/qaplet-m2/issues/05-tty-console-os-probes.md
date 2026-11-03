@@ -64,3 +64,5 @@
 
 必需 `make check` 首轮被源码盘 D 的既有 4GiB 安全门槛阻断，未降低阈值或清理原件；本票合同均通过。新 Mac native 和当前新集成 Full 尚未执行，Windows 原 CI 具体 errno 仍未获证实；票继续 claimed，不能 resolved。
 
+2026-11-03 补检：coordinator 验证静态 SDK 编译缓存的标准 NTFS 压缩保留全部 4783 文件字节，恢复 D 盘既有空间门槛后，本票通过原 `dev.py check` 完整入口：362 项中 182 项执行通过、180 项既有条件 skipped，本票 8 项均执行，统一锁/CI 静态合同/真实 C bootstrap 全部 pass。首轮失败原件保留；新报告为 fresh 修复树的 `out/m2-05-fix/candidate/dev-check-entry.json` 与 `dev-check-after-space.json`，环境收据在主工作区 `out/qaplet-m2/cache-compression-verified.json`。补检后已合并最新 integration `1e1908f`，没有产品配方变化；仍待新 Mac native 与集成 Full，不改变 claimed 状态。
+
