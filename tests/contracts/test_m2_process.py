@@ -14,6 +14,45 @@ CLI = ROOT / "scripts/m2_process.py"
 
 
 class M2ProcessContract(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt" and os.environ.get("QAPLET_TEST_M2_PROCESS_PRODUCER"), "Actual Windows supplied probe required")
+    def test_missing_native_fixture_root_reports_stage_errno_and_runs_no_children(self):
+        producer = Path(os.environ["QAPLET_TEST_M2_PROCESS_PRODUCER"])
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-process-missing-root-") as temporary:
+            missing = Path(temporary) / "missing" / "temporary"
+            result = subprocess.run([producer.parent / "artifacts/m2-process.com", "--suite",
+                                     "--native-child", producer.parent / "artifacts/m2-process-winchild.exe",
+                                     "--fixture-root", missing], capture_output=True, text=True, timeout=30)
+            self.assertIn(result.returncode, (3, 768), result.stdout + result.stderr)
+            self.assertEqual([json.loads(line)["case_id"] for line in result.stdout.splitlines()], ["facts"])
+            self.assertEqual(result.stderr, "[m2-process-fixture] stage=mkdtemp errno=2 cleanup=true\n")
+            self.assertFalse(missing.parent.exists())
+
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_PROCESS_PRODUCER"), "Explicit Ubuntu probe producer required")
+    def test_fixture_uses_private_host_temporary_root_and_removes_it(self):
+        producer = Path(os.environ["QAPLET_TEST_M2_PROCESS_PRODUCER"])
+        options = ["--loader-dir", os.environ["QAPLET_TEST_M2_PROCESS_LOADERS"]] if os.environ.get("QAPLET_TEST_M2_PROCESS_LOADERS") else []
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-process-host-") as temporary:
+            work = Path(temporary)
+            host_temp = work / "host temp 临时"
+            host_temp.mkdir()
+            environment = dict(os.environ, TMPDIR=str(host_temp), TEMP=str(host_temp), TMP=str(host_temp))
+            result = subprocess.run([sys.executable, CLI, "run", "--build-report", producer,
+                                     "--artifact", producer.parent / "artifacts/m2-process.com", *options,
+                                     "--report", work / "report.json"], env=environment,
+                                    capture_output=True, text=True, timeout=60)
+            report = json.loads((work / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.returncode, 0, report["reason"])
+            fixture = report["temporary_fixture"]
+            self.assertTrue(fixture["created_before_execution"])
+            self.assertTrue(fixture["removed_after_execution"])
+            self.assertEqual(Path(fixture["root"]).parent, host_temp)
+            case = next(case for case in report["cases"] if case["case_id"] == "process.path")
+            observed = bytes.fromhex(case["actual"]["temporary_directory_hex"]).decode("utf-8").replace("\\", "/")
+            if os.name == "nt" and len(observed) > 3 and observed[0] == "/" and observed[2] == "/":
+                observed = observed[1] + ":" + observed[2:]
+            self.assertEqual(Path(observed).parent, Path(fixture["root"]))
+            self.assertEqual(list(host_temp.iterdir()), [])
+
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_PROCESS_PRODUCER"), "Explicit Ubuntu probe producer required")
     def test_guest_export_uses_its_own_payload_prefix_and_explicit_child_launcher(self):
         producer = Path(os.environ["QAPLET_TEST_M2_PROCESS_PRODUCER"])
@@ -28,7 +67,7 @@ class M2ProcessContract(unittest.TestCase):
             manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(all(item["guest_path"].startswith("/payload/m2-process/") for item in manifest["files"]))
             argv = manifest["commands"][0]["argv"]
-            self.assertEqual(argv[2:], ["--suite", "--launcher", argv[0]])
+            self.assertEqual(argv[2:], ["--suite", "--launcher", argv[0], "--fixture-root", "/tmp"])
 
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_PROCESS_PRODUCER"), "Explicit Ubuntu probe producer required")
     def test_same_bytes_preserve_argv_environment_cwd_and_binary_stdio(self):

@@ -11,6 +11,7 @@ import shutil
 import sys
 import uuid
 import struct
+import tempfile
 import ape_helpers
 import m2_process_pe
 from build_ape import publish_ape
@@ -257,7 +258,20 @@ def consume(args, report, directory):
         argv += ["--launcher", loader]
     if report["host"]["os"] == "Windows":
         argv += ["--native-child", Path(report["windows_child"]["path"])]
-    executed, stdout, stderr = run(report, directory, "suite", argv, args.timeout, expected=None)
+    # A Windows host need not have the literal POSIX /tmp directory. The
+    # controller owns an independent host temporary root, including on early
+    # native setup failure; the probe owns its mkdtemp child inside that root.
+    root = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-process-") as temporary:
+            root = Path(temporary).resolve()
+            report["temporary_fixture"] = {"root": str(root), "created_before_execution": root.is_dir(),
+                                           "removed_after_execution": False}
+            argv += ["--fixture-root", root]
+            executed, stdout, stderr = run(report, directory, "suite", argv, args.timeout, expected=None)
+    finally:
+        if root is not None:
+            report["temporary_fixture"]["removed_after_execution"] = not root.exists()
     if executed["timed_out"]:
         report["cases"].append({"case_id": "runner.timeout", "status": "fail", "actual": {
             "timed_out": True, "exit_code": executed["exit_code"], "process_reaped": executed["exit_code"] is not None},
@@ -265,6 +279,12 @@ def consume(args, report, directory):
         raise BuildError("Probe deadline exceeded; raw logs and supervisor cleanup retained")
     records = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     collect_observations(report, records, executed, identity(args.artifact), report["host"], args.timeout)
+    actual = next(record["actual"] for record in records if record["case_id"] == "process.path")
+    observed = bytes.fromhex(actual["temporary_directory_hex"]).decode("utf-8").replace("\\", "/")
+    if report["host"]["os"] == "Windows" and len(observed) > 3 and observed[0] == "/" and observed[2] == "/":
+        observed = observed[1] + ":" + observed[2:]
+    if Path(observed).parent != root or not report["temporary_fixture"]["removed_after_execution"]:
+        raise BuildError("Native fixture did not use and release the independent supplied host temporary root")
     if stderr:
         raise BuildError("Unexpected native stderr; raw output retained")
     if sha256(args.artifact) != artifact["sha256"] or (loader and sha256(loader) != report["loader"]["sha256"]):
@@ -314,7 +334,7 @@ def import_guest(args, report):
         raise BuildError("Exactly one actual M2 process/inheritance suite command is required")
     suite = suites[0]
     loader = suite["argv"][0]
-    if suite["argv"] != [loader, target, "--suite", "--launcher", loader] or loader not in before:
+    if suite["argv"] != [loader, target, "--suite", "--launcher", loader, "--fixture-root", "/tmp"] or loader not in before:
         raise BuildError("Guest process must use explicit loader/program argv with no shell")
     expected_loader = producer.get("portable_helpers", {}).get("loader", {}).get("sha256")
     if expected_loader and before[loader] != expected_loader:
@@ -361,7 +381,7 @@ def guest_manifest(args, report):
     guest_loader, guest_program = "/payload/m2-process/ape-aarch64.elf", "/payload/m2-process/进程 空格/m2-process.com"
     payload = {"schema_version": 1, "page_size": args.page_size,
                "files": [{**loader, "guest_path": guest_loader}, {**identity(args.artifact), "guest_path": guest_program}],
-               "commands": [{"case_id": "m2-process.suite", "argv": [guest_loader, guest_program, "--suite", "--launcher", guest_loader],
+               "commands": [{"case_id": "m2-process.suite", "argv": [guest_loader, guest_program, "--suite", "--launcher", guest_loader, "--fixture-root", "/tmp"],
                              "expected_exit_code": 0, "expected_stderr": ""}]}
     write_json(args.manifest, payload)
     report.update(status="pass", reason="Same-byte Unicode/space process guest payload exported; guest execution not performed",

@@ -139,3 +139,145 @@ Ubuntu `make check` 首次因 Windows `.git` marker 在 WSL 无法解析而失�
 最终合入 `0460f71` 后，`make check OUT=out/m2/process/validation/final-integration`
 完成 361 项合同（185 项按其显式输入/目标标记跳过）、CI/输入锁合同和真实 C bootstrap，
 退出 0。最终 producer 的 11 个源码/配方文件在交付前逐项重算 SHA，与报告完全一致。
+
+## Windows Full 失败后的当前修复与重验
+
+2026-11-03，独立修复分支 `codex/m2-04-windows-fix`，工作区
+`D:/Workspace/dairn/qaplet/.cache/worktrees/m2-04-fix`。从集成祖先 `196cd75` 开始，
+交付前快进合入 `78cce5c`；该集成增量仅更新 02 的验收文字，11 个实际源码/配方输入未变。
+本节报告均在该修复工作区的 `out/m2-04-fix/`，旧工作区、原 ZIP 和 Full 原件未覆盖。
+
+### 原始红色结果与诊断边界
+
+读取主工作区 `out/qaplet-m2/full-196cd75/HANDOFF.md`、
+`raw-replayed-001.json`、`source-and-producer-verified-002.json` 与真实 Windows suite raw，
+再次执行 `replay_raw.py --report out/m2-04-fix/original-raw-replay.json`。
+Windows process 仍只有 facts，exit_code=768、timed_out=false、stderr 空，缺 17 项。
+再将输入缩到该一条 facts 和原 suite 元数据，直接调用本票 collector，稳定拒绝缺项；
+没有改 consumer 判据使其通过。`windows-original-minimal.json` 保留最小重放输入。
+
+先列出四个可证伪假设并交 root：literal `/tmp` 根不可用、早期 realpath 失败、
+Unicode mkdir/realpath 失败、宿主文件系统访问受限。仅加有界 stage/errno 的第一轮
+Ubuntu producer 在本机 Windows 为 18/18，原 APE 直接运行亦为 18 项 exit0。
+原 CI producer 直接经本机 CLI 消费被原有 CI 身份合同拒绝，失败报告
+`original-local-windows.json` 保留；没有补造 CI 身份。
+只改受控子进程 TMPDIR 为不存在的私有路径，literal `/tmp` 的 mkdir 仍成功。
+该次 `--strace` 污染受控 stderr，导致 inherit 的 binary_exact 失败，原始输出仍在
+`original-tmpdir-absent.*`，不算正常 stdio 验收。单改 COSMOSDRIVE 亦未复现早退。
+
+因此，本地证据不能证明原 CI 具体是哪一次 syscall、哪一个 errno 失败。
+当前修复移除未经保证的宿主临时根前提，并留下真实 setup 诊断；原 CI 的精确 errno
+仍须由新 Windows CI 原件确认，不用本地通过替代新的 Full/Cross。
+
+### 私有临时根与实际 cwd 表示
+
+`run` 先通过宿主 Python `TemporaryDirectory` 创建实际独立目录，再以
+`--fixture-root` 显式供应。native suite 不再回退到 literal `/tmp`，而是在该根内
+用 mkdtemp 分配自己的独立子目录。原生实际 realpath 的目录字节以 hex 记录在
+`process.path.temporary_directory_hex`；consumer 校验该目录确为供应根的直接子目录，
+并记录根在执行前已存在、执行后已回收。controller 的 finally 和 native 的早期失败清理
+分别承担各自拥有的目录；没有创建宿主全局 `/tmp` 或改变系统配置。
+
+最初的私有根完整 Windows 执行保留在 `private-root/windows.json`：17 项通过，
+Cosmopolitan 的 cwd_exact 失败。最小独立 `diagnosis/cwd.c` 在 Ubuntu 用锁定编译器构建，
+Windows 实际观测 input/realpath 为 `/C/Users/.../Temp/...`，chdir 成功后 getcwd 为
+`/Users/.../Temp/...`，errno0。两种表示指向同一目标。
+native setup 现在短暂切换到目标，使用与 child 相同的 getcwd 取得预期字符串，再恢复
+父 cwd；child 原有 strcmp 精确检查、Win32 的精确 cwd 检查和 consumer 预期保持不变。
+
+公开 CLI 的私有根回归先红（旧入口没有独立根证据），第一轮仍因上述真实 cwd 差异红，
+修正后转绿。另一条真实 Windows native seam 回归先红：旧 APE 忽略显式缺根参数，仍
+运行 18 项 exit0；新 APE 对同一不存在的私有根只输出 facts，exit768，stderr 为
+`stage=mkdtemp errno=2 cleanup=true`，前后均未创建缺根。
+`closure/missing-root.json` 绑定当前 APE SHA，保留此实际失败命令及 raw。
+这证明缺根能造成与原 CI 相同的早退形状，仍不声称它就是原 CI 已证实的原因。
+
+guest 明确供应其临时文件系统 `/tmp`，native 仍独立 mkdtemp 并回收；manifest 和只读
+import 同时要求完整的显式 loader/program/root argv。没有 shell 或隐式 fallback。
+
+### 当前同字节闭环
+
+`closure/build.json` 重新签发当前全部 11 个 LF 源码/配方输入，
+`closure/source-current-verified.json` 逐项重算 SHA/长度全部相同。
+当前 APE 为 971648 bytes，SHA-256
+`f52b62bafcad30d9bcb952cbf455fe790d465f46e3070e007eea6b4de677680c`。
+供应 PE 仍为 9216 bytes，SHA-256
+`17943b060e32dba29fe1c735af8a911e0213e216a570814af5a48a8fc929196a`；
+PE 源码、配方、执行前后 SHA 核验均保留。
+
+| 当前原件 | 实际范围 | 结果 / report ID |
+| --- | --- | --- |
+| `closure/build.json` | Ubuntu 固定输入、fat APE 与无 CRT PE 配方 | pass / `6df2650c-baf0-49f7-b87f-49fdc48354f6` |
+| `closure/windows.json` | Windows x64 / 4096 / native | 18/18 / `4ace0ae4-0056-432d-8565-56924ec39e19` |
+| `closure/linux.json` | Linux x64 / WSL kernel 6.6.87.2 / 4096 | 13/13 / `28d6601d-066e-4e47-876c-657726b5b926` |
+| `closure/guest-64k.json` | 实际 ARM64 完整系统 guest / 65536 | transport pass / `c1340521-7a67-4f69-b871-4d47ea9ab570` |
+| `closure/guest-import-windows.json` | 同摘要 APE/loader、实际 raw 与执行后 payload SHA 只读复核 | 13/13 / `bb0128f1-f397-436a-99ad-a00bd70af9d0` |
+
+当前同字节完整 suite 保留复杂 argv、环境完整替换与 Cosmo 协议差分、三路任意字节、
+EOF/exit 两种顺序、强制终止/reap、三 HANDLE 白名单、文件对象身份检测与故意继承
+sentinel 正向控制。未借用旧 APE 的通过身份。
+Windows 公开 CLI 合同 11/11，Ubuntu 9 项通过、两项 Windows 专属明确不适用；
+当前真实 guest 的缺项、重复、false-success 和 payload-changed 四种变体均实际拒绝。
+日志是 `closure/{windows,linux}-contracts.{stdout,stderr}.log`。
+
+实际命令延续本页原入口，构建/guest 缓存显式使用主工作区物理 `.cache/`：
+
+```sh
+python3 scripts/m2_process.py build \
+  --toolchain-cache /mnt/d/Workspace/dairn/qaplet/.cache/toolchains/cosmocc \
+  --helper-source-cache /mnt/d/Workspace/dairn/qaplet/.cache/sources/ape-loader \
+  --build-dir /mnt/d/Workspace/dairn/qaplet/.cache/build \
+  --output-dir out/m2-04-fix/closure/artifacts --report out/m2-04-fix/closure/build.json
+python3 scripts/m2_process.py guest-manifest \
+  --build-report out/m2-04-fix/closure/build.json \
+  --artifact out/m2-04-fix/closure/artifacts/m2-process.com \
+  --loader out/m2-04-fix/closure/artifacts/ape-aarch64.elf --page-size 65536 \
+  --manifest out/m2-04-fix/closure/guest-manifest.json --report out/m2-04-fix/closure/manifest.json
+python3 scripts/arm64_guest.py run \
+  --cache /mnt/d/Workspace/dairn/qaplet/.cache/guests --page-size 65536 \
+  --manifest out/m2-04-fix/closure/guest-manifest.json --report out/m2-04-fix/closure/guest-64k.json
+```
+
+### 仓库检查与仍待范围
+
+当前 WSL 仍使用本工作区独立 ignored Git shim：只为当前仓库的只读命令映射 Git
+metadata/work-tree，worktree 只处理 list；其他 fixture、init 和其他 `-C` 原样透传，
+未设置全局 GIT_DIR、core.worktree 或共享配置。首次 shim 未处理 git_read 的 `-c` 前缀，
+实际失败保留在 `validation/dev-check.json`；修正 shim 后重新执行完整入口。
+
+`validation/dev-check-002.json` 的 preflight、输入锁和 CI 合同通过，但完整 363 项合同
+为 30 fail、1 error、187 skip。失败均位于 nightly_toolchain：实测 D 盘仅
+4167708672 bytes，低于原有默认 4 GiB（4294967296 bytes），因此 CLI 在合同目标前被
+容量门禁拒绝。原始 stderr/stdout 保留在 `validation/check-002/`；未降低阈值，未删除
+共享缓存、源码或原件，也没有将这次完整 check 记为通过。
+未进入的真实 C bootstrap 随后独立执行，通过报告在
+`validation/bootstrap-only/bootstrap.json`。
+
+当前新 APE 的 macOS 两原生、Linux ARM64 native、新 Windows CI 和完整 Cross/Full
+交 root 继续采集。原 CI 的准确 syscall/errno 仍未知；本票保持 awaiting_cross，
+不 resolved，不宣称 Runtime 产品支持或父 M2 已验收。
+
+### 容量恢复后的完整补检
+
+root 对静态 `.cache/build/sdk` 做标准 NTFS 压缩后，主工作区环境收据
+`out/qaplet-m2/cache-compression-verified.json` 记录 4783 个文件前后数量一致、
+内容摘要变化 0、reparse 条目 0，D 盘可用 4862255104 bytes，超过原有 4 GiB 门槛。
+未降低门槛，前述真实容量失败及全部日志保持原样。
+
+在同一 Ubuntu 上、沿用本工作区只读 Git shim 与主物理缓存，实际补跑：
+
+```sh
+python3 scripts/dev.py check \
+  --output-dir out/m2-04-fix/validation/check-003 \
+  --report out/m2-04-fix/validation/dev-check-003.json
+```
+
+新报告 `dev-check-003.json` 为 pass，实际 `make check` exit_code=0、timed_out=false：
+preflight、输入锁、CI 合同和完整 363 项合同全部完成，其中 176 项实际通过、187 项按其
+显式输入/目标条件跳过；真实系统 C bootstrap 同轮通过。
+完整 stdout/stderr 和 bootstrap 报告位于 `validation/check-003/`。
+没有补做大构建或改产品配方；交付前重核 closure 的 11 个源码/配方输入，摘要全部未变。
+
+补检后确认已合入最新 integration `1e1908f`，本分支合并提交为 `7f099b9`；该增量只改
+实施记录和磁盘恢复说明。上述本地通过仍不替代待采集的新 Windows CI、其原始失败
+syscall/errno，以及当前新 APE 的 macOS/ARM native 和完整 Cross/Full。
