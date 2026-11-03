@@ -69,8 +69,8 @@ python3 scripts/m2_tty.py build \
 3. `green-posix/build.json` 保留固定头重复 SID 定义的真实编译失败；未修改锁或 M0 绕过输入审计。
 4. `windows-red.json`、`windows-v3.json` 保留原始 fd0 不是 Console、open(CONIN$) 不能把 libc fd0 安全改成 Console，以及分块 emoji 输入丢失的失败；最终分开 native 标准 HANDLE 路由、libc fd0 和文本子集，原始丢失事实继续作为能力限制保留。
 5. 非法终端输入的新合同在旧 producer 上真实 red（没有 text.invalid-input 观察）；加入真实 PTY/ConPTY 输入后 Linux/Windows green。`windows-v4.json` 还保留 consumer 变严格后旧 producer 没有完整模式快照而拒绝的失败，最终 accepted producer 补齐实测快照与真正 close 的租约端点。
-6. 首次 `make-check.json` 在 352 项中有 18 项失败，均由 Windows 创建的 linked worktree `.git` 内 D: 指针在 Ubuntu 中不可识别而发生，原始 stderr 保存。后续使用仅本 worktree 的只读 Git 查询映射；worktree 只允许 list，其他 fixture 的 -C / init / config 原样透传，不设置全局 GIT_DIR，不写共享 Git 配置。映射前后共享 `.git/config` SHA-256 均为 `18de2af639cb0d28809b71bfa845293181862452ac47bab3e6d7ea3296422b19`；`make-check-mapped.json` 完整通过 352 项，173 项既有外部输入条件 skipped，本票 7 项全部显式执行。真实系统 C bootstrap 与全部 CI 静态检查也通过。
+6. 首次 `make-check.json` 在 352 项中有 18 项失败，均由 Windows 创建的 linked worktree `.git` 内 D: 指针在 Ubuntu 中不可识别而发生，原始 stderr 保存。后续使用仅本 worktree 的只读 Git 查询映射；worktree 只允许 list，其他 fixture 的 -C / init / config 原样透传，不设置全局 GIT_DIR，不写共享 Git 配置。映射前后共享 `.git/config` SHA-256 均为 `18de2af639cb0d28809b71bfa845293181862452ac47bab3e6d7ea3296422b19`；`make-check-mapped.json` 的 352 项回归成功，其中 179 项执行通过、173 项既有外部输入条件 skipped，本票 7 项全部显式执行。真实系统 C bootstrap 与全部 CI 静态检查也通过。
 7. 交付前增加模式字段缺失负向用例，实际发现空 before/restored 字典仍会被旧 consumer 接受，先得到真实 red；增加 Windows/POSIX 完整字段集、数值与 cc_hex 类型检查后同一真实 guest 变体 green。保留旧 accepted 与 final producer 原件；最后一轮 producer 使用已提交并按 `.gitattributes` 规范化 LF 的实现字节，避免把 CRLF 工作副本的配方身份当作 Git 源码身份。
-8. 加强后的当前源码再次运行完整 `make check`，`accepted/make-check-strict.json` 为 352 项全通过、173 项既有条件 skipped；本票 7 项显式执行且无跳过，真实 bootstrap 通过。该次所选 accepted APE 与最终 verified APE 已证实同摘要；最终 verified 两平台各 7 项还分别独立重跑并保留原始日志。
+8. 加强后的当前源码再次运行完整 `make check`，`accepted/make-check-strict.json` 的 352 项回归成功，其中 179 项执行通过、173 项既有条件 skipped；本票 7 项显式执行且无跳过，真实 bootstrap 通过。该次所选 accepted APE 与最终 verified APE 已证实同摘要；最终 verified 两平台各 7 项还分别独立重跑并保留原始日志。
 
 完整 Cross/Full 尚未在本票关闭前完成，尤其 macOS 两架构及原生 Linux ARM64。它们的缺口不被本地模拟 guest、M0 旧成绩或本票的 59 项 OS 观察替代；集成 coordinator 负责当前提交的统一矩阵和票最终关闭。
