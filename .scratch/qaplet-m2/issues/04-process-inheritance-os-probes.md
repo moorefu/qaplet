@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Execution state:** not_started
+**Execution state:** awaiting_cross；独立实现和本地 Linux/Windows/实际 ARM64 64K 已完成，macOS 两目标及 Linux ARM64 native 待统一 Cross，尚未 resolved。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] 实测显式可执行路径、Unicode/空格/引号/反斜杠/元字符 argv、cwd、完整环境替换和缺程序错误，不隐式调用 shell。
-- [ ] pipe/inherit/ignore 均有真实子进程结果，退出与 EOF 两种顺序可区分。
-- [ ] 加入额外 waker、文件和描述符 fixture，证明仅授权 stdio 可继承，内部传递元信息不造成句柄泄漏或 EOF 悬挂。
-- [ ] 真实强制终止并 reap 直接子进程，保留 native exit/signal/error，覆盖创建失败和重复回收。
+- [x] 实测显式可执行路径、Unicode/空格/引号/反斜杠/元字符 argv、cwd、完整环境替换和缺程序错误，不隐式调用 shell。
+- [x] pipe/inherit/ignore 均有真实子进程结果，退出与 EOF 两种顺序可区分。
+- [x] 加入额外 waker、文件和描述符 fixture，证明仅授权 stdio 可继承，内部传递元信息不造成句柄泄漏或 EOF 悬挂。
+- [x] 真实强制终止并 reap 直接子进程，保留 native exit/signal/error，覆盖创建失败和重复回收。
 - [ ] Ubuntu producer、各适用宿主与实际 64K 的探针结果保持身份和原始日志，不宣称整树或优雅终止能力。
 
 ## Blocking details
@@ -54,3 +54,7 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+
+2026-11-03：领取独立 worktree `codex/m2-04-process`，确认集成祖先并合入 `8fd870e`。按已确认 T01/T02 公开 CLI/原生探针 seam 执行真实 red/green；产物与旧 M0 配方隔离。
+
+2026-11-03：独立 `m2-process.com`、无 CRT Windows PE child 与公开 CLI 合同完成。Ubuntu producer 和同摘要 Linux 13 项、Windows 18 项、实际 ARM64 64K 13 项均通过；Windows CLI 9/9、Ubuntu 8 过及唯一 Windows 专属项不适用。保留 posix_spawn 的真实环境差分、trace duplicate 导致的 EOF 挂起、HANDLE 数值复用误判和修正后的正向继承控制。上述勾选仅覆盖已测本地三目标，不代表完整 Cross；原始报告、失败历史、准确 CLI、SHA 和边界见[中文证据](../04-process-validation.md)。合入 `0460f71`，原件 out 保留，未 push。
