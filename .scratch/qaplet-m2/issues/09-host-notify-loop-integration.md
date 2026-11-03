@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 原生通知可来自任意生产者/完成线程，宿主用自己的真实等待机制收取提示，不导出 SDK 等待句柄。
-- [ ] 合并与多余通知不改变业务数量或交付结果，内部 run_once 不依赖宿主钩子完成唤醒。
-- [ ] fixture 中钩子快速返回、不运行 JS、不重入 SDK，SDK 不以回调阻塞替代内部控制交接。
-- [ ] 内部清理与外部在途通知均结束前，代码和 userdata 不可卸载；确定性交接覆盖 close 重叠。
-- [ ] 投递、stop、令牌释放和清理进度的通知只报告实际支持范围，POD 查询及线程权限不变。
+- [x] 原生通知可来自任意生产者/完成线程，宿主用自己的真实等待机制收取提示，不导出 SDK 等待句柄。
+- [x] 合并与多余通知不改变业务数量或交付结果，内部 run_once 不依赖宿主钩子完成唤醒。
+- [x] fixture 中钩子快速返回、不运行 JS、不重入 SDK，SDK 不以回调阻塞替代内部控制交接。
+- [x] 内部清理与外部在途通知均结束前，代码和 userdata 不可卸载；确定性交接覆盖 close 重叠。
+- [x] 投递、stop、令牌释放和清理进度的通知只报告实际支持范围，POD 查询及线程权限不变。
 
 ## Blocking details
 
@@ -55,4 +55,6 @@
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-03：06 自身当前五原生及实际 64K 严格验收已完成，领取 `codex/m2-09-host-notify` / `.cache/worktrees/m2-09`，fresh implementer 执行公开 SDK/真实宿主等待接入的 TDD。并行能力位协调：HostNotify 使用 bit 20，保留既有 ABI 数值；内部 waker、原生在途和 userdata 保留期不得延后实现。
+
+2026-11-03：本地产品 `f0feb5c` 已完成，保持 claimed / awaiting_cross。独立通知声明/POD、锁下 lease 与锁外 hook、内部 waker 独立、close 重叠、finite quiesce 与原生/外部双重保留期均经公开 SDK 及包外 Host 验证；不虚构后续 work/process 完成。64 项 RECIPE Git blob/LF 相同，最终 Linux 115 pass、Windows 114 pass + 1 可选 symlink blocked（必需缺口 0），包外应用 8、受控 fixture Linux/Windows 各 1、独立 Notify Host 各 4 全通过，两平台各实际 100 组进程内/12,800 业务事件。当前完整本地 check 通过。受限 Windows pre-main timeout、错误 loader 选择和一次性报告 adapter 失败原件保留；最终五原生/实际 64K 与全资源 T03 待 integration 新 Full。详见[09 独立验证记录](../09-host-notify-validation.md)，冻结原件为本树 `out/m2-09/final/`。
 
