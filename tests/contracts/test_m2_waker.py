@@ -107,6 +107,13 @@ class M2WakerContract(unittest.TestCase):
             self.assertEqual(cases["waker.redundant"]["actual"]["observed"], 0)
             self.assertEqual(cases["waker.redundant"]["actual"]["poll"], 1)
             self.assertEqual(cases["socket.reuse"]["actual"]["same_descriptor"], True)
+            refusal = cases["socket.connect-error"]["actual"]
+            self.assertTrue(refusal.get("reserve_closed_before_connect"), refusal)
+            self.assertGreater(refusal.get("target_port", 0), 0, refusal)
+            self.assertTrue(refusal["connection_failed"], refusal)
+            self.assertEqual(refusal["connect"], -1)
+            self.assertNotEqual(refusal["socket_error"], 0)
+            self.assertTrue(refusal["poll"] == 1 or refusal["select"] > 0, refusal)
             self.assertFalse(report["product_support_verified"])
 
     def test_missing_supplied_bytes_are_blocked_without_compilation(self):

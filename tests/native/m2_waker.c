@@ -323,6 +323,11 @@ static void sockets(void) {
   setup = reserve >= 0 && !bind(reserve, (void *)&address, length) && !getsockname(reserve, (void *)&address, &length);
   client = setup ? socket(AF_INET, SOCK_STREAM, 0) : -1;
   setup = setup && client >= 0 && nonblock(client);
+  /* A bound, unlistening TCP endpoint can keep a connect pending on Darwin.
+     Release the selected loopback port so this probes a real connect error.
+     A concurrent listener claiming it must fail this case, never fake success. */
+  int reserve_closed = setup && closed(&reserve);
+  setup = setup && reserve_closed;
   errno = 0;
   connect_value = setup ? connect(client, (void *)&address, length) : -2;
   connect_error = errno;
@@ -344,8 +349,8 @@ static void sockets(void) {
   }
   int failed_connect = setup && connect_value == -1 &&
       ((connect_error != EINPROGRESS && connect_error != EWOULDBLOCK) || ((polled == 1 || selected > 0) && !got && socket_error != 0));
-  snprintf(json, sizeof(json), "{\"connect\":%d,\"connect_errno\":%d,\"poll\":%d,\"poll_timeout_ms\":2000,\"raw_revents\":%d,\"error\":%s,\"hup\":%s,\"select\":%d,\"select_writable\":%s,\"select_exceptional\":%s,\"socket_error\":%d,\"connection_failed\":%s}",
-      connect_value, connect_error, polled, events, boolean(events & POLLERR), boolean(events & POLLHUP), selected, boolean(writable), boolean(exceptional), socket_error, boolean(failed_connect));
+  snprintf(json, sizeof(json), "{\"reserve_closed_before_connect\":%s,\"target_port\":%d,\"connect\":%d,\"connect_errno\":%d,\"poll\":%d,\"poll_timeout_ms\":2000,\"raw_revents\":%d,\"error\":%s,\"hup\":%s,\"select\":%d,\"select_writable\":%s,\"select_exceptional\":%s,\"socket_error\":%d,\"connection_failed\":%s}",
+      boolean(reserve_closed), ntohs(address.sin_port), connect_value, connect_error, polled, events, boolean(events & POLLERR), boolean(events & POLLHUP), selected, boolean(writable), boolean(exceptional), socket_error, boolean(failed_connect));
   result("socket.connect-error", failed_connect, json);
   closed(&client); closed(&reserve);
   snprintf(json, sizeof(json), "{\"all_descriptors_closed\":%s}", boolean(cleanup_ok));

@@ -2,6 +2,8 @@
 
 2026-11-03：独立探针及 producer/consumer 已实现；本地三个实际目标通过，完整 Cross 尚待集成分支运行。本记录只证明 OS 可实施性，不签发 Qaplet Runtime、SDK、generation 过滤或网络产品能力。
 
+最新状态：首次 Full 的两 macOS 在 `socket.connect-error` 失败；下文保留旧验收，新增最小夹具修复和新本地证据。新字节尚待原生 macOS Cross，本票仍为 awaiting_cross。
+
 ## 实现与输入身份
 
 - 实施分支 `codex/m2-02-waker`，确认起点祖先为 `5685bb6e26b9b181ccf68208c73f69e355ce7275`。实现提交 `e4bd0e6`、`804f521`；报告绑定的源提交为 `804f5216602562bf906630979d47a771f3ecb01d`。报告同时绑定实际源文件和配方字节，提交号不暗示整个 worktree 干净。
@@ -80,3 +82,51 @@ Windows 设置 producer / guest 两项并用正常用户上下文执行同一测
 - 受限 Windows agent 上下文中，新的 APE 与已有旧 M0 native-io / Hello 对照都在 main 前无输出挂起；正常用户上下文的新 APE可执行。`out/m2/waker/first/windows.json` 保留受限超时，`windows-user-context.json` 保留真实失败 connect 差异。该受限上下文不外推为系统未支持，也不签发通过。
 - `out/m2/waker/first/`、`final/` 和 `diagnosis-windows.ndjson` 是历史/探索成绩，不与 `accepted/` 混合；隔离 no-pause / minimal 变体不作为验收来源。
 - 本票尚不能标记 resolved：macOS 两目标、Linux ARM64 native 与适用 Full 回归待集成分支统一执行。M2 生命周期/长测、SDK 公共合同、生成代次过滤、继承/Console/Pipe 等仍由各自票验收，当前 OS 探针不替代它们。
+
+## 首次 Full macOS 失败与最小夹具修复
+
+首次 Full [41599033541](https://github.com/moorefu/qaplet/actions/runs/41599033541) 绑定 `5fb999fda5b671bbf559ea66db2d91741355123b`。Darwin 24.6.0 的 x86_64 / 4096 与原生 aarch64 / 16384 各 18 pass、1 fail，唯一失败为 `socket.connect-error`；suite 退出 1、未超时、stderr 为空。原始观测均为 `connect=-1, errno=115, poll(2000ms)=0, select(5s)=0, SO_ERROR=0, connection_failed=false`。旧 Linux x64、Linux ARM64 native 和 Windows x64 各 19/19；它们不能覆盖 macOS 的失败。
+
+完整交接及原件位于主树 `out/qaplet-m2/initial-cross/HANDOFF.md`。修复树为 `.cache/worktrees/m2-02-fix`、分支 `codex/m2-02-macos-fix`，起点 `c338ca9`；新输出独立位于修复树 `out/m2-02-fix/`，没有写回旧原件。
+
+### 红灯、收敛与可证伪假设
+
+先实际执行原件重放：
+
+```powershell
+python D:/Workspace/dairn/qaplet/out/qaplet-m2/initial-cross/replay_mac_waker.py --report out/m2-02-fix/macos-failure-red-replay.json
+```
+
+实际退出 1，`failure_reproduced=true, targets=2, failed_case=socket.connect-error, new_native_execution=false`。收敛后的诊断信号是唯一失败记录：连接持续 pending，等待未报告就绪，也未取得 OS 错误；其余 18 项不失败。这里最小化的是保存的观测，不是新的 Darwin syscall 实验；本机无原生 Mac，不能把秒级旧 trace 重放称为新夹具的绿灯。
+
+在改变夹具前给出以下排序假设及预测：
+
+1. bound、未 listen 的 reserve 在 Darwin 使连接保持 pending；释放该 reserve 后同地址的真实 nonblocking connect 应取得错误。
+2. Cosmopolitan 的 Darwin poll/select 连接错误通知均有缺口；释放 reserve 后仍 pending，需新原生对照才能区分。
+3. 首次 SO_ERROR 读取清除了迟到错误；若先 select 后读 SO_ERROR 改变结果则支持它，但旧 trace 首次已读 0 使此项较弱。
+4. 地址或套接字设置错误；其它相同 loopback 设置的成功 connect 会使此项较弱。
+
+Apple 的 [XNU 固定源码](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/netinet/tcp_input.c#L2321)将存在且为 TCPS_CLOSED 的端点送入 drop，而[无对应 PCB 的路径](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/netinet/tcp_input.c#L2177)可进入 reset 路径。这支持假设 1，不证明该 CI 内核二进制的具体执行路径；新的 macOS 原生结果仍是最终验证。
+
+公开 CLI 原有真实供应物测试先增加端口释放事实、真实错误和等待就绪断言；使用旧正式本地 producer 执行该单测，实际 1 test / 0.815s 失败，`reserve_closed_before_connect` 缺失，日志为 `connect-refusal-red.log`。这是候选夹具合同的红灯，与前述真实 macOS 失败分开记录。
+
+### 最小修改与新本地结果
+
+仅修改 `tests/native/m2_waker.c` 与公开 CLI 回归：在原 bind/getname、client nonblock 设置后，调用既有 `closed` 实测 close 成功且 F_GETFD 返回 EBADF，再对原 loopback 地址发起 connect。原始记录新增 `reserve_closed_before_connect` 和 `target_port`。端口释放至 connect 之间存在别的本地进程抢占端口的可能；若连接成功或错误没有实际就绪及非零 SO_ERROR，既有 consumer 仍失败，不重试或伪造拒绝。
+
+consumer `scripts/m2_waker.py` 字节不变，SHA-256 为 `bf34d114f6dc62d08ea871fdb665c31fbf7a899907b610659c217d550fa90fb5`。未扩大 2 秒 poll / 5 秒 select 时限，未把 pending 当成功，未改宿主网络、安全策略或 sysctl。`macos-failure-preserved-after-fix.json` 再次以同一不变 consumer 重放旧原件，仍为两目标同一失败，退出 1。
+
+Ubuntu 使用既有固定输入和主树物理 `.cache/` 构建，新 APE 为 977325 bytes、SHA-256 `c1507c60f6800e45847fef05bb7a5cc1d4a5a110fb65dda221d93746beb630b7`；source 集合 SHA 为 `5bb85bcce1c84bc7da4d3333834d516dbdc1da80a057e6ca1ef56d23748da33a`，build 配方 SHA 为 `610a3afb16dce19a17302fe3ea3c8e08ae06b7c3c7812debed2c15086381b383`。报告记录构建时 HEAD `c338ca9` 及实际未提交源字节，不把 HEAD 外推为工作树干净。
+
+| 新供应字节目标 | 实测执行 | 结果 | connect-error 原始事实 |
+|---|---|---|---|
+| Linux x64 | native，WSL2 6.6.87.2，4096 | 19/19 | errno 115，poll 1，revents 28，SO_ERROR 111 |
+| Windows x64 | native，正常用户上下文，10.0.22000，4096 | 19/19 | errno 115，poll 0，select 1 / writable，SO_ERROR 10061 |
+| Linux ARM64 64K | emulated-system，6.8.0-147-generic-64k，65536 | 19/19 | errno 115，poll 1，revents 28，SO_ERROR 111 |
+| macOS x64 / ARM64，Linux ARM64 native | 新字节尚未执行 | not_run | 等待新原生 Cross |
+
+三个已测目标的 `reserve_closed_before_connect=true`，端口均非零；socket 资源全部关闭，7 个 helper 全部 join，live_helpers=0。64K 仍使用固定 QEMU 6.2.0 / virt-6.2,gic-version=3 / cortex-a72 / TCG 单线程，guest 实测页大小及 smaps 相符，payload 前后摘要相同；QEMU 正常退出、未超时，RAM-only、无网络和磁盘，无 host global changes。
+
+新 Linux / Windows 公开 CLI 各 6 tests 通过、0 skipped，耗时 4.197s / 5.415s；含真实供应物正常执行及新增拒绝夹具事实、改字节启动前拒绝、缺输入 blocked、输出碰撞拒绝、外层 deadline 真实回收、真实 guest 证据的四类拒绝变体。原件为 `contracts-linux.log`、`contracts-windows.log`；`build-info.json`、`artifacts/`、`linux.json`、`windows.json`、`payload-64k.json`、`export-64k.json`、`guest-64k.json`、`arm64-64k.json` 与全部 `evidence/` 保留在新输出目录。
+
+纯只读 Windows `preflight-windows.json` 通过；WSL 直接读取 Windows worktree `.git` 路径失败的首次预检单独保存在 `preflight.json`，不是探针失败。最终仓库检查与合入点由后续同分支记录补充。本票仍待新 macOS 原生及适用 Full，尚不能 resolved。
