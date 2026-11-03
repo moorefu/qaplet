@@ -14,6 +14,7 @@ import uuid
 import zipfile
 
 from build_ape import BuildError, FORBIDDEN, headers
+from arm64_guest import protocol_stream
 from ci_identity import validate_ci_identity
 from input_lock import component, attach, consume_identity, check_loader_bundle, check_portable_helper
 from evidence import read_json
@@ -238,7 +239,9 @@ def verify_guest_transport(evidence, item, output):
     for field in ("rootfs", "executable", "compressed_kernel"):
         require(re.fullmatch(r"[0-9a-f]{64}", qemu[field]["sha256"]) and qemu[field]["size_bytes"] > 0, "Missing QEMU/guest provenance: " + field)
     evidence.read(qemu["init"])
-    serial = decode(evidence.read(qemu["serial_log"]))
+    evidence.read(qemu["serial_log"])
+    token = "QAPLET_" + item["report_id"].replace("-", "")
+    serial = protocol_stream(qemu, token, evidence.read)
     evidence.read(qemu["stderr_log"])
     require(item["cleanup"]["qemu_exited"] is True and item["cleanup"]["timed_out"] is False and item["cleanup"]["ram_only"] is True and
             item["cleanup"]["disks"] == [] and item["cleanup"]["network"] == "none" and item["cleanup"]["host_global_changes"] is False, "Guest transport cleanup/invocation failed")
@@ -249,10 +252,18 @@ def verify_guest_transport(evidence, item, output):
     argv = command["argv"]
     require(PurePosixPath(normalized(argv[0])).name == PurePosixPath(normalized(qemu["executable"]["path"])).name == "qemu-system-aarch64",
             "Actual locked full-system QEMU executable required; qemu-user cannot provide kernel coverage")
+    protocol_argv = []
+    if qemu.get("protocol") is not None:
+        runner = (ROOT / "scripts/arm64_guest.py").read_bytes()
+        require(same(item["source"]["runner"], {"sha256": digest(runner), "size_bytes": len(runner)}),
+                "Guest journal runner source differs from current protocol")
+        log = qemu["protocol"]["log"]["path"]
+        protocol_argv = ["-chardev", "file,id=qaplet-evidence,path=" + log.replace(",", ",,"),
+            "-device", "virtio-serial-device", "-device", "virtserialport,chardev=qaplet-evidence,name=org.qaplet.evidence"]
     require(argv == [argv[0], "-machine", qemu["machine"], "-cpu", qemu["cpu"], "-accel", "tcg,thread=single",
                     "-smp", "1", "-m", "512M", "-display", "none", "-serial", "stdio", "-monitor", "none",
                     "-nic", "none", "-no-reboot", "-kernel", qemu["kernel"]["path"], "-initrd", qemu["rootfs"]["path"],
-                    "-append", "console=ttyAMA0 rdinit=/init panic=-1"], "Full-system RAM-only isolated invocation differs from locked protocol")
+                    "-append", "console=ttyAMA0 rdinit=/init panic=-1", *protocol_argv], "Full-system RAM-only isolated invocation differs from locked protocol")
     for option, value in (("-accel", "tcg,thread=single"), ("-machine", qemu["machine"]), ("-cpu", qemu["cpu"]),
                           ("-nic", "none"), ("-kernel", qemu["kernel"]["path"]), ("-initrd", qemu["rootfs"]["path"])):
         require(argv.count(option) == 1 and argv[argv.index(option) + 1] == value, "QEMU command identity mismatch: " + option)
@@ -291,6 +302,8 @@ def verify_guest_transport(evidence, item, output):
     cases = unique(item["cases"])
     require(set(cases) == set(records), "Guest serial/raw case coverage mismatch")
     for name, case in cases.items():
+        if qemu.get("protocol") is not None:
+            require(case.get("protocol_log") == qemu["protocol"]["log"], "Guest case refers to different protocol evidence")
         raw = records[name]
         require(set(raw) == {"CWD", "START", "END", "EXIT", "STDOUT", "STDERR"}, "Incomplete actual guest command")
         require(case["status"] == "pass" and int(raw["EXIT"]) == case["exit_code"] == case["actual"]["exit_code"] and

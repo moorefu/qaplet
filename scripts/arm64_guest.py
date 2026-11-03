@@ -242,9 +242,17 @@ def init_script(data, token, timeout):
              "/bin/busybox mount -t proc proc /proc", "/bin/busybox mount -t sysfs sysfs /sys", "/bin/busybox mount -t devtmpfs devtmpfs /dev",
              "/bin/busybox mkdir -p /dev/pts", "/bin/busybox mount -t devpts -o newinstance,ptmxmode=0666,mode=0620 devpts /dev/pts",
              "/bin/busybox ln -sf pts/ptmx /dev/ptmx", "/bin/busybox ip link set lo up",
-             "/bin/busybox date -u -s " + shlex.quote(now()[:19].replace("T", " ")) + " >/dev/null"]
+             "/bin/busybox date -u -s " + shlex.quote(now()[:19].replace("T", " ")) + " >/dev/null",
+             'test "$(/bin/busybox cat /sys/class/virtio-ports/vport0p1/name)" = org.qaplet.evidence || { /bin/busybox poweroff -f; exit 1; }',
+             ': >/tmp/qaplet-evidence || { /bin/busybox poweroff -f; exit 1; }',
+             "qaplet_record() {",
+             # Evaluate each record once. The RAM journal is authoritative;
+             # the console remains a diagnostic mirror with its original bytes.
+             '  printf \'%s\\n\' "$1" >>/tmp/qaplet-evidence || { /bin/busybox poweroff -f; exit 1; }',
+             '  printf \'%s\\n\' "$1"',
+             "}"]
     def emit(kind, expression):
-        lines.append("printf '%s\\n' " + shlex.quote(token + " " + kind + " ") + expression)
+        lines.append("qaplet_record " + shlex.quote(token + " " + kind + " ") + expression)
     for key, command in (("os", "/bin/busybox uname -s"), ("architecture", "/bin/busybox uname -m"),
                          ("kernel", "/bin/busybox uname -r"), ("page_size", "/usr/bin/getconf PAGESIZE"),
                          ("page_size_alias", "/usr/bin/getconf PAGE_SIZE"),
@@ -272,8 +280,36 @@ def init_script(data, token, timeout):
     for item in data["files"]:
         emit("HASH_AFTER " + item["guest_path"], '"$(/bin/busybox sha256sum ' + shlex.quote(item["guest_path"]) + " | /bin/busybox cut -d ' ' -f 1)\"")
     emit("DONE", "")
+    # Open the evidence port only after payload execution. No evidence FD is
+    # inherited by a product process and its stdin/stdout/stderr stay unchanged.
+    lines += ['journal_size=$(/bin/busybox wc -c </tmp/qaplet-evidence)',
+              'journal_sha=$(/bin/busybox sha256sum /tmp/qaplet-evidence)',
+              'journal_sha=${journal_sha%% *}',
+              '{ /bin/busybox cat /tmp/qaplet-evidence && printf \'%s JOURNAL %s %s\\n\' ' + shlex.quote(token) + ' "$journal_size" "$journal_sha"; } >/dev/vport0p1',
+              'test "$?" = 0 || { /bin/busybox poweroff -f; exit 1; }']
     lines.append("/bin/busybox poweroff -f")
     return ("\n".join(lines) + "\n").encode()
+
+
+def protocol_stream(qemu, token, read):
+    """Read a complete guest-created journal, or the strict legacy console."""
+    protocol = qemu.get("protocol")
+    if protocol is None:
+        return read(qemu["serial_log"]).decode("utf-8", "replace")
+    if (set(protocol) != {"version", "transport", "device", "name", "log"} or
+            protocol["version"] != 2 or protocol["transport"] != "virtio-serial-journal" or
+            protocol["device"] != "/dev/vport0p1" or protocol["name"] != "org.qaplet.evidence"):
+        raise ValueError("Unsupported guest evidence protocol")
+    raw = read(protocol["log"])
+    body, separator, footer = raw.rpartition((token + " JOURNAL ").encode("ascii"))
+    if not separator or not re.fullmatch(rb"[0-9]+ [0-9a-f]{64}\n", footer):
+        raise ValueError("Missing complete guest journal seal")
+    size, digest = footer.rstrip(b"\n").split(b" ")
+    if len(body) != int(size) or hashlib.sha256(body).hexdigest().encode("ascii") != digest:
+        raise ValueError("Guest journal SHA-256/length mismatch")
+    if not body.endswith(b"\n") or any(not line.startswith((token + " ").encode("ascii")) for line in body.splitlines()):
+        raise ValueError("Malformed guest journal record")
+    return body.decode("utf-8")
 
 
 def execute(args, report, directory):
@@ -302,18 +338,26 @@ def execute(args, report, directory):
     report["qemu"]["version"] = version.strip()
     executable = shutil.which(args.qemu)
     report["qemu"]["executable"] = identity(Path(executable))
+    journal = directory / "qemu-evidence.log"
+    report["qemu"]["protocol"] = {"version": 2, "transport": "virtio-serial-journal",
+        "device": "/dev/vport0p1", "name": "org.qaplet.evidence", "log": {"path": str(journal)}}
     argv = [args.qemu, "-machine", lock["qemu"]["machine"], "-cpu", lock["qemu"]["cpu"],
             "-accel", "tcg,thread=single", "-smp", "1", "-m", "512M", "-display", "none", "-serial", "stdio",
             "-monitor", "none", "-nic", "none", "-no-reboot", "-kernel", image, "-initrd", initrd,
-            "-append", "console=ttyAMA0 rdinit=/init panic=-1"]
+            "-append", "console=ttyAMA0 rdinit=/init panic=-1",
+            "-chardev", "file,id=qaplet-evidence,path=" + str(journal).replace(",", ",,"),
+            "-device", "virtio-serial-device", "-device", "virtserialport,chardev=qaplet-evidence,name=org.qaplet.evidence"]
     executed, serial, errors = run(report, directory, "qemu-serial", argv, args.timeout, expected=None)
     report["cleanup"] = {"qemu_exited": executed["exit_code"] is not None, "timed_out": executed["timed_out"],
                          "process_group_cleanup": "foundation.command terminates the QEMU process group on timeout",
                          "ram_only": True, "disks": [], "network": "none", "host_global_changes": False}
     report["qemu"]["serial_log"] = identity(Path(executed["stdout_log"]))
     report["qemu"]["stderr_log"] = identity(Path(executed["stderr_log"]))
+    if journal.is_file():
+        report["qemu"]["protocol"]["log"] = identity(journal)
     if executed["timed_out"]:
         raise BuildError("Full-system guest deadline exceeded; QEMU process group terminated and raw serial retained")
+    serial = protocol_stream(report["qemu"], token, lambda entry: Path(entry["path"]).read_bytes())
     rows = [line.rstrip("\r").split(" ", 2)[1:] for line in serial.splitlines() if line.startswith(token + " ")]
     facts, hashes, hashes_after, records = {}, {}, {}, {}
     done = 0
@@ -337,6 +381,8 @@ def execute(args, report, directory):
             record[key] = content
         elif kind == "DONE":
             done += 1
+        else:
+            raise BuildError("Unknown guest protocol record")
     report["guest"] = {**facts, "execution_mode": "emulated-system", "file_sha256": hashes, "file_sha256_after": hashes_after,
                        "clock": "Isolated guest UTC seeded from host immediately before boot; host command brackets preserved"}
     if facts.get("os") != "Linux" or facts.get("architecture") != "aarch64" or facts.get("page_size") != args.page_size or facts.get("page_size_alias") != args.page_size or facts.get("smaps_kib") != args.page_size // 1024 or facts.get("kernel") != profile["kernel_release"]:
@@ -368,6 +414,7 @@ def execute(args, report, directory):
             "expected": {key: value for key, value in item.items() if key.startswith("expected_") or key == "stderr_contains"}, "exit_code": code,
             "actual": {"stdout": text_out, "stderr": text_err, "exit_code": code},
             "stdout_log": identity(out), "stderr_log": identity(err), "serial_log": report["qemu"]["serial_log"],
+            "protocol_log": report["qemu"]["protocol"]["log"],
             "reason": "Actual full-system guest command and returned raw bytes"})
     # A successful shell fragment cannot turn a kernel timeout/panic into green.
     if executed["exit_code"] != 0 or executed["timed_out"] or done != 1 or set(records) != {item["case_id"] for item in data["commands"]}:
