@@ -36,9 +36,18 @@ extern int sys_close(int);
 extern char **environ;
 static int failures, cleanup_ok = 1, live_children;
 static int startup_duplicate, startup_duplicate_closed;
+static const char *setup_directory, *setup_unicode;
 static const unsigned char input[] = {'I', 0, 255, 'N', '\n'};
 static const unsigned char errors[] = {'E', 0, 254, 'R'};
 static const char *boolean(int value) { return value ? "true" : "false"; }
+static int fixture_failure(const char *stage) {
+  int error = errno;
+  int cleaned = 1;
+  if (setup_unicode) cleaned &= !rmdir(setup_unicode);
+  if (setup_directory) cleaned &= !rmdir(setup_directory);
+  fprintf(stderr, "[m2-process-fixture] stage=%s errno=%d cleanup=%s\n", stage, error, boolean(cleaned));
+  return 3;
+}
 static void result(const char *id, bool pass, const char *actual) {
   printf("{\"case_id\":\"%s\",\"status\":\"%s\",\"actual\":%s}\n", id, pass ? "pass" : "fail", actual);
   fflush(stdout);
@@ -555,23 +564,55 @@ int main(int argc, char **argv) {
 #endif
   printf("{\"case_id\":\"facts\",\"status\":\"pass\",\"actual\":{\"probe\":\"m2-process\",\"os\":\"%s\",\"arch\":\"%s\",\"page_size\":%ld}}\n", host.sysname, arch, sysconf(_SC_PAGESIZE));
   fflush(stdout);
-  char temporary[] = "/tmp/qaplet-m2-process-XXXXXX", cwd[4096], original[4096], self[8192], nativecopy[8192];
-  char *directory = mkdtemp(temporary);
-  const char *launcher = 0, *native_child = 0;
+  char temporary[8192], cwd[4096], original[4096], self[8192], nativecopy[8192];
+  const char *launcher = 0, *native_child = 0, *fixture_root = 0;
   for (int i = 2; i + 1 < argc; i += 2) {
     if (!strcmp(argv[i], "--launcher")) launcher = argv[i + 1];
     if (!strcmp(argv[i], "--native-child")) native_child = argv[i + 1];
+    if (!strcmp(argv[i], "--fixture-root")) fixture_root = argv[i + 1];
   }
-  if (!directory || !realpath(directory, cwd) || !realpath(argv[0], original)) return 3;
+  if (!fixture_root) { errno = EINVAL; return fixture_failure("fixture-root-required"); }
+  int length = snprintf(temporary, sizeof(temporary), "%s/qaplet-m2-process-XXXXXX", fixture_root);
+  if (length < 0 || length >= sizeof(temporary)) { errno = ENAMETOOLONG; return fixture_failure("fixture-root-length"); }
+  char *directory = mkdtemp(temporary);
+  if (!directory) return fixture_failure("mkdtemp");
+  setup_directory = directory;
+  if (!realpath(directory, cwd)) return fixture_failure("realpath-temporary");
+  if (!realpath(argv[0], original)) return fixture_failure("realpath-program");
+  char directory_hex[sizeof(cwd) * 2 + 1];
+  static const char hex[] = "0123456789abcdef";
+  size_t directory_length = strlen(cwd);
+  for (size_t i = 0; i < directory_length; ++i) {
+    directory_hex[i * 2] = hex[(unsigned char)cwd[i] >> 4];
+    directory_hex[i * 2 + 1] = hex[(unsigned char)cwd[i] & 15];
+  }
+  directory_hex[directory_length * 2] = 0;
   char unicodecwd[8192];
   snprintf(unicodecwd, sizeof(unicodecwd), "%s/工作 目录", cwd);
-  if (mkdir(unicodecwd, 0700) || !realpath(unicodecwd, cwd)) return 3;
+  if (mkdir(unicodecwd, 0700)) return fixture_failure("mkdir-unicode");
+  setup_unicode = unicodecwd;
+  if (!realpath(unicodecwd, cwd)) return fixture_failure("realpath-unicode");
+  /* Windows getcwd omits the system-drive prefix that realpath preserves.
+     Observe the target using the same API as the controlled child, while
+     retaining the exact child comparison and restoring the parent's cwd. */
+  char parentcwd[4096];
+  if (!getcwd(parentcwd, sizeof(parentcwd))) return fixture_failure("getcwd-parent");
+  if (chdir(cwd)) return fixture_failure("chdir-unicode");
+  int observed = getcwd(cwd, sizeof(cwd)) != 0;
+  int observed_errno = errno;
+  if (chdir(parentcwd)) return fixture_failure("restore-parent-cwd");
+  if (!observed) { errno = observed_errno; return fixture_failure("getcwd-unicode"); }
   snprintf(self, sizeof(self), "%s/程序 空格.com", cwd);
   int copied = copy_file(original, self);
-  char json[512];
-  snprintf(json, sizeof(json), "{\"same_bytes\":%s,\"unicode_space_executable\":true,\"unicode_space_cwd\":true}", boolean(copied));
+  char json[sizeof(directory_hex) + 512];
+  snprintf(json, sizeof(json), "{\"same_bytes\":%s,\"unicode_space_executable\":true,\"unicode_space_cwd\":true,\"temporary_directory_hex\":\"%s\"}", boolean(copied), directory_hex);
   result("process.path", copied, json);
-  if (!copied) return 3;
+  if (!copied) {
+    unlink(self);
+    rmdir(cwd);
+    rmdir(directory);
+    return 3;
+  }
   setenv("QAPLET_PARENT_LEAK", "must not reach child", 1);
   pipe_case(self, launcher, cwd);
   if (IsWindows()) {
