@@ -60,3 +60,7 @@
 
 最终 producer 绑定已提交实现 `4044c7e`，原件位于本 worktree `out/m2/tty/verified/`；逐一核对 source/recipe 字节与当前源码一致。最终三目标再次全部通过，两宿主各 7 项 CLI（含 5 种真实 guest 反向变体）全部通过。Ubuntu 当前源码完整 `make check` 352 项回归成功，其中 179 项执行通过、173 项既有条件 skipped；本票显式合同 0 skipped。只读 Git 路径映射前后共享 `.git/config` 摘要不变，原始 18 项路径失败和所有历史失败保留。
 
+2026-11-03：当前集成 `196cd75` 的真实 Full `41607608424` 在两 Mac 的完整模式恢复/resize 及 Windows stdin setup 上失败，旧本地成绩不能替代。fresh 修复提交 `fe37a634efb366f6be601319391a3683b0fc1d76` 保持完整模式比较，增加 Darwin 非消费性队列处理、独立 resize PTY/self-pipe/退出前查询、受控双就绪取消、自有 stdin fixture-root 与分步 errno，并仅规范架构已知别名而保留 raw。新同摘要 Ubuntu producer 的 Linux 19/19、Windows 21/21、实际完整系统 ARM64 64K 19/19 通过；两宿主公开 CLI 各 8/8、0 skipped，原负向和八类 guest 反向变体保留。全部新证据在 fresh worktree 的 `out/m2-05-fix/`，细节见[验证记录新增节](../05-tty-validation.md#196cd75-full-失败后的独立修复)。
+
+必需 `make check` 首轮被源码盘 D 的既有 4GiB 安全门槛阻断，未降低阈值或清理原件；本票合同均通过。新 Mac native 和当前新集成 Full 尚未执行，Windows 原 CI 具体 errno 仍未获证实；票继续 claimed，不能 resolved。
+
