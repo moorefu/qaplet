@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] run_once 的 0/有限等待、进度、执行 phase 和返回原因分别表达；多次 wake 不重置累计等待预算。
-- [ ] owner 创建保活令牌，任意线程释放；入口 DONE、空闲、PENDING 和 UNSETTLED_ENTRY 的公开行为可区分。
-- [ ] 业务事件维持复制、NO_HANDLER、超大拒绝、QUEUE_FULL 和 FIFO；满队列仍接受 stop。
-- [ ] 检查到入睡的各确定顺序无丢唤醒；不隐藏 JS 线程、不固定短轮询，stop 接受端只发布与唤醒。
-- [ ] 整个驱动范围保护危险重入，原有执行期限跨等待累计；原生控制和空实例清理保持安全。
+- [x] run_once 的 0/有限等待、进度、执行 phase 和返回原因分别表达；多次 wake 不重置累计等待预算。
+- [x] owner 创建保活令牌，任意线程释放；入口 DONE、空闲、PENDING 和 UNSETTLED_ENTRY 的公开行为可区分。
+- [x] 业务事件维持复制、NO_HANDLER、超大拒绝、QUEUE_FULL 和 FIFO；满队列仍接受 stop。
+- [x] 检查到入睡的各确定顺序无丢唤醒；不隐藏 JS 线程、不固定短轮询，stop 接受端只发布与唤醒。
+- [x] 整个驱动范围保护危险重入，原有执行期限跨等待累计；原生控制和空实例清理保持安全。
 
 ## Blocking details
 
@@ -54,4 +54,12 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-03：产品实现 `921f6f6`，合并 integration `0e4ba21` 后为 `2a9ab07`。
+已实现本票等待/事件/令牌/stop 子集；[中文验证记录](../06-wait-validation.md)
+记录最终已提交原字节、供应 SDK、Linux 111 pass、Windows 110 pass/1 optional blocked、
+包外 C 8 pass、独立故障及两平台各 600 次本票重复。接受后 wake 故障不假拒绝；
+无法证明的 close 责任独立计量并保持 CLOSED/CLEANING/destroy BUSY，不重关复用 FD。
+上方勾选表示本票子合同实现与本地验收，完整平台 Cross/Full/64K 仍待统一签发，
+保持 claimed / awaiting_cross；不将后续资源或最终 T03 全混合范围标为完成。
 
