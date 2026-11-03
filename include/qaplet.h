@@ -200,6 +200,33 @@ typedef struct {
 typedef enum {
   QAPLET_NATIVE_RUNNING, QAPLET_NATIVE_CLEANING, QAPLET_NATIVE_QUIESCENT
 } qaplet_native_state;
+
+typedef enum {
+  QAPLET_ERROR_DOMAIN_NONE, QAPLET_ERROR_DOMAIN_ERRNO
+} qaplet_error_domain;
+typedef enum {
+  QAPLET_ROLLBACK_NONE, QAPLET_ROLLBACK_COMPLETE, QAPLET_ROLLBACK_INCOMPLETE
+} qaplet_rollback_state;
+/* Independent, caller-owned M2 error record; no pointers or OS handle values.
+ * Domain ERRNO includes POSIX returned errors and Cosmopolitan's mapped socket
+ * errno values. Zero means
+ * no associated native error. Primary and cleanup errors never replace each
+ * other. A later control fault can be reported alongside a prior stop cause. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_code primary_reason;
+  uint32_t primary_error_domain;
+  int32_t primary_error;
+  uint32_t control_error_domain;
+  int32_t control_error;
+  qaplet_code cleanup_reason;
+  uint32_t cleanup_error_domain;
+  int32_t cleanup_error;
+  qaplet_native_state native_state;
+  qaplet_rollback_state creation_rollback;
+  uint64_t native_uncertain_handles;
+} qaplet_m2_diagnostic;
+#define QAPLET_M2_DIAGNOSTIC_INIT {sizeof(qaplet_m2_diagnostic), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 typedef enum {
   QAPLET_DRIVE_IDLE, QAPLET_DRIVE_PROGRESS, QAPLET_DRIVE_WAIT_TIMEOUT,
   QAPLET_DRIVE_UNSETTLED_ENTRY, QAPLET_DRIVE_ERROR, QAPLET_DRIVE_STOPPED,
@@ -248,9 +275,26 @@ typedef struct { uint64_t runtime_id, slot, generation; } qaplet_keepalive;
 #define QAPLET_M2_SNAPSHOT_INIT {sizeof(qaplet_m2_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, QAPLET_LIMITS_INIT, QAPLET_M2_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 /* Explicit opt-in; base retains exactly the M1 configuration contract.
- * Failure stores NULL in output and releases every unpublished resource. */
+ * Failure stores NULL in output and attempts all feasible unpublished cleanup.
+ * Use the extended factory to distinguish complete rollback from an OS close
+ * error whose resource identity cannot safely be retried. */
 qaplet_code qaplet_create_m2(const qaplet_config *base, const qaplet_m2_config *,
                             qaplet_runtime **output, qaplet_diagnostic *);
+/* Same factory semantics, with a required full-size independent error record.
+ * Success has ROLLBACK_NONE. Failure has COMPLETE or INCOMPLETE. INCOMPLETE
+ * records uncertain kernel resources: it is not a successful rollback, a live
+ * Runtime, a transferable OS handle or permission to retry a numeric fd.
+ * No internal executor or Host callback exists before publication; storage
+ * with no future user is released even if kernel resource cleanup is unknown.
+ * No SDK continuation can prove those retired resource identities closed. */
+qaplet_code qaplet_create_m2_with_diagnostic(const qaplet_config *, const qaplet_m2_config *,
+                                          qaplet_runtime **, qaplet_m2_diagnostic *, qaplet_diagnostic *);
+/* Any thread; synchronized POD copy without JS, including CLOSED. M1 handles
+ * return UNSUPPORTED. primary_reason is the retained execution first cause,
+ * primary_error belongs only to that cause, control_error also reports a later
+ * control fault, and cleanup fields retain the first cleanup failure.
+ * creation_rollback is NONE for a published Runtime. Full output size required. */
+qaplet_code qaplet_get_m2_diagnostic(qaplet_runtime *, qaplet_m2_diagnostic *, qaplet_diagnostic *);
 /* Any thread, including CLOSED. M1 handles report their M1 capability set and
  * zero M2 limits; querying does not enable M2. Output must have the full size. */
 qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *, qaplet_m2_snapshot *, qaplet_diagnostic *);

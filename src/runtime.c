@@ -140,11 +140,12 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
 
 qaplet_code qaplet_create(const qaplet_config *config, qaplet_runtime **output,
                          qaplet_diagnostic *diagnostic) {
-  return qaplet_create_internal(config, NULL, output, diagnostic);
+  return qaplet_create_internal(config, NULL, output, diagnostic, NULL);
 }
 
 qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_config *m2,
-                                  qaplet_runtime **output, qaplet_diagnostic *diagnostic) {
+                                  qaplet_runtime **output, qaplet_diagnostic *diagnostic,
+                                  qaplet_m2_diagnostic *detail) {
   if (output) *output = NULL;
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
@@ -195,7 +196,12 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
   runtime->m2_enabled = m2 != NULL;
   runtime->m2_limits = m2_limits;
   runtime->native_state = QAPLET_NATIVE_RUNNING;
-  if (pthread_mutex_init(&runtime->mutex, NULL)) {
+  int mutex_error = pthread_mutex_init(&runtime->mutex, NULL);
+  if (mutex_error) {
+    if (detail) {
+      detail->primary_error_domain = QAPLET_ERROR_DOMAIN_ERRNO;
+      detail->primary_error = mutex_error;
+    }
     free(runtime);
     return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   }
@@ -208,6 +214,10 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
       pthread_condattr_destroy(&attributes);
     }
     if (error) {
+      if (detail) {
+        detail->primary_error_domain = QAPLET_ERROR_DOMAIN_ERRNO;
+        detail->primary_error = error;
+      }
       pthread_mutex_destroy(&runtime->mutex);
       free(runtime);
       return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
@@ -238,7 +248,19 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
   if (!code) code = qaplet_loop_init(runtime);
   if (!code) code = qaplet_execution_check(runtime);
   if (code) {
+    int primary_error = code == QAPLET_CONTROL_FAILURE ? runtime->control_error : 0;
     qaplet_loop_shutdown(runtime);
+    if (detail) {
+      detail->primary_error_domain = primary_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+      detail->primary_error = primary_error;
+      detail->control_error_domain = runtime->control_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+      detail->control_error = runtime->control_error;
+      detail->cleanup_reason = runtime->cleanup_reason;
+      detail->cleanup_error_domain = runtime->cleanup_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
+      detail->cleanup_error = runtime->cleanup_error;
+      detail->native_uncertain_handles = runtime->native_uncertain_handles;
+      detail->native_state = runtime->native_state;
+    }
     qaplet_events_dispose(runtime);
     qaplet_modules_dispose(runtime);
     qaplet_execution_dispose(runtime);

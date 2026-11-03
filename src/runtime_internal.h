@@ -30,7 +30,7 @@ struct qaplet_runtime {
   uint64_t native_handles, native_handles_peak, reactor_registrations, reactor_registrations_peak;
   uint64_t native_uncertain_handles;
   uint64_t keepalive_tokens, keepalive_tokens_peak, wake_requests, wake_signals, wait_calls;
-  int control_error;
+  int control_error, cleanup_error, primary_error;
   JSRuntime *engine;
   JSContext *context;
   qaplet_allocation *engine_allocations;
@@ -72,7 +72,7 @@ qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);
-qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *);
+qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *, qaplet_m2_diagnostic *);
 qaplet_code qaplet_m2_configure(const qaplet_m2_config *, const qaplet_limits *, qaplet_m2_limits *);
 void qaplet_driver_set(qaplet_runtime *, int);
 qaplet_code qaplet_loop_init(qaplet_runtime *);
