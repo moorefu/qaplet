@@ -89,6 +89,7 @@ HOST_CASES = (
     ("m2-configuration", ["--m2-configuration"], "M2 configuration: explicit capabilities; finite copied defaults; sizes/version/tails; invalid combinations: pass\n"),
     ("m2-owner", ["--m2-owner"], "M2 owner: foreign calls refused; pump/run_once/run guard; safe POD/control/setter; CLOSED query: pass\n"),
     ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; unpublished null failures; fresh recovery and cleanup: pass\n"),
+    ("m2-diagnostics", ["--m2-diagnostics"], "M2 diagnostics: independent versioned POD; factory rollback; sizes/tails; bounded caller buffers; CLOSED cross-thread query: pass\n"),
     ("m2-runtime", ["--m2-runtime"], "M2 runtime: explicit empty instance; idle drive; CLOSED/native quiescent; destroy: pass\n"),
     ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
     ("close-concurrent", ["--close-concurrent"], "close concurrent: producer overlap observed; post/snapshot/stop stable; CLOSED calls drained before destroy: pass\n"),
@@ -238,7 +239,7 @@ def package_consume(args, report, directory):
         if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
         executed, stdout, stderr = run(report, directory, "qaplet-m2-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
-        expected = "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\n"
+        expected = "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n"
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,

@@ -249,7 +249,87 @@ static int close_contract(void) {
   return 0;
 }
 
+typedef struct { qaplet_runtime *runtime; int passed; } diagnostic_query;
+static void *query_closed_diagnostic(void *opaque) {
+  diagnostic_query *query = opaque;
+  qaplet_m2_diagnostic detail = QAPLET_M2_DIAGNOSTIC_INIT;
+  qaplet_diagnostic text = QAPLET_DIAGNOSTIC_INIT;
+  char buffer[2] = {'x', 'z'};
+  text.message = buffer; text.capacity = 1;
+  query->passed = qaplet_get_m2_diagnostic(query->runtime, &detail, &text) == QAPLET_OK &&
+    detail.primary_reason == QAPLET_EXECUTION_STOPPED && !detail.primary_error_domain &&
+    !detail.primary_error && !detail.control_error_domain && !detail.control_error &&
+    !detail.cleanup_reason && !detail.cleanup_error_domain && !detail.cleanup_error &&
+    detail.native_state == QAPLET_NATIVE_QUIESCENT && !detail.native_uncertain_handles &&
+    detail.creation_rollback == QAPLET_ROLLBACK_NONE && !buffer[0] && buffer[1] == 'z' &&
+    text.code == QAPLET_OK && text.length == 2 && (text.flags & QAPLET_DIAGNOSTIC_TRUNCATED);
+  return NULL;
+}
+static int diagnostics_contract(void) {
+  qaplet_config base = QAPLET_CONFIG_INIT;
+  qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *runtime = NULL;
+  qaplet_m2_diagnostic detail = QAPLET_M2_DIAGNOSTIC_INIT;
+  qaplet_diagnostic text = QAPLET_DIAGNOSTIC_INIT;
+  char buffer[3] = {'x', 'y', 'z'};
+  text.message = buffer; text.capacity = 2;
+  CHECK(qaplet_create(&base, &runtime, NULL) == QAPLET_OK);
+  detail.primary_reason = QAPLET_JS_EXCEPTION;
+  CHECK(qaplet_get_m2_diagnostic(runtime, &detail, NULL) == QAPLET_UNSUPPORTED && detail.primary_reason == QAPLET_JS_EXCEPTION);
+  CHECK(qaplet_close(runtime, NULL) == QAPLET_OK && qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  runtime = (qaplet_runtime *)1;
+  detail.struct_size = 8;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, NULL) == QAPLET_ABI_MISMATCH && !runtime && detail.primary_reason == QAPLET_JS_EXCEPTION);
+  detail = (qaplet_m2_diagnostic)QAPLET_M2_DIAGNOSTIC_INIT;
+  struct { qaplet_m2_diagnostic value; uint64_t tail; } factory = {QAPLET_M2_DIAGNOSTIC_INIT, 1};
+  factory.value.struct_size = sizeof(factory);
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &factory.value, NULL) == QAPLET_ABI_MISMATCH && !runtime && factory.tail == 1);
+  factory.tail = 0;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &factory.value, NULL) == QAPLET_OK && !factory.tail);
+  CHECK(qaplet_close(runtime, NULL) == QAPLET_OK && qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  detail.abi_version++;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, NULL) == QAPLET_ABI_MISMATCH && !runtime);
+  detail = (qaplet_m2_diagnostic)QAPLET_M2_DIAGNOSTIC_INIT;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, NULL, NULL) == QAPLET_INVALID_ARGUMENT && !runtime);
+  text.struct_size = 8;
+  detail.primary_reason = QAPLET_JS_EXCEPTION;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, &text) == QAPLET_ABI_MISMATCH && !runtime && detail.primary_reason == QAPLET_JS_EXCEPTION);
+  text = (qaplet_diagnostic)QAPLET_DIAGNOSTIC_INIT;
+  text.capacity = 1;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, &text) == QAPLET_INVALID_ARGUMENT && !runtime && detail.primary_reason == QAPLET_JS_EXCEPTION);
+  text.message = buffer; text.capacity = 2;
+  config.flags = 1;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, &text) == QAPLET_INVALID_ARGUMENT && !runtime);
+  CHECK(detail.primary_reason == QAPLET_INVALID_ARGUMENT && !detail.primary_error_domain && !detail.primary_error && detail.creation_rollback == QAPLET_ROLLBACK_COMPLETE);
+  config.flags = 0;
+  CHECK(qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, &text) == QAPLET_OK);
+  CHECK(!detail.primary_reason && !detail.primary_error && !detail.control_error && !detail.cleanup_reason && !detail.cleanup_error && !detail.native_uncertain_handles && detail.native_state == QAPLET_NATIVE_RUNNING && detail.creation_rollback == QAPLET_ROLLBACK_NONE);
+  CHECK(buffer[0] == 'O' && !buffer[1] && buffer[2] == 'z' && text.code == QAPLET_OK && text.length == 2 && (text.flags & QAPLET_DIAGNOSTIC_TRUNCATED));
+  struct { qaplet_m2_diagnostic value; uint64_t tail; } larger = {QAPLET_M2_DIAGNOSTIC_INIT, 0};
+  larger.value.struct_size = sizeof(larger);
+  CHECK(qaplet_get_m2_diagnostic(runtime, &larger.value, NULL) == QAPLET_OK && !larger.tail);
+  larger.tail = 1; larger.value.primary_reason = QAPLET_JS_EXCEPTION;
+  CHECK(qaplet_get_m2_diagnostic(runtime, &larger.value, NULL) == QAPLET_ABI_MISMATCH && larger.value.primary_reason == QAPLET_JS_EXCEPTION && larger.tail == 1);
+  detail.struct_size = 8;
+  CHECK(qaplet_get_m2_diagnostic(runtime, &detail, NULL) == QAPLET_ABI_MISMATCH);
+  detail = (qaplet_m2_diagnostic)QAPLET_M2_DIAGNOSTIC_INIT;
+  qaplet_progress progress = QAPLET_PROGRESS_INIT;
+  qaplet_result result = QAPLET_RESULT_INIT;
+  CHECK(qaplet_eval(runtime, "42", 2, &progress, NULL) == QAPLET_OK);
+  text.message = NULL; text.capacity = 0;
+  CHECK(qaplet_get_m2_diagnostic(runtime, &detail, &text) == QAPLET_OK && !detail.primary_reason && text.length == 2 && (text.flags & QAPLET_DIAGNOSTIC_TRUNCATED));
+  CHECK(qaplet_get_result(runtime, &result, NULL) == QAPLET_OK && result.number == 42);
+  CHECK(qaplet_request_stop(runtime, NULL) == QAPLET_OK && qaplet_close(runtime, NULL) == QAPLET_OK);
+  diagnostic_query query = {runtime, 0};
+  pthread_t worker;
+  CHECK(!pthread_create(&worker, NULL, query_closed_diagnostic, &query) && !pthread_join(worker, NULL) && query.passed);
+  CHECK(buffer[0] == 'O' && !buffer[1] && buffer[2] == 'z');
+  CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
+  puts("M2 diagnostics: independent versioned POD; factory rollback; sizes/tails; bounded caller buffers; CLOSED cross-thread query: pass");
+  return 0;
+}
 int sdk_m2_runtime(const char *mode) {
+  if (!strcmp(mode, "--m2-diagnostics")) return diagnostics_contract();
   if (!strcmp(mode, "--m2-close")) return close_contract();
   if (!strcmp(mode, "--m2-drive")) return drive_contract();
   if (!strcmp(mode, "--m2-configuration")) return configuration();
