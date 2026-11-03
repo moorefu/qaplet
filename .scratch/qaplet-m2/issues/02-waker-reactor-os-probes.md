@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -54,3 +54,5 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+
+2026-11-03：实施分支 `codex/m2-02-waker`，基于 integration 基线 `5685bb6`。采用独立 `scripts/m2_waker.py` / `tests/native/m2_waker.c` 与公开 CLI 合同；Ubuntu 构建、供应同字节消费。初测 Linux 18 项通过；Windows 正常用户上下文发现失败 connect 的 poll 差异，已以显式 select 分路实测，正式重建及其他目标验证进行中。受限 Windows main 前超时、旧 M0 对照与正常用户执行分开保留，不计为产品失败或通过。
