@@ -6,9 +6,9 @@
 
 - 新入口 `scripts/m2_tty.py`，原生源 `tests/native/m2_tty.c`，公开 CLI 合同 `tests/contracts/test_m2_tty.py`。
 - `scripts/m2_tty_terminal.py` 是从既有 `native_io_terminal.py` 的私有 ConPTY 生命周期设施派生的扩展，增加显式 resize / 输入门控和原始字节返回。没有修改 M0 配方、源或 helper，也没有公开完整 PTY 创建 API。
-- Ubuntu producer 的源码提交基线为 `c338ca9d600312a544cfc5c936bdf1e3b5525c31`；构建报告明确说明工作区可能含本票未提交文件，实际逐文件摘要与聚合摘要绑定真实源/配方。交付前已合并 `af6c0ff`，该后续变更仅涉及编排及记录，没有改变本票 producer 的源/配方文件。
+- 最终 Ubuntu producer 的源码提交为 `4044c7e4cd62f32c076ad62474a3fb993bbd6b6b`，包含本票实现，已合并 `af6c0ff`。逐一复核所有 recipe 文件与当前提交后的实际字节一致。早期 accepted producer 基线 `c338ca9` 及 final producer 基线 `af6c0ff` 原样保留，最终验收只选下述 verified 原件。
 - 供应 `m2-tty.com`：980739 bytes，SHA-256 `5af6aa6ba0008c65370d55aad0596bbc7891237774afbb25c8b2b60c2a3ded6d`。
-- 源/配方聚合摘要 `64ec02c3d740eeb61ccfac068a003a405fdd31af1f614f842ba7d269ef94119d`；构建配方摘要 `f376a13b92edba5dc02d6b04794da584477473bdc679705ba93d79688e186d0f`。producer 包含固定输入前后复核、完整 toolchain tree、原 ZIP、双 CPU ELF LOAD、PE import 与供应 helper 身份。
+- 最终源/配方聚合摘要 `4bfc6e4bc3dc21a24e7c203cdc2634c752f9acee26601e0c3bf2e9be841f46e4`；构建配方摘要 `e5b4e1733f2460bb141fdab6c5d4264f1194dfee5c60054849a56866401b17be`。producer 包含固定输入前后复核、完整 toolchain tree、原 ZIP、双 CPU ELF LOAD、PE import 与供应 helper 身份。加强 consumer 和规范化配方换行后，新旧构建 APE 摘要仍完全相同；最终仍重新执行全部三个目标。
 - 固定 `files.h` 自带重复的 `NtSidIdentifierAuthority` 定义，最初真实编译失败。探针使用该锁定头中的原样 `DuplicateHandle` 函数声明，链接实际 Cosmopolitan wrapper；Windows 的复制、共享模式、关闭和 owner 存活均实际执行，不以声明或编译成功代替 ABI 验证。
 
 ## 实际观测与边界
@@ -31,7 +31,7 @@
 
 ## 本地矩阵与原件
 
-原件统一在本票 worktree 的 `out/m2/tty/accepted/`；未删除任何早期输出或 worktree。producer 的同一 APE 字节用于以下三项：
+最终原件统一在本票 worktree 的 `out/m2/tty/verified/`；早期 accepted、final、red 输出均保留，未删除任何输出或 worktree。producer 的同一 APE 字节用于以下三项：
 
 | 报告 | 实测身份 | 结果 |
 |---|---|---|
@@ -41,19 +41,19 @@
 
 guest 运输绑定实际 machine、CPU、QEMU executable/version、kernel/config/rootfs、serial log、guest 内两种页查询、所有 payload 执行前后 SHA-256 及显式 loader/program argv。`payload-64k.json` 使用独立 `/payload/m2-tty/` 前缀与 Unicode/空格程序路径。导出 `export-64k.json` 本身不计执行成绩。
 
-公开 CLI 的 7 项合同在 Linux 和 Windows 各实际通过，0 skipped：正常同字节执行及四路径恢复、非法终端输入、缺失供应物 blocked、篡改 byte 在启动前拒绝、报告不得覆盖供应物、外层 deadline 保持 fail 且实际回收进程，以及真实 guest 原件的四种拒绝子用例。guest 子用例复制真实 raw evidence 并重新计算修改日志摘要，分别删除项、添加重复项、把 restored 改 false 但保留 pass，以及篡改执行后 payload 摘要；没有 synthetic success。Windows 原始测试输出和命令收据为 `contracts-windows.json` 及所引日志；Linux 合同亦包含在完整 `make check` 的真实输出中。
+公开 CLI 的 7 项合同在 Linux 和 Windows 各实际通过，0 skipped：正常同字节执行及四路径恢复、非法终端输入、缺失供应物 blocked、篡改 byte 在启动前拒绝、报告不得覆盖供应物、外层 deadline 保持 fail 且实际回收进程，以及真实 guest 原件的五种拒绝子用例。guest 子用例复制真实 raw evidence 并重新计算修改日志摘要，分别删除项、添加重复项、把 restored 改 false 但保留 pass、删除完整模式快照字段，以及篡改执行后 payload 摘要；没有 synthetic success。最终两平台测试命令与原始输出分别见 `verified/contracts-linux.json`、`verified/contracts-windows.json` 及所引日志。
 
 ## 可重放入口
 
-在 Ubuntu 执行构建，共享缓存显式指向主工作区：
+在 Ubuntu 执行构建，共享缓存显式指向主工作区。以下为实际执行入口，重跑须选择新的空 output-dir 和新 report，保留既有原件：
 
 ```sh
 python3 scripts/m2_tty.py build \
   --toolchain-cache /mnt/d/Workspace/dairn/qaplet/.cache/toolchains/cosmocc \
   --helper-source-cache /mnt/d/Workspace/dairn/qaplet/.cache/sources/ape-loader \
   --build-dir /mnt/d/Workspace/dairn/qaplet/.cache/build \
-  --output-dir out/m2/tty/accepted/artifacts \
-  --report out/m2/tty/accepted/build-info.json
+  --output-dir out/m2/tty/verified/artifacts \
+  --report out/m2/tty/verified/build-info.json
 ```
 
 `run --build-report BUILD --artifact m2-tty.com --report RUN` 消费供应字节；Linux/macOS 额外传固定 `--loader` 或供应 `--loader-dir` / `--loader-manifest`。Windows 不构建，普通用户提升上下文消费相同 PE 字节并创建私有 ConPTY。
@@ -69,6 +69,8 @@ python3 scripts/m2_tty.py build \
 3. `green-posix/build.json` 保留固定头重复 SID 定义的真实编译失败；未修改锁或 M0 绕过输入审计。
 4. `windows-red.json`、`windows-v3.json` 保留原始 fd0 不是 Console、open(CONIN$) 不能把 libc fd0 安全改成 Console，以及分块 emoji 输入丢失的失败；最终分开 native 标准 HANDLE 路由、libc fd0 和文本子集，原始丢失事实继续作为能力限制保留。
 5. 非法终端输入的新合同在旧 producer 上真实 red（没有 text.invalid-input 观察）；加入真实 PTY/ConPTY 输入后 Linux/Windows green。`windows-v4.json` 还保留 consumer 变严格后旧 producer 没有完整模式快照而拒绝的失败，最终 accepted producer 补齐实测快照与真正 close 的租约端点。
-6. 首次 `make-check.json` 在 352 项中有 18 项失败，均由 Windows 创建的 linked worktree `.git` 内 D: 指针在 Ubuntu 中不可识别而发生，原始 stderr 保存。后续使用仅本 worktree 的只读 Git 查询映射；worktree 只允许 list，其他 fixture 的 -C / init / config 原样透传，不设置全局 GIT_DIR，不写共享 Git 配置。映射前共享 `.git/config` SHA-256 为 `18de2af639cb0d28809b71bfa845293181862452ac47bab3e6d7ea3296422b19`；后续结果见 `make-check-mapped.json`。
+6. 首次 `make-check.json` 在 352 项中有 18 项失败，均由 Windows 创建的 linked worktree `.git` 内 D: 指针在 Ubuntu 中不可识别而发生，原始 stderr 保存。后续使用仅本 worktree 的只读 Git 查询映射；worktree 只允许 list，其他 fixture 的 -C / init / config 原样透传，不设置全局 GIT_DIR，不写共享 Git 配置。映射前后共享 `.git/config` SHA-256 均为 `18de2af639cb0d28809b71bfa845293181862452ac47bab3e6d7ea3296422b19`；`make-check-mapped.json` 完整通过 352 项，173 项既有外部输入条件 skipped，本票 7 项全部显式执行。真实系统 C bootstrap 与全部 CI 静态检查也通过。
+7. 交付前增加模式字段缺失负向用例，实际发现空 before/restored 字典仍会被旧 consumer 接受，先得到真实 red；增加 Windows/POSIX 完整字段集、数值与 cc_hex 类型检查后同一真实 guest 变体 green。保留旧 accepted 与 final producer 原件；最后一轮 producer 使用已提交并按 `.gitattributes` 规范化 LF 的实现字节，避免把 CRLF 工作副本的配方身份当作 Git 源码身份。
+8. 加强后的当前源码再次运行完整 `make check`，`accepted/make-check-strict.json` 为 352 项全通过、173 项既有条件 skipped；本票 7 项显式执行且无跳过，真实 bootstrap 通过。该次所选 accepted APE 与最终 verified APE 已证实同摘要；最终 verified 两平台各 7 项还分别独立重跑并保留原始日志。
 
 完整 Cross/Full 尚未在本票关闭前完成，尤其 macOS 两架构及原生 Linux ARM64。它们的缺口不被本地模拟 guest、M0 旧成绩或本票的 59 项 OS 观察替代；集成 coordinator 负责当前提交的统一矩阵和票最终关闭。

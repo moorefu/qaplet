@@ -58,3 +58,5 @@
 
 当前仍为 claimed；第五条适用目标原件完整性待集成 Cross/Full，不以本地成功或旧 M0 成绩 resolved。未修改公共 workflow/ci_tiers/README，也未修改 M0 配方/源。
 
+最终 producer 绑定已提交实现 `4044c7e`，原件位于本 worktree `out/m2/tty/verified/`；逐一核对 source/recipe 字节与当前源码一致。最终三目标再次全部通过，两宿主各 7 项 CLI（含 5 种真实 guest 反向变体）全部通过。Ubuntu 当前源码完整 `make check` 352 项通过，173 项既有条件 skipped；本票显式合同 0 skipped。只读 Git 路径映射前后共享 `.git/config` 摘要不变，原始 18 项路径失败和所有历史失败保留。
+
