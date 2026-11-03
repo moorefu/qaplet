@@ -3,11 +3,13 @@
 #include "qaplet.h"
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr,"work system seam line %d: %s\n",__LINE__,#c); return 1; } } while (0)
-static int fail_allocation, fail_thread, fail_join;
+static int fail_allocation, fail_thread, fail_join, fail_send, executions;
 void *__real_calloc(size_t,size_t);
 void *__wrap_calloc(size_t n,size_t size) {
   if (fail_allocation) { fail_allocation=0;errno=ENOMEM;return NULL; }
@@ -23,11 +25,24 @@ int __wrap_pthread_tryjoin_np(pthread_t thread,void **value) {
   if (fail_join) return EIO;
   return __real_pthread_tryjoin_np(thread,value);
 }
+ssize_t __real_send(int,const void *,size_t,int);
+ssize_t __wrap_send(int fd,const void *data,size_t length,int flags) {
+  if (fail_send) {fail_send=0;errno=EIO;return -1;}
+  return __real_send(fd,data,length,flags);
+}
 static qaplet_code copy(qaplet_work_context *context,const void *input,size_t length,
                          qaplet_work_output *output,void *userdata) {
   (void)context;(void)userdata;
+  ++executions;
   if (length) memcpy(output->data,input,length);
   output->length=length;return QAPLET_OK;
+}
+typedef struct {pthread_mutex_t mutex;pthread_cond_t condition;int entered,released;} gate;
+static qaplet_code held(qaplet_work_context *context,const void *input,size_t length,
+                         qaplet_work_output *output,void *userdata) {
+  gate *g=userdata;pthread_mutex_lock(&g->mutex);g->entered=1;pthread_cond_broadcast(&g->condition);
+  while (!g->released) pthread_cond_wait(&g->condition,&g->mutex);
+  pthread_mutex_unlock(&g->mutex);return copy(context,input,length,output,NULL);
 }
 static int make(qaplet_runtime **runtime) {
   qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
@@ -60,6 +75,28 @@ int main(void) {
   CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK);
   CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==QAPLET_MEMORY_LIMIT);
   CHECK(!finish(runtime));
+  CHECK(!make(&runtime));task=(qaplet_work_task)QAPLET_WORK_TASK_INIT;executions=0;fail_send=1;
+  CHECK(qaplet_work_submit(runtime,"copy",4,&input,1,&task,NULL)==QAPLET_OK && task.runtime_id);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.accepted==1 && stats.operations==1);
+  CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==QAPLET_CONTROL_FAILURE && snapshot.control_error_domain==QAPLET_ERROR_DOMAIN_ERRNO && snapshot.control_error==EIO);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_CONTROL_FAILURE && !executions);
+  CHECK(!finish(runtime));
+  CHECK(!make(&runtime));
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler handler=QAPLET_WORK_HANDLER_INIT;
+  handler.name="held";handler.name_length=4;handler.function=held;handler.userdata=&g;handler.input_bytes=1;handler.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&handler,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);
+  pthread_mutex_lock(&g.mutex);while (!g.entered) pthread_cond_wait(&g.condition,&g.mutex);pthread_mutex_unlock(&g.mutex);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  fail_send=1;pthread_mutex_lock(&g.mutex);g.released=1;pthread_cond_broadcast(&g.condition);pthread_mutex_unlock(&g.mutex);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (!stats.completed);
+  CHECK(stats.accepted==1 && stats.retained_results==1 && stats.pending_handoffs==1);
+  qaplet_work_result result=QAPLET_WORK_RESULT_INIT;unsigned char bytes=0;result.buffer=&bytes;result.capacity=1;
+  CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_SUCCEEDED && bytes==17);
+  CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==QAPLET_CONTROL_FAILURE && snapshot.control_error==EIO);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_CONTROL_FAILURE);
+  CHECK(!finish(runtime) && !pthread_cond_destroy(&g.condition) && !pthread_mutex_destroy(&g.mutex));
   /* Deliberately uncertain join: no fake reclamation or second join attempt.
    * The Runtime/worker storage remains owned through process termination. */
   CHECK(!make(&runtime));
@@ -74,6 +111,6 @@ int main(void) {
   CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_CLOSED && !snapshot.engine_current_bytes && !snapshot.termination_reason);
   CHECK(qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
   CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_CONTROL_FAILURE && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
-  puts("controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; join error independently retained CLOSED/BUSY without false cleanup: pass");
+  puts("controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass");
   return 0;
 }

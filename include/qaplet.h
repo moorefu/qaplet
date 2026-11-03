@@ -391,13 +391,15 @@ typedef struct {
  * with output unchanged. Actual SDK allocation refusal permanently fails the
  * Runtime. Every task defaults ref until owner completion handoff, including
  * the complete jobs checkpoint. Neither onEvent nor business queue space is
- * required. Result records continue charging capacity until release/close. */
+ * required. Retained results and physical use continue charging capacity. */
 qaplet_code qaplet_register_work_handler(qaplet_runtime *, const qaplet_work_handler *, qaplet_diagnostic *);
 qaplet_code qaplet_work_submit(qaplet_runtime *, const char *name, size_t name_length,
                                const void *input, size_t input_length, qaplet_work_task *, qaplet_diagnostic *);
 /* Owner only. Nonterminal results/releases return BAD_STATE. BUFFER_TOO_SMALL
  * reports length without copying bytes; retry never reruns the task. Release
  * invalidates this token; cross-Runtime and stale generations are INVALID_HANDLE.
+ * A released logically cancelled task keeps physical buffers/record charged
+ * until its native call returns. Release never proves syscall/thread exit.
  * close invalidates result access and retires records only after physical use.
  * Neither logical cancellation nor close proves native exit/join. */
 qaplet_code qaplet_work_copy_result(qaplet_runtime *, const qaplet_work_task *, qaplet_work_result *, qaplet_diagnostic *);
