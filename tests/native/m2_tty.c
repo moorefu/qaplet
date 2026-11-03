@@ -33,6 +33,7 @@ bool32 DuplicateHandle(int64_t, int64_t, int64_t, int64_t *, uint32_t, bool32, u
 
 static FILE *evidence;
 static const char *gate_directory;
+static const char *fixture_root;
 static int failures;
 static const char *boolean(int n) { return n ? "true" : "false"; }
 static void result(const char *id, int pass, const char *json) {
@@ -63,22 +64,41 @@ static const char *stdin_type(void) {
   return "other";
 }
 static void stdin_routes(int terminal) {
-  char json[256], path[] = "/tmp/qaplet-m2-tty-XXXXXX";
-  int save = dup(0), pipes[2], file = mkstemp(path);
-  int made = !pipe(pipes), setup = save >= 0 && made && file >= 0;
+  char json[512], path[4096] = {0};
+  int save = dup(0), save_error = save < 0 ? errno : 0, pipes[2] = {-1, -1};
+  int made = !pipe(pipes), pipe_error = made ? 0 : errno;
+  FILE *temporary = 0; int file = -1;
+  if (fixture_root) {
+    int length = snprintf(path, sizeof(path), "%s/qaplet-m2-tty-XXXXXX", fixture_root);
+    if (length < 0 || length >= sizeof(path)) errno = ENAMETOOLONG;
+    else file = mkstemp(path);
+  } else {
+    /* The guest has no controller directory; use the OS temporary-file API. */
+    temporary = tmpfile();
+    if (temporary) file = fileno(temporary);
+  }
+  int file_error = file < 0 ? errno : 0;
+  int setup = save >= 0 && made && file >= 0, route_ok = 1;
   const char *names[] = {"pipe", "file", "invalid", "terminal"};
   for (int i = 0; setup && i < 4; ++i) {
     if (i == 3 && terminal < 0) continue;
-    if (i == 2) close(0);
-    else dup2(i == 0 ? pipes[0] : i == 1 ? file : terminal, 0);
+    if (i == 2) route_ok &= !close(0);
+    else route_ok &= dup2(i == 0 ? pipes[0] : i == 1 ? file : terminal, 0) == 0;
     const char *type = stdin_type();
     snprintf(json, sizeof(json), "{\"type\":\"%s\",\"actual_fd\":0,\"private_terminal_inference\":false}", type);
     char id[64]; snprintf(id, sizeof(id), "stdin.%s", names[i]);
-    result(id, !strcmp(type, i == 3 ? "TTY" : names[i]), json);
-    dup2(save, 0);
+    result(id, route_ok && !strcmp(type, i == 3 ? "TTY" : names[i]), json);
+    route_ok &= dup2(save, 0) == 0;
   }
-  int clean = setup && closed(save) && closed(pipes[0]) && closed(pipes[1]) && closed(file) && !unlink(path);
-  result("stdin.cleanup", clean, clean ? "{\"owned_routes_closed\":true,\"original_fd0_restored\":true}" : "{\"owned_routes_closed\":false}");
+  int original_restored = save >= 0 && dup2(save, 0) == 0;
+  int clean = 1;
+  if (save >= 0) clean &= closed(save);
+  if (pipes[0] >= 0) clean &= closed(pipes[0]);
+  if (pipes[1] >= 0) clean &= closed(pipes[1]);
+  if (temporary) { clean &= !fclose(temporary); errno = 0; clean &= fcntl(file, F_GETFD) == -1 && errno == EBADF; }
+  else if (file >= 0) { clean &= closed(file); clean &= !unlink(path); }
+  snprintf(json, sizeof(json), "{\"owned_routes_closed\":%s,\"original_fd0_restored\":%s,\"fixture_root_supplied\":%s,\"setup\":{\"dup_errno\":%d,\"pipe_errno\":%d,\"file_errno\":%d},\"routes_completed\":%s}", boolean(clean), boolean(original_restored), boolean(fixture_root != 0), save_error, pipe_error, file_error, boolean(setup && route_ok));
+  result("stdin.cleanup", setup && route_ok && original_restored && clean, json);
 }
 static void console_stdin(int64_t input) {
   int64_t original = GetStdHandle((uint32_t)-10);
@@ -90,6 +110,18 @@ static void console_stdin(int64_t input) {
   result("stdin.console", actual_console && restore, json);
 }
 struct Lease { int active, fd; struct termios original; uint32_t input, output; int64_t hin, hout; };
+static int restore_termios(int fd, const struct termios *original) {
+  struct termios checked;
+  if (tcsetattr(fd, TCSANOW, original) || tcgetattr(fd, &checked)) return 0;
+  if (IsXnu() && !(original->c_lflag & PENDIN) && (checked.c_lflag & PENDIN)) {
+    /* XNU marks raw -> canonical input for reprocessing. FIONREAD runs that
+       processing without consuming bytes or flushing the queue. Compare the
+       entire resulting termios below; never mask PENDIN out of evidence. */
+    int available = 0;
+    if (ioctl(fd, FIONREAD, &available) || tcgetattr(fd, &checked)) return 0;
+  }
+  return same(original, &checked);
+}
 static int acquire(struct Lease *l) {
   if (l->active) return EBUSY;
   if (IsWindows()) {
@@ -117,8 +149,7 @@ static int release(struct Lease *l) {
     ok = SetConsoleMode(l->hin, l->input) && SetConsoleMode(l->hout, l->output) &&
       GetConsoleMode(l->hin, &a) && GetConsoleMode(l->hout, &b) && a == l->input && b == l->output;
   } else {
-    struct termios checked;
-    ok = !tcsetattr(l->fd, TCSANOW, &l->original) && !tcgetattr(l->fd, &checked) && same(&l->original, &checked);
+    ok = restore_termios(l->fd, &l->original);
   }
   if (ok) l->active = 0;
   return ok ? 0 : EIO;
@@ -272,57 +303,88 @@ static void posix_text(struct Lease *l, int master) {
   result("text.invalid-input", exact && rejected && reset, json);
 }
 struct Resize { int count, cols, rows, setup; };
-static void posix_resize(int master, int slave) {
-  int ready[2], gate[2], reply[2];
-  int made = !pipe(ready) && !pipe(gate) && !pipe(reply);
+static int resize_notify_fd = -1;
+static void resize_notify(int signal) {
+  int saved = errno;
+  if (signal == SIGWINCH) write(resize_notify_fd, "W", 1);
+  errno = saved;
+}
+static int close_owned(int *fd) {
+  if (*fd < 0) return 1;
+  int ok = closed(*fd); *fd = -1; return ok;
+}
+static void posix_resize(void) {
+  /* A session leader's exit can revoke its controlling terminal on Darwin.
+     Keep resize's terminal independent of the lease/text/borrowed terminal. */
+  int master = posix_openpt(O_RDWR | O_NOCTTY), slave = -1;
+  if (master >= 0 && !grantpt(master) && !unlockpt(master)) slave = open(ptsname(master), O_RDWR | O_NOCTTY);
+  int ready[2] = {-1,-1}, gate[2] = {-1,-1}, reply[2] = {-1,-1}, notify[2] = {-1,-1};
+  int made = slave >= 0 && !pipe(ready) && !pipe(gate) && !pipe(reply) && !pipe(notify);
   struct Resize observed = {0}; struct winsize first = {.ws_row = 24, .ws_col = 80}, last = {.ws_row = 33, .ws_col = 100};
   int initial = made && !ioctl(master, TIOCSWINSZ, &first);
   pid_t child = initial ? fork() : -1;
   if (!child) {
-    close(ready[0]); close(gate[1]); close(reply[0]);
+    close(master); close(ready[0]); close(gate[1]); close(reply[0]);
     sigset_t set; sigemptyset(&set); sigaddset(&set, SIGWINCH);
-    sigprocmask(SIG_BLOCK, &set, 0);
-    observed.setup = setsid() >= 0 && !ioctl(slave, TIOCSCTTY, 0) && !tcsetpgrp(slave, getpgrp());
+    resize_notify_fd = notify[1];
+    struct sigaction action = {.sa_handler = resize_notify}; sigemptyset(&action.sa_mask);
+    int blocked = !sigprocmask(SIG_BLOCK, &set, 0);
+    int installed = !sigaction(SIGWINCH, &action, 0);
+    observed.setup = blocked && installed && !fcntl(notify[1], F_SETFL, O_NONBLOCK) &&
+      setsid() >= 0 && !ioctl(slave, TIOCSCTTY, 0) && !tcsetpgrp(slave, getpgrp());
     write(ready[1], &observed.setup, sizeof(observed.setup));
     char byte; read(gate[0], &byte, 1);
-    if (observed.setup) { int signal = 0; if (!sigwait(&set, &signal) && signal == SIGWINCH) observed.count = 1; }
+    if (observed.setup && !sigprocmask(SIG_UNBLOCK, &set, 0)) {
+      struct pollfd pending = {notify[0], POLLIN, 0}; int status;
+      do { status = poll(&pending, 1, 2000); } while (status < 0 && errno == EINTR);
+      if (status == 1 && (pending.revents & POLLIN)) { char signals[16]; int n = read(notify[0], signals, sizeof(signals)); if (n > 0) observed.count = n; }
+    }
     struct winsize actual = {0};
     if (!ioctl(slave, TIOCGWINSZ, &actual)) { observed.cols = actual.ws_col; observed.rows = actual.ws_row; }
     write(reply[1], &observed, sizeof(observed));
+    /* The parent queries the still-live controlling terminal before ack. */
+    read(gate[0], &byte, 1);
     _Exit(0);
   }
-  int prepared = 0, resized = 0, reaped = 0, clean = 0;
+  int prepared = 0, resized = 0, reaped = 0, clean = 1, response = 0, queried = 0, acknowledged = 0;
+  struct winsize checked = {0};
   if (child > 0) {
-    close(ready[1]); close(gate[0]); close(reply[1]);
+    clean &= close_owned(&ready[1]); clean &= close_owned(&gate[0]); clean &= close_owned(&reply[1]);
+    clean &= close_owned(&notify[0]); clean &= close_owned(&notify[1]);
     if (read(ready[0], &prepared, sizeof(prepared)) == sizeof(prepared) && prepared) {
       struct winsize middle = {.ws_row = 31, .ws_col = 90};
       resized = !ioctl(master, TIOCSWINSZ, &middle) && !ioctl(master, TIOCSWINSZ, &last);
     }
     write(gate[1], "R", 1);
     struct pollfd wait = {reply[0], POLLIN, 0};
-    if (poll(&wait, 1, 2000) == 1) read(reply[0], &observed, sizeof(observed));
+    if (poll(&wait, 1, 3000) == 1) response = read(reply[0], &observed, sizeof(observed)) == sizeof(observed);
+    if (response) { queried = !ioctl(slave, TIOCGWINSZ, &checked); acknowledged = write(gate[1], "Q", 1) == 1; }
     else kill(child, SIGKILL);
     int status = 0; reaped = waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    clean = closed(ready[0]) && closed(gate[1]) && closed(reply[0]);
   }
-  struct winsize checked = {0}; int queried = !ioctl(slave, TIOCGWINSZ, &checked);
-  char json[512];
-  snprintf(json, sizeof(json), "{\"initial_cols\":80,\"initial_rows\":24,\"resize_calls\":2,\"notifications\":%d,\"latest_cols\":%d,\"latest_rows\":%d,\"queried_cols\":%d,\"queried_rows\":%d,\"controlled_foreground\":%s,\"child_reaped\":%s,\"fixture_pipes_closed\":%s,\"notification\":\"SIGWINCH-blocked-then-sigwait\"}", observed.count, observed.cols, observed.rows, checked.ws_col, checked.ws_row, boolean(prepared), boolean(reaped), boolean(clean));
-  result("tty.resize", initial && resized && observed.count == 1 && observed.cols == 100 && observed.rows == 33 && queried && checked.ws_col == 100 && checked.ws_row == 33 && reaped && clean, json);
+  for (int i = 0; i < 2; ++i) { clean &= close_owned(&ready[i]); clean &= close_owned(&gate[i]); clean &= close_owned(&reply[i]); clean &= close_owned(&notify[i]); }
+  int terminal_closed = close_owned(&slave); terminal_closed &= close_owned(&master);
+  char json[640];
+  snprintf(json, sizeof(json), "{\"initial_cols\":80,\"initial_rows\":24,\"resize_calls\":2,\"notifications\":%d,\"latest_cols\":%d,\"latest_rows\":%d,\"queried_cols\":%d,\"queried_rows\":%d,\"controlled_foreground\":%s,\"child_reaped\":%s,\"fixture_pipes_closed\":%s,\"query_before_child_exit\":%s,\"private_terminal_closed\":%s,\"notification\":\"SIGWINCH-self-pipe\"}", observed.count, observed.cols, observed.rows, checked.ws_col, checked.ws_row, boolean(prepared), boolean(reaped), boolean(clean), boolean(response && queried && acknowledged), boolean(terminal_closed));
+  result("tty.resize", initial && resized && observed.count >= 1 && observed.cols == 100 && observed.rows == 33 && queried && acknowledged && checked.ws_col == 100 && checked.ws_row == 33 && reaped && clean && terminal_closed, json);
 }
 struct Cancel {
-  pthread_mutex_t mutex; pthread_cond_t cond; int prepared, control[2], endpoint, returned;
+  pthread_mutex_t mutex; pthread_cond_t cond; int prepared, released, control[2], endpoint, returned, endpoint_ready;
   int64_t event, console;
 };
 static void *wait_borrowed(void *opaque) {
   struct Cancel *c = opaque;
-  pthread_mutex_lock(&c->mutex); c->prepared = 1; pthread_cond_signal(&c->cond); pthread_mutex_unlock(&c->mutex);
+  pthread_mutex_lock(&c->mutex); c->prepared = 1; pthread_cond_signal(&c->cond);
+  while (!c->released) pthread_cond_wait(&c->cond, &c->mutex);
+  pthread_mutex_unlock(&c->mutex);
   if (IsWindows()) { int64_t handles[] = {c->event, c->console}; c->returned = WaitForMultipleObjects(2, handles, false, 5000) == 0; }
-  else { struct pollfd p[] = {{c->control[0], POLLIN, 0}, {c->endpoint, POLLIN, 0}}; c->returned = poll(p, 2, 5000) == 1 && (p[0].revents & POLLIN); }
+  else { struct pollfd p[] = {{c->control[0], POLLIN, 0}, {c->endpoint, POLLIN, 0}};
+    int ready = poll(p, 2, 5000); c->endpoint_ready = ready > 0 && (p[1].revents & POLLIN);
+    c->returned = ready > 0 && (p[0].revents & POLLIN); }
   return 0;
 }
 static void borrowed(struct Lease *l, int master) {
-  char json[768]; struct Cancel c = {.mutex = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER};
+  char json[768]; struct Cancel c = {.mutex = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .control = {-1,-1}};
   int shared_mode = 0, shared_flags = 0, restored = 0, owner_open = 0, endpoints = 0, duplicate = -1;
   int64_t copy = 0;
   if (IsWindows()) {
@@ -336,26 +398,36 @@ static void borrowed(struct Lease *l, int master) {
     endpoints = c.event != 0 && made;
   } else {
     duplicate = dup(l->fd); c.endpoint = duplicate;
-    struct termios saved, changed, measured;
+    struct termios saved = {0}, changed, measured;
     int got = !tcgetattr(l->fd, &saved); changed = saved; changed.c_lflag ^= ECHO;
     shared_mode = got && !tcsetattr(duplicate, TCSANOW, &changed) && !tcgetattr(l->fd, &measured) && same(&changed, &measured);
     int flags = fcntl(l->fd, F_GETFL);
     shared_flags = flags >= 0 && !fcntl(duplicate, F_SETFL, flags | O_NONBLOCK) && (fcntl(l->fd, F_GETFL) & O_NONBLOCK);
-    restored = !fcntl(l->fd, F_SETFL, flags) && !tcsetattr(l->fd, TCSANOW, &saved) && !tcgetattr(l->fd, &measured) && same(&saved, &measured);
+    restored = got && flags >= 0 && !fcntl(l->fd, F_SETFL, flags) && restore_termios(l->fd, &saved);
+    restored &= flags >= 0 && fcntl(l->fd, F_GETFL) == flags && fcntl(duplicate, F_GETFL) == flags;
     endpoints = !pipe(c.control);
   }
   pthread_t worker; int created = endpoints && !pthread_create(&worker, 0, wait_borrowed, &c);
+  int input_ready = IsWindows(), requested = 0;
   if (created) {
     pthread_mutex_lock(&c.mutex); while (!c.prepared) pthread_cond_wait(&c.cond, &c.mutex); pthread_mutex_unlock(&c.mutex);
-    if (IsWindows()) SetEvent(c.event); else write(c.control[1], "C", 1);
+    if (IsWindows()) requested = SetEvent(c.event);
+    else {
+      /* Both sources are ready before the waiter proceeds: control must win
+         without starting a read on the shared endpoint. */
+      struct pollfd pending = {duplicate, POLLIN, 0};
+      input_ready = write(master, "B\n", 2) == 2 && poll(&pending, 1, 1000) == 1 && (pending.revents & POLLIN);
+      requested = write(c.control[1], "C", 1) == 1;
+    }
+    pthread_mutex_lock(&c.mutex); c.released = 1; pthread_cond_signal(&c.cond); pthread_mutex_unlock(&c.mutex);
   }
   int joined = created && !pthread_join(worker, 0);
   int clean;
-  if (IsWindows()) { clean = CloseHandle(copy) && CloseHandle(c.event); uint32_t checked; owner_open = GetConsoleMode(l->hin, &checked); }
-  else { clean = closed(duplicate) && closed(c.control[0]) && closed(c.control[1]); owner_open = fcntl(l->fd, F_GETFD) >= 0; }
+  if (IsWindows()) { clean = CloseHandle(copy); clean &= CloseHandle(c.event); uint32_t checked; owner_open = GetConsoleMode(l->hin, &checked); }
+  else { clean = close_owned(&duplicate); clean &= close_owned(&c.control[0]); clean &= close_owned(&c.control[1]); owner_open = fcntl(l->fd, F_GETFD) >= 0; }
   clean &= !pthread_cond_destroy(&c.cond) && !pthread_mutex_destroy(&c.mutex);
-  snprintf(json, sizeof(json), "{\"duplicate_shares_mode\":%s,\"duplicate_shares_status_flags\":%s,\"shared_state_restored\":%s,\"cancel_observed\":%s,\"joined\":%s,\"owner_still_open\":%s,\"owned_wait_endpoints_closed\":%s,\"unsafe_borrow\":\"UNSUPPORTED\",\"strategy\":\"cancel-owned-wait-before-borrowed-read\",\"pending_shared_read_cancel\":\"UNSUPPORTED\"}", boolean(shared_mode), boolean(shared_flags), boolean(restored), boolean(c.returned), boolean(joined), boolean(owner_open), boolean(clean));
-  result("tty.borrowed", shared_mode && (IsWindows() || shared_flags) && restored && c.returned && joined && owner_open && clean, json);
+  snprintf(json, sizeof(json), "{\"duplicate_shares_mode\":%s,\"duplicate_shares_status_flags\":%s,\"shared_state_restored\":%s,\"cancel_observed\":%s,\"joined\":%s,\"owner_still_open\":%s,\"owned_wait_endpoints_closed\":%s,\"borrowed_ready_on_cancel\":%s,\"unsafe_borrow\":\"UNSUPPORTED\",\"strategy\":\"cancel-owned-wait-before-borrowed-read\",\"pending_shared_read_cancel\":\"UNSUPPORTED\"}", boolean(shared_mode), boolean(shared_flags), boolean(restored), boolean(c.returned), boolean(joined), boolean(owner_open), boolean(clean), boolean(c.endpoint_ready));
+  result("tty.borrowed", shared_mode && (IsWindows() || (shared_flags && c.endpoint_ready)) && restored && input_ready && requested && c.returned && joined && owner_open && clean, json);
 }
 static int gate(const char *name) {
   if (!gate_directory) return 0;
@@ -440,6 +512,7 @@ int main(int argc, char **argv) {
   evidence = stdout;
   for (int i = 1; i + 1 < argc; ++i) if (!strcmp(argv[i], "--result")) evidence = fopen(argv[i + 1], "w");
   for (int i = 1; i + 1 < argc; ++i) if (!strcmp(argv[i], "--gate")) gate_directory = argv[i + 1];
+  for (int i = 1; i + 1 < argc; ++i) if (!strcmp(argv[i], "--fixture-root")) fixture_root = argv[i + 1];
   if (!evidence) return 2;
   if (argc > 1 && !strcmp(argv[1], "--hang")) for (;;) pause();
   int console = argc > 1 && !strcmp(argv[1], "--console");
@@ -461,7 +534,7 @@ int main(int argc, char **argv) {
   }
   if (!IsWindows()) stdin_routes(slave);
   leases(&lease);
-  if (!IsWindows()) { posix_resize(master, slave); posix_text(&lease, master); }
+  if (!IsWindows()) { posix_resize(); posix_text(&lease, master); }
   else { console_resize(&lease); console_text(&lease); console_input_boundary(&lease, 0); console_input_boundary(&lease, 1); }
   borrowed(&lease, master);
   invalid_text();

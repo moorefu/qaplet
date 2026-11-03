@@ -22,15 +22,20 @@
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
 | 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
-| 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | `a64afa6` 已集成，待 Cross |
-| 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | `0460f71` 已集成，待 Cross |
-| 06–27 | 待分派 | 待创建 | 等待各自直接 blocker |
+| 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | `.cache/worktrees/m2-04-fix` | 修复已由 `87fe34f` 集成，本地/64K 与完整检查通过，待当前 Cross |
+| 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | `.cache/worktrees/m2-05-fix` | 修复已由 `73e84df` 集成，本地/64K 与完整检查通过，待当前 Cross |
+| 06 | `codex/m2-06-wait` | `.cache/worktrees/m2-06` | in_progress，独立 SDK 首轮通过，继续事件/停止/故障清理 |
+| 07–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
 
 `out/qaplet-m2/context.json` 记录实际上下文：Ubuntu、Linux x86_64、WSL2 kernel `6.6.87.2-microsoft-standard-WSL2`、4096 页、uid/gid 1000、构建允许。该报告只证明执行环境，不证明产品合同通过。
 
 `out/qaplet-m2/guest-inputs.json`：现有固定 64K guest 输入经离线签名、长度及摘要核验通过，`qemu-system-aarch64` 已安装；尚不表示新探针已经执行。
+
+04/05 候选修复的完整本地检查曾因 D 盘可用空间低于既有 4 GiB 门槛失败，保留原失败，没有降低阈值。确认无活动构建后，对静态派生 `.cache/build/sdk` 执行标准 NTFS `compact /C /S /I /Q`（不使用 `/EXE`），4,783 个文件压缩前后长度与 SHA-256 全部相同，目录无 reparse 项，缓存位置与原件均保留。`out/qaplet-m2/cache-compression-before.json`、`cache-compression-compact.log` 与 `cache-compression-verified.json` 记录可用空间从 4,011,765,760 增至 4,862,255,104 字节；该收据只证明环境恢复，04/05 完整检查仍需重跑。
+
+随后以相同标准 NTFS 方式压缩其余 220 个静态派生 build 子目录，排除正在构建的 `m2-06`：另 3,643 文件数量、长度及 SHA-256 全部相同，无 reparse 项；`static-cache-compression-verified.json` 记录 D 可用空间增至 5,567,799,296 字节。06 自行在静态阶段压缩自己的 build 目录并核验 87 个文件不变，再继续构建。以上仅改压缩属性，不移动缓存、删除输入或改验收门槛。
 
 ## 公共 CI 接入
 
@@ -77,6 +82,10 @@ Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merg
 实际 [Full 41607608424](https://github.com/moorefu/qaplet/actions/runs/41607608424) 绑定 `196cd75`，整体 `completed/failure`，失败属于 04 Windows fixture setup 与 05 Mac/Windows TTY。02 自身五原生各 19 项及实际 64K 19 项（共 114）、真实 native loader/provider 原件、源/配方/CI/同 APE、guest serial/4 suite/8 payload/清理、当前 M0 Full 六目标 235 项均已严格重算，见 `out/qaplet-m2/full-196cd75/verify02/VERIFICATION.md` 与 `summary.json`。02 按本票范围完成，01/02 的直接依赖 06 已放行；04/05 独立失败继续由 fresh agent 修复，父 M2 不完成。
 
 01/02/03 旧 worktree 已在干净、全部提交合入、绝对路径与非 reparse 检查后清理。全部 out 先再次对照已保存归档核验（`store-01/02/03-pre-cleanup.json`）；额外忽略文件分别只含 64/24/67 个可再生 Python 字节码，无其它遗漏，分支保留。原路径可由 `evidence_store.py restore/materialize` 恢复到相应备份的 `out`，不改变旧报告内容。
+
+04 Windows 修复及 05 Mac/Windows 修复分别由独立 merger 无冲突集成为 `87fe34f`、`73e84df`；逐票 11 项当前 LF 源码/配方与供应原件逐字节相同，窄公开 CI 合同及 diff 检查通过。恢复空间后的两票完整检查均通过且保留旧失败；主树再次执行 `scripts/dev.py check` 通过，报告 `out/qaplet-m2/check-probe-fixes-integration.json`：364 项中 178 项实际执行、186 项需显式外部输入而跳过，真实系统 C bootstrap 通过。尚未取得新 Mac/Windows CI/ARM native，本地成绩不关闭 04/05 或父规格。
+
+两修复树输出分别完整保存并核验为 `tickets/04-windows-fix/`（349 文件、56,903,491 逻辑字节）与 `tickets/05-cross-fix/`（242 文件、41,090,449 逻辑字节），收据为主 `store-04-windows-fix-*`、`store-05-cross-fix-*`。旧 04/05 out 在清理前重新对照原归档通过（`store-04/05-pre-cleanup.json`），干净、已合入、绝对路径及非 reparse 根检查均通过，out 外各仅 69 个 Python 字节码。仅清理本会话原始旧 worktree `m2-04`、`m2-05`，保留分支和所有归档；新修复树仍保留。
 
 ## 一次性测试入口修复
 
