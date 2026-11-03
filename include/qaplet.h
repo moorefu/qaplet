@@ -22,7 +22,9 @@ typedef enum {
   QAPLET_MODULE_RESOLVE = 14, QAPLET_MODULE_LOAD = 15, QAPLET_MODULE_LIMIT = 16,
   QAPLET_DEADLINE_EXCEEDED = 17, QAPLET_DISPATCH_LIMIT = 18,
   QAPLET_HOST_ERROR = 19, QAPLET_NO_HANDLER = 20, QAPLET_QUEUE_FULL = 21,
-  QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23
+  QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23,
+  QAPLET_RESOURCE_LIMIT = 24, QAPLET_INVALID_HANDLE = 25,
+  QAPLET_CONTROL_FAILURE = 26
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -46,9 +48,9 @@ enum {
   QAPLET_CAP_HOST_MODULES = 1u << 11,
   QAPLET_CAP_POD_EVENTS = 1u << 12,
   QAPLET_CAP_RUNTIME_SNAPSHOT = 1u << 16,
-  /* Explicit M2 factory, empty-loop drive and separate native cleanup state.
-   * Does not advertise timer, OS waiting, work, process or stdio support. */
+  /* Explicit M2 factory and separate native cleanup state. */
   QAPLET_CAP_M2_RUNTIME = 1u << 17,
+  QAPLET_CAP_M2_WAIT = 1u << 18,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -179,8 +181,8 @@ typedef struct {
 
 /* M2 structures are independent: no M1 layout or reserved field changes.
  * Capacities describe the finite configuration, not available resource APIs.
- * Query capabilities before using a feature; this release enables only the
- * empty M2 Runtime. No thread, OS wait backend or standard stream is acquired. */
+ * M2 waiting owns a private connected-socket waker, with no JS/helper thread.
+ * Timer, work, process and standard-stream APIs are separate capabilities. */
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t worker_threads, helper_threads, worker_stack_bytes, helper_stack_bytes;
@@ -222,11 +224,28 @@ typedef struct {
   qaplet_m2_limits m2_limits;
   uint64_t engine_current_bytes, engine_peak_bytes;
   uint64_t native_current_bytes, native_peak_bytes;
+  uint64_t native_handles, native_handles_peak;
+  uint64_t reactor_registrations, reactor_registrations_peak;
+  uint64_t keepalive_tokens, keepalive_tokens_peak;
+  uint64_t wake_requests, wake_signals, wait_calls;
+  /* Core control error, separate from the first termination cause. POSIX errno
+   * is domain 1 (including Cosmopolitan's socket errno mapping); 0 means none. */
+  uint32_t control_error_domain;
+  int32_t control_error;
+  /* close returned an error and ownership cannot be proved. Such resources
+   * stay charged separately, prevent quiescence/destroy, and are never retried
+   * by numeric fd (which may already name another thread's resource). */
+  uint64_t native_uncertain_handles;
 } qaplet_m2_snapshot;
+/* Opaque value identity: never modify its fields. Copies denote the same token.
+ * Runtime identity and generation reject cross-instance and stale releases.
+ * These values cannot validate a Runtime pointer after destroy. */
+typedef struct { uint64_t runtime_id, slot, generation; } qaplet_keepalive;
+#define QAPLET_KEEPALIVE_INIT {0, 0, 0}
 #define QAPLET_M2_LIMITS_INIT {sizeof(qaplet_m2_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_M2_CONFIG_INIT {sizeof(qaplet_m2_config), QAPLET_ABI_VERSION, 0, QAPLET_M2_LIMITS_INIT, {0}}
 #define QAPLET_DRIVE_RESULT_INIT {sizeof(qaplet_drive_result), QAPLET_ABI_VERSION, 0, 0, 0, 0}
-#define QAPLET_M2_SNAPSHOT_INIT {sizeof(qaplet_m2_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, QAPLET_LIMITS_INIT, QAPLET_M2_LIMITS_INIT, 0, 0, 0, 0}
+#define QAPLET_M2_SNAPSHOT_INIT {sizeof(qaplet_m2_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, QAPLET_LIMITS_INIT, QAPLET_M2_LIMITS_INIT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 /* Explicit opt-in; base retains exactly the M1 configuration contract.
  * Failure stores NULL in output and releases every unpublished resource. */
@@ -237,13 +256,28 @@ qaplet_code qaplet_create_m2(const qaplet_config *base, const qaplet_m2_config *
 qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *, qaplet_m2_snapshot *, qaplet_diagnostic *);
 /* M2 owner-only drives. max_wait_ms is finite (0 never waits). An empty
  * instance returns IDLE immediately, even for a positive wait budget. These
- * calls do not provide an OS waiting capability. An unresolvable entry Promise
+ * calls wait only while a ref source (currently a Host keepalive) exists.
+ * Ready work runs before any wait. max_wait is cumulative active waiting,
+ * never reset by redundant wakes; it does not bound JS/native call duration.
+ * An unresolvable entry Promise
  * returns reason UNSETTLED_ENTRY, code OK and phase PENDING; pump keeps its M1
- * no-progress behavior. run continues ready work until idle/error/stop.
+ * no-progress behavior. run continues until natural idle/error/stop.
  * An idle call preserves the last completed result. No call closes the Runtime. */
 qaplet_code qaplet_run_once(qaplet_runtime *, uint64_t max_wait_ms,
                            qaplet_drive_result *, qaplet_diagnostic *);
 qaplet_code qaplet_run(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
+/* Create: owner, outside callbacks/drives, OPEN M2 only. Output is written only
+ * on success. Count/storage are bounded from creation. Release: any thread,
+ * exactly once; old/cross-instance tokens return INVALID_HANDLE. Release wakes
+ * the owner; stop/close invalidate outstanding tokens without waiting for the
+ * external producer. Withdraw/join all producers before destroy. */
+qaplet_code qaplet_keepalive_create(qaplet_runtime *, qaplet_keepalive *, qaplet_diagnostic *);
+qaplet_code qaplet_keepalive_release(qaplet_runtime *, const qaplet_keepalive *, qaplet_diagnostic *);
+/* Any thread, M2 only. A coalescible hint, not business work or loop keepalive.
+ * Terminal/CLOSED hints are harmless. Accepted state changes (event, release,
+ * stop) still return OK if the later wake syscall fails. The core fault is
+ * independently latched and reported by snapshot/owner drive. Not signal-safe. */
+qaplet_code qaplet_wake(qaplet_runtime *, qaplet_diagnostic *);
 /* M2 owner, CLOSED only, no JS. Zero only checks. Native cleanup is separate
  * from lifecycle; an empty instance is immediately QUIESCENT after close.
  * Future resource capabilities must finish physical cleanup before quiescence.
@@ -348,7 +382,7 @@ qaplet_code qaplet_post_event(qaplet_runtime *, uint32_t type, uint64_t token,
  * event posts and owner claims share one order. Ordinary work is then rejected;
  * claimed work exits cooperatively and unclaimed events/jobs never run again.
  * Owner interrupt polling or a subsequent pump confirms STOPPED/DONE, returning
- * EXECUTION_STOPPED (23). No OS wakeup or native-call preemption is promised.
+ * EXECUTION_STOPPED (23). M2 also wakes system waiting; native calls are not preempted.
  * Repeated calls in STOP_REQUESTED/STOPPED/FAILED/CLOSED succeed without changing
  * state or the first recorded stop/budget/allocation termination reason.
  * close releases remaining user work without running finally/cleanup JS.

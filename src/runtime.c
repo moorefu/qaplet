@@ -134,7 +134,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -191,6 +191,7 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
   qaplet_runtime *runtime = calloc(1, sizeof(*runtime));
   if (!runtime) return qaplet_report(diagnostic, QAPLET_MEMORY_LIMIT);
   runtime->owner = pthread_self();
+  runtime->wake_fd[0] = runtime->wake_fd[1] = -1;
   runtime->m2_enabled = m2 != NULL;
   runtime->m2_limits = m2_limits;
   runtime->native_state = QAPLET_NATIVE_RUNNING;
@@ -234,8 +235,10 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
   JS_SetContextOpaque(runtime->context, runtime);
   code = qaplet_modules_init(runtime, config);
   if (!code) code = qaplet_events_init(runtime);
+  if (!code) code = qaplet_loop_init(runtime);
   if (!code) code = qaplet_execution_check(runtime);
   if (code) {
+    qaplet_loop_shutdown(runtime);
     qaplet_events_dispose(runtime);
     qaplet_modules_dispose(runtime);
     qaplet_execution_dispose(runtime);
@@ -333,6 +336,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   if (qaplet_get_lifecycle(runtime) != QAPLET_CLOSED) {
+    qaplet_loop_shutdown(runtime);
     qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);
     qaplet_modules_dispose(runtime);
@@ -347,11 +351,12 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
     pthread_mutex_lock(&runtime->mutex);
     runtime->snapshot.lifecycle = QAPLET_CLOSED;
     runtime->snapshot.phase = QAPLET_PHASE_IDLE;
-    runtime->native_state = runtime->native_retained ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
+    runtime->native_state = runtime->native_retained || runtime->native_handles || runtime->native_uncertain_handles ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
     pthread_mutex_unlock(&runtime->mutex);
   }
+  code = runtime->m2_enabled ? runtime->cleanup_reason : QAPLET_OK;
   qaplet_driver_set(runtime, 0);
-  return qaplet_report(diagnostic, QAPLET_OK);
+  return qaplet_report(diagnostic, code);
 }
 
 qaplet_code qaplet_destroy(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic) {

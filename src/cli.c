@@ -104,15 +104,18 @@ int main(int argc, char **argv) {
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   qaplet_result result = QAPLET_RESULT_INIT;
   qaplet_diagnostic diagnostic = QAPLET_DIAGNOSTIC_INIT;
+  qaplet_m2_config m2 = QAPLET_M2_CONFIG_INIT;
+  qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
   char message[1024]; diagnostic.message=message; diagnostic.capacity=sizeof(message);
-  qaplet_code code=qaplet_create(&config,&runtime,&diagnostic);
+  qaplet_code code=qaplet_create_m2(&config,&m2,&runtime,&diagnostic);
   free(arguments);
   if (!code) code=is_run ? qaplet_run_entry(runtime,input,strlen(input),&progress,&diagnostic) :
                           qaplet_eval(runtime,input,strlen(input),&progress,&diagnostic);
   int unsettled=0;
   while (!code && progress.phase==QAPLET_PHASE_PENDING) {
-    code=qaplet_pump(runtime,&progress,&diagnostic);
-    if (!code && progress.phase==QAPLET_PHASE_PENDING && !progress.progressed) { unsettled=1; break; }
+    code=qaplet_run_once(runtime,0,&drive,&diagnostic);
+    progress.phase=drive.phase;
+    if (!code && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY) { unsettled=1; break; }
   }
   if (!code && !unsettled && !is_run) code=qaplet_get_result(runtime,&result,&diagnostic);
   if (code==QAPLET_BUFFER_TOO_SMALL) {
@@ -120,10 +123,22 @@ int main(int argc, char **argv) {
     if (!result.buffer) { code=QAPLET_MEMORY_LIMIT; strcpy(message,"MEMORY_LIMIT"); }
     else code=qaplet_get_result(runtime,&result,&diagnostic);
   }
+  /* Retain the copied entry result before later independent deliveries can
+   * replace the SDK's most recent result. */
+  if (!code && !unsettled) {
+    code=qaplet_run(runtime,&drive,&diagnostic);
+    if (!code && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY) unsettled=1;
+  }
   if (!code && !unsettled && !is_run) print_result(&result);
   free(result.buffer);
   if (code) fprintf(stderr,"qaplet: code=%u %s\n",(unsigned)code,message);
   if (unsettled) fputs("qaplet: UNSETTLED_ENTRY\n",stderr);
-  if (runtime) { qaplet_close(runtime,NULL); qaplet_destroy(runtime,NULL); }
+  if (runtime) {
+    qaplet_code cleanup=qaplet_close(runtime,NULL);
+    if (!cleanup) cleanup=qaplet_quiesce(runtime,5000,&drive,NULL);
+    if (!cleanup && drive.reason!=QAPLET_DRIVE_QUIESCENT) cleanup=QAPLET_BUSY;
+    if (!cleanup) cleanup=qaplet_destroy(runtime,NULL);
+    if (cleanup) { fprintf(stderr,"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup); code=cleanup; }
+  }
   return finish(code || unsettled ? 1 : 0);
 }
