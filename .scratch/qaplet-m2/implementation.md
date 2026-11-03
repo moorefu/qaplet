@@ -24,7 +24,7 @@
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | 原件见 `tickets/05` / `05-cross-fix` | completed（`0e4ba21` 五原生及实际 64K 共 116 项严格重放通过） |
-| 06 | `codex/m2-06-wait` | `.cache/worktrees/m2-06` | `1708ede` 已集成，本地最终供应通过，当前 Full 进行中 |
+| 06 | `codex/m2-06-wait` 及两条定向修复分支 | `.cache/worktrees/m2-06` | `1708ede` 已集成；64K 传输完整性及未发布创建清理诊断待修复 |
 | 07–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
@@ -96,6 +96,12 @@ Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merg
 06 产品提交 `921f6f6` 经独立 merger 合入为 `1708edec3aca9d7593cc530e6e4e31256c5af3fe`；全部 63 项 RECIPE 原字节与源 tip、实际 producer `2a9ab07`、merge Git blob 一致、CRLF 为零，71 个供应文件及 ZIP 核验通过。最终本地 Linux 111 pass，Windows 110 pass + 1 optional symlink blocked（必需缺口 0），包外应用 8、独立故障夹具 1 通过。两平台各实际 500 次 token 与 100 次 concurrent 场景通过，绑定最终 Host 字节；仅说明本票资源重复范围，不算最终 T03 全混合。producer 的 `working_tree_dirty=true` 原样保留：Ubuntu Git 对既有 CRLF 非 RECIPE 文档的观测与 Windows Git clean 不同，不能改写报告或将其说成 Ubuntu 全树 clean。
 
 06 的真实 close 故障先暴露错误成功诊断，再以明确拒绝、实际关闭后同号复用两种受控情形验证：FD 只尝试关闭一次，不确定句柄独立计量并保持 CLEANING/destroy BUSY，quiesce 不重关复用 fd，不把这类故障称为资源清零成功。主树当前 `scripts/dev.py check` 通过（`out/qaplet-m2/check-wait-integration.json`，364 项中 178 实际执行、186 条件 skipped，真实 C bootstrap 通过）；已推送触发 [Full 41621764245](https://github.com/moorefu/qaplet/actions/runs/41621764245)。五原生及实际 64K 当前原件与独立重放仍待齐，06 不 resolved，07/09/10/13 不提前放行，父 M2 保持 in_progress。
+
+06 原 worktree 的 8,062 个冻结输出（649,029,428 逻辑字节）已经保存到 `tickets/06/`，`store-06-created.json`、`store-06-verified.json` 完成源成员/内容/元数据、归档 CRC 和摘要核验；源树保留，归档不单独授权清理。
+
+Full `41621764245` 最终 completed/failure，唯一失败 job 为实际 64K `arm64-page-gaps`。独立严格重算五原生各 111（含六个新增等待合同）、包外应用 8、独立故障夹具 1 和当前 M0 Full 235 均通过，Windows 本次 optional symlink 也实际通过。29 provider 原 ZIP、12 嵌套供应物、11 job 原日志及离线核验齐全，见 `out/qaplet-m2/full-1708ede/HANDOFF.md` 与 `verify/scope-summary.json`。SDK guest serial 原文恰缺 `qaplet.run-unsettled` 的 START：110 项六字段完整，111 项退出/输出均符合 catalog，但该项立即退出时长无法验证；原 parser 在此前 86 pass 后拒绝，不能补造字段或称全部 111 guest 通过。原 init 有无条件 START 发射，serial 未见相邻交错；QEMU 正常退出、DONE=1、26 payload 前后 hash 同且清理完整，不能由此推断产品挂起、ABI 错误或具体 errno。fresh `codex/m2-06-guest-fix` / `.cache/worktrees/m2-06-guest-fix` 负责区分发射、console 传输及 host 采集并修复。
+
+另一个相邻定向系统夹具实际两次复现未发布创建的诊断缺口：accept 失败且 close 成功时活 socket 为 0；listener close 明确拒绝、或 accept EMFILE 后 close EACCES 时各仍有 1 个活 socket，返回 CONTROL_FAILURE/outNULL，但内部不确定清理/原始 setup 与 cleanup 错误随 Runtime 释放而丢失。夹具最后自行清理，不把它算 SDK 回滚完成，原件在主 `out/qaplet-m2/06-init-close-diagnosis/report.json`。fresh `codex/m2-06-creation-fix` / `.cache/worktrees/m2-06-creation-fix` 处理公开诊断和安全责任边界；不重关数值 fd、不伪造清零、不发布成功半成品。06 继续 awaiting_cross，后续 blocker 不放行。
 
 ## 一次性测试入口修复
 
