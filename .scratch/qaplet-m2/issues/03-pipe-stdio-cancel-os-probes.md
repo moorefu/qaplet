@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] 覆盖真实 stdin 的 pipe、文件、无效句柄及适用终端类型，区分借用、拥有和描述符别名。
-- [ ] 验证任意字节/NUL、短读写、暂不可用、EOF/EPIPE、部分写和 readiness；结果保留原始字节。
-- [ ] 实际观察 nonblocking/模式修改是否影响别名，不假设 dup 自动隔离共享状态。
-- [ ] 验证等待中取消、端点关闭及迟到完成的原生退出边界；不能安全接入的方式有实测原因。
+- [x] 覆盖真实 stdin 的 pipe、文件、无效句柄及适用终端类型，区分借用、拥有和描述符别名。
+- [x] 验证任意字节/NUL、短读写、暂不可用、EOF/EPIPE、部分写和 readiness；结果保留原始字节。
+- [x] 实际观察 nonblocking/模式修改是否影响别名，不假设 dup 自动隔离共享状态。
+- [x] 验证等待中取消、端点关闭及迟到完成的原生退出边界；不能安全接入的方式有实测原因。
 - [ ] 探针经 Ubuntu 构建与供应、适用 Cross/Full 实跑和原始报告消费，不能用旧 M0 pipe 单字节成绩替代。
 
 ## Blocking details
@@ -53,4 +53,6 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-03：实现与本地验证见 [03 探针记录](../03-stdio-validation.md)。独立 Ubuntu producer 供应同一 APE，Linux x64、Windows x64 和实际 ARM64 64K 完整系统 guest 各 19/19 pass；两平台供应 CLI 合同各 4/4 pass。Windows NOWAIT 大写入 TRUE/0 是明确观测，原始字节及已写量/回收通过，能力约束独列，不冒充短写支持。保留编译、受限上下文超时及 64K fixture 页假设的红记录。普通 Ubuntu check 通过。首四项记录本票实现及已测宿主范围；最后一项所需当前 Cross/Full 及其他必需原生宿主尚待集成验证，状态保持 claimed，不放行依赖或宣称 M2 产品通过。
 
