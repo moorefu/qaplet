@@ -278,6 +278,7 @@ def check_tier_transport(workflow):
         "python scripts/sdk.py build --output-dir out/sdk/artifacts --report out/sdk/build.json",
         "python scripts/sdk.py run --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/sdk/fast/run.json",
         "python scripts/sdk.py package-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --output-dir out/sdk/external --loader-dir out/m0/loaders --report out/sdk/package-consume.json",
+        "python scripts/sdk.py fault-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --output-dir out/sdk/fault-artifacts --loader-dir out/m0/loaders --report out/sdk/fault-consume.json",
         "python scripts/sdk.py matrix --profile fast --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-report out/sdk/fast/run.json --report out/sdk/fast-matrix.json",
     ]
     require([step["run"] for step in build if "scripts/sdk.py" in step.get("run", "")] == sdk_fast,
