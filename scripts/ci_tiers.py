@@ -48,7 +48,10 @@ def plan(args):
     if name == "pull_request":
         tier, reason = ("full", "sensitive pull request paths") if sensitive else ("cross", "pull request native smoke")
     elif name == "push":
-        tier, reason = ("full", "release candidate tag") if ref.startswith("refs/tags/") else ("fast", "every pushed commit")
+        if ref == "refs/heads/codex/m2-integration":
+            tier, reason = "full", "M2 integration requires current native and 64K evidence"
+        else:
+            tier, reason = ("full", "release candidate tag") if ref.startswith("refs/tags/") else ("fast", "every pushed commit")
     elif name == "schedule":
         tier, reason = "full", "daily implemented Full contracts"
     elif name == "workflow_dispatch":

@@ -179,6 +179,8 @@ class CITiersContract(unittest.TestCase):
                 ("workflow_dispatch", "refs/heads/topic", {"tier": "full"}, "full", False),
                 ("schedule", "refs/heads/main", {}, "full", True),
                 ("push", "refs/tags/v1.0-rc1", {}, "full", False),
+                ("push", "refs/heads/codex/m2-integration", {}, "full", False),
+                ("push", "refs/heads/codex/m2-02-waker", {}, "fast", False),
                 ("workflow_dispatch", "refs/heads/main", {"tier": "invalid"}, None, False),
             ):
                 event.write_text(json.dumps({"inputs": inputs, "repository": {"default_branch": "main"}}), encoding="utf-8")
