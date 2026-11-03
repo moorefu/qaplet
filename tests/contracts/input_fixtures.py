@@ -15,4 +15,4 @@ def current_input_identity():
                                 capture_output=True, text=True, timeout=30)
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
-        return json.loads(report.read_text())["input_lock"]
+        return json.loads(report.read_text(encoding="utf-8"))["input_lock"]

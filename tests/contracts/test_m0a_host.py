@@ -15,7 +15,7 @@ class M0AHostContract(unittest.TestCase):
     def invoke(self, mode):
         if os.environ.get("QAPLET_M0A_NATIVE"):
             return subprocess.run([os.environ["QAPLET_M0A_NATIVE"], mode], capture_output=True, text=True, timeout=5)
-        producer = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text())
+        producer = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text(encoding="utf-8"))
         artifact = next(item for item in producer["artifacts"] if item["name"] == "quickjs-eval")
         launcher = producer["build"]["launcher"]["path"]
         return subprocess.run([launcher, artifact["path"], mode], capture_output=True, text=True, timeout=5)
@@ -59,7 +59,7 @@ class M0AHostContract(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("QAPLET_M0A_BUILD"), "Actual APE producer required")
     def test_producer_records_esm_and_job_execution_evidence(self):
-        producer = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text())
+        producer = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text(encoding="utf-8"))
         required = {"esm-export", "esm-dependency", "esm-missing", "esm-syntax", "esm-exception",
                     "jobs-complete", "jobs-exception", "jobs-rejection", "jobs-unfinished", "jobs-budget"}
         cases = {item["case_id"]: item for item in producer["cases"]}
@@ -77,7 +77,7 @@ class M0AHostContract(unittest.TestCase):
                          "Actual current producer and native startup evidence required")
     def test_consumer_rejects_global_only_wrong_result_and_successful_error_exit(self):
         producer = Path(os.environ["QAPLET_M0A_BUILD"])
-        actual = json.loads(Path(os.environ["QAPLET_M0A_STARTUP"]).read_text())
+        actual = json.loads(Path(os.environ["QAPLET_M0A_STARTUP"]).read_text(encoding="utf-8"))
         root = Path(__file__).resolve().parents[2]
         parent = Path(os.environ.get("QAPLET_M0A_REPORT_DIR", root / "out/m0a-contracts"))
         parent.mkdir(parents=True, exist_ok=True)
@@ -95,13 +95,13 @@ class M0AHostContract(unittest.TestCase):
             else:
                 cases["quickjs-eval.jobs-exception"]["actual"]["stdout"] = "42\n"
             path = work / (name + ".json")
-            path.write_text(json.dumps(incoming))
+            path.write_text(json.dumps(incoming), encoding="utf-8")
             result = subprocess.run([sys.executable, str(root / "scripts/startup.py"), "matrix",
                 "--build-report", str(producer), "--artifact-dir", str(producer.parent / "artifacts"),
                 "--input-report", str(path), "--report", str(work / (name + "-refused.json"))],
                 capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertEqual(json.loads((work / (name + "-refused.json")).read_text())["status"], "fail")
+            self.assertEqual(json.loads((work / (name + "-refused.json")).read_text(encoding="utf-8"))["status"], "fail")
 
 
 if __name__ == "__main__":

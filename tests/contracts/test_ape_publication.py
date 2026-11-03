@@ -15,12 +15,12 @@ import build_ape
 class APEPublication(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("QAPLET_PUBLICATION_REPORTS"), "Explicit five actual Ubuntu producer reports required")
     def test_all_five_actual_producer_distributions_ship_matching_maps_and_notices(self):
-        selection = json.loads(Path(os.environ["QAPLET_PUBLICATION_REPORTS"]).read_text())
-        reports = [json.loads(Path(path).read_text()) for path in selection["reports"]]
+        selection = json.loads(Path(os.environ["QAPLET_PUBLICATION_REPORTS"]).read_text(encoding="utf-8"))
+        reports = [json.loads(Path(path).read_text(encoding="utf-8")) for path in selection["reports"]]
         self.assertCountEqual([report["report_kind"] for report in reports],
                               ["ape-build", "native-io", "pages64k-build", "svc-scm-build", "svc-job-build"])
         header = Path(selection["helper_source"]) / "third_party/haclstar/blake2b.c"
-        expected_hacl = "\n".join(header.read_text().splitlines()[:28]) + "\n"
+        expected_hacl = "\n".join(header.read_text(encoding="utf-8").splitlines()[:28]) + "\n"
         for report in reports:
             with self.subTest(producer=report["report_kind"]):
                 self.assertEqual(report["status"], "pass", report["reason"])
@@ -29,7 +29,7 @@ class APEPublication(unittest.TestCase):
                     for name in ("LICENSE", "source.lock.json"):
                         self.assertEqual((output / "ape-helper-notices" / name).read_bytes(),
                                          (ROOT / "third_party/ape-helpers" / name).read_bytes())
-                    self.assertEqual((output / "ape-helper-notices/HACL-LICENSE.txt").read_text(), expected_hacl)
+                    self.assertEqual((output / "ape-helper-notices/HACL-LICENSE.txt").read_text(encoding="utf-8"), expected_hacl)
                     self.assertEqual(hashlib.sha256((output / "ape-aarch64.elf").read_bytes()).hexdigest(),
                                      report["portable_helpers"]["loader"]["sha256"])
                     maps = artifact.get("maps", artifact.get("audit", {}).get("maps", []))
@@ -60,7 +60,7 @@ class APEPublication(unittest.TestCase):
             (work / "tmp").mkdir(parents=True)
             output.mkdir()
             (source / "third_party/haclstar").mkdir(parents=True)
-            (source / "third_party/haclstar/blake2b.c").write_text("/* MIT license fixture */\n" * 28 + "implementation\n")
+            (source / "third_party/haclstar/blake2b.c").write_text("/* MIT license fixture */\n" * 28 + "implementation\n", encoding="utf-8")
             for suffix in (".com", ".com.dbg", ".aarch64.elf"):
                 (work / ("probe" + suffix)).write_bytes(b"literal product " + suffix.encode())
             (work / "tmp/probe.com.dbg.map").write_bytes(b"x86_64 map")
@@ -75,7 +75,7 @@ class APEPublication(unittest.TestCase):
             for name in ("LICENSE", "source.lock.json"):
                 self.assertEqual((output / "ape-helper-notices" / name).read_bytes(),
                                  (ROOT / "third_party/ape-helpers" / name).read_bytes())
-            self.assertEqual((output / "ape-helper-notices/HACL-LICENSE.txt").read_text(), "/* MIT license fixture */\n" * 28)
+            self.assertEqual((output / "ape-helper-notices/HACL-LICENSE.txt").read_text(encoding="utf-8"), "/* MIT license fixture */\n" * 28)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ class LockedArchiveContract(unittest.TestCase):
                                      "--report", str(work / "fetch.json")], env=environment,
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-            report = json.loads((work / "fetch.json").read_text())
+            report = json.loads((work / "fetch.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertIn("GH_TOKEN", report["reason"])
             self.assertEqual(report["commands"], [])

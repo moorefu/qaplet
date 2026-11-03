@@ -280,7 +280,7 @@ def evaluate(path):
         # The current Full manifest remains a separate M0 product contract.
         m0_path = Path(manifest["m0_manifest"])
         m0_path = m0_path if m0_path.is_absolute() else base / m0_path
-        m0 = json.loads(m0_path.read_text())
+        m0 = json.loads(m0_path.read_text(encoding="utf-8"))
         original = evidence.json(manifest["m0_original_manifest"])
         for field in ("schema_version", "profile", "producers", "startup_reports", "io_reports", "pages64k_reports", "offline_report", "offline_recipe_comparison"):
             require(m0[field] == original[field], "Current M0 Full selection differs from original provider manifest: " + field)

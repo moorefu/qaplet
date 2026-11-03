@@ -17,12 +17,12 @@ class CITiersContract(unittest.TestCase):
     def test_required_sdk_fast_and_native_distribution_cannot_be_removed(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-sdk-ci-") as temp:
             work = Path(temp)
-            value = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            value = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             # This removes the SDK increment while preserving every original M0 job.
             for job in value["jobs"].values():
                 job["steps"] = [step for step in job["steps"] if "scripts/sdk.py" not in step.get("run", "")]
             path = work / "workflow.json"
-            path.write_text(json.dumps(value))
+            path.write_text(json.dumps(value), encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
                 "--workflow", str(path), "--report", str(work / "result.json")], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -37,7 +37,7 @@ class CITiersContract(unittest.TestCase):
         work = Path(tempfile.mkdtemp(prefix="qaplet-ci-owner-", dir="/tmp"))
         os.chown(work, uid, gid)
         try:
-            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             command = next(step["run"] for step in workflow["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
             first = command.splitlines()[0]
             if first.startswith("mkdir -p "):
@@ -48,13 +48,13 @@ class CITiersContract(unittest.TestCase):
                 "--uid", str(uid), "--gid", str(gid), "--report", str(report)], cwd=ROOT, capture_output=True, text=True, timeout=90)
             self.assertEqual(produced.returncode, 0, produced.stdout + produced.stderr)
             event = work / "event.json"
-            event.write_text("{}")
+            event.write_text("{}", encoding="utf-8")
             written = subprocess.run([*runner, sys.executable, str(CLI), "plan", "--event-name", "workflow_dispatch", "--event-json",
                 str(event), "--report", str(report.parent / "transport-receipt.json")], capture_output=True, text=True, timeout=20)
             self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
             self.assertEqual(report.parent.stat().st_uid, uid)
             self.assertEqual(report.stat().st_uid, 0)
-            self.assertEqual(json.loads(report.read_text())["m0_core_status"], "not_run")
+            self.assertEqual(json.loads(report.read_text(encoding="utf-8"))["m0_core_status"], "not_run")
         finally:
             # Only this fresh POSIX fixture is removed by root; never repository/cache permissions.
             self.assertEqual(work.parent, Path("/tmp"))
@@ -71,7 +71,7 @@ class CITiersContract(unittest.TestCase):
                 "--report", str(work / "seal.json")], capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(source.read_bytes(), original)
-            mappings = json.loads((source.parent / "extra-path-mappings.json").read_text())
+            mappings = json.loads((source.parent / "extra-path-mappings.json").read_text(encoding="utf-8"))
             self.assertEqual(len(mappings), 4)
             for entry in mappings:
                 copied = source.parent.parent / entry["relative"]
@@ -79,27 +79,27 @@ class CITiersContract(unittest.TestCase):
             checked = subprocess.run([sys.executable, str(ROOT / "scripts/dev.py"), "preflight", "--recipe-receipt",
                 str(source.parent / "recipe-comparison.json"), "--report", str(work / "preflight.json")], capture_output=True, text=True, timeout=120)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
-            self.assertEqual(json.loads((work / "preflight.json").read_text())["preflight"]["recipe_scope"], "identical")
+            self.assertEqual(json.loads((work / "preflight.json").read_text(encoding="utf-8"))["preflight"]["recipe_scope"], "identical")
 
     def test_full_manifest_refuses_empty_or_other_commit_collections(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-manifest-") as temp:
             work = Path(temp)
             source, report = work / "collection.json", work / "result.json"
-            source.write_text(json.dumps({"status": "pass", "artifacts": []}))
+            source.write_text(json.dumps({"status": "pass", "artifacts": []}), encoding="utf-8")
             result = subprocess.run([sys.executable, str(CLI), "manifest", "--collection-report", str(source),
                 "--commit", "1234567890abcdef1234567890abcdef12345678", "--report", str(report)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("nonempty", json.loads(report.read_text())["reason"])
-            source.write_text(json.dumps({"status": "pass", "artifacts": [{"id": 17, "name": "m0-build-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}))
+            self.assertIn("nonempty", json.loads(report.read_text(encoding="utf-8"))["reason"])
+            source.write_text(json.dumps({"status": "pass", "artifacts": [{"id": 17, "name": "m0-build-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}), encoding="utf-8")
             result = subprocess.run([sys.executable, str(CLI), "manifest", "--collection-report", str(source),
                 "--commit", "1234567890abcdef1234567890abcdef12345678", "--report", str(report)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("another commit", json.loads(report.read_text())["reason"])
+            self.assertIn("another commit", json.loads(report.read_text(encoding="utf-8"))["reason"])
 
     def test_required_full_jobs_and_probes_cannot_be_skipped_or_tolerated(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-full-contract-") as temp:
             work = Path(temp)
-            original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            original = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             for mutation in ("missing_core", "disabled_build", "skipped_compile", "tolerated_probe", "empty_native", "missing_native", "duplicate_native", "skip_seal", "skip_core_consumer", "missing_runner_parent"):
                 value = json.loads(json.dumps(original))
                 if mutation == "missing_core":
@@ -125,7 +125,7 @@ class CITiersContract(unittest.TestCase):
                     step = next(step for step in value["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
                     step["run"] = step["run"].removeprefix("mkdir -p out/m0/offline\n")
                 path = work / "workflow.json"
-                path.write_text(json.dumps(value))
+                path.write_text(json.dumps(value), encoding="utf-8")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
                     "--report", str(work / "check.json")], capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode, 1, mutation + ": " + result.stdout + result.stderr)
@@ -134,12 +134,12 @@ class CITiersContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-native-catalog-") as temp:
             work = Path(temp)
             event, report = work / "event.json", work / "plan.json"
-            event.write_text("{}")
+            event.write_text("{}", encoding="utf-8")
             result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", "push",
                 "--event-json", str(event),
                 "--report", str(report)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            rows = json.loads(report.read_text())["native_matrix"]["include"]
+            rows = json.loads(report.read_text(encoding="utf-8"))["native_matrix"]["include"]
             self.assertEqual(len(rows), 5)
             self.assertEqual({(row["runner"], row["os"], row["arch"]) for row in rows}, {
                 ("ubuntu-24.04", "Linux", "x86_64"), ("windows-2022", "Windows", "x86_64"),
@@ -158,10 +158,10 @@ class CITiersContract(unittest.TestCase):
                 ("push", "refs/tags/v1.0-rc1", {}, "full", False),
                 ("workflow_dispatch", "refs/heads/main", {"tier": "invalid"}, None, False),
             ):
-                event.write_text(json.dumps({"inputs": inputs, "repository": {"default_branch": "main"}}))
+                event.write_text(json.dumps({"inputs": inputs, "repository": {"default_branch": "main"}}), encoding="utf-8")
                 result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", name,
                     "--event-json", str(event), "--ref", ref, "--report", str(report)], capture_output=True, text=True, timeout=20)
-                value = json.loads(report.read_text())
+                value = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual(result.returncode, 0 if expected else 1, result.stdout + result.stderr)
                 if expected:
                     self.assertEqual(value["tier"], expected)
@@ -174,13 +174,13 @@ class CITiersContract(unittest.TestCase):
     def test_workflow_rejects_cache_bypass_and_untrusted_save(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-cache-ci-") as temp:
             work = Path(temp)
-            original = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            original = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             def check(value):
                 path = work / "workflow.json"
-                path.write_text(json.dumps(value))
+                path.write_text(json.dumps(value), encoding="utf-8")
                 process = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
                     "--workflow", str(path), "--report", str(work / "report.json")], capture_output=True, text=True, timeout=20)
-                return process.returncode, json.loads((work / "report.json").read_text())
+                return process.returncode, json.loads((work / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(check(original)[0], 0)
             bypass = json.loads(json.dumps(original))
             verify = next(step for step in bypass["jobs"]["build"]["steps"] if "fetch_locked_toolchain.py" in step.get("run", ""))
@@ -201,14 +201,14 @@ class CITiersContract(unittest.TestCase):
             event = work / "event.json"
             changed = work / "paths.json"
             report = work / "plan.json"
-            event.write_text("{}")
-            changed.write_text('["tests/native/quickjs_eval.c"]')
+            event.write_text("{}", encoding="utf-8")
+            changed.write_text('["tests/native/quickjs_eval.c"]', encoding="utf-8")
             def plan(name):
                 result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", name,
                     "--event-json", str(event), "--changed-paths", str(changed),
                     "--ref", "refs/heads/topic", "--report", str(report)], capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                return json.loads(report.read_text())
+                return json.loads(report.read_text(encoding="utf-8"))
             pushed = plan("push")
             self.assertEqual(pushed["tier"], "fast")
             self.assertFalse(pushed["run_cross"])

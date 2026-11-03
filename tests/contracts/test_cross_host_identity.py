@@ -25,7 +25,7 @@ class PageProducerCI(unittest.TestCase):
                 "--toolchain-cache", work / "missing", "--report", output], env=environment,
                 capture_output=True, text=True, timeout=30)
             self.assertNotEqual(result.returncode, 0)
-            report = json.loads(output.read_text())
+            report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report.get("ci", {}).get("commit"), "a" * 40)
             self.assertEqual(report["ci"]["run_id"], "123")
 
@@ -38,19 +38,19 @@ class CrossHostIdentity(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.work = Path(self.temporary.name)
         self.producer_path = Path(os.environ["QAPLET_M0A_BUILD"])
-        self.producer = json.loads(self.producer_path.read_text())
-        self.native = json.loads(Path(os.environ["QAPLET_M0A_STARTUP"]).read_text())
+        self.producer = json.loads(self.producer_path.read_text(encoding="utf-8"))
+        self.native = json.loads(Path(os.environ["QAPLET_M0A_STARTUP"]).read_text(encoding="utf-8"))
 
     def matrix(self, producer=None, incoming=None, profile="full", duplicate=False):
         build = self.producer_path
         if producer is not None:
             build = self.work / "build.json"
-            build.write_text(json.dumps(producer))
+            build.write_text(json.dumps(producer), encoding="utf-8")
             incoming = copy.deepcopy(incoming or self.native)
             incoming["producer_report"] = {"path": str(build), "sha256": hashlib.sha256(build.read_bytes()).hexdigest(),
                                            "size_bytes": build.stat().st_size}
         native = self.work / "native.json"
-        native.write_text(json.dumps(incoming or self.native))
+        native.write_text(json.dumps(incoming or self.native), encoding="utf-8")
         output = self.work / "matrix.json"
         arguments = [sys.executable, ROOT / "scripts/startup.py", "matrix",
             "--build-report", build, "--artifact-dir", self.producer_path.parent / "artifacts",
@@ -60,7 +60,7 @@ class CrossHostIdentity(unittest.TestCase):
         result = subprocess.run(arguments,
             capture_output=True, text=True, timeout=30)
         self.assertTrue(output.is_file(), result.stderr)
-        return result.returncode, json.loads(output.read_text())
+        return result.returncode, json.loads(output.read_text(encoding="utf-8"))
 
     def test_cross_retains_missing_native_hosts_without_claiming_full_core(self):
         code, report = self.matrix(profile="cross")

@@ -32,7 +32,7 @@ class StartupGuestContract(unittest.TestCase):
                          "--page-size", "65536", "--manifest", work / "manifest.json"]
             result = self.invoke(*arguments, "--report", work / "intact.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            manifest = json.loads((work / "manifest.json").read_text())
+            manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(len(manifest["commands"]), 17)
             self.assertIn("quickjs-eval.pointer-roundtrip", [item["case_id"] for item in manifest["commands"]])
             changed = bytearray(loader.read_bytes())
@@ -40,7 +40,7 @@ class StartupGuestContract(unittest.TestCase):
             loader.write_bytes(changed)
             result = self.invoke(*arguments, "--report", work / "corrupt.json")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            refused = json.loads((work / "corrupt.json").read_text())
+            refused = json.loads((work / "corrupt.json").read_text(encoding="utf-8"))
             self.assertIn("SHA-256/size", refused["reason"])
             self.assertEqual(refused["commands"], [])
 
@@ -49,12 +49,12 @@ class StartupGuestContract(unittest.TestCase):
             work = Path(temp)
             result = self.invoke("page-gaps", "--report", work / "plan.json", "--github-output", work / "outputs")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((work / "plan.json").read_text())
+            report = json.loads((work / "plan.json").read_text(encoding="utf-8"))
             self.assertEqual(report["report_kind"], "ape-page-plan")
             self.assertEqual(report["covered_native_pages"], [])
             self.assertEqual(report["missing_pages"], [4096, 65536])
             self.assertEqual(report["m0_core_status"], "not_run")
-            outputs = (work / "outputs").read_text()
+            outputs = (work / "outputs").read_text(encoding="utf-8")
             self.assertIn('matrix={"include":[{"page_size":4096},{"page_size":65536}]}', outputs)
             self.assertIn("needs_guest=true", outputs)
 
@@ -66,10 +66,10 @@ class StartupGuestContract(unittest.TestCase):
                 work = Path(temp)
                 (work / "native.json").write_text(json.dumps({"schema_version": 1, "report_kind": "ape-startup", "status": "fail",
                     "host": {"os": "Linux", "cpu": "aarch64", "execution_arch": "aarch64", "execution_mode": "native",
-                             "page_size": page, "kernel": "fixture-kernel"}, "qemu": {"status": "not_applicable"}}))
+                             "page_size": page, "kernel": "fixture-kernel"}, "qemu": {"status": "not_applicable"}}), encoding="utf-8")
                 result = self.invoke("page-gaps", "--input-report", work / "native.json", "--report", work / "plan.json")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                report = json.loads((work / "plan.json").read_text())
+                report = json.loads((work / "plan.json").read_text(encoding="utf-8"))
                 self.assertEqual(report["missing_pages"], missing)
                 self.assertEqual(report["observations"][0]["status"], "fail")
                 self.assertEqual(report["m0_core_status"], "not_run")
@@ -77,7 +77,7 @@ class StartupGuestContract(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("QAPLET_STARTUP_NATIVE_REPORT"), "Actual native Linux ARM64 startup report required")
     def test_actual_native_page_measurement_schedules_only_the_missing_page(self):
         native = Path(os.environ["QAPLET_STARTUP_NATIVE_REPORT"])
-        original = json.loads(native.read_text())
+        original = json.loads(native.read_text(encoding="utf-8"))
         self.assertEqual(original["host"]["os"], "Linux")
         self.assertEqual(original["host"]["execution_arch"], "aarch64")
         measured = original["host"]["page_size"]
@@ -85,7 +85,7 @@ class StartupGuestContract(unittest.TestCase):
             work = Path(temp)
             result = self.invoke("page-gaps", "--input-report", native, "--report", work / "plan.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((work / "plan.json").read_text())
+            report = json.loads((work / "plan.json").read_text(encoding="utf-8"))
             self.assertEqual(report["covered_native_pages"], [measured] if measured in (4096, 65536) else [])
             self.assertEqual(report["missing_pages"], [page for page in (4096, 65536) if page != measured])
             self.assertEqual(report["observations"][0]["status"], original["status"])
@@ -101,8 +101,8 @@ class StartupGuestContract(unittest.TestCase):
         result = self.invoke("import-guest", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                              "--guest-report", guest, "--report", work / "startup.json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        report = json.loads((work / "startup.json").read_text())
-        original = json.loads(guest.read_text())
+        report = json.loads((work / "startup.json").read_text(encoding="utf-8"))
+        original = json.loads(guest.read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "pass")
         self.assertEqual(report["host"]["os"], "Linux")
         self.assertEqual(report["host"]["execution_arch"], "aarch64")
@@ -121,7 +121,7 @@ class StartupGuestContract(unittest.TestCase):
         matrix = self.invoke("matrix", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                              "--input-dir", work, "--report", work / "matrix.json")
         self.assertEqual(matrix.returncode, 2, matrix.stdout + matrix.stderr)
-        coverage = json.loads((work / "matrix.json").read_text())
+        coverage = json.loads((work / "matrix.json").read_text(encoding="utf-8"))
         self.assertEqual(coverage["status"], "blocked")
         self.assertEqual(sum(item["status"] == "pass" for item in coverage["coverage"]), 1)
 
@@ -129,15 +129,15 @@ class StartupGuestContract(unittest.TestCase):
                          "Actual producer and full-system guest reports required")
     def test_guest_raw_log_identity_mismatch_cannot_be_imported_as_pass(self):
         producer = Path(os.environ["QAPLET_STARTUP_GUEST_BUILD"])
-        incoming = json.loads(Path(os.environ["QAPLET_STARTUP_GUEST_REPORT"]).read_text())
+        incoming = json.loads(Path(os.environ["QAPLET_STARTUP_GUEST_REPORT"]).read_text(encoding="utf-8"))
         incoming["cases"][0]["stdout_log"]["sha256"] = "f" * 64
         with tempfile.TemporaryDirectory(prefix="qaplet-bad-guest-log-") as temp:
             work = Path(temp)
-            (work / "guest.json").write_text(json.dumps(incoming))
+            (work / "guest.json").write_text(json.dumps(incoming), encoding="utf-8")
             result = self.invoke("import-guest", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                                  "--guest-report", work / "guest.json", "--report", work / "startup.json")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "startup.json").read_text())
+            report = json.loads((work / "startup.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "fail")
             self.assertIn("raw", report["reason"].lower())
 
@@ -145,7 +145,7 @@ class StartupGuestContract(unittest.TestCase):
                          "Actual producer and full-system guest reports required")
     def test_guest_report_can_be_imported_after_transport_with_its_raw_logs(self):
         producer = Path(os.environ["QAPLET_STARTUP_GUEST_BUILD"])
-        incoming = json.loads(Path(os.environ["QAPLET_STARTUP_GUEST_REPORT"]).read_text())
+        incoming = json.loads(Path(os.environ["QAPLET_STARTUP_GUEST_REPORT"]).read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="qaplet-transported-guest-") as temp:
             work = Path(temp)
             logs = work / "evidence" / incoming["report_id"]
@@ -161,11 +161,11 @@ class StartupGuestContract(unittest.TestCase):
             for event in incoming["commands"]:
                 if event["stdout_log"] == original_serial:
                     event["stdout_log"] = incoming["qemu"]["serial_log"]["path"]
-            (work / "guest.json").write_text(json.dumps(incoming))
+            (work / "guest.json").write_text(json.dumps(incoming), encoding="utf-8")
             result = self.invoke("import-guest", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                                  "--guest-report", work / "guest.json", "--report", work / "startup.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((work / "startup.json").read_text())
+            report = json.loads((work / "startup.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "pass")
             self.assertTrue(all(Path(case["commands"][0]["stdout_log"]).is_file() for case in report["cases"]))
 
@@ -178,14 +178,14 @@ class StartupGuestContract(unittest.TestCase):
             result = self.invoke("import-guest", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                                  "--guest-report", os.environ["QAPLET_STARTUP_GUEST_REPORT"], "--report", work / "actual.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((work / "actual.json").read_text())
+            report = json.loads((work / "actual.json").read_text(encoding="utf-8"))
             for status in ("fail", "blocked"):
                 report.update(status=status, reason="Conservative report-status fixture")
-                (work / (status + ".json")).write_text(json.dumps(report))
+                (work / (status + ".json")).write_text(json.dumps(report), encoding="utf-8")
             result = self.invoke("matrix", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                                  "--input-report", work / "fail.json", "--input-report", work / "blocked.json", "--report", work / "matrix.json")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            matrix = json.loads((work / "matrix.json").read_text())
+            matrix = json.loads((work / "matrix.json").read_text(encoding="utf-8"))
             self.assertEqual(matrix["status"], "fail")
             self.assertEqual(next(slot for slot in matrix["coverage"] if slot["reports"])["status"], "fail")
 

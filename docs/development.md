@@ -19,6 +19,7 @@
 | 断网重构 | `sudo python3 scripts/dev.py offline`，先实际权限/namespace预检再运行双构建 |
 | 审查材料 | [按轴生成、验证和派发](agents/review.md) |
 | CI证据 | `python3 scripts/ci_evidence.py --help`，显式fetch、离线verify、typed summary |
+| 证据保存与迁移 | `scripts/evidence_store.py`、`scripts/evidence_selection.py`；[容量、归档与路径派生](development/evidence.md#证据保存与路径派生) |
 
 `make check` 仍为原入口：CI合同、普通回归和真实系统C bootstrap；完整Core判定由显式consumer证据入口签发。CLI `--help` 是参数的权威列表。
 

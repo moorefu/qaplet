@@ -10,7 +10,7 @@
         {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
         {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
         {"name": "Check tracked outputs, syntax and tooling orchestration", "run": "python scripts/dev.py preflight --report out/workflow/preflight.json"},
-        {"name": "Exercise public workflow commands", "run": "python -B -m unittest discover -s tests/contracts -p test_workflow_tools.py -v"},
+        {"name": "Exercise public workflow commands", "run": "python -B -m unittest discover -s tests/contracts -p 'test_workflow*.py' -v"},
         {"name": "Retain workflow evidence", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "workflow-tools-${{ github.sha }}", "path": "out/workflow/", "if-no-files-found": "error"}}
       ]
     }

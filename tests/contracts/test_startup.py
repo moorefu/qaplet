@@ -28,11 +28,11 @@ class StartupContract(unittest.TestCase):
                 "report_kind": "ape-build", "schema_version": 1, "status": "pass", "input_lock": current_input_identity(),
                 "source": {}, "toolchain": {}, "build": {}, "artifacts": [
                     {"name": "hello", "sha256": "1" * 64, "size_bytes": 7},
-                    {"name": "quickjs-eval", "sha256": "2" * 64, "size_bytes": 8}]}))
+                    {"name": "quickjs-eval", "sha256": "2" * 64, "size_bytes": 8}]}), encoding="utf-8")
             result = self.invoke("run", "--build-report", work / "producer.json",
                                  "--artifact-dir", work, "--report", work / "report.json")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "report.json").read_text())
+            report = json.loads((work / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "fail")
             self.assertIn("SHA-256", report["reason"])
             self.assertEqual(report["commands"], [])
@@ -45,7 +45,7 @@ class StartupContract(unittest.TestCase):
                                      "--zig-cache", str(work / "missing"), "--output-dir", str(work / "loaders"),
                                      "--report", str(work / "helpers.json")], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-            report = json.loads((work / "helpers.json").read_text())
+            report = json.loads((work / "helpers.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertIn("archive", report["reason"])
             self.assertFalse((work / "missing").exists())
@@ -55,13 +55,13 @@ class StartupContract(unittest.TestCase):
                          "Ubuntu and explicit current-v3 producer required")
     def test_other_or_unidentified_helper_bundle_is_rejected_before_execution(self):
         producer_path = Path(os.environ["QAPLET_STARTUP_BUILD"])
-        producer = json.loads(producer_path.read_text())
+        producer = json.loads(producer_path.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="qaplet-helper-bundle-") as temp:
             work = Path(temp)
             resolved = subprocess.run([sys.executable, str(ROOT / "scripts/input_lock.py"), "resolve",
                                        "--report", str(work / "resolved.json")], capture_output=True, text=True, timeout=30)
             self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
-            current = json.loads((work / "resolved.json").read_text())["input_lock"]
+            current = json.loads((work / "resolved.json").read_text(encoding="utf-8"))["input_lock"]
             self.assertEqual(producer.get("input_lock"), current, "Explicit producer must belong to the current v3")
             artifacts = work / "artifacts"
             shutil.copytree(producer_path.parent / "artifacts", artifacts)
@@ -71,11 +71,11 @@ class StartupContract(unittest.TestCase):
                 bundle = {"schema_version": 1, "report_kind": "ape-loaders", "status": "pass", "helpers": []}
                 if state:
                     bundle["input_lock"] = dict(current, lock_state=state)
-                (loaders / "helpers.json").write_text(json.dumps(bundle))
+                (loaders / "helpers.json").write_text(json.dumps(bundle), encoding="utf-8")
                 result = self.invoke("run", "--build-report", producer_path, "--artifact-dir", artifacts,
                                      "--loader-dir", loaders, "--report", work / "refusal.json")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                actual = json.loads((work / "refusal.json").read_text())
+                actual = json.loads((work / "refusal.json").read_text(encoding="utf-8"))
                 self.assertIn("unified", actual["reason"])
                 self.assertEqual(actual["commands"], [])
 
@@ -104,7 +104,7 @@ class StartupContract(unittest.TestCase):
                 arguments += ["--loader-dir", os.environ["QAPLET_STARTUP_LOADERS"]]
             result = self.invoke(*arguments)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((report_dir / "report.json").read_text())
+            report = json.loads((report_dir / "report.json").read_text(encoding="utf-8"))
             for artifact in report["artifacts"]:
                 self.assertEqual(stat.S_IMODE(Path(artifact["path"]).stat().st_mode), 0o755)
                 self.assertTrue(os.access(artifact["path"], os.X_OK))
@@ -120,7 +120,7 @@ class StartupContract(unittest.TestCase):
             arguments[arguments.index("--report") + 1] = report_dir / "rejected.json"
             rejected = self.invoke(*arguments)
             self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
-            rejected_report = json.loads((report_dir / "rejected.json").read_text())
+            rejected_report = json.loads((report_dir / "rejected.json").read_text(encoding="utf-8"))
             self.assertIn("SHA-256", rejected_report["reason"])
             self.assertEqual(rejected_report["commands"], [])
             for name in ("hello", "quickjs-eval"):
@@ -146,7 +146,7 @@ class StartupContract(unittest.TestCase):
             result = self.invoke("run", "--build-report", producer, "--artifact-dir", work,
                                  "--report", report_dir / "report.json")
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-            report = json.loads((report_dir / "report.json").read_text())
+            report = json.loads((report_dir / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertIn("not executable", report["reason"])
             self.assertEqual(report["commands"], [])
@@ -167,7 +167,7 @@ class StartupContract(unittest.TestCase):
                 arguments += ["--loader-dir", os.environ["QAPLET_STARTUP_LOADERS"]]
             result = self.invoke(*arguments)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            report = json.loads((work / "report.json").read_text())
+            report = json.loads((work / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "pass")
             self.assertEqual(len(report["cases"]), 17)
             cases = {case["case_id"]: case for case in report["cases"]}
@@ -184,7 +184,7 @@ class StartupContract(unittest.TestCase):
             matrix = self.invoke("matrix", "--build-report", producer, "--artifact-dir", producer.parent / "artifacts",
                                  "--input-report", work / "report.json", "--report", work / "matrix.json")
             self.assertEqual(matrix.returncode, 2, matrix.stdout + matrix.stderr)
-            coverage = json.loads((work / "matrix.json").read_text())
+            coverage = json.loads((work / "matrix.json").read_text(encoding="utf-8"))
             self.assertEqual(len(coverage["coverage"]), 6)
             self.assertEqual(sum(item["status"] == "pass" for item in coverage["coverage"]), 1)
             self.assertEqual(coverage["status"], "blocked")

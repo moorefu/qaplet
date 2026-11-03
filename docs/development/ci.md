@@ -23,6 +23,14 @@ GitHub 插件取得 API 结果后先保留原始 JSON，仅将判定字段返回
 
 `ci_evidence.py summarize --input-report <report.json> --report out/summary.json` 按已知schema/report_kind提取计数和清理事实。汇总明确 evidence_verified=false，不能代替完整consumer或新的OS执行；deep producer缺ci时保持null，Job supervisor从facts.cleanup读取。完整结果写报告，终端只显示短摘要。
 
+SDK (`qaplet-sdk`)、M1 gate (`qaplet-m1-evidence`) 和严格回归也支持小摘要：保留产品/SDK/配方身份、实际测试计数、必需/可选缺口数量、有限失败片段；不展开 commands、raw logs 或完整 evidence_index。报告文件保留最多八项失败/缺口/制品样本。
+
+### 即时引用下载
+
+已有 provider catalog 时，使用 `ci_evidence.py fetch-actions --manifest CATALOG --repository OWNER/REPO --commit FULL_SHA --run-id ID --output-dir out/collected --report out/collection-NEW.json`。`--artifact-id ID` 可重复以显式选择子集。工具校验 provider 的 run/commit、原 ZIP digest/长度/expiry，逐件向固定 GitHub API 取得引用并立即开始下载；引用只在内存中存在。已有 `GITHUB_TOKEN` 仅发送给固定 API host，下载重定向不携带认证。单件下载 401/403/410 最多刷新一次引用，失败和后续成功各留一条 attempt，不重试坏摘要/CRC。没有可用 API 读取授权时保留失败，沿用插件取得本地 ZIP 后的普通 fetch 入口。
+
+collection 必须使用新报告路径，保存全部失败尝试。成功报告中的 `artifacts` / `local_manifest` 仅含已验本地 archive.path，可直接复用普通离线 verify；原 catalog 保留安全的 API 地址，签名下载 URL 和 token 不写入输出。测试允许显式 literal loopback HTTP API，始终不携带 token；生产 API 固定为 `https://api.github.com`。
+
 ## Fast / Cross / Full
 
 `m0.yml` 保留原 workflow 身份。共享 `scripts/ci_tiers.py plan` 从实际 event/ref 与 PR diff

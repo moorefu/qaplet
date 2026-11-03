@@ -20,7 +20,7 @@ import svc_job
 
 class JobContract(unittest.TestCase):
     def test_damaged_first_launch_evidence_cannot_reach_the_suite_or_verified(self):
-        recorded = json.loads((ROOT / "tests/contracts/fixtures/svc-job-missing-export.json").read_text())
+        recorded = json.loads((ROOT / "tests/contracts/fixtures/svc-job-missing-export.json").read_text(encoding="utf-8"))
         mutations = [
             ("nonzero-exit", ("command", "exit_code"), 37),
             ("timeout", ("command", "timed_out"), True),
@@ -72,7 +72,7 @@ class JobContract(unittest.TestCase):
         result = subprocess.run([sys.executable, CLI, *arguments, "--report", work / "result.json"],
                                 capture_output=True, text=True, timeout=30)
         self.assertTrue((work / "result.json").exists(), result.stdout + result.stderr)
-        return result, json.loads((work / "result.json").read_text())
+        return result, json.loads((work / "result.json").read_text(encoding="utf-8"))
 
     def test_missing_producer_is_blocked_without_execution(self):
         result, report = self.invoke("run", "--input-report", ROOT / "out/absent-job.json",
@@ -91,7 +91,7 @@ class JobContract(unittest.TestCase):
             producer = {"schema_version": 1, "report_kind": "svc-job-build", "status": "pass", "input_lock": current_input_identity(),
                         "artifacts": [{"name": "svc-job", "sha256": "1" * 64, "size_bytes": 29}]}
             path = work / "producer.json"
-            path.write_text(json.dumps(producer))
+            path.write_text(json.dumps(producer), encoding="utf-8")
             result, report = self.invoke("run", "--input-report", path, "--artifact", artifact)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("SHA-256", report["reason"])
@@ -102,7 +102,7 @@ class JobContract(unittest.TestCase):
             work = Path(temp)
             artifact, producer = work / "job.com", work / "producer.json"
             artifact.write_bytes(b"not an executable")
-            producer.write_text("[]")
+            producer.write_text("[]", encoding="utf-8")
             result, report = self.invoke("run", "--input-report", producer, "--artifact", artifact)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertEqual(report["status"], "fail")
@@ -115,20 +115,20 @@ class JobContract(unittest.TestCase):
 
     def test_ci_rejects_compilation_in_windows_consumer(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-job-ci-") as temp:
-            workflow = json.loads((ROOT / ".github/workflows/svc-job.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/svc-job.yml").read_text(encoding="utf-8"))
             workflow["jobs"]["windows-job"]["steps"].append({"run": "python scripts/svc_job.py build --report out/forbidden.json"})
             path = Path(temp) / "workflow.json"
-            path.write_text(json.dumps(workflow))
+            path.write_text(json.dumps(workflow), encoding="utf-8")
             result, report = self.invoke("check-ci", "--workflow", path)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("must not compile", report["reason"])
 
     def test_ci_rejects_core_make_compilation_in_windows_consumer(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-job-ci-make-") as temp:
-            workflow = json.loads((ROOT / ".github/workflows/svc-job.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/svc-job.yml").read_text(encoding="utf-8"))
             workflow["jobs"]["windows-job"]["steps"].append({"run": "make check"})
             path = Path(temp) / "workflow.json"
-            path.write_text(json.dumps(workflow))
+            path.write_text(json.dumps(workflow), encoding="utf-8")
             result, report = self.invoke("check-ci", "--workflow", path)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("must not compile", report["reason"])

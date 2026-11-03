@@ -61,7 +61,7 @@ except urllib.error.HTTPError as error:
  if "--write-out" in args: print(error.code,end="")
  print("curl: (22) The requested URL returned error: "+str(error.code),file=sys.stderr)
  sys.exit(22)
-''')
+''', encoding="utf-8")
         shim.chmod(0o755)
         calls = work / "calls.jsonl"
         environment = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
@@ -69,9 +69,9 @@ except urllib.error.HTTPError as error:
         output = work / "report.json"
         result = subprocess.run([sys.executable, ROOT / "scripts/arm64_guest.py", "fetch", "--cache", cache.parent,
             "--report", output], env=environment, capture_output=True, text=True, timeout=45)
-        report = json.loads(output.read_text())
-        actual = [json.loads(line) for line in calls.read_text().splitlines()]
-        expected = json.loads((ROOT / "guests/arm64.lock.json").read_text())["metadata"][first]
+        report = json.loads(output.read_text(encoding="utf-8"))
+        actual = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
+        expected = json.loads((ROOT / "guests/arm64.lock.json").read_text(encoding="utf-8"))["metadata"][first]
         return result, report, cache / first, actual, expected
 
     def test_transient_503_retries_same_locked_url_then_verifies_signed_inputs(self):
@@ -83,7 +83,7 @@ except urllib.error.HTTPError as error:
         self.assertEqual(report["signature_chain"]["status"], "pass")
         attempts = [command for command in report["commands"] if command["argv"][0] == "curl"]
         self.assertEqual([command["exit_code"] for command in attempts], [22, 0])
-        self.assertIn("503", Path(attempts[0]["stderr_log"]).read_text())
+        self.assertIn("503", Path(attempts[0]["stderr_log"]).read_text(encoding="utf-8"))
 
     def test_exhausted_503_retries_fail_without_publishing_or_changing_source(self):
         result, report, downloaded, requests, expected = self.invoke(10)
@@ -93,7 +93,7 @@ except urllib.error.HTTPError as error:
         self.assertTrue(all(arguments[-1] == expected["url"] for arguments in requests))
         self.assertFalse(downloaded.exists())
         self.assertEqual(len(report["commands"]), 3)
-        self.assertTrue(all("503" in Path(command["stderr_log"]).read_text() for command in report["commands"]))
+        self.assertTrue(all("503" in Path(command["stderr_log"]).read_text(encoding="utf-8") for command in report["commands"]))
 
 
 if __name__ == "__main__":

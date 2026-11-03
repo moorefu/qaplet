@@ -25,6 +25,8 @@
 
 ## 长验证之前
 
+仓库预检同时检查证据工具和 `tests/contracts/*.py` 的显式文本编码。`scripts/text_encoding.py` 给出首批工具范围，所有 `evidence_*.py` 自动纳入。`read_text`、`write_text`、常规文本 `open` 使用显式 `encoding`；原始进程输出使用二进制 I/O。生产者配方中的其他脚本留待单独审计，变更其字节仍需匹配产品验收。小型 Unicode fixture 回归在关闭 Python UTF-8/locale coercion 的进程执行，不依赖完整 CI 制品。
+
 先运行 `scripts/dev.py preflight`。有已锁定 recipe receipt 时增加 `--recipe-receipt <file>`，同时核对当前工作字节和暂存 Git blobs；结果保留原输入闭包，不宣称不同配方等价。再运行严格证据的 `--preflight-only`，最后执行完整回归。`scripts/dev.py offline` 先执行便宜的仓库预检及实际 nonroot namespace preflight，成功后才运行原断网 pair；`--preflight-only` 到权限/namespace检查即结束。配方变化后的完整证明仍由原 producer/consumer 合同判定。
 
 ## 身份与原始证据
@@ -44,6 +46,23 @@
 | `toolchain` / `build` / `artifact` | 实测系统编译器路径/版本/摘要、构建命令/source 摘要、制品路径/大小/摘要；非构建用例为 null |
 
 缺失的产品身份保持 null，并通过 case 的原因说明缺口，不填假 SHA 或成功结果。每次运行使用独立 `evidence/<uuid>/`，同名报告原子替换时保留旧日志。原始日志保持进程输出的字节编码；Windows WSL 可能使用 UTF-16LE。报告本身是 UTF-8 JSON，不序列化环境变量全集、凭据或 Git remote。
+
+## 证据保存与路径派生
+
+`scripts/evidence_store.py` 管理显式关闭的输出树；不提供删除 source/worktree 的操作。先 `plan --source-root CLOSED --backup NEW --report NEW_REPORT` 查看去重内容、保守归档上界、可用字节及 reserve。`--expansion-budget` 为下一次回归/恢复另留峰值空间，`--reserve-bytes` 默认 512 MiB；计划不等于保存完成。
+
+```sh
+python3 scripts/evidence_store.py create --closed-source --source-root CLOSED --backup NEW --report out/store-created.json
+python3 scripts/evidence_store.py verify --backup NEW --source-root CLOSED --report out/store-verified.json
+python3 scripts/evidence_store.py restore --backup NEW --report out/store-restored.json
+python3 scripts/evidence_store.py materialize --backup NEW --member relative/original.log --report out/store-expanded.json
+```
+
+每次报告使用新路径，放在 source/backup 之外。新归档使用 Python 3.13 标准库可读的去重 tar.gz；历史 M1 tar.zst 通过 Python 3.14+ 标准库读取。inventory 保留每条路径的 SHA、长度、模式、mtime 和源物理身份；完整流读取核验压缩 footer。恢复在 `backup/out` 创建独立文件，按 inventory 恢复每条路径元数据；已有不同文件拒绝覆盖。source/backup 重叠、reparse/目录别名、越界成员、坏归档及空间不足均失败，源保留。归档、恢复与校验收据始终 `cleanup_authorized=false`；worktree 清理仍需独立的 Git/路径边界/遗漏输出审计。新工具只操作本次显式备份，不修改 M1 既有保存收据或快照计数。
+
+`scripts/evidence_selection.py --config ACCEPTED_CONFIG --provider-catalog ORIGINAL_CATALOG --backup BACKUP --output-dir NEW_SELECTION` 从原选择和保存收据派生新的 M1/M0 配置。`--backup` 可重复；收据及 inventory/归档摘要先核对，再验证 provider ID/name/commit/digest 与解包字节。`--mount D:=/mnt/d` 显式增加 WSL 变体，不假定本机盘符适用于其他机器。
+
+工具只变更位置字段和显式保存映射，原报告与原 provider catalog 不改写；`derivation.json` 记录源摘要和输出摘要，状态为 `prepared`、`evidence_verified=false`。先对新 `config-native.json` / `config-wsl.json` 执行原 `check_evidence.py --preflight-only`，再执行完整严格回归；派生成功不代表新的 OS 执行或严格通过。
 
 ## BOOT-08 断网重构
 

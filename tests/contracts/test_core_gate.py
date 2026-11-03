@@ -18,7 +18,7 @@ class CoreGateCLI(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("QAPLET_M0A_BUILD"), "Explicit current actual APE producer required")
     def test_ci_producer_identity_is_validated_before_archive_and_host_checks(self):
         # Mutations of a real producer exercise rejection, not remote execution.
-        original = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_M0A_BUILD"]).read_text(encoding="utf-8"))
         ci = dict(run_id="1", run_attempt="1", workflow="contract-fixture", commit="a" * 40,
                   runner_name="fixture", runner_os="Linux", runner_arch="X64", image_os="fixture", image_version="1")
         mutations = [(dict(ci, runner_name=None), "complete run, commit, runner and image identities"),
@@ -33,15 +33,15 @@ class CoreGateCLI(unittest.TestCase):
             manifest.write_text(json.dumps({"schema_version": 1, "profile": "full",
                                             "producers": {"startup": str(producer)},
                                             "startup_reports": [], "io_reports": [], "pages64k_reports": [],
-                                            "offline_report": None, "offline_recipe_comparison": None}))
+                                            "offline_report": None, "offline_recipe_comparison": None}), encoding="utf-8")
             for changed, reason in mutations:
                 with self.subTest(ci=changed):
-                    producer.write_text(json.dumps(dict(original, ci=changed)))
+                    producer.write_text(json.dumps(dict(original, ci=changed)), encoding="utf-8")
                     result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "evaluate",
                                              "--input-manifest", str(manifest), "--report", str(output)],
                                             capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn(reason, " ".join(json.loads(output.read_text())["core"]["errors"]))
+                    self.assertIn(reason, " ".join(json.loads(output.read_text(encoding="utf-8"))["core"]["errors"]))
 
     def test_empty_results_cannot_complete_core(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -54,7 +54,7 @@ class CoreGateCLI(unittest.TestCase):
                                     capture_output=True, text=True, timeout=30)
             self.assertNotEqual(result.returncode, 0)
             self.assertTrue(report.is_file(), result.stderr)
-            self.assertEqual(json.loads(report.read_text())["core"]["status"], "fail")
+            self.assertEqual(json.loads(report.read_text(encoding="utf-8"))["core"]["status"], "fail")
 
     @unittest.skipUnless(os.environ.get("QAPLET_GATE_MANIFEST"), "Explicit real full-matrix evidence required")
     def test_actual_complete_evidence_passes(self):
@@ -63,7 +63,7 @@ class CoreGateCLI(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT / "scripts/core_gate.py"), "evaluate",
                                      "--input-manifest", os.environ["QAPLET_GATE_MANIFEST"], "--report", str(report)],
                                     capture_output=True, text=True, timeout=120)
-            actual = json.loads(report.read_text())
+            actual = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(result.returncode, 0, actual["core"].get("errors"))
             self.assertEqual(actual["core"]["status"], "pass")
             self.assertEqual(len(actual["core"]["coverage"]), 6)
@@ -75,7 +75,7 @@ class ActualCoreEvidence(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
-        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text())
+        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
 
     def evaluate(self):
         manifest = self.directory / "inputs.json"
@@ -85,7 +85,7 @@ class ActualCoreEvidence(unittest.TestCase):
                                   "--input-manifest", str(manifest), "--report", str(output)],
                                  capture_output=True, text=True, timeout=120)
         self.assertTrue(output.is_file(), process.stderr)
-        return process.returncode, json.loads(output.read_text())
+        return process.returncode, json.loads(output.read_text(encoding="utf-8"))
 
     def inject_report(self, selection, change, index=0, mutate_files=None):
         reference = Path(self.manifest[selection][index])
@@ -121,10 +121,10 @@ class ActualCoreEvidence(unittest.TestCase):
 
     def inject_offline(self, change):
         original = Path(self.manifest["offline_report"])
-        report = json.loads(original.read_text())
+        report = json.loads(original.read_text(encoding="utf-8"))
         child_path = Path(next(item["root"] + report["child_report"]["path"][len(item["source"]):]
                                for item in self.manifest["path_mappings"] if report["child_report"]["path"].startswith(item["source"] + "/")))
-        child = json.loads(child_path.read_text())
+        child = json.loads(child_path.read_text(encoding="utf-8"))
         change(report)
         change(child)
         copied_child = self.directory / "isolated.json"
@@ -133,7 +133,7 @@ class ActualCoreEvidence(unittest.TestCase):
         copied = self.directory / "offline.json"
         copied.write_text(json.dumps(report), encoding="utf-8")
         recipe_path = Path(self.manifest["offline_recipe_comparison"])
-        recipe = json.loads(recipe_path.read_text())
+        recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
         recipe["disconnected_report"] = {"path": str(copied), "sha256": hashlib.sha256(copied.read_bytes()).hexdigest(), "size_bytes": copied.stat().st_size}
         copied_recipe = self.directory / "recipe.json"
         copied_recipe.write_text(json.dumps(recipe), encoding="utf-8")
@@ -188,7 +188,7 @@ class ActualCoreEvidence(unittest.TestCase):
             "no-commands": lambda report: report["cases"][0].update(commands=[]),
             "path-traversal": lambda report: report["cases"][0]["commands"][0].update(stdout_log="../unrelated.stdout.log"),
         }
-        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
         for name, mutate in mutations.items():
             with self.subTest(injection=name):
                 self.manifest = json.loads(json.dumps(original))
@@ -202,7 +202,7 @@ class ActualCoreEvidence(unittest.TestCase):
         code, result = self.evaluate()
         self.assertNotEqual(code, 0)
         self.assertIn("Missing required target", " ".join(result["core"]["errors"]))
-        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text())
+        self.manifest = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
         self.manifest["startup_reports"].append(self.manifest["startup_reports"][0])
         code, result = self.evaluate()
         self.assertNotEqual(code, 0)
@@ -215,7 +215,7 @@ class ActualCoreEvidence(unittest.TestCase):
         self.assertEqual(result["core"]["status"], "fail")
 
     def test_mutated_real_io_and_deep_semantics_are_rejected(self):
-        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
         mutations = (
             ("io_reports", lambda report: report["cases"][1]["actual"].update(send=0)),
             ("io_reports", lambda report: report["cases"].pop()),
@@ -235,7 +235,7 @@ class ActualCoreEvidence(unittest.TestCase):
 
     def test_missing_raw_log_cannot_be_repaired_by_same_named_file(self):
         def remove(root):
-            report = json.loads((root / "startup.json").read_text())
+            report = json.loads((root / "startup.json").read_text(encoding="utf-8"))
             name = report["cases"][0]["commands"][0]["stdout_log"].replace("\\", "/").rsplit("/", 1)[-1]
             path = next(root.rglob(name))
             unrelated = root / "unrelated" / name
@@ -247,7 +247,7 @@ class ActualCoreEvidence(unittest.TestCase):
         self.assertIn("FileNotFoundError", " ".join(report["core"]["errors"]))
 
     def test_offline_missing_build_refusal_trace_or_inventory_is_nonpassing(self):
-        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_GATE_MANIFEST"]).read_text(encoding="utf-8"))
         mutations = (
             lambda report: report["builds"].pop(),
             lambda report: report["cases"].pop(),
@@ -269,7 +269,7 @@ class ActualCoreEvidence(unittest.TestCase):
     def test_actual_link_inventory_rejects_service_only_symbol(self):
         def poison(root):
             path = root / "build-info.json"
-            report = json.loads(path.read_text())
+            report = json.loads(path.read_text(encoding="utf-8"))
             entry = report["artifacts"][0]["audit"]["maps"][0]
             target = root / "artifacts" / entry["path"].rsplit("/", 1)[-1]
             target.write_bytes(target.read_bytes() + b"\nCreateServiceW\n")
@@ -283,7 +283,7 @@ class ActualCoreEvidence(unittest.TestCase):
     def test_serial_execution_is_reparsed_after_all_declared_hashes_are_updated(self):
         def change_serial(root):
             guest_path = root / "guest.json"
-            guest = json.loads(guest_path.read_text())
+            guest = json.loads(guest_path.read_text(encoding="utf-8"))
             old_guest_sha = hashlib.sha256(guest_path.read_bytes()).hexdigest()
             old = guest["qemu"]["serial_log"].copy()
             serial = next(root.rglob(old["path"].rsplit("/", 1)[-1]))
@@ -308,7 +308,7 @@ class ActualCoreEvidence(unittest.TestCase):
             new_identity = {"sha256": hashlib.sha256(guest_path.read_bytes()).hexdigest(), "size_bytes": guest_path.stat().st_size}
             for path in root.glob("*.json"):
                 if path != guest_path:
-                    path.write_text(json.dumps(replace(json.loads(path.read_text()), new_identity)), encoding="utf-8")
+                    path.write_text(json.dumps(replace(json.loads(path.read_text(encoding="utf-8")), new_identity)), encoding="utf-8")
         self.inject_report("pages64k_reports", lambda report: None, mutate_files=change_serial)
         code, result = self.evaluate()
         self.assertNotEqual(code, 0)
@@ -335,7 +335,7 @@ class ActualCoreEvidence(unittest.TestCase):
     def test_self_consistent_recipe_receipt_cannot_change_current_inputs(self):
         self.inject_offline(lambda report: None)
         path = Path(self.manifest["offline_recipe_comparison"])
-        receipt = json.loads(path.read_text())
+        receipt = json.loads(path.read_text(encoding="utf-8"))
         receipt["current_recipe_inputs"][0]["sha256"] = "f" * 64
         receipt["current_recipe_inventory_sha256"] = hashlib.sha256(json.dumps(receipt["current_recipe_inputs"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         path.write_text(json.dumps(receipt), encoding="utf-8")

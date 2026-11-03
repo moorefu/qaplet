@@ -22,20 +22,20 @@ class BuildAPEContract(unittest.TestCase):
                 shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("evidence", "__pycache__"))
             shutil.copyfile(ROOT / "Makefile", repo / "Makefile")
             path = repo / "toolchains/qaplet.lock.json"
-            value = json.loads(path.read_text())
+            value = json.loads(path.read_text(encoding="utf-8"))
             value["lock_state"] = "selected_pending_validation"
             for entry in value["recipes"]:
                 raw = (repo / entry["path"]).read_bytes()
                 entry.update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
-            path.write_text(json.dumps(value))
+            path.write_text(json.dumps(value), encoding="utf-8")
             argv = [sys.executable, str(repo / "scripts/build_ape.py"), "build", "--report", str(repo / "out/build.json")]
             ordinary = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-            refused = json.loads((repo / "out/build.json").read_text())
+            refused = json.loads((repo / "out/build.json").read_text(encoding="utf-8"))
             self.assertEqual(ordinary.returncode, 1, ordinary.stdout + ordinary.stderr)
             self.assertIn("selected_pending_validation", refused["reason"])
             self.assertEqual(refused["commands"], [])
             controlled = subprocess.run([*argv, "--controlled-probe"], capture_output=True, text=True, timeout=30)
-            checked = json.loads((repo / "out/build.json").read_text())
+            checked = json.loads((repo / "out/build.json").read_text(encoding="utf-8"))
             self.assertEqual(controlled.returncode, 2, controlled.stdout + controlled.stderr)
             self.assertTrue(checked["controlled_probe"])
             self.assertIn("source cache is missing", checked["reason"])
@@ -60,11 +60,11 @@ class BuildAPEContract(unittest.TestCase):
     def test_ci_distributes_build_bytes_and_rejects_compiling_again_in_test_jobs(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-m0-ci-") as temp:
             work = Path(temp)
-            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             path = work / "m0.yml"
 
             def check():
-                path.write_text(json.dumps(workflow))
+                path.write_text(json.dumps(workflow), encoding="utf-8")
                 return subprocess.run([sys.executable, str(CLI), "check-ci", "--workflow", str(path),
                                        "--report", str(work / "check.json")],
                                       capture_output=True, text=True, timeout=20)
@@ -74,14 +74,14 @@ class BuildAPEContract(unittest.TestCase):
             workflow["jobs"]["build"]["runs-on"] = "windows-latest"
             result = check()
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "check.json").read_text())
+            report = json.loads((work / "check.json").read_text(encoding="utf-8"))
             self.assertIn("Ubuntu", report["reason"])
             workflow["jobs"]["build"]["runs-on"] = "ubuntu-24.04"
             workflow["jobs"]["test"] = {"runs-on": "ubuntu-24.04", "needs": "build",
                                         "steps": [{"run": "make build-ape OUT=out/test"}]}
             result = check()
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "check.json").read_text())
+            report = json.loads((work / "check.json").read_text(encoding="utf-8"))
             self.assertIn("recompil", report["reason"])
 
     def test_missing_source_is_blocked_without_creating_or_fetching_cache(self):
@@ -112,13 +112,13 @@ class BuildAPEContract(unittest.TestCase):
     def test_ci_refuses_a_fixed_guest_matrix_that_ignores_native_page_measurement(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-page-ci-") as temp:
             work = Path(temp)
-            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             workflow["jobs"]["arm64-page-gaps"]["strategy"]["matrix"] = {"page_size": [4096, 65536]}
-            (work / "m0.yml").write_text(json.dumps(workflow))
+            (work / "m0.yml").write_text(json.dumps(workflow), encoding="utf-8")
             result = subprocess.run([sys.executable, str(CLI), "check-ci", "--workflow", str(work / "m0.yml"),
                                      "--report", str(work / "check.json")], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("missing ARM64", json.loads((work / "check.json").read_text())["reason"])
+            self.assertIn("missing ARM64", json.loads((work / "check.json").read_text(encoding="utf-8"))["reason"])
 
     def test_inspection_rejects_changed_artifact_before_using_any_toolchain(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-corrupt-ape-") as temp:
@@ -128,7 +128,7 @@ class BuildAPEContract(unittest.TestCase):
                                      "--expected-sha256", "1" * 64, "--toolchain-cache", str(work / "missing"),
                                      "--report", str(work / "inspect.json")], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "inspect.json").read_text())
+            report = json.loads((work / "inspect.json").read_text(encoding="utf-8"))
             self.assertIn("SHA-256", report["reason"])
             self.assertEqual(report["commands"], [])
 
@@ -144,11 +144,11 @@ class BuildAPEContract(unittest.TestCase):
                                     capture_output=True, text=True, timeout=900)
             diagnostic = result.stdout + result.stderr
             if result.returncode and (work / "build.json").is_file():
-                failed = json.loads((work / "build.json").read_text())
+                failed = json.loads((work / "build.json").read_text(encoding="utf-8"))
                 if failed["commands"]:
-                    diagnostic += Path(failed["commands"][-1]["stderr_log"]).read_text(errors="replace")
+                    diagnostic += Path(failed["commands"][-1]["stderr_log"]).read_text(errors="replace", encoding="utf-8")
             self.assertEqual(result.returncode, 0, diagnostic)
-            report = json.loads((work / "build.json").read_text())
+            report = json.loads((work / "build.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["native_toolchain"]["kind"], "derived-linux-elf-x86_64")
             helpers = {helper["path"]: helper for helper in report["native_toolchain"]["helpers"]}
@@ -181,7 +181,7 @@ class BuildAPEContract(unittest.TestCase):
                                            *self.native_cache_options(),
                                            "--report", str(work / "inspect.json")],
                                           capture_output=True, text=True, timeout=360)
-                return observed, json.loads((work / "inspect.json").read_text())
+                return observed, json.loads((work / "inspect.json").read_text(encoding="utf-8"))
 
             with self.subTest("intact artifact can be independently inspected"):
                 observed, inspected = inspect()
@@ -221,11 +221,11 @@ class BuildAPEContract(unittest.TestCase):
                                      "--output-dir", str(work / "artifacts"), "--report", str(work / "build.json")],
                                     capture_output=True, text=True, timeout=360)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "build.json").read_text())
+            report = json.loads((work / "build.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "fail")
             self.assertTrue(report["cases"])
             self.assertEqual(report["cases"][-1]["status"], "fail")
-            diagnostic = Path(report["commands"][-1]["stderr_log"]).read_text(errors="replace")
+            diagnostic = Path(report["commands"][-1]["stderr_log"]).read_text(errors="replace", encoding="utf-8")
             self.assertIn("-qaplet-invalid-flag", diagnostic)
             self.assertIn("unrecognized command-line option", diagnostic)
             self.assertEqual(report["artifacts"], [])

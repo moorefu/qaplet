@@ -38,6 +38,8 @@ def preflight(repo, receipt=None):
     for source in scripts:
         ast.parse(source.read_bytes(), filename=str(source))
     result = {"tracked_generated_files": 0, "python_files_parsed": len(scripts)}
+    from text_encoding import check
+    result["text_encoding"] = check(repo)
     if (repo / "toolchains/qaplet.lock.json").is_file():
         from input_lock import InputLock, audit_consumers
         result["input_lock"] = InputLock(repo / "toolchains/qaplet.lock.json").identity()
@@ -56,7 +58,7 @@ def preflight(repo, receipt=None):
             raise ValueError("Tooling checks must run on Ubuntu")
         steps = jobs["workflow"].get("steps", [])
         required = ["python scripts/dev.py preflight --report out/workflow/preflight.json",
-                    "python -B -m unittest discover -s tests/contracts -p test_workflow_tools.py -v"]
+                    "python -B -m unittest discover -s tests/contracts -p 'test_workflow*.py' -v"]
         if [step["run"] for step in steps if "run" in step] != required or any(step.get("continue-on-error") for step in steps):
             raise ValueError("Tooling CI must run preflight before required CLI contracts")
         if not any(step.get("if") == "${{ always() }}" and step.get("uses", "").startswith("actions/upload-artifact@")

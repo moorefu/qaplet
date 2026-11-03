@@ -27,7 +27,7 @@ class InputLockContract(unittest.TestCase):
                                      "--report", str(report)], cwd=ROOT, capture_output=True,
                                     text=True, timeout=30)
             self.assertTrue(report.is_file(), result.stdout + result.stderr)
-            return result, json.loads(report.read_text())
+            return result, json.loads(report.read_text(encoding="utf-8"))
 
     def test_current_target_resolves_exact_identities_without_touching_cache(self):
         result, report = self.run_cli("--purpose", "probe")
@@ -46,9 +46,9 @@ class InputLockContract(unittest.TestCase):
             repo = Path(temp)
             self.copied_repo(repo)
             path = repo / "toolchains/cosmocc.lock.json"
-            value = json.loads(path.read_text())
+            value = json.loads(path.read_text(encoding="utf-8"))
             value["archive"]["sha256"] = "1234567890abcdef" * 4
-            path.write_text(json.dumps(value))
+            path.write_text(json.dumps(value), encoding="utf-8")
             commands = [("quickjs_source.py", "verify"), ("nightly_toolchain.py", "verify"),
                         ("ape_helpers.py", "verify"), ("startup_loaders.py", "verify"),
                         ("build_ape.py", "build"), ("native_io.py", "build"),
@@ -60,7 +60,7 @@ class InputLockContract(unittest.TestCase):
                                              "--report", str(report)], cwd=repo, capture_output=True,
                                             text=True, timeout=30)
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                    actual = json.loads(report.read_text())
+                    actual = json.loads(report.read_text(encoding="utf-8"))
                     self.assertIn("conflict", actual["reason"].lower())
                     self.assertEqual(actual["commands"], [])
 
@@ -70,19 +70,19 @@ class InputLockContract(unittest.TestCase):
             self.copied_repo(repo)
             (repo / "scripts/unmigrated.py").write_text(
                 'from evidence import read_json\nfrom foundation import ROOT\n'
-                'old_lock = ROOT / "toolchains/cosmocc.lock.json"\nvalue = read_json(old_lock)\n')
+                'old_lock = ROOT / "toolchains/cosmocc.lock.json"\nvalue = read_json(old_lock)\n', encoding="utf-8")
             report = repo / "out/audit.json"
             result = subprocess.run([sys.executable, str(repo / "scripts/input_lock.py"), "audit",
                                      "--report", str(report)], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("unmigrated.py", json.loads(report.read_text())["reason"])
+            self.assertIn("unmigrated.py", json.loads(report.read_text(encoding="utf-8"))["reason"])
 
     def test_bad_schema_fields_manifests_helpers_and_selected_builds_fail_closed(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-input-negative-") as temp:
             repo = Path(temp)
             self.copied_repo(repo)
             path = repo / "toolchains/qaplet.lock.json"
-            original = json.loads(path.read_text())
+            original = json.loads(path.read_text(encoding="utf-8"))
             changes = [lambda v: v.update(schema=""), lambda v: v.update(schema="qaplet.toolchain-lock.v99"),
                        lambda v: v.update(lock_state="unknown"),
                        lambda v: v.update(lock_state="selected_pending_validation"),
@@ -95,13 +95,13 @@ class InputLockContract(unittest.TestCase):
             for change in changes:
                 value = copy.deepcopy(original)
                 change(value)
-                path.write_text(json.dumps(value))
+                path.write_text(json.dumps(value), encoding="utf-8")
                 result, report = self.run_cli("--lock", path)
                 self.assertEqual(result.returncode, 1, report)
                 self.assertEqual(report["commands"], [])
             value = copy.deepcopy(original)
             value["lock_state"] = "selected_pending_validation"
-            path.write_text(json.dumps(value))
+            path.write_text(json.dumps(value), encoding="utf-8")
             for purpose in ("fetch", "probe"):
                 result, report = self.run_cli("--lock", path, "--purpose", purpose)
                 self.assertEqual(result.returncode, 0, report)
@@ -120,7 +120,7 @@ class InputLockContract(unittest.TestCase):
             before = (repo / "toolchains/qaplet.lock.json").read_bytes()
             result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(json.loads(candidate.read_text())["lock_state"], "selected_pending_validation")
+            self.assertEqual(json.loads(candidate.read_text(encoding="utf-8"))["lock_state"], "selected_pending_validation")
             published = candidate.read_bytes()
             result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1)
@@ -138,7 +138,7 @@ class InputLockContract(unittest.TestCase):
                                          "--fixture-lock", "--report", str(report)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("Fixture mode", json.loads(report.read_text())["reason"])
+                self.assertIn("Fixture mode", json.loads(report.read_text(encoding="utf-8"))["reason"])
                 self.assertEqual((ROOT / lock).read_bytes(), before)
 
     def test_fixture_mode_cannot_target_another_production_manifest_or_source_directory(self):
@@ -153,7 +153,7 @@ class InputLockContract(unittest.TestCase):
                                          "--repository", str(repo / "absent-upstream"), "--report", str(report)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                actual = json.loads(report.read_text())
+                actual = json.loads(report.read_text(encoding="utf-8"))
                 self.assertIn("Fixture mode", actual["reason"])
                 self.assertEqual(actual["commands"], [])
 
@@ -164,12 +164,12 @@ class InputLockContract(unittest.TestCase):
                 (work / "toolchains").mkdir(exist_ok=True)
                 (work / "out").mkdir(exist_ok=True)
                 lock, report = work / "toolchains/bad-lock.json", work / "out/refusal.json"
-                lock.write_text(json.dumps(value))
-                report.write_text('{"status":"pass","old_report":true}')
+                lock.write_text(json.dumps(value), encoding="utf-8")
+                report.write_text('{"status":"pass","old_report":true}', encoding="utf-8")
                 result = subprocess.run([sys.executable, str(CLI), "resolve", "--lock", str(lock),
                                          "--report", str(report)], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 1)
-                actual = json.loads(report.read_text())
+                actual = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual(actual["status"], "fail", result.stderr)
                 self.assertNotIn("old_report", actual)
 
@@ -201,7 +201,7 @@ class InputLockContract(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="qaplet-input-migration-error-") as temp:
             repo = Path(temp)
             self.copied_repo(repo)
-            lock = json.loads((ROOT / "third_party/quickjs/source.lock.json").read_text())
+            lock = json.loads((ROOT / "third_party/quickjs/source.lock.json").read_text(encoding="utf-8"))
             name = lock["commit"] + "-" + lock["patch_manifest_sha256"][:16]
             source = repo / ".cache/quickjs" / name / "source"
             shutil.copytree(ROOT / ".cache/quickjs" / name / "source", source, symlinks=True)
@@ -211,13 +211,13 @@ class InputLockContract(unittest.TestCase):
                 self.skipTest("Requires symlink permission for the source refusal fixture")
             report, output = repo / "out/refusal.json", repo / "toolchains/candidate.json"
             report.parent.mkdir()
-            report.write_text('{"status":"pass"}')
+            report.write_text('{"status":"pass"}', encoding="utf-8")
             before = (repo / "toolchains/qaplet.lock.json").read_bytes()
             result = subprocess.run([sys.executable, str(repo / "scripts/input_lock.py"), "migrate",
                                      "--output", str(output), "--report", str(report)],
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            actual = json.loads(report.read_text())
+            actual = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(actual["status"], "fail")
             self.assertIn("symlink", actual["reason"])
             self.assertFalse(output.exists())
@@ -243,7 +243,7 @@ class InputLockContract(unittest.TestCase):
             repo = Path(temp)
             self.copied_repo(repo)
             source_path, unified_path = repo / "third_party/quickjs/source.lock.json", repo / "toolchains/qaplet.lock.json"
-            source, unified = json.loads(source_path.read_text()), json.loads(unified_path.read_text())
+            source, unified = json.loads(source_path.read_text(encoding="utf-8")), json.loads(unified_path.read_text(encoding="utf-8"))
             source["upstream"]["files"] = [entry for entry in source["upstream"]["files"] if entry["path"] != "VERSION"]
             source["upstream"]["sha256"] = hashlib.sha256(json.dumps(source["upstream"]["files"],
                 sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -251,16 +251,16 @@ class InputLockContract(unittest.TestCase):
             source_path.write_bytes(raw)
             unified["manifests"]["quickjs"].update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
             unified["selection"]["quickjs"]["upstream_sha256"] = source["upstream"]["sha256"]
-            unified_path.write_text(json.dumps(unified))
+            unified_path.write_text(json.dumps(unified), encoding="utf-8")
             report = repo / "out/refusal.json"
             report.parent.mkdir()
             for script in ("quickjs_source.py", "nightly_toolchain.py", "build_ape.py"):
-                report.write_text('{"status":"pass","old_report":true}')
+                report.write_text('{"status":"pass","old_report":true}', encoding="utf-8")
                 operation = "build" if script == "build_ape.py" else "verify"
                 result = subprocess.run([sys.executable, str(repo / "scripts" / script), operation,
                                          "--report", str(report)], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 1)
-                actual = json.loads(report.read_text())
+                actual = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual(actual["status"], "fail", result.stderr)
                 self.assertIn("VERSION", actual["reason"])
                 self.assertEqual(actual["commands"], [])
@@ -275,13 +275,13 @@ class InputLockContract(unittest.TestCase):
                 if not wrong_source:
                     producer["input_lock"]["lock_state"] = "selected_pending_validation"
                 path, report = work / "producer.json", work / "refusal.json"
-                path.write_text(json.dumps(producer))
+                path.write_text(json.dumps(producer), encoding="utf-8")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/startup_loaders.py"), "build",
                                          "--producer-report", str(path), "--zig-cache", str(work / "absent"),
                                          "--output-dir", str(work / "loaders"), "--report", str(report)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                actual = json.loads(report.read_text())
+                actual = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual(actual["commands"], [])
                 self.assertFalse((work / "loaders").exists())
 
@@ -296,11 +296,11 @@ class InputLockContract(unittest.TestCase):
             producer = {"schema_version": 1, "report_kind": "ape-build", "status": "pass", "source": {"commit": "old"},
                         "toolchain": {}, "build": {}, "artifacts": artifacts}
             path, report = work / "producer.json", work / "refusal.json"
-            path.write_text(json.dumps(producer))
+            path.write_text(json.dumps(producer), encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/startup.py"), "run", "--build-report", str(path),
                                      "--artifact-dir", str(work), "--report", str(report)], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1)
-            actual = json.loads(report.read_text())
+            actual = json.loads(report.read_text(encoding="utf-8"))
             self.assertIn("unified", actual["reason"])
             self.assertEqual(actual["commands"], [])
 
@@ -325,17 +325,17 @@ class InputLockContract(unittest.TestCase):
             producer = {"schema_version": 1, "report_kind": "ape-build", "status": "pass", "input_lock": resolved["input_lock"],
                         "source": {}, "toolchain": {}, "build": {}, "artifacts": []}
             path = work / "producer.json"
-            path.write_text(json.dumps(producer))
+            path.write_text(json.dumps(producer), encoding="utf-8")
             entries = [dict(os=system, arch=arch, file=name, sha256=hashlib.sha256(name.encode()).hexdigest(), size_bytes=42)
                        for system, arch, name in (("Linux", "aarch64", "ape-aarch64.elf"), ("Linux", "x86_64", "ape-x86_64.elf"),
                                                   ("Darwin", "x86_64", "ape-x86_64.macho"), ("Darwin", "aarch64", "ape-aarch64.macho"))]
             (work / "helpers.json").write_text(json.dumps({"schema_version": 1, "report_kind": "ape-loaders", "status": "pass",
-                "input_lock": resolved["input_lock"], "helpers": entries}))
+                "input_lock": resolved["input_lock"], "helpers": entries}), encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/startup.py"), "run", "--build-report", str(path),
                                      "--artifact-dir", str(work), "--loader-dir", str(work), "--report", str(work / "refusal.json")],
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 1)
-            actual = json.loads((work / "refusal.json").read_text())
+            actual = json.loads((work / "refusal.json").read_text(encoding="utf-8"))
             self.assertIn("helper source", actual["reason"])
             self.assertEqual(actual["commands"], [])
 

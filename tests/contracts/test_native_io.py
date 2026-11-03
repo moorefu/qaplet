@@ -20,7 +20,7 @@ class NativeIOContract(unittest.TestCase):
     def test_loader_directory_uses_pinned_inputs_without_a_candidate_probe_option(self):
         producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
         environment = dict(os.environ)
-        ci = json.loads(producer.read_text()).get("ci")
+        ci = json.loads(producer.read_text(encoding="utf-8")).get("ci")
         if ci:
             # Replay only: simulate the recorded CI call boundary, never a new CI receipt.
             environment["GITHUB_ACTIONS"] = "true"
@@ -35,7 +35,7 @@ class NativeIOContract(unittest.TestCase):
             result = subprocess.run([sys.executable, CLI, "run", "--build-report", producer,
                 "--artifact", producer.parent / "artifacts/native-io.com", "--loader-dir", os.environ["QAPLET_TEST_IO_LOADER_DIR"],
                 "--report", report_path], env=environment, capture_output=True, text=True, timeout=60)
-            report = json.loads(report_path.read_text())
+            report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(result.returncode, 0, report["reason"])
             self.assertTrue(report["cases"])
             self.assertTrue(all(case["status"] == "pass" for case in report["cases"]))
@@ -51,7 +51,7 @@ class NativeIOContract(unittest.TestCase):
                                      "--manifest", work / "payload.json", "--report", work / "io.json"],
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            payload = json.loads((work / "payload.json").read_text())
+            payload = json.loads((work / "payload.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["page_size"], 65536)
             self.assertEqual(len(payload["files"]), 2)
             self.assertEqual(payload["commands"][0]["argv"], ["/payload/ape-aarch64.elf", "/payload/进程 空格/native io.com",
@@ -59,7 +59,7 @@ class NativeIOContract(unittest.TestCase):
             self.assertEqual(payload["commands"][0]["expected_exit_code"], 0)
             for item in payload["files"]:
                 self.assertEqual(hashlib.sha256(Path(item["path"]).read_bytes()).hexdigest(), item["sha256"])
-            report = json.loads((work / "io.json").read_text())
+            report = json.loads((work / "io.json").read_text(encoding="utf-8"))
             self.assertEqual(report["scope"], "manifest")
             self.assertEqual(report["commands"], [])
             self.assertEqual(report["cases"], [])
@@ -67,7 +67,7 @@ class NativeIOContract(unittest.TestCase):
     def changed_guest(self, mutate):
         producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
         source = Path(os.environ["QAPLET_TEST_IO_GUEST_REPORT"])
-        guest = json.loads(source.read_text())
+        guest = json.loads(source.read_text(encoding="utf-8"))
         parent = ROOT / "out/native-contracts"
         parent.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="native-io-guest-negative-", dir=parent))
@@ -80,11 +80,11 @@ class NativeIOContract(unittest.TestCase):
             path = logs / Path(suite[kind + "_log"]["path"]).name
             path.write_bytes(content)
             suite[kind + "_log"].update(path=str(path), sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content))
-        (work / "guest.json").write_text(json.dumps(guest))
+        (work / "guest.json").write_text(json.dumps(guest), encoding="utf-8")
         result = subprocess.run([sys.executable, CLI, "import-guest", "--artifact", producer.parent / "artifacts/native-io.com",
                                  "--build-report", producer, "--guest-report", work / "guest.json", "--report", work / "io.json"],
                                 capture_output=True, text=True, timeout=30)
-        return result, json.loads((work / "io.json").read_text())
+        return result, json.loads((work / "io.json").read_text(encoding="utf-8"))
 
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_IO_GUEST_REPORT"), "explicit real full-system guest evidence required")
     def test_guest_pass_label_cannot_hide_a_wrong_eof_value(self):
@@ -121,11 +121,11 @@ class NativeIOContract(unittest.TestCase):
                                  "--build-report", producer, "--guest-report", os.environ["QAPLET_TEST_IO_GUEST_REPORT"],
                                  "--report", work / "io.json"], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        report = json.loads((work / "io.json").read_text())
+        report = json.loads((work / "io.json").read_text(encoding="utf-8"))
         self.assertEqual(report["execution"]["execution_mode"], "emulated-system")
         self.assertEqual(report["execution"]["execution_arch"], "aarch64")
         self.assertEqual(report["execution"]["page_size"], 65536)
-        original = json.loads(Path(os.environ["QAPLET_TEST_IO_GUEST_REPORT"]).read_text())
+        original = json.loads(Path(os.environ["QAPLET_TEST_IO_GUEST_REPORT"]).read_text(encoding="utf-8"))
         self.assertEqual(report["started_at"], original["started_at"])
         self.assertEqual(report["finished_at"], original["finished_at"])
         self.assertEqual(len(report["cases"]), 20)
@@ -135,14 +135,14 @@ class NativeIOContract(unittest.TestCase):
     def test_ci_never_compiles_io_in_a_consumer_job(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-io-ci-") as temp:
             work = Path(temp)
-            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text())
+            workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
             workflow["jobs"]["native-startup"]["steps"].append({"run": "python scripts/native_io.py build --report out/forbidden.json"})
             path = work / "m0.yml"
-            path.write_text(json.dumps(workflow))
+            path.write_text(json.dumps(workflow), encoding="utf-8")
             result = subprocess.run([sys.executable, ROOT / "scripts/build_ape.py", "check-ci", "--workflow", path,
                                      "--report", work / "check.json"], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("recompilation", json.loads((work / "check.json").read_text())["reason"])
+            self.assertIn("recompilation", json.loads((work / "check.json").read_text(encoding="utf-8"))["reason"])
 
     def run_native(self):
         producer = Path(os.environ["QAPLET_TEST_IO_PRODUCER"])
@@ -154,7 +154,7 @@ class NativeIOContract(unittest.TestCase):
                                  "--build-report", producer, *options, "--report", work / "io.json"],
                                 capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        report = json.loads((work / "io.json").read_text())
+        report = json.loads((work / "io.json").read_text(encoding="utf-8"))
         return {c["case_id"]: c for c in report["cases"]}
 
     def test_missing_supplied_artifact_is_blocked_and_does_not_compile(self):
@@ -164,7 +164,7 @@ class NativeIOContract(unittest.TestCase):
                                      "--build-report", work / "absent.json", "--report", work / "io.json"],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-            report = json.loads((work / "io.json").read_text())
+            report = json.loads((work / "io.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertEqual(report["m0_core_status"], "not_run")
             self.assertEqual(report["commands"], [])
@@ -177,12 +177,12 @@ class NativeIOContract(unittest.TestCase):
             (work / "native-io.com").write_bytes(b"MZ-corrupt-zip-resource")
             producer = {"report_kind": "native-io", "status": "pass", "input_lock": current_input_identity(), "artifacts": [
                 {"name": "native-io", "sha256": "1" * 64, "size_bytes": 22}]}
-            (work / "build.json").write_text(json.dumps(producer))
+            (work / "build.json").write_text(json.dumps(producer), encoding="utf-8")
             result = subprocess.run([sys.executable, CLI, "run", "--artifact", work / "native-io.com",
                                      "--build-report", work / "build.json", "--report", work / "io.json"],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            report = json.loads((work / "io.json").read_text())
+            report = json.loads((work / "io.json").read_text(encoding="utf-8"))
             self.assertIn("SHA-256", report["reason"])
             self.assertEqual(report["commands"], [])
 
@@ -194,13 +194,13 @@ class NativeIOContract(unittest.TestCase):
             producer = {"schema_version": 1, "report_kind": "native-io", "scope": "build", "status": "pass", "input_lock": current_input_identity(),
                         "source": None, "build": {"sha256": "2" * 64}, "artifacts": [
                             {"name": "native-io", "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}]}
-            (work / "build.json").write_text(json.dumps(producer))
+            (work / "build.json").write_text(json.dumps(producer), encoding="utf-8")
             result = subprocess.run([sys.executable, CLI, "run", "--artifact", work / "native-io.com",
                                      "--build-report", work / "build.json", "--report", work / "io.json"],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertTrue((work / "io.json").is_file(), result.stdout + result.stderr)
-            report = json.loads((work / "io.json").read_text())
+            report = json.loads((work / "io.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "fail")
             self.assertEqual(report["commands"], [])
 
@@ -212,7 +212,7 @@ class NativeIOContract(unittest.TestCase):
                                      "--report", work / "io.json"], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertTrue((work / "io.json").is_file(), result.stdout + result.stderr)
-            report = json.loads((work / "io.json").read_text())
+            report = json.loads((work / "io.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertEqual(report["commands"], [])
 
@@ -227,7 +227,7 @@ class NativeIOContract(unittest.TestCase):
                                  "--artifact", producer.parent / "artifacts/native-io.com", "--build-report", producer,
                                  *options, "--report", work / "io.json"], capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        report = json.loads((work / "io.json").read_text())
+        report = json.loads((work / "io.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "fail")
         self.assertEqual(report["cases"][0]["case_id"], "runner.timeout")
         self.assertTrue(report["commands"][0]["timed_out"])

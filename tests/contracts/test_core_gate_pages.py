@@ -53,7 +53,7 @@ class Actual4KGuest(unittest.TestCase):
                                      "--input-manifest", guest_manifest_selection(),
                                      "--guest-report", "guest.json", "--report", "validated.json"],
                                     cwd=directory, capture_output=True, text=True, timeout=120)
-            report = json.loads((directory / "validated.json").read_text())
+            report = json.loads((directory / "validated.json").read_text(encoding="utf-8"))
             self.assertEqual(result.returncode, 0, report["guest_validation"]["errors"])
             self.assertEqual(report["guest_validation"]["guest"]["page_size"], 4096)
             self.assertEqual(report["m0_core_status"], "not_run")
@@ -66,7 +66,7 @@ class Actual4KGuest(unittest.TestCase):
                                  "--input-manifest", str(manifest or guest_manifest_selection()),
                                  "--guest-report", str(path), "--report", str(output)],
                                 capture_output=True, text=True, timeout=120)
-        return result.returncode, json.loads(output.read_text())
+        return result.returncode, json.loads(output.read_text(encoding="utf-8"))
 
     def test_4k_transport_does_not_consume_an_unused_deep_producer(self):
         guest = json.loads(Path(os.environ["QAPLET_GATE_4K_GUEST"]).read_text(encoding="utf-8"))
@@ -88,7 +88,7 @@ class Actual4KGuest(unittest.TestCase):
                                      "--input-manifest", guest_manifest_selection(),
                                      "--guest-report", os.environ["QAPLET_GATE_4K_GUEST"], "--report", str(output)],
                                     capture_output=True, text=True, timeout=120)
-            report = json.loads(output.read_text())
+            report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result.returncode, 0, report["guest_validation"]["errors"])
             self.assertEqual(report["guest_validation"]["guest"]["page_size"], 4096)
             self.assertEqual(len(report["guest_validation"]["cases"]), 18)

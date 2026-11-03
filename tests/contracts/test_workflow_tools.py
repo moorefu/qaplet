@@ -48,11 +48,11 @@ class ReviewPacketCLI(unittest.TestCase):
                                      "--axis", "standards", "--contexts", str(config), "--output-dir", str(output)],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            packet = json.loads((output / "packet.json").read_text())
+            packet = json.loads((output / "packet.json").read_text(encoding="utf-8"))
             self.assertEqual(packet["head"], head)
             self.assertEqual(packet["axis"], "standards")
             self.assertEqual({item["source"] for item in packet["contexts"]}, {"common.md", "standards.md"})
-            patch = (output / "diff.patch").read_text()
+            patch = (output / "diff.patch").read_text(encoding="utf-8")
             self.assertIn("app.py", patch)
             self.assertIn("NORMATIVE-REQUIREMENT", patch)
             self.assertNotIn("SPEC-ONLY", patch)
@@ -69,7 +69,7 @@ class ReviewPacketCLI(unittest.TestCase):
                                       "--packet", str(output)], capture_output=True, text=True, timeout=15)
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("required", missing.stdout)
-            config_value = json.loads(config.read_text())
+            config_value = json.loads(config.read_text(encoding="utf-8"))
             config_value["contexts"].append({"path": "common.md", "audience": "aggregate"})
             config.write_text(json.dumps(config_value), encoding="utf-8")
             conflicting = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/review_packet.py"), "build",
@@ -92,7 +92,7 @@ class StrictEvidenceCLI(unittest.TestCase):
             output = directory / "result.json"
             process = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/check_evidence.py"),
                 "--config", config, "--report", output], capture_output=True, text=True, timeout=15)
-            result = json.loads(output.read_text())
+            result = json.loads(output.read_text(encoding="utf-8"))
             self.assertNotEqual(process.returncode, 0)
             self.assertIn("missing-4k.json", result["reason"])
             self.assertNotIn("tests", result)
@@ -111,7 +111,7 @@ class StrictEvidenceCLI(unittest.TestCase):
                 while not output.exists() and process.poll() is None and time.monotonic() < deadline:
                     time.sleep(0.02)
                 self.assertTrue(output.is_file())
-                running = json.loads(output.read_text())
+                running = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(running["status"], "running")
                 self.assertTrue(Path(running["progress"]).is_file())
             finally:
@@ -142,7 +142,7 @@ class StrictEvidenceCLI(unittest.TestCase):
             process = subprocess.run([sys.executable, "-B", str(clone / "scripts/check_evidence.py"),
                                       "--config", os.environ["QAPLET_EVIDENCE_CONFIG"], "--report", str(report)],
                                      capture_output=True, text=True, timeout=180)
-            result = json.loads(report.read_text())
+            result = json.loads(report.read_text(encoding="utf-8"))
             self.assertNotEqual(process.returncode, 0)
             self.assertTrue(result["tests"]["skipped"])
             self.assertIn("skipped", result["reason"])
@@ -184,12 +184,16 @@ class WorktreeContextCLI(unittest.TestCase):
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             outside = Path(temporary) / "outside"
             outside.mkdir()
-            (repo / ".cache").symlink_to(outside, target_is_directory=True)
+            if os.name == "nt":
+                subprocess.run(["cmd", "/c", "mklink", "/J", str(repo / ".cache"), str(outside)],
+                               check=True, capture_output=True)
+            else:
+                (repo / ".cache").symlink_to(outside, target_is_directory=True)
             output = repo / "out/context.json"
             result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/dev.py"), "context",
                                      "--repo", str(repo), "--report", str(output)], capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("physical", json.loads(output.read_text())["reason"])
+            self.assertIn("physical", json.loads(output.read_text(encoding="utf-8"))["reason"])
 
     def test_preflight_rejects_non_ubuntu_tooling_ci(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -203,7 +207,7 @@ class WorktreeContextCLI(unittest.TestCase):
             result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/dev.py"), "preflight",
                                      "--repo", str(repo), "--report", str(output)], capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Ubuntu", json.loads(output.read_text())["reason"])
+            self.assertIn("Ubuntu", json.loads(output.read_text(encoding="utf-8"))["reason"])
 
     def test_linked_checkout_selects_the_main_physical_cache_and_rejects_tracked_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -223,7 +227,7 @@ class WorktreeContextCLI(unittest.TestCase):
             process = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/dev.py"), "context",
                                       "--repo", str(linked), "--report", str(output)], capture_output=True, text=True, timeout=15)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-            report = json.loads(output.read_text())
+            report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(Path(report["context"]["cache_root"]), main / ".cache")
             self.assertEqual(Path(report["context"]["checkout"]), linked)
             (main / "toolchains/evidence").mkdir(parents=True)
@@ -232,7 +236,7 @@ class WorktreeContextCLI(unittest.TestCase):
             failed = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/dev.py"), "preflight",
                                      "--repo", str(main), "--report", str(output)], capture_output=True, text=True, timeout=15)
             self.assertNotEqual(failed.returncode, 0)
-            self.assertIn("toolchains/evidence/generated.json", json.loads(output.read_text())["reason"])
+            self.assertIn("toolchains/evidence/generated.json", json.loads(output.read_text(encoding="utf-8"))["reason"])
 
 
 class CIEvidenceCLI(unittest.TestCase):
@@ -263,7 +267,7 @@ class CIEvidenceCLI(unittest.TestCase):
             result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/ci_evidence.py"), "summarize",
                                      "--input-report", str(source), "--report", str(source)], capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(source.read_text(), original)
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
 
     def test_collection_report_cannot_overwrite_delivered_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -318,8 +322,8 @@ class CIEvidenceCLI(unittest.TestCase):
                 self.assertEqual(server.requests, 0)
                 fetched = run("fetch")
                 self.assertEqual(fetched.returncode, 0, fetched.stdout + fetched.stderr)
-                self.assertNotIn("test-secret", fetched.stdout + output.read_text())
-                receipt = json.loads(output.read_text())
+                self.assertNotIn("test-secret", fetched.stdout + output.read_text(encoding="utf-8"))
+                receipt = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(run("verify").returncode, 0)
                 self.assertEqual(server.requests, 1)
                 Path(receipt["artifacts"][0]["archive"]["path"]).write_bytes(b"corrupt")
@@ -359,7 +363,7 @@ class CIEvidenceCLI(unittest.TestCase):
                                          "--repo", str(repo), "--manifest", str(config), "--output-dir", str(repo / "out/bundle"),
                                          "--report", str(report)], capture_output=True, text=True, timeout=15)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(json.loads(report.read_text())["status"], "fail")
+                self.assertEqual(json.loads(report.read_text(encoding="utf-8"))["status"], "fail")
                 self.assertFalse((repo / "out/bundle/bad").exists())
                 self.assertFalse((repo / "out/bundle/escaped.txt").exists())
 
@@ -377,7 +381,7 @@ class CIEvidenceCLI(unittest.TestCase):
                                      capture_output=True, text=True, timeout=15)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             self.assertLess(len(process.stdout), 1000)
-            report = json.loads(output.read_text())
+            report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual([run["id"] for run in report["runs"]], [11])
             self.assertNotIn("repository", report["runs"][0])
 
@@ -398,7 +402,7 @@ class CIEvidenceCLI(unittest.TestCase):
                                               "--input-report", str(source), "--report", str(report)],
                                              capture_output=True, text=True, timeout=15)
                     self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-                    result = json.loads(report.read_text())
+                    result = json.loads(report.read_text(encoding="utf-8"))
                     self.assertFalse(result["evidence_verified"])
                     self.assertEqual(result["summary"]["kind"], kind)
                     if kind == "svc-job-run":
@@ -426,15 +430,15 @@ class CIEvidenceCLI(unittest.TestCase):
                                      capture_output=True, text=True, timeout=15)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             self.assertLess(len(process.stdout), 1000)
-            self.assertEqual((output / "sample/artifacts/hello.txt").read_text(), "hello\n")
-            receipt = json.loads(report.read_text())
+            self.assertEqual((output / "sample/artifacts/hello.txt").read_text(encoding="utf-8"), "hello\n")
+            receipt = json.loads(report.read_text(encoding="utf-8"))
             self.assertTrue(Path(receipt["artifacts"][0]["archive"]["path"]).is_relative_to(repo / ".cache"))
             archive.unlink()
             (output / "sample/artifacts/hello.txt").write_text("changed", encoding="utf-8")
             failed = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/ci_evidence.py"), "verify", *arguments],
                                     capture_output=True, text=True, timeout=15)
             self.assertNotEqual(failed.returncode, 0)
-            self.assertIn("Extracted", json.loads(report.read_text())["reason"])
+            self.assertIn("Extracted", json.loads(report.read_text(encoding="utf-8"))["reason"])
 
 
 if __name__ == "__main__":

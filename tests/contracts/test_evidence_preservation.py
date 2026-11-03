@@ -18,8 +18,8 @@ class EvidencePreservation(unittest.TestCase):
     def run_cli(self, directory, arguments):
         directory.mkdir(parents=True, exist_ok=True)
         process = subprocess.run(arguments, capture_output=True, text=True, timeout=30)
-        (directory / "stdout.log").write_text(process.stdout)
-        (directory / "stderr.log").write_text(process.stderr)
+        (directory / "stdout.log").write_text(process.stdout, encoding="utf-8")
+        (directory / "stderr.log").write_text(process.stderr, encoding="utf-8")
         return process
 
     def assert_preserved(self, directory, arguments, paths, no_output=(), **metadata):
@@ -29,7 +29,7 @@ class EvidencePreservation(unittest.TestCase):
         process = self.run_cli(directory, arguments)
         after = hashes()
         (directory / "receipt.json").write_text(json.dumps({"before": before, "after": after,
-            "exit_code": process.returncode, **metadata}))
+            "exit_code": process.returncode, **metadata}), encoding="utf-8")
         self.assertEqual(before, after, "Consumer replaced selected immutable bytes or their alias")
         self.assertNotEqual(process.returncode, 0)
         self.assertIn("immutable", process.stdout + process.stderr)
@@ -46,8 +46,8 @@ class EvidencePreservation(unittest.TestCase):
             raw.write_bytes(b"original native stdout\n")
             incoming, producer = root / "native/run.json", root / "build.json"
             incoming.write_text(json.dumps({"schema_version": 1, "report_kind": "qaplet-sdk", "scope": "run",
-                "report_id": "native-id", "evidence_directory": "/original/native/evidence/native-id"}))
-            producer.write_text("{}")
+                "report_id": "native-id", "evidence_directory": "/original/native/evidence/native-id"}), encoding="utf-8")
+            producer.write_text("{}", encoding="utf-8")
             self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk.py"), "matrix", "--profile", "fast",
                 "--build-report", str(producer), "--input-report", str(incoming), "--report", str(raw)],
                 [raw], [raw.parent / "evidence"])
@@ -67,16 +67,16 @@ class EvidencePreservation(unittest.TestCase):
                     case = root / field
                     case.mkdir(parents=True)
                     selected = case / "selected.json"
-                    selected.write_text('{"original":"selected evidence"}')
+                    selected.write_text('{"original":"selected evidence"}', encoding="utf-8")
                     reference = str(selected)
                     value = [reference] if shape == "list" else {"startup": reference} if shape == "map" else reference
                     inputs = case / "inputs.json"
-                    inputs.write_text(json.dumps({"schema_version": 1, "profile": "full" if consumer == "core" else "m1-full", field: value}))
+                    inputs.write_text(json.dumps({"schema_version": 1, "profile": "full" if consumer == "core" else "m1-full", field: value}), encoding="utf-8")
                     if consumer == "core":
                         argv = ["core_gate.py", "evaluate", "--input-manifest", str(inputs)]
                     else:
                         config = case / "config.json"
-                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(inputs)}))
+                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(inputs)}), encoding="utf-8")
                         argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
                     self.assert_preserved(case,
                         [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
@@ -94,13 +94,13 @@ class EvidencePreservation(unittest.TestCase):
                         actual = base / ("specific" if longest else "relocated")
                         actual.mkdir(parents=True)
                         selected = actual / "startup.json"
-                        selected.write_text('{"original":"mapped producer"}')
+                        selected.write_text('{"original":"mapped producer"}', encoding="utf-8")
                         before = hashlib.sha256(selected.read_bytes()).hexdigest()
                         m0 = base / "inputs.json"
                         m0.write_text(json.dumps({"schema_version": 1, "profile": "full", "evidence_index": None,
                             "producers": {"startup": "/original/" + ("specific/" if longest else "") + "startup.json"},
                             "path_mappings": [{"source": "/original", "root": "relocated"},
-                                              {"source": "/original/specific", "root": "specific"}]}))
+                                              {"source": "/original/specific", "root": "specific"}]}), encoding="utf-8")
                         if consumer == "core":
                             argv = ["core_gate.py", "evaluate", "--input-manifest", str(m0)]
                         else:
@@ -108,11 +108,11 @@ class EvidencePreservation(unittest.TestCase):
                             if consumer == "nested":
                                 inputs = case / "outer/inputs.json"
                                 inputs.write_text(json.dumps({"schema_version": 1, "profile": "m1-full", "m0_manifest": "nested/inputs.json",
-                                    "path_mappings": [{"source": "/original", "root": "unrelated-outer-root"}]}))
+                                    "path_mappings": [{"source": "/original", "root": "unrelated-outer-root"}]}), encoding="utf-8")
                             config = case / "configuration/config.json"
                             config.parent.mkdir()
                             config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence" if consumer == "nested" else "m0-evidence",
-                                "input_manifest": os.path.relpath(inputs, config.parent)}))
+                                "input_manifest": os.path.relpath(inputs, config.parent)}), encoding="utf-8")
                             argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
                         self.assert_preserved(case,
                             [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(selected)],
@@ -121,7 +121,7 @@ class EvidencePreservation(unittest.TestCase):
                         ordinary = self.run_cli(case / "allowed-output",
                             [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(output)])
                         self.assertTrue(output.is_file(), ordinary.stdout + ordinary.stderr)
-                        self.assertEqual(json.loads(output.read_text())["status"], "fail")
+                        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["status"], "fail")
                         self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
 
     def test_guest_mapping_roots_do_not_swallow_unrelated_report_outputs(self):
@@ -131,16 +131,16 @@ class EvidencePreservation(unittest.TestCase):
             relocated = root / "relocated"
             (relocated / "sdk").mkdir(parents=True)
             selected = relocated / "selection.json"
-            selected.write_text(json.dumps({"distribution_root": "/original/sdk"}))
+            selected.write_text(json.dumps({"distribution_root": "/original/sdk"}), encoding="utf-8")
             before = hashlib.sha256(selected.read_bytes()).hexdigest()
             inputs = root / "inputs.json"
             inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/selection.json",
-                "guest_report": "/original/guest.json", "path_mappings": [{"source": "/original", "root": "relocated"}]}))
+                "guest_report": "/original/guest.json", "path_mappings": [{"source": "/original", "root": "relocated"}]}), encoding="utf-8")
             output = relocated / "unrelated-report.json"
             process = self.run_cli(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
                 "--input-manifest", str(inputs), "--report", str(output)])
             self.assertTrue(output.is_file(), process.stdout + process.stderr)
-            self.assertEqual(json.loads(output.read_text())["status"], "fail")
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["status"], "fail")
             self.assertEqual(before, hashlib.sha256(selected.read_bytes()).hexdigest())
 
     def test_guest_input_manifest_preserves_the_selected_distribution_without_transports(self):
@@ -155,9 +155,9 @@ class EvidencePreservation(unittest.TestCase):
             archive = supplied / "qaplet-sdk.zip"
             shutil.copyfile(fixture, archive)
             selected = root / "selection.json"
-            selected.write_text(json.dumps({"distribution_root": "sdk"}))
+            selected.write_text(json.dumps({"distribution_root": "sdk"}), encoding="utf-8")
             inputs = root / "inputs.json"
-            inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "selection.json", "guest_report": "guest.json"}))
+            inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "selection.json", "guest_report": "guest.json"}), encoding="utf-8")
             self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
                 "--input-manifest", str(inputs), "--report", str(archive)], [archive])
 
@@ -172,10 +172,10 @@ class EvidencePreservation(unittest.TestCase):
                 bundle.writestr("original.txt", "immutable mapped distribution\n")
             archive = supplied / "qaplet-sdk.zip"
             shutil.copyfile(fixture, archive)
-            (root / "selection.json").write_text(json.dumps({"distribution_root": "/original/sdk/sdk"}))
+            (root / "selection.json").write_text(json.dumps({"distribution_root": "/original/sdk/sdk"}), encoding="utf-8")
             inputs = root / "inputs.json"
             inputs.write_text(json.dumps({"schema_version": 1, "profile": "sdk-guest", "selection": "/original/sdk/selection.json",
-                "guest_report": "/original/sdk/guest.json", "path_mappings": [{"source": "/original/sdk", "root": str(root)}]}))
+                "guest_report": "/original/sdk/guest.json", "path_mappings": [{"source": "/original/sdk", "root": str(root)}]}), encoding="utf-8")
             self.assert_preserved(root, [sys.executable, str(ROOT / "scripts/sdk_guest.py"), "import",
                 "--input-manifest", str(inputs), "--report", str(archive)], [archive])
 
@@ -194,7 +194,7 @@ class EvidencePreservation(unittest.TestCase):
                         supplied = case / "sdk"
                         supplied.mkdir(parents=True)
                         producer = case / "build.json"
-                        producer.write_text("{}")
+                        producer.write_text("{}", encoding="utf-8")
                         archive = supplied / "qaplet-sdk.zip"
                         shutil.copyfile(original, archive)
                         target = producer if material == "producer" else archive
@@ -226,11 +226,11 @@ class EvidencePreservation(unittest.TestCase):
                         component = supplied / "libqaplet.a"
                         component.write_bytes(b"original supplied static archive")
                         producer = case / "build.json"
-                        producer.write_text("{}")
+                        producer.write_text("{}", encoding="utf-8")
                         loader = loaders / "ape-x86_64.elf"
                         loader.write_bytes(b"original supplied loader")
                         incoming = native / "run.json"
-                        incoming.write_text("{}")
+                        incoming.write_text("{}", encoding="utf-8")
                         target = {"package": package, "component": component, "producer": producer,
                                   "loader": loader, "native": incoming}[material]
                         self.assert_preserved(case, [sys.executable, str(ROOT / "scripts/sdk.py"), operation,
@@ -263,12 +263,12 @@ class EvidencePreservation(unittest.TestCase):
                     inputs = case / "inputs.json"
                     manifest = {"schema_version": 1, "transports": [{"root": "extracted", "archive": {"path": "selected.zip"}}]}
                     if nested:
-                        (case / "m0.json").write_text(json.dumps(manifest))
+                        (case / "m0.json").write_text(json.dumps(manifest), encoding="utf-8")
                         manifest = {"schema_version": 1, "m0_manifest": "m0.json"}
-                    inputs.write_text(json.dumps(manifest))
+                    inputs.write_text(json.dumps(manifest), encoding="utf-8")
                     if consumer == "strict":
                         config = case / "config.json"
-                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": "inputs.json"}))
+                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": "inputs.json"}), encoding="utf-8")
                         argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
                     elif consumer == "guest":
                         argv = ["sdk_guest.py", "import", "--input-manifest", str(inputs)]
@@ -295,10 +295,10 @@ class EvidencePreservation(unittest.TestCase):
                     with zipfile.ZipFile(archive, "w") as bundle:
                         bundle.write(member, member.name)
                     manifest = case / "inputs.json"
-                    manifest.write_text(json.dumps({"transports": [{"root": str(supplied), "archive": {"path": str(archive)}}]}))
+                    manifest.write_text(json.dumps({"transports": [{"root": str(supplied), "archive": {"path": str(archive)}}]}), encoding="utf-8")
                     if consumer == "strict":
                         config = case / "config.json"
-                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(manifest)}))
+                        config.write_text(json.dumps({"schema_version": 1, "profile": "m1-evidence", "input_manifest": str(manifest)}), encoding="utf-8")
                         argv = ["check_evidence.py", "--config", str(config), "--preflight-only"]
                     elif consumer == "guest":
                         argv = ["sdk_guest.py", "import", "--input-manifest", str(manifest)]
@@ -306,7 +306,7 @@ class EvidencePreservation(unittest.TestCase):
                         argv = ["core_gate.py", "evaluate", "--input-manifest", str(manifest)]
                     else:
                         producer = case / "build.json"
-                        producer.write_text("{}")
+                        producer.write_text("{}", encoding="utf-8")
                         argv = ["sdk.py", "run", "--build-report", str(producer), "--artifact", str(supplied / "qaplet-host.com")]
                     self.assert_preserved(case,
                         [sys.executable, str(ROOT / "scripts" / argv[0]), *argv[1:], "--report", str(target)],

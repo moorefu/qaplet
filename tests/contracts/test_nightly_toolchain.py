@@ -206,7 +206,7 @@ class NightlyToolchainContract(unittest.TestCase):
         completed, report = self.run_cli("fetch", "--archive", archive, "--acquisition-report", receipt,
                                          "--backing-dir", self.work)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        lock = json.loads(self.lock.read_text())
+        lock = json.loads(self.lock.read_text(encoding="utf-8"))
         self.assertEqual(lock["source"]["provider"], "github-actions")
         self.assertEqual(lock["source"]["github"]["repository"], "jart/cosmopolitan")
         self.assertEqual(lock["source"]["github"]["run_id"], 11)
@@ -258,7 +258,7 @@ class NightlyToolchainContract(unittest.TestCase):
         completed, report = self.run_cli("fetch", "--archive", self.archive("links.zip", (link, "cosmocc")))
         self.assertEqual(completed.returncode, 0, completed.stderr)
         tree = Path(report["resolved_path"])
-        lock = json.loads(self.lock.read_text())
+        lock = json.loads(self.lock.read_text(encoding="utf-8"))
         recorded = next(item for item in lock["files"] if item["path"] == "bin/cosmoc++")
         self.assertEqual(recorded["kind"], "symlink")
         self.assertEqual(recorded["target"], "cosmocc")
@@ -455,7 +455,7 @@ class NightlyToolchainContract(unittest.TestCase):
         completed, report = self.run_cli("fetch", "--backing-dir", self.work, env=env)
         self.assertEqual(completed.returncode, 2, completed.stderr)
         self.assertEqual(report["commands"][0]["exit_code"], 7)
-        self.assertIn("deliberate-network-outage", Path(report["commands"][0]["stderr_log"]).read_text())
+        self.assertIn("deliberate-network-outage", Path(report["commands"][0]["stderr_log"]).read_text(encoding="utf-8"))
         self.assertFalse(self.lock.exists())
         self.assertEqual(list(self.cache.iterdir()), [])
 
