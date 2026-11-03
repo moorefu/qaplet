@@ -127,7 +127,7 @@ def producer_inputs(args, report):
 
 
 REQUIRED = {"facts", "waker.before-check", "waker.prepared", "waker.blocked",
-            "waker.coalesced", "waker.cancel", "waker.close-before-notify",
+            "waker.coalesced", "waker.redundant", "waker.cancel", "waker.close-before-notify",
             "waker.notify-before-close", "waker.control-failure", "waker.cleanup",
             "socket.connect", "socket.readiness", "socket.halfclose", "socket.eof",
             "socket.connect-error", "socket.invalid", "socket.reuse", "socket.cleanup"}
@@ -147,6 +147,7 @@ def matches_contract(record, execution):
         "waker.prepared": {"empty_check": 0, "accepted": 1, "observed": 1, "poll": 1, "joined": True},
         "waker.blocked": {"accepted": 1, "observed": 1, "poll": 1, "poll_calls": 1, "timeout_ms": -1, "joined": True},
         "waker.coalesced": {"accepted": 1000, "observed": 1000, "signal_bytes": 1, "extra_poll": 0, "joined": True},
+        "waker.redundant": {"send": 1, "poll": 1, "observed": 0, "drained_bytes": 1, "extra_poll": 0, "closed": True},
         "waker.cancel": {"accepted": 1, "observed": 1, "poll": 1, "cancel_seen": True, "joined": True},
         "waker.close-before-notify": {"accepted": 0, "closed": True, "joined": True},
         "waker.notify-before-close": {"accepted": 1, "closed": True, "joined": True},
@@ -184,6 +185,7 @@ def collect_observations(report, records, executed, artifact, execution, timeout
         if not matches_contract(record, execution):
             record = {**record, "status": "fail", "reason": "Observed native result does not satisfy the probe contract"}
         report["cases"].append({**record, "artifact": artifact, "commands": [executed],
+                                "execution_kind": "controlled-system-fault" if record["case_id"] == "waker.control-failure" else "normal-os-probe",
                                 "started_at": executed["started_at"], "finished_at": executed["finished_at"],
                                 "timeout_seconds": timeout, "exit_code": executed["exit_code"]})
     missing = REQUIRED - set(ids)

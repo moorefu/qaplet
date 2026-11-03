@@ -224,6 +224,24 @@ static void wakers(void) {
     pthread_cond_destroy(&w.condition);
     pthread_mutex_destroy(&w.mutex);
   }
+  struct waker redundant;
+  if (init_waker(&redundant)) {
+    short events = 0;
+    int sent = send(redundant.fd[1], "W", 1, 0);
+    int polled = wait_fd(redundant.fd[0], POLLIN, &events, -1);
+    pthread_mutex_lock(&redundant.mutex);
+    int observed = redundant.published;
+    int drained = drain_locked(&redundant);
+    pthread_mutex_unlock(&redundant.mutex);
+    int extra = wait_fd(redundant.fd[0], POLLIN, &events, 0);
+    int released = close_waker(&redundant);
+    char json[256];
+    snprintf(json, sizeof(json), "{\"send\":%d,\"poll\":%d,\"observed\":%d,\"drained_bytes\":%d,\"extra_poll\":%d,\"closed\":%s}",
+        sent, polled, observed, drained, extra, boolean(released));
+    result("waker.redundant", sent == 1 && polled == 1 && observed == 0 && drained == 1 && extra == 0 && released, json);
+    pthread_cond_destroy(&redundant.condition);
+    pthread_mutex_destroy(&redundant.mutex);
+  } else result("waker.redundant", false, "{\"setup\":false}");
   struct waker fault;
   if (init_waker(&fault)) {
     closed(&fault.fd[1]);  /* Controlled real EBADF after acceptance. */
