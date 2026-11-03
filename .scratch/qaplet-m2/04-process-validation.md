@@ -256,3 +256,28 @@ metadata/work-tree，worktree 只处理 list；其他 fixture、init 和其他 `
 当前新 APE 的 macOS 两原生、Linux ARM64 native、新 Windows CI 和完整 Cross/Full
 交 root 继续采集。原 CI 的准确 syscall/errno 仍未知；本票保持 awaiting_cross，
 不 resolved，不宣称 Runtime 产品支持或父 M2 已验收。
+
+### 容量恢复后的完整补检
+
+root 对静态 `.cache/build/sdk` 做标准 NTFS 压缩后，主工作区环境收据
+`out/qaplet-m2/cache-compression-verified.json` 记录 4783 个文件前后数量一致、
+内容摘要变化 0、reparse 条目 0，D 盘可用 4862255104 bytes，超过原有 4 GiB 门槛。
+未降低门槛，前述真实容量失败及全部日志保持原样。
+
+在同一 Ubuntu 上、沿用本工作区只读 Git shim 与主物理缓存，实际补跑：
+
+```sh
+python3 scripts/dev.py check \
+  --output-dir out/m2-04-fix/validation/check-003 \
+  --report out/m2-04-fix/validation/dev-check-003.json
+```
+
+新报告 `dev-check-003.json` 为 pass，实际 `make check` exit_code=0、timed_out=false：
+preflight、输入锁、CI 合同和完整 363 项合同全部完成，其中 176 项实际通过、187 项按其
+显式输入/目标条件跳过；真实系统 C bootstrap 同轮通过。
+完整 stdout/stderr 和 bootstrap 报告位于 `validation/check-003/`。
+没有补做大构建或改产品配方；交付前重核 closure 的 11 个源码/配方输入，摘要全部未变。
+
+补检后确认已合入最新 integration `1e1908f`，本分支合并提交为 `7f099b9`；该增量只改
+实施记录和磁盘恢复说明。上述本地通过仍不替代待采集的新 Windows CI、其原始失败
+syscall/errno，以及当前新 APE 的 macOS/ARM native 和完整 Cross/Full。
