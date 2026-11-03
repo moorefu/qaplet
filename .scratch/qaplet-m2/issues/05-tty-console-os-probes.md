@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** local_verified_cross_pending
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,10 +18,10 @@
 
 ## Acceptance criteria
 
-- [ ] 区分真实标准输入和私有 CONIN$/PTY，不能从私有 Console 成功推断 fd0 是 Console。
-- [ ] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。
-- [ ] 验证 UTF-8、Unicode、分块输入/输出和非法数据，不能用替换解码或剥离控制字符当作逐字节证明。
-- [ ] 观察取消/关闭与共享模式、借用端点的影响，明确安全可用及 UNSUPPORTED 的范围。
+- [x] 区分真实标准输入和私有 CONIN$/PTY，不能从私有 Console 成功推断 fd0 是 Console。
+- [x] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。
+- [x] 验证 UTF-8、Unicode、分块输入/输出和非法数据，不能用替换解码或剥离控制字符当作逐字节证明。
+- [x] 观察取消/关闭与共享模式、借用端点的影响，明确安全可用及 UNSUPPORTED 的范围。
 - [ ] 受控设施、失败历史、供应字节及各适用目标原始证据完整；不增加面向用户的完整 PTY 创建 API。
 
 ## Blocking details
@@ -53,4 +53,8 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-03：独立 worktree 在 codex/m2-05-tty 实施，先合并集成点 93a7aa6，再合并 c338ca9 / af6c0ff，未 reset。独立 Ubuntu producer 供应同一 `m2-tty.com`，Linux x64 4K 19/19、Windows x64 4K 21/21、实际完整系统 ARM64 64K 19/19 通过；Linux/Windows 各 7 项 CLI 合同全部通过、0 skipped。Windows 原始 libc fd0 为 other，显式 native 标准 HANDLE 路由另行检测；ConPTY 非法及补充平面输入实测丢失，明确 UNSUPPORTED，保留原始事件。原件、真实 red/green、失败历史、公开命令和限定范围见[本票验证记录](../05-tty-validation.md)。
+
+当前仍为 claimed；第五条适用目标原件完整性待集成 Cross/Full，不以本地成功或旧 M0 成绩 resolved。未修改公共 workflow/ci_tiers/README，也未修改 M0 配方/源。
 
