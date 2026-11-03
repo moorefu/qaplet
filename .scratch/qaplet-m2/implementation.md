@@ -20,7 +20,7 @@
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
-| 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | `.cache/worktrees/m2-02` / `m2-02-fix` | `9a390f9` 候选已集成，待新 Mac/Cross |
+| 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` | `.cache/worktrees/m2-04` | `a64afa6` 已集成，待 Cross |
 | 05 | `codex/m2-05-tty` | `.cache/worktrees/m2-05` | `0460f71` 已集成，待 Cross |
@@ -73,6 +73,10 @@ Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merg
 04、05 代码均已就绪，已恢复 `c338ca9` 的四探针编排，准备对当前集成重新执行 Full。05 全部输出已保存/核验 820 文件、143,245,848 逻辑字节；Mac 候选输出保存/核验 436 文件、23,857,384 逻辑字节，收据分别为主 `store-05-*.json`、`store-02-macos-fix-*.json`。
 
 五票当前集成的 Ubuntu 仓库检查通过：`out/qaplet-m2/check-five-ticket-integration.json`，361 项总数中 178 项实际执行通过、183 项因需外部显式输入而跳过，C bootstrap 通过；`git diff --check` 无问题。下一次 Full 将使用主树当前 LF 源码及清理后的配方，不继承 04/05 本地旧源字节的签发身份。
+
+实际 [Full 41607608424](https://github.com/moorefu/qaplet/actions/runs/41607608424) 绑定 `196cd75`，整体 `completed/failure`，失败属于 04 Windows fixture setup 与 05 Mac/Windows TTY。02 自身五原生各 19 项及实际 64K 19 项（共 114）、真实 native loader/provider 原件、源/配方/CI/同 APE、guest serial/4 suite/8 payload/清理、当前 M0 Full 六目标 235 项均已严格重算，见 `out/qaplet-m2/full-196cd75/verify02/VERIFICATION.md` 与 `summary.json`。02 按本票范围完成，01/02 的直接依赖 06 已放行；04/05 独立失败继续由 fresh agent 修复，父 M2 不完成。
+
+01/02/03 旧 worktree 已在干净、全部提交合入、绝对路径与非 reparse 检查后清理。全部 out 先再次对照已保存归档核验（`store-01/02/03-pre-cleanup.json`）；额外忽略文件分别只含 64/24/67 个可再生 Python 字节码，无其它遗漏，分支保留。原路径可由 `evidence_store.py restore/materialize` 恢复到相应备份的 `out`，不改变旧报告内容。
 
 ## 一次性测试入口修复
 
