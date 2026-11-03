@@ -18,7 +18,9 @@ qaplet_code qaplet_request_stop(qaplet_runtime *runtime, qaplet_diagnostic *diag
   if (runtime->snapshot.lifecycle == QAPLET_OPEN)
     qaplet_record_termination_locked(runtime, QAPLET_EXECUTION_STOPPED);
   qaplet_wake_locked(runtime);
+  qaplet_notification notification = qaplet_notify_prepare_locked(runtime);
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime, notification);
   return qaplet_report(diagnostic, QAPLET_OK);
 }
 

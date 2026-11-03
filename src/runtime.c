@@ -129,12 +129,13 @@ qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *runtime) {
 }
 
 qaplet_code qaplet_query_abi(qaplet_abi *output) {
+  if (qaplet_in_notify) return QAPLET_BUSY;
   qaplet_code code = qaplet_check_structure(output, sizeof(*output));
   if (!code) output->capabilities = QAPLET_CAP_LIFECYCLE | QAPLET_CAP_SYNC_SCRIPT |
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -373,7 +374,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
     pthread_mutex_lock(&runtime->mutex);
     runtime->snapshot.lifecycle = QAPLET_CLOSED;
     runtime->snapshot.phase = QAPLET_PHASE_IDLE;
-    runtime->native_state = runtime->native_retained || runtime->native_handles || runtime->native_uncertain_handles ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
+    runtime->native_state = runtime->native_retained || runtime->notify_inflight || runtime->native_handles || runtime->native_uncertain_handles ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
     pthread_mutex_unlock(&runtime->mutex);
   }
   code = runtime->m2_enabled ? runtime->cleanup_reason : QAPLET_OK;
