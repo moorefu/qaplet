@@ -14,9 +14,9 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 | 01 | [M2 Runtime 的可选创建与兼容生命周期](issues/01-runtime-opt-in-compatibility.md) | 无 | resolved |
 | 02 | [唤醒与 Socket 等待的真实 OS 探针](issues/02-waker-reactor-os-probes.md) | 无 | resolved |
 | 03 | [Pipe 与借用标准流的可取消接入探针](issues/03-pipe-stdio-cancel-os-probes.md) | 无 | resolved |
-| 04 | [子进程参数、stdio 与继承隔离探针](issues/04-process-inheritance-os-probes.md) | 无 | ready-for-agent |
-| 05 | [真实终端租约、resize 与 Console 文本探针](issues/05-tty-console-os-probes.md) | 无 | ready-for-agent |
-| 06 | [等待中的 Runtime 接收事件与停止](issues/06-wait-events-keepalive-stop.md) | [01](issues/01-runtime-opt-in-compatibility.md)、[02](issues/02-waker-reactor-os-probes.md) | ready-for-agent |
+| 04 | [子进程参数、stdio 与继承隔离探针](issues/04-process-inheritance-os-probes.md) | 无 | resolved |
+| 05 | [真实终端租约、resize 与 Console 文本探针](issues/05-tty-console-os-probes.md) | 无 | resolved |
+| 06 | [等待中的 Runtime 接收事件与停止](issues/06-wait-events-keepalive-stop.md) | [01](issues/01-runtime-opt-in-compatibility.md)、[02](issues/02-waker-reactor-os-probes.md) | claimed |
 | 07 | [一次 timer 推进 TLA 与自然退出](issues/07-one-shot-timer-tla.md) | [06](issues/06-wait-events-keepalive-stop.md) | ready-for-agent |
 | 08 | [重复 timer、immediate 与检查点轮转](issues/08-interval-immediate-fair-checkpoints.md) | [07](issues/07-one-shot-timer-tla.md) | ready-for-agent |
 | 09 | [宿主自有事件循环的原生通知接入](issues/09-host-notify-loop-integration.md) | [06](issues/06-wait-events-keepalive-stop.md) | ready-for-agent |
