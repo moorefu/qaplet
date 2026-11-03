@@ -24,7 +24,7 @@
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | 原件见 `tickets/05` / `05-cross-fix` | completed（`0e4ba21` 五原生及实际 64K 共 116 项严格重放通过） |
-| 06 | `codex/m2-06-wait` 及两条定向修复分支 | `.cache/worktrees/m2-06` | `1708ede` 已集成；64K 传输完整性及未发布创建清理诊断待修复 |
+| 06 | `codex/m2-06-wait` 及两条定向修复分支 | `.cache/worktrees/m2-06*` | 两修复已由 `b97b09c` / `bd14a1e` 集成，当前 112 项新 Full 待严格验收 |
 | 07–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
@@ -102,6 +102,12 @@ Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merg
 Full `41621764245` 最终 completed/failure，唯一失败 job 为实际 64K `arm64-page-gaps`。独立严格重算五原生各 111（含六个新增等待合同）、包外应用 8、独立故障夹具 1 和当前 M0 Full 235 均通过，Windows 本次 optional symlink 也实际通过。29 provider 原 ZIP、12 嵌套供应物、11 job 原日志及离线核验齐全，见 `out/qaplet-m2/full-1708ede/HANDOFF.md` 与 `verify/scope-summary.json`。SDK guest serial 原文恰缺 `qaplet.run-unsettled` 的 START：110 项六字段完整，111 项退出/输出均符合 catalog，但该项立即退出时长无法验证；原 parser 在此前 86 pass 后拒绝，不能补造字段或称全部 111 guest 通过。原 init 有无条件 START 发射，serial 未见相邻交错；QEMU 正常退出、DONE=1、26 payload 前后 hash 同且清理完整，不能由此推断产品挂起、ABI 错误或具体 errno。fresh `codex/m2-06-guest-fix` / `.cache/worktrees/m2-06-guest-fix` 负责区分发射、console 传输及 host 采集并修复。
 
 另一个相邻定向系统夹具实际两次复现未发布创建的诊断缺口：accept 失败且 close 成功时活 socket 为 0；listener close 明确拒绝、或 accept EMFILE 后 close EACCES 时各仍有 1 个活 socket，返回 CONTROL_FAILURE/outNULL，但内部不确定清理/原始 setup 与 cleanup 错误随 Runtime 释放而丢失。夹具最后自行清理，不把它算 SDK 回滚完成，原件在主 `out/qaplet-m2/06-init-close-diagnosis/report.json`。fresh `codex/m2-06-creation-fix` / `.cache/worktrees/m2-06-creation-fix` 处理公开诊断和安全责任边界；不重关数值 fd、不伪造清零、不发布成功半成品。06 继续 awaiting_cross，后续 blocker 不放行。
+
+创建诊断修复产品 `90b73d8`、供应源码 `3019c3f` 经独立 merger 合入 `b97b09c`：新增独立版本化 M2 诊断 POD、扩展创建和线程安全查询，主因/control 与 cleanup 原始 domain/value 分别保存；未发布状态无内部执行者，可释放已证明无后续访问的 C/引擎存储，未知 OS 资源只报告 INCOMPLETE 及数量，不代表实际释放或调用方可按 fd 重关。63 RECIPE 原字节/Git blob/LF、71 供应文件/ZIP、Linux 112、Windows 111 必需 pass + 1 optional blocked、包外 8、fault 1 及每宿主 2×4 系统 tracer 原件已由 merger 重核；本地 producer dirty=true 原样保留。受控原始 pthread 返回值、CLOSED 清理时钟、短结构/缓冲及跨线程诊断均保留红绿，见[创建修复记录](06-creation-fix-validation.md)。全部 1,408 输出、252,554,190 逻辑字节已保存/独立核验于 `tickets/06-creation-fix/`，收据 `store-06-creation-fix-*`。
+
+guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`：记录在 guest RAM journal 逐条计算一次，payload 全部结束后才打开独立 virtio port 传完整 journal 与长度/SHA seal，console 原件继续保留；不更改 payload 标准流或泄漏证据 fd，不从残缺 console 推造时间。旧丢失层级仍 unproven，1708 失败不变；新的同供应本地实际 64K 111/111、26 payload 前后 hash、725 条双路记录及 raw 身份核验通过，仅属旧产品字节上的新 guest 协议范围。合入创建修复后的现成 ci=null/dirty=true 112 SDK 公开导出通过，不冒充匹配 CI/112 guest。额外 Core 负向套件的 13 个失败 subtest 经旧基线复现，修复测试的 native 目标选择、每变体新报告和完整路径映射后 20 项实际 pass、1 service pointer 未选择 skip；SDK 导出旧 105 计数红灯以独立 literal 111 ID 下限和公开输出一致性修复，允许 112 增量。旧 CI 在新配方下只记 stale-recipe 拒绝，先前同配方 CI-null 身份拒绝另有原件。见[guest 修复记录](06-guest-transport-validation.md)。604 输出、11,021,967 逻辑字节已保存/独立核验于 `tickets/06-guest-fix/`，收据 `store-06-guest-fix-*`。
+
+两修复合并后的主树完整检查 `out/qaplet-m2/check-wait-repairs-integration.json` 通过：368 项中 179 实际执行、189 条件 skipped，真实 C bootstrap 通过。已推送 `bd14a1e` 触发 [Full 41632318680](https://github.com/moorefu/qaplet/actions/runs/41632318680)，当前 112 项五原生/实际 64K、独立故障及新 journal 严格闭包仍待原件，06 不 resolved，后续 frontier 继续等待。
 
 ## 一次性测试入口修复
 
