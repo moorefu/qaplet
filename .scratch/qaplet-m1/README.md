@@ -4,7 +4,7 @@
 **Publication baseline:** 每票独立文件；发布时均为 ready-for-agent，当前状态见各票。
 **Spec:** [正式 M1 实施规格](spec.md)。[设计记录](design.md)保留 Q1–Q32，规格与 ADR 是共同合同。
 
-**Implementation:** 集成分支 `codex/m1-integration`；01–16 已解决，父规格保持 claimed 等待最终独立审查。当前状态以各票和验收记录为准。闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)、[最小 CLI](12-cli-validation.md)、[可分发 SDK/纯 C 应用](13-sdk-validation.md)、[五宿主 Cross](14-cross-host-validation.md)、[当前 64K/Full](15-arm64-full-validation.md)及[严格集成](16-evidence-validation.md)。逐票原始证据保留在主工作区 `out/m1/tickets/NN/out/`，复制收据记录原路径和字节校验；当前最终闭包只选择成功重试 Full `41489263809`，不混入首次失败 Full 或本地 CI=null 报告。
+**Implementation:** 集成分支 `codex/m1-integration`；01–16 与父规格均已解决；[最终集成与审查](final-review-validation.md)记录最终收口。当前状态以各票和验收记录为准。闭环包括 [Runtime](01-runtime-validation.md)、[严格值/诊断](02-values-validation.md)、[Promise](03-promise-validation.md)、[文件 ESM/TLA](04-file-modules-validation.md)、[模块策略](05-module-policy-validation.md)、[Host Module](06-host-modules-validation.md)、[预算](07-budgets-validation.md)、[事件桥](08-events-validation.md)、[资源限额](09-resource-validation.md)、[协作停止](10-stop-validation.md)、[关闭/释放](11-close-validation.md)、[最小 CLI](12-cli-validation.md)、[可分发 SDK/纯 C 应用](13-sdk-validation.md)、[五宿主 Cross](14-cross-host-validation.md)、[当前 64K/Full](15-arm64-full-validation.md)及[严格集成](16-evidence-validation.md)。逐票原始证据保留在主工作区 `out/m1/tickets/NN/out/`，复制收据记录原路径和字节校验；初次 16 验收对应 Full `41489263809`；审查修复后的当前产品为 `43193d6e9163aaccece5e3c30d96bcbabd3cd260`，最终闭包选择成功 Full `41542426189`，并完成清理后主工作区 98 项严格重放。历史失败与本地 CI=null 报告按其原范围保留。
 
 ## 任务与阻塞依赖
 
@@ -60,3 +60,5 @@ Ubuntu 构建 CLI、SDK 分发物与纯 C 示例，其他宿主消费供应制�
 
 2026-11-03：[16 严格集成](16-evidence-validation.md)已解决：当前重试原件闭包、五 native/1000 循环、包外 C 应用、64K 和独立 M0 Full 重放通过，85 项严格回归零 skips/errors/failures；父规格仍等待最终独立审查。
 
+
+2026-11-03：[最终集成与审查](final-review-validation.md)完成：01–16 与父规格均已解决；当前 Full、两轴审查及 worktree 清理后主工作区 98/98 严格回归通过，全部原始证据完成独立保存审计。M2 和原 ZIP 镜像发布门禁仍暂缓。

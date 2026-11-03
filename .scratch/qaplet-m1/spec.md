@@ -1,8 +1,8 @@
 # 正式 M1：QuickJS Engine 与 Qaplet Embed SDK 实施规格
 
-**Status:** claimed
+**Status:** resolved
 **Confirmed:** 2026-11-02。Q1–Q32 已在 grill-with-docs 中全部确认；用户在本次 to-spec 中明确要求沿用 Q32 测试与证据边界。
-**Execution state:** 正在 `codex/m1-integration` 收口；父规格保持 claimed，等待最终独立审查。01–15 已解决：统一 Runtime/SDK/CLI/纯 C 应用及五个真实 native、当前 64K 与 M0 Full 均有原始证据。16 在既有严格入口只读汇总成功 Full `41489263809` 的完整闭包，产品源码固定为 `21bd317f4246571f0048789ca97167632c09f924`，评估器另记身份。逐票红绿、变异及当前最终集成判定见任务索引；旧成绩、M2 和发布门禁保持原范围。
+**Execution state:** 已在 `codex/m1-integration` 完成 01–16、最终独立审查和父规格收口。产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 对应成功 Full `41542426189`；五个原生宿主、实际 64K、独立当前 M0 Full、包外纯 C 消费者及清理后主工作区 98 项严格回归均通过。身份、原件、失败历史、保存审计与最终重放见[最终集成与审查](final-review-validation.md)；M2 与独立发布门禁保持原范围。
 **Baseline:** [已确认设计 Q1–Q32](design.md)、[v1.5 正式 M1](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md#m1--quickjs-engine--通用-c-embed-sdk)、[生命周期 ADR](../../docs/adr/0005-m1-runtime-lifetime-boundary.md)、[模块缓存 ADR](../../docs/adr/0006-m1-frozen-module-identity.md)、[资源终止 ADR](../../docs/adr/0007-m1-cooperative-resource-failure.md)。
 
 ## Problem Statement
@@ -304,3 +304,11 @@ SDK 提供实例创建、宿主模块注册、Script eval、模块运行、分�
 ## Comments
 
 2026-11-02：依据已确认 Q1–Q32 发布正式 M1 规格，Status 为 ready-for-agent。用户明确沿用 Q32 的公开 SDK/最小 CLI、真实制品、主要宿主和现有证据消费者边界；本次仅完成规格与文档索引，不执行产品验收。
+
+## Answer
+
+2026-11-03：正式 M1 已完成并在 `codex/m1-integration` 集成；01–16 全部解决。统一 Runtime、值/诊断桥、ESM/TLA、Host Module、预算、POD 事件、停止与关闭/释放、公开静态 SDK、最小 CLI 和纯 C 应用均已实现并取得真实合同证据。
+
+最终产品 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的 Full `41542426189`、五 native/每项 1,000 次生命周期、64K 98 项、包外 C 8 项及独立 M0 Full 235 项通过。两轴最终审查各零剩余发现；实现 worktree 清理后的主工作区严格重放 98/98，零 failures/errors/skips，Windows/Ubuntu 路径选择均通过预检。所有历史原件、失败和诊断均已按[最终集成与审查](final-review-validation.md)保存并独立审计。
+
+M2 OS 调度/取消与长期原 ZIP 镜像发布门禁仍按原约定暂缓；`release_ready=false`。

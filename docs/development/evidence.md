@@ -124,4 +124,4 @@ python3 scripts/check_evidence.py --config out/m1-selection.json --report out/m1
 
 `--preflight-only` 明确签发 `evidence-preflight`，不声称运行变异。完整入口必须运行其选定的真实闭包回归；required skip/error/failure、空 catalog、未完成和中断均失败，原始 log、逐项 progress 和实际计数保留。失败时保留已解析 evidence_index；输出路径不得覆盖选择或 provider 原件。评估器与测试源码身份独立于冻结产品的 57 个 recipe 文件，并在严格运行结束重核。
 
-当前可重放选择和实际红绿见 [16 验收](../../.scratch/qaplet-m1/16-evidence-validation.md)。产品源码固定 `21bd317f4246571f0048789ca97167632c09f924`，成功 Full 为 `41489263809`；报告分开给出 `m1`、`m0`/`m0_core_status`、required/optional gaps。M2 OS waker、I/O 取消、迟到 completion、完整调度以及物理 64K/性能均不外推；长期原 ZIP 镜像仍未验收，`release_ready=false`。
+初次严格入口的红绿见 [16 验收](../../.scratch/qaplet-m1/16-evidence-validation.md)；最终选择、独立审查和清理后 98 项实际重放见[最终集成记录](../../.scratch/qaplet-m1/final-review-validation.md)。当前产品源码固定 `43193d6e9163aaccece5e3c30d96bcbabd3cd260`，成功 Full 为 `41542426189`；报告分开给出 `m1`、`m0`/`m0_core_status`、required/optional gaps。M2 OS waker、I/O 取消、迟到 completion、完整调度以及物理 64K/性能均不外推；长期原 ZIP 镜像仍未验收，`release_ready=false`。

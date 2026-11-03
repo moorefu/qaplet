@@ -2,7 +2,7 @@
 
 可移植 JavaScript 应用运行时与应用交付平台。当前路线见[文档入口](docs/INDEX.md)和 [v1.5 执行计划](docs/plans/qaplet-v1-implementation-plan-v1.5.md)。既有 v1.4 M0 已完成固定输入、Ubuntu fat APE、六目标启动/I/O、ARM64 64K 和断网合同；原结论由 [Core gate](.scratch/qaplet-m0/core-evidence-gate-validation.md) 保留。
 
-[统一 v3 锁、QuickJS 目标升级和 M0-A ESM/Promise 增量](.scratch/qaplet-v15-alignment/README.md)已完成。正式 M1 已实现 Runtime、公开静态 Embed SDK、共用执行器的最小 CLI 和完整纯 C 应用；[M1 索引](.scratch/qaplet-m1/README.md)记录当前源码、五宿主、64K 和严格证据范围。构建使用 pinned v3 统一入口，旧分锁只作摘要绑定的组件清单。具体业务应用继续作为参考，长期原 ZIP 镜像仍是独立发布门禁。
+[统一 v3 锁、QuickJS 目标升级和 M0-A ESM/Promise 增量](.scratch/qaplet-v15-alignment/README.md)已完成。正式 M1 已实现 Runtime、公开静态 Embed SDK、共用执行器的最小 CLI 和完整纯 C 应用；[M1 索引](.scratch/qaplet-m1/README.md)与[最终集成记录](.scratch/qaplet-m1/final-review-validation.md)记录已完成的源码、五宿主、64K、独立审查和清理后严格重放。构建使用 pinned v3 统一入口，旧分锁只作摘要绑定的组件清单。具体业务应用继续作为参考，长期原 ZIP 镜像仍是独立发布门禁。
 
 Ubuntu 本地构建需要 Python 3.10+、GNU Make，以及可执行的 GCC 或 Clang 系统 C 编译器。无需安装 Python 包；其他平台使用已生成制品的验证入口。
 

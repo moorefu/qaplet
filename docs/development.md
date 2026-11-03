@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。当前产品源码 `21bd317f4246571f0048789ca97167632c09f924` 的成功 Full `41489263809` 提供五个原生宿主、实际 64K 和独立当前 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收与最终审查状态见[M1 索引](../.scratch/qaplet-m1/README.md)，旧 M0/对齐成绩保留原范围。后续产品配方变化必须重新验收；06 发布镜像由用户暂缓，`release_ready=false`。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。当前产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的成功 Full `41542426189` 提供五个原生宿主、实际 64K 和独立当前 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收见[M1 索引](../.scratch/qaplet-m1/README.md)，已完成的独立审查、证据保存与清理后 98 项严格重放见[最终集成记录](../.scratch/qaplet-m1/final-review-validation.md)，旧 M0/对齐成绩保留原范围。后续产品配方变化必须重新验收；06 发布镜像由用户暂缓，`release_ready=false`。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
