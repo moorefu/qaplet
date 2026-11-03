@@ -281,3 +281,7 @@ preflight、输入锁、CI 合同和完整 363 项合同全部完成，其中 17
 补检后确认已合入最新 integration `1e1908f`，本分支合并提交为 `7f099b9`；该增量只改
 实施记录和磁盘恢复说明。上述本地通过仍不替代待采集的新 Windows CI、其原始失败
 syscall/errno，以及当前新 APE 的 macOS/ARM native 和完整 Cross/Full。
+
+### 当前配方 Cross 已完成
+
+后续 Full `41616881692` / `0e4ba21` 整体成功。独立读取五原生和实际 64K 原件，83/83 项重算通过，源码/配方、供应 APE/实际 PE child、loader、CI/宿主身份与 guest 清理完整核验；本票已 resolved。严格摘要、不可变原件选择及边界见主 `out/qaplet-m2/full-0e4ba21/HANDOFF.md`、`verify/scope-summary.json`。这是原执行证据重放，未计新 native 执行；原 CI 失败 syscall/errno 仍未从旧 raw 证实，不以本地受控 errno 替代。修复树已在重新源对档核验后清理，冻结输出保存在主 `out/qaplet-m2/tickets/04-windows-fix/`，分支保留。

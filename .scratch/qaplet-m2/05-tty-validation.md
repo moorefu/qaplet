@@ -115,3 +115,7 @@ Ubuntu `candidate/make-check.json` 已实际执行 362 项，180 项既有外部
 `diagnosis/replay_current.py` 再用修复树 consumer 读取冻结原件，`raw-replay-after.json` 仍将两 Mac 的 10 项真实失败和 Windows 的缺三项保留为 fail；不能把 consumer 别名修复算成新 OS 执行。新增 POSIX lifetime/取消合同也拒绝缺这些事实的旧 Linux raw，不以旧成功补齐新配方。
 
 票保持 **claimed / local_verified_cross_pending**，`product_support_verified=false`。当前没有新 Mac x64/ARM64 原生执行，原 CI 的 Windows setup errno 也仍未知；新集成 Full 必须重新供应当前配方并验证五原生及实际 64K，不能据本地修复关闭本票。
+
+### 当前配方 Cross 已完成
+
+后续 Full `41616881692` / `0e4ba21` 整体成功。五原生 97 项及实际 64K 19 项共 116/116 由独立当前 consumer 重算通过，真实 Mac 完整模式恢复/resize、Windows ConPTY 原始 controller 动作、同 APE/loader、源码/配方/CI/宿主身份和 guest 清理均核验，本票已 resolved。严格摘要及原件选择见主 `out/qaplet-m2/full-0e4ba21/HANDOFF.md`、`verify/scope-summary.json`；重放不计新 native 执行。Windows 非法及补充平面输入仍为实测 UNSUPPORTED，不能由本票 OS 探针外推未来 stdio/TTY 产品支持。修复树已重新源对档核验后清理，冻结输出在主 `out/qaplet-m2/tickets/05-cross-fix/`，分支保留；旧失败及原 setup errno 未证实的边界不变。

@@ -22,9 +22,9 @@
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
 | 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
-| 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | `.cache/worktrees/m2-04-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
-| 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | `.cache/worktrees/m2-05-fix` | completed（`0e4ba21` 五原生及实际 64K 共 116 项严格重放通过） |
-| 06 | `codex/m2-06-wait` | `.cache/worktrees/m2-06` | in_progress，独立 SDK 首轮通过，继续事件/停止/故障清理 |
+| 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
+| 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | 原件见 `tickets/05` / `05-cross-fix` | completed（`0e4ba21` 五原生及实际 64K 共 116 项严格重放通过） |
+| 06 | `codex/m2-06-wait` | `.cache/worktrees/m2-06` | `1708ede` 已集成，本地最终供应通过，当前 Full 进行中 |
 | 07–27 | 待分派 | 待创建 | 等待各自直接 blocker |
 
 ## 环境事实
@@ -90,6 +90,12 @@ Mac 候选修复 `9a390f9`、05 `0460f71`、04 `a64afa6` 已分别由独立 merg
 当前 [Full 41616881692](https://github.com/moorefu/qaplet/actions/runs/41616881692) 精确绑定 `0e4ba214cdb7bd6e103cfade9fba748cbd8f85fa`，整体 completed/success。29 个 provider 原 ZIP 已保存并通过 fetch/offline verify；独立读取当前 consumer 重算 04 五原生 70 + 实际 64K 13 项、05 五原生 97 + 实际 64K 19 项全部通过，同源码/配方/CI/APE、Windows PE child、实际 native loader、ConPTY 动作、guest serial/4 suite/8 payload/清理均核验。root 另在 `out/qaplet-m2/full-0e4ba21/04-05-acceptance-check.json` 重核数量、逐项状态及 native/guest 同 APE；本次重放不计新执行。04/05 自身范围 resolved，不外推后续产品资源、最终 T03 或父 M2 完成。v1 adapter 已通过 consumer 抛错拒绝非零退出/timeout；v2 仅增加显式重复检查，不把 v1 记录为失效。
 
 已完成的 02 Mac 修复旧 worktree 也在重新源对档核验 436 文件、23,857,384 逻辑字节、干净/已合入/绝对路径/非 reparse 根审计后清理；out 外仅 67 个 Python 字节码，分支保留，原件仍在 `tickets/02-macos-fix/`。收据为 `store-02-macos-fix-pre-cleanup.json` 与 `old-02-fix-worktree-{audit,cleanup}.json`。
+
+04/05 的修复 worktree 在本票 resolved 后再次对照归档通过（349/242 文件），干净、已合入及绝对路径/非 reparse 根审计通过，out 外各仅 71 个 Python 字节码，已清理并保留分支。收据在 `store-04-windows-fix-pre-cleanup.json`、`store-05-cross-fix-pre-cleanup.json`、`completed-fix-worktree-{audit,cleanup}.json`。当前 0e4ba21 的独立 M0 Core 也重放 235/235 通过；可选 02/03 通用适配器的接口差异失败保留，不扩大其已完成结论。
+
+06 产品提交 `921f6f6` 经独立 merger 合入为 `1708edec3aca9d7593cc530e6e4e31256c5af3fe`；全部 63 项 RECIPE 原字节与源 tip、实际 producer `2a9ab07`、merge Git blob 一致、CRLF 为零，71 个供应文件及 ZIP 核验通过。最终本地 Linux 111 pass，Windows 110 pass + 1 optional symlink blocked（必需缺口 0），包外应用 8、独立故障夹具 1 通过。两平台各实际 500 次 token 与 100 次 concurrent 场景通过，绑定最终 Host 字节；仅说明本票资源重复范围，不算最终 T03 全混合。producer 的 `working_tree_dirty=true` 原样保留：Ubuntu Git 对既有 CRLF 非 RECIPE 文档的观测与 Windows Git clean 不同，不能改写报告或将其说成 Ubuntu 全树 clean。
+
+06 的真实 close 故障先暴露错误成功诊断，再以明确拒绝、实际关闭后同号复用两种受控情形验证：FD 只尝试关闭一次，不确定句柄独立计量并保持 CLEANING/destroy BUSY，quiesce 不重关复用 fd，不把这类故障称为资源清零成功。主树当前 `scripts/dev.py check` 通过（`out/qaplet-m2/check-wait-integration.json`，364 项中 178 实际执行、186 条件 skipped，真实 C bootstrap 通过）；已推送触发 [Full 41621764245](https://github.com/moorefu/qaplet/actions/runs/41621764245)。五原生及实际 64K 当前原件与独立重放仍待齐，06 不 resolved，07/09/10/13 不提前放行，父 M2 保持 in_progress。
 
 ## 一次性测试入口修复
 
