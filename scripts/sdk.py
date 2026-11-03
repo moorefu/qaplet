@@ -99,7 +99,7 @@ HOST_CASES = (
     ("m2-drive", ["--m2-drive"], "M2 drive: ready jobs; independent progress/reason; idle result retained; unsettled entry; no implicit close: pass\n"),
     ("m2-configuration", ["--m2-configuration"], "M2 configuration: explicit capabilities; finite copied defaults; sizes/version/tails; invalid combinations: pass\n"),
     ("m2-owner", ["--m2-owner"], "M2 owner: foreign calls refused; pump/run_once/run guard; safe POD/control/setter; CLOSED query: pass\n"),
-    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; unpublished null failures; fresh recovery and cleanup: pass\n"),
+    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; allocation versus metadata precheck; null failures and complete rollback; fresh cleanup: pass\n"),
     ("m2-diagnostics", ["--m2-diagnostics"], "M2 diagnostics: independent versioned POD; factory rollback; sizes/tails; bounded caller buffers; CLOSED cross-thread query: pass\n"),
     ("m2-runtime", ["--m2-runtime"], "M2 runtime: explicit empty instance; idle drive; CLOSED/native quiescent; destroy: pass\n"),
     ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
