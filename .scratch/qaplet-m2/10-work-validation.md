@@ -1,0 +1,105 @@
+# 10 · 纯 C 有界原生工作与两阶段退出
+
+本票从干净的 `4d86901` / `codex/m2-10-work` / `.cache/worktrees/m2-10`
+开始。沿用已经确认的公开 SDK、包外纯 C Host 与真实/受控系统 seam；
+读取父规格、GLOSSARY、ADR 0005/0007、06 及两修复证据，使用 tdd 与
+tests/mocking 指引，不重复接口访谈，不声明 JS work Promise 或完整 task cancel。
+
+## 公开增量
+
+- 能力 bit 21 `QAPLET_CAP_M2_WORK`，独立版本化声明、结果、work POD 快照。
+  M1 布局/数值不变；M1 实例不取得 work 能力，调用返回 UNSUPPORTED。
+- owner 注册复制命名声明；默认并发 1，显式不超过实例池；重复、替换和
+  首次执行/有效 pump/接受 work 之后的注册拒绝。函数代码和 userdata 仍为
+  Host 所有，保留到 native quiescent，不能套用同步 Host Module 的较短边界。
+- 每 Runtime 按需 worker，默认 2，OS 请求栈默认各 1 MiB 单独计量。
+  worker 从可运行 handler 中按接受顺序选择，受 handler 并发阻塞的队首
+  不占用一个执行配额，也不挡住其他可运行 handler。
+- submit 在接受之前同时预检 operation count、8 MiB 数据子额、任务/线程
+  元数据及 16 MiB 原生总额；输入复制，输出全部预留，再在接受 mutex 下
+  发布 token。实际 SDK calloc 拒绝永久失败，容量预检只拒绝操作。
+- 三元 Runtime/slot/generation token，不暴露 JSValue、Context、fd 或内部
+  存储指针；代次耗尽不复用。owner 复制终态结果，BUFFER_TOO_SMALL 只报告
+  长度、无部分复制、不重跑；结果保留仍收费，release 后 token 失效。
+- 完成只写接受前预留的原生记录，不 malloc、不占业务事件槽、不要求 onEvent。
+  worker 发布不解除默认 ref；owner 在完整 jobs 检查点之间交接。无活跃
+  JS 入口的 C 完成不创建 JS ledger、不改最近 JS 结果；有活跃入口则扣同一份
+  累计 dispatch/期限。work/event 在有限交付预算中轮转，cursor 跨 pump 保留。
+- stop 请求、worker 领取、完成按同一接受锁排序；请求线程不遍历清理。
+  worker 协作标记可观察已接受 stop，非 OPEN 后不再领取排队任务。
+  owner 确认终止立即取消并启动原生退出，不等 close。
+- STOPPED 保留 C 终态结果；逻辑 release 可使 token 失效，但仍在物理调用中
+  的输入/输出/记录继续收费。close 不等不可中断调用、不执行用户 JS，保留
+  原生数据直到物理退出。pool、worker 及结果保留责任独立于 loop ref。
+- callback/worker_main 返回不证明 OS 线程退出，Host TLS 析构也可能继续。
+  只用实际供应的 `pthread_tryjoin_np` 成功证明 join 后回收；EBUSY 保留等待，
+  其他错误记录独立 cleanup 并停止重试该线程身份。0/有限 quiesce 不做阻塞
+  join；仍在运行时 CLOSED/CLEANING、destroy BUSY。不强杀 pthread。
+
+## 保留的红绿与失败
+
+原件在本工作树 `out/m2-10/`，旧报告不改写：
+
+1. `file-red.log`：公开新 C tracer 首次实际编译失败，旧头没有 work 类型/入口。
+   `file-green.json`：真实 mkstemp/read/close、精确二进制、有界输出、ENOENT、
+   复制输入/声明、结果重读和 join 实际通过。
+2. `slice1/build.json`：构建期间追加了测试源码，producer 正确报告
+   `SDK recipe/source changed during build`；不是最终供应。其已生成候选 APE
+   只作逐片 tracer，后续都用新供应重新验收。
+3. `extra-results.json`：fairness/close 实际通过，registration 因测试把短结构
+   的既有 ABI_MISMATCH 写为 INVALID_ARGUMENT 而失败；修正预期后的
+   `extra-results-2.json` registration/capacity 通过，未放宽产品 ABI。
+4. `ledger-red.json`：活跃 PENDING 入口的小累计 dispatch 与 native 交接组合
+   实际失败；`ledger-green.json` 修复后同时验证 dispatch 与绝对等待期限。
+5. `physical-red.json`：真实阻塞 TLS 析构导致旧阻塞 join 被外层 supervisor
+   5 秒终止，明确是未完成/失败，不能算产品已退出。`physical-green.json`
+   同一 seam 验证 0/有限 quiesce 返回 pending、BUSY、安全保留，解除析构后
+   真正 join。无退出信号之后的保守复核可到有限等待预算末尾才完成回收；
+   不用周期短轮询，不承诺立即回收或整个调用硬耗时。
+6. `retention-red.json`：STOPPED 的 C 结果被 loop shutdown 过早失效；
+   `retention-green.json` 验证 STOPPED 终态复制、逻辑 release 与物理占额分离，
+   并复验其余 work 合同。
+7. `scheduling-red.json`：32 个 native 完成的批量交接挡住已就绪业务事件；
+   `scheduling-green.json` 验证共享有限预算下的轮转与完整检查点。
+8. `request-red.json`：stop 已接受而 owner 尚未驱动时，worker 协作标记仍为假；
+   `request-green.json` 验证标记和 worker 领取共享 stop 的接受顺序，不启动
+   排队的迟到 callback。
+9. 一次 inline Python runner 因 shell 引号产生 SyntaxError，未运行产品；
+   随后改为保存的 `tracer.py`。首次 Git 写入被受限文件系统拒绝，没有写入
+   或重置数据；普通用户上下文提交成功。一次 recipe 检查临时命令未设置
+   scripts import 路径，ImportError 后补齐路径，实际逐文件检查见下。
+
+## 首冻结供应（保留原范围，非最终选择）
+
+首产品 `276a880ba110c7626e68c756c558550421eb85eb`，66 个 RECIPE 原字节
+全部等于该提交 Git blob、全部 LF，`recipe-blobs.json`。Windows Git clean。
+Ubuntu producer `working_tree_dirty=true` 原样保留，未改写为 clean。
+后续 `4c7c29e` 加包外 work 消费，`8180eec` 加停止/调度红绿及可叠加 ABI
+基线断言；最终供应必须对最终合并源码重新生成。
+
+| 原件 | 实际结果 |
+|---|---|
+| `frozen/build.json` | Ubuntu 固定输入 SDK ZIP/双 archive/三 APE 构建 pass，绑定 276a880、dirty=true |
+| `frozen/dev-check.json` | Ubuntu完整检查 pass；368 tests，177 实际执行、191 条件 skip；真实系统 C bootstrap pass |
+| `frozen/linux.json` | Linux x86-64 native / WSL2 6.6.87.2 / 4096；122 中121 pass、1 fail；10个 work 新用例全部 pass |
+| `frozen/windows.json` | Windows x86-64 native / 4096，同一 APE；120 pass、1 fail、1 optional symlink blocked；10个 work全部 pass |
+| `frozen/fault-consume.json` | 真正供应 ZIP 在 `/tmp/qaplet-sdk-consumer-*` 包外编译；既有 M2 系统夹具及新 work 系统夹具各1必需 case，2/2 pass |
+
+两宿主的唯一 fail 是完整示例 `--abi` 把旧全部 capability 魔数 491519 当作
+精确新全集。修复保留这份旧必需位的 subset 断言和 tail/flags/结构合同；
+新 work bit 由 work 公开用例独立验证，metadata 仍严格核对真实全部位。
+Windows 唯一 optional blocked 是旧 symlink fixture 的 winerror 1314，未计 pass。
+
+受控 work fixture 通过公开结果/快照观察：pthread_create EAGAIN 原样保留、
+操作原子拒绝且 Runtime 可重试；实际 calloc 拒绝永久 MEMORY_LIMIT，stop 不
+覆盖首因；tryjoin EIO 独立 cleanup，CLOSED 不复活，存储/线程身份保留，
+反复 quiesce 不伪造清零/destroy。最后的异常实例刻意保留到进程结束，
+该负向结果不是“SDK 已清理成功”。夹具不代替正常 native backend 证明。
+
+## 待最终集成验收
+
+本票保持 claimed，未 resolved、未 push、未做整体 Standards/Spec review。
+最终需合入最新 integration，保留07/09能力、目录和生命周期合同，接真实
+HostNotify lease 后重新冻结全部 RECIPE 并供应；重新跑完整双宿主、包外
+普通 work/故障消费及本地 check。其余五原生/实际64K与最终全资源 T03/Full
+由 root 的新供应签发；上述单宿主与局部重复不外推这些范围，不签发 release-ready。
