@@ -1,7 +1,7 @@
 # 正式 M2 任务与依赖
 
 **Approval:** 2026-11-03，用户明确确认“按 27 张发布”。
-**Execution state:** not_started；27 张任务均已独立发布为 ready-for-agent，当前尚未领取或实施。
+**Execution state:** in_progress；2026-11-03 用户调用 `/implement-spec`，在 `codex/m2-integration` 上实施。逐票验收状态以任务及[实施记录](implementation.md)为准。
 **Parent:** [正式 M2 规格](spec.md)，Q1–Q53、110 条用户故事和 28 组验收合同；发布子票不修改或关闭父规格。
 **Coverage:** 27 票、38 条直接阻塞边、135 条逐票验收条件。主要责任及完整追踪见[已确认拆票方案](ticket-proposal.md#覆盖映射)。
 
@@ -84,4 +84,6 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 ## Comments
 
 2026-11-03：按用户确认发布 27 份独立任务，均为 ready-for-agent/not_started。仅发布任务与索引，没有开始产品实现、关闭父规格或继承旧 M1 成绩为 M2 通过。
+
+2026-11-03：开始实施。先以 `5685bb6` 保存已批准规格、任务及现有文档修改；01–03 已分配独立 worktree，04/05 在并发容量释放后领取。尚未签发任何 M2 验收结论。
 

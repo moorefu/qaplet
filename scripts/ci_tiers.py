@@ -48,7 +48,10 @@ def plan(args):
     if name == "pull_request":
         tier, reason = ("full", "sensitive pull request paths") if sensitive else ("cross", "pull request native smoke")
     elif name == "push":
-        tier, reason = ("full", "release candidate tag") if ref.startswith("refs/tags/") else ("fast", "every pushed commit")
+        if ref == "refs/heads/codex/m2-integration":
+            tier, reason = "full", "M2 integration requires current native and 64K evidence"
+        else:
+            tier, reason = ("full", "release candidate tag") if ref.startswith("refs/tags/") else ("fast", "every pushed commit")
     elif name == "schedule":
         tier, reason = "full", "daily implemented Full contracts"
     elif name == "workflow_dispatch":
@@ -102,7 +105,7 @@ def check_workflow(workflow):
         if name in ("build", "tier-plan"):
             continue
         for step in job.get("steps", []):
-            if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders)\.py\s+build|cosmocc", step.get("run", "")):
+            if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders|m2_waker|m2_stdio)\.py\s+build|cosmocc", step.get("run", "")):
                 raise ValueError("Test job must consume distributed bytes without recompilation: " + name)
     native = workflow["jobs"].get("native-startup", {})
     rows = native.get("strategy", {}).get("matrix", {}).get("include", [])
@@ -149,7 +152,60 @@ def check_workflow(workflow):
     if "always()" not in aggregation.get("if", "") or not any("scripts/startup.py matrix" in step.get("run", "") and
             "--input-dir" in step["run"] for step in aggregation.get("steps", [])):
         raise ValueError("Six-target startup aggregation must run even when a consumer fails")
+    check_m2_probe_transport(workflow)
     check_tier_transport(workflow)
+
+
+def check_m2_probe_transport(workflow):
+    """New backend facts keep their own suppliers, host logs and 64K semantics."""
+    jobs = workflow["jobs"]
+    build = jobs["build"]["steps"]
+    native = jobs["native-startup"]["steps"]
+    guest = jobs["arm64-page-gaps"]["steps"]
+    supplier = "m2-probes-build-${{ github.sha }}"
+    require(any(step.get("if") == "${{ always() }}" and
+                step.get("uses", "").startswith("actions/upload-artifact@") and
+                step.get("with", {}).get("name") == supplier and
+                step["with"].get("path") == "out/m2-probes/" and
+                step["with"].get("if-no-files-found") == "error" for step in build),
+            "M2 probes must distribute original supplier bytes and Fast failure logs")
+    require(any(step.get("uses", "").startswith("actions/download-artifact@") and
+                step.get("with") == {"name": supplier, "path": "out/m2-probes"} for step in native),
+            "Every M2 native host must consume the same Ubuntu supplier")
+    require(any(step.get("if") == "${{ always() }}" and
+                step.get("uses", "").startswith("actions/upload-artifact@") and
+                step.get("with", {}).get("name") == "m2-probes-native-${{ matrix.runner }}-${{ github.sha }}" and
+                step["with"].get("path") == "out/m2-probes-native/${{ matrix.runner }}/" and
+                step["with"].get("if-no-files-found") == "error" for step in native),
+            "M2 native failures and cleanup observations must be retained")
+    guest_if = "${{ !cancelled() && matrix.page_size == 65536 }}"
+    require(any(step.get("if") == guest_if and step.get("with") ==
+                {"name": supplier, "path": "out/m2-probes"} for step in guest),
+            "Missing 64K validation must download the same M2 supplier")
+    for name in ("waker", "stdio"):
+        prefix = "python scripts/m2_" + name + ".py "
+        base = "out/m2-probes/" + name
+        inputs = " --build-report " + base + "/build-info.json --artifact " + base + "/artifacts/m2-" + name + ".com"
+        expected = {
+            "build": prefix + "build --output-dir " + base + "/artifacts --report " + base + "/build-info.json",
+            "fast": prefix + "run" + inputs + " --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/" + name + ".json",
+            "native": prefix + "run" + inputs + " --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/m2-probes-native/${{ matrix.runner }}/" + name + ".json",
+            "export": prefix + "guest-manifest" + inputs + " --loader " + base + "/artifacts/ape-aarch64.elf --page-size 65536 --manifest out/page-gaps/65536/m2/" + name + "-payload.json --report out/page-gaps/65536/m2/" + name + "-export.json",
+            "import": prefix + "import-guest" + inputs + " --guest-report out/page-gaps/65536/m2/guest.json --report out/page-gaps/65536/m2/" + name + ".json",
+        }
+        for key, steps, condition in (("build", build, None), ("fast", build, None),
+                ("native", native, "${{ !cancelled() }}"), ("export", guest, guest_if), ("import", guest, guest_if)):
+            matches = [step for step in steps if step.get("run") == expected[key]]
+            require(len(matches) == 1 and matches[0].get("if") == condition,
+                    "Required M2 " + name + " " + key + " command is missing or may be skipped")
+    merged = [step for step in guest if "scripts/arm64_guest.py merge-manifests" in step.get("run", "") and
+              "--manifest out/page-gaps/65536/m2/payload.json" in step["run"]]
+    require(len(merged) == 1 and merged[0].get("if") == guest_if and all(
+                "--input-manifest out/page-gaps/65536/m2/" + name + "-payload.json" in merged[0]["run"]
+                for name in ("waker", "stdio")), "64K must execute both independent M2 probe payloads")
+    require(any(step.get("if") == guest_if and step.get("run") ==
+                "python scripts/arm64_guest.py run --cache .cache/guests --page-size 65536 --manifest out/page-gaps/65536/m2/payload.json --timeout 300 --command-timeout 60 --report out/page-gaps/65536/m2/guest.json"
+                for step in guest), "M2 probes need actual full-system 64K execution before semantic import")
 
 
 def check_tier_transport(workflow):

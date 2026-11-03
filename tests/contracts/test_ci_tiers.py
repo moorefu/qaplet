@@ -14,6 +14,29 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    def test_m2_probes_require_distributed_native_and_guest_execution(self):
+        original = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-ci-") as temp:
+            work = Path(temp)
+            mutations = []
+            for script in ("m2_waker.py", "m2_stdio.py"):
+                for job in ("build", "native-startup", "arm64-page-gaps"):
+                    value = json.loads(json.dumps(original))
+                    value["jobs"][job]["steps"] = [step for step in value["jobs"][job]["steps"]
+                        if script not in step.get("run", "")]
+                    mutations.append((script + ":" + job, value))
+                value = json.loads(json.dumps(original))
+                value["jobs"]["native-startup"]["steps"].append({"run": "python scripts/" + script + " build"})
+                mutations.append((script + ":consumer-build", value))
+            for label, value in mutations:
+                with self.subTest(label=label):
+                    path = work / "workflow.json"
+                    path.write_text(json.dumps(value), encoding="utf-8")
+                    checked = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
+                        "--workflow", str(path), "--report", str(work / "report.json")],
+                        capture_output=True, text=True, timeout=20)
+                    self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
+
     def test_required_sdk_fast_and_native_distribution_cannot_be_removed(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-sdk-ci-") as temp:
             work = Path(temp)
@@ -156,6 +179,8 @@ class CITiersContract(unittest.TestCase):
                 ("workflow_dispatch", "refs/heads/topic", {"tier": "full"}, "full", False),
                 ("schedule", "refs/heads/main", {}, "full", True),
                 ("push", "refs/tags/v1.0-rc1", {}, "full", False),
+                ("push", "refs/heads/codex/m2-integration", {}, "full", False),
+                ("push", "refs/heads/codex/m2-02-waker", {}, "fast", False),
                 ("workflow_dispatch", "refs/heads/main", {"tier": "invalid"}, None, False),
             ):
                 event.write_text(json.dumps({"inputs": inputs, "repository": {"default_branch": "main"}}), encoding="utf-8")
