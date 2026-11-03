@@ -38,6 +38,7 @@ collection 必须使用新报告路径，保存全部失败尝试。成功报告
 `execution_status=not_run` 和 `evidence_verified=false` 不表示执行通过。
 
 - 每次 branch push 运行 Ubuntu Fast：仓库/统一锁检查与实际 Hello、eval、ESM/Promise producer。
+  正式 M2 的 `codex/m2-integration` 推送提升为 Full，以便在集成点及时取得当前五原生及实际 64K 证据；仍保持非默认分支不可写可信缓存。普通实施分支继续 Fast。
 - PR 运行 Cross：同一 Ubuntu producer 分发给 Linux x64/ARM64、Windows x64、macOS x64/ARM64。
   除 `docs/`、`.scratch/` 和根级已知文字说明外的改动均提升到 Full，包含新增未知源码位置、
   Engine/Host/SDK/include、锁、patch、native fixture 和 CI 脚本。无法取得 PR diff 时失败。
