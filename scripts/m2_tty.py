@@ -150,7 +150,9 @@ def matches_contract(record, execution):
         return case == "text.invalid-input" and actual.get("raw_transport_exact") is True and actual.get("strict_rejected") is True
     if case == "facts":
         os_match = str(actual.get("os", "")).startswith("Windows") if execution["os"] == "Windows" else actual.get("os") == execution["os"]
-        return (os_match and actual.get("probe") == "m2-tty" and actual.get("arch") == execution["execution_arch"]
+        # uname reports arm64 on Darwin; keep the raw spelling in evidence.
+        architecture = {"arm64": "aarch64", "amd64": "x86_64"}.get(actual.get("arch"), actual.get("arch"))
+        return (os_match and actual.get("probe") == "m2-tty" and architecture == execution["execution_arch"]
                 and actual.get("page_size") == execution["page_size"])
     if case.startswith("stdin.") and case != "stdin.cleanup":
         expected = {"stdin.pipe": "pipe", "stdin.file": "file", "stdin.invalid": "invalid",
@@ -194,11 +196,12 @@ def matches_contract(record, execution):
         return False
     if case == "tty.resize":
         return (actual.get("notifications", 0) >= 1 and (execution["os"] == "Windows" or
-                all(actual.get(key) is True for key in ("controlled_foreground", "child_reaped", "fixture_pipes_closed"))))
+                actual.get("notification") == "SIGWINCH-self-pipe" and all(actual.get(key) is True for key in
+                ("controlled_foreground", "child_reaped", "fixture_pipes_closed", "query_before_child_exit", "private_terminal_closed"))))
     if case == "text.chunks":
         return actual.get("input_hex") == ("41e4b8ad5a" if execution["os"] == "Windows" else "41e4b8adf09f99825a")
     if case == "tty.borrowed" and execution["os"] != "Windows":
-        return actual.get("duplicate_shares_status_flags") is True
+        return actual.get("duplicate_shares_status_flags") is True and actual.get("borrowed_ready_on_cancel") is True
     if case == "text.vt":
         if execution["os"] == "Windows":
             return actual.get("rendered_character") == 88 and actual.get("red_foreground") is True
@@ -255,7 +258,7 @@ def consume(args, report, directory):
     if report["host"]["os"] != "Windows" and not loader:
         raise BuildError("Linux/macOS validation requires supplied native loader", "blocked")
     args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
-    argv = ([loader] if loader else []) + [args.artifact, "--" + args.probe_mode]
+    argv = ([loader] if loader else []) + [args.artifact, "--" + args.probe_mode, "--fixture-root", directory.resolve()]
     executed, stdout, stderr = run(report, directory, "suite", argv, args.timeout, expected=None)
     if executed["timed_out"]:
         report["cases"].append({"case_id": "runner.timeout", "status": "fail", "actual": {
