@@ -53,6 +53,8 @@
 
 ## Comments
 
+2026-11-04（独立合并）：`a5c8b10` 已集成源tip `1b0886a` / 产品 `6583ed3`；77项RECIPE、双archive15、供应ZIP、595条原始命令/1422闭包文件、raw/Git blob/LF/合并树与两窄UbuntuCI通过，详主 `out/qaplet-m2/merge-13/final-handoff-001.json`。原std-route执行前hash不足限定与checker失败历史均保留。当前仍claimed/awaiting_cross，新的Full及实际64K验收后才放行14。
+
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-04：04、06 已按各自范围完成，领取 `codex/m2-13-process` / `.cache/worktrees/m2-13`，从当前集成点实施公开 C spawn、退出/reap 与资源首次接入的预算和关闭安全。能力位协调为 bit 22；尚未实现的 pipe 模式必须明确拒绝，不能回退为 ignore。最终状态仍以新供应制品和适用平台证据为准。
