@@ -14,6 +14,39 @@ CLI = ROOT / "scripts/m2_tty.py"
 
 
 class M2TTYContract(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32" and os.environ.get("QAPLET_TEST_M2_TTY_RESIZE_ORDER_PRODUCER"),
+                         "Explicit Ubuntu controlled-order fixture required on Windows")
+    def test_console_resize_uses_size_after_final_notification(self):
+        # The confirmed backend seam uses real ConPTY APIs and a controlled
+        # ordering build; its results never substitute for normal host evidence.
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from m2_tty_terminal import conpty
+        producer = Path(os.environ["QAPLET_TEST_M2_TTY_RESIZE_ORDER_PRODUCER"])
+        artifact = Path(os.environ.get("QAPLET_TEST_M2_TTY_RESIZE_ORDER_ARTIFACT", str(producer.parent / "artifacts/m2-tty.com")))
+        supplied = json.loads(producer.read_text(encoding="utf-8"))
+        wanted = next(item for item in supplied["artifacts"] if item["name"] == "m2-tty")
+        self.assertEqual(supplied["status"], "pass")
+        self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), wanted["sha256"])
+        self.assertEqual(artifact.stat().st_size, wanted["size_bytes"])
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-tty-resize-order-") as temporary:
+            work = Path(temporary)
+            executable = work / "tty fixture.exe"
+            shutil.copyfile(artifact, executable)
+            results = work / "console-results.ndjson"
+            command, _ = conpty([str(executable), "--console", "--result", str(results), "--gate", str(work)],
+                                work, 15, resize_order_fixture=True)
+            self.assertFalse(command["timed_out"], command)
+            self.assertIsNone(command["error"], command)
+            self.assertTrue(all(command["cleanup"].values()), command)
+            rows = [json.loads(line) for line in results.read_text(encoding="utf-8").splitlines()]
+            resize = next(row for row in rows if row["case_id"] == "tty.resize")
+            self.assertEqual(resize["status"], "pass", resize)
+            self.assertEqual((resize["actual"]["latest_cols"], resize["actual"]["latest_rows"]), (100, 33))
+            self.assertEqual((resize["actual"]["queried_cols"], resize["actual"]["queried_rows"]), (100, 33))
+            self.assertEqual((resize["actual"]["before_notification_cols"], resize["actual"]["before_notification_rows"]), (90, 31))
+            self.assertTrue(resize["actual"]["query_after_final_notification"])
+            self.assertEqual(command["exit_code"], 0, command)
+
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_TTY_GUEST_REPORT"), "Explicit real full-system guest report required")
     def test_guest_architecture_alias_preserves_raw_fact_and_rejects_different_cpu(self):
         producer = Path(os.environ["QAPLET_TEST_M2_TTY_PRODUCER"])
