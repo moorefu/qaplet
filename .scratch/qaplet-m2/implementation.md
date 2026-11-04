@@ -163,3 +163,15 @@ WorkPool `867356c` / Full `41799595408` 最终 completed/failure：Windows nativ
 11由独立merger合入 `d8a9ba9`（源d8b5e826 / 供应产品96e8eb4）：77 raw/Gitblob/LF、ZIP79成员/SDK/三APE/archive各15、normal169/package46/fault2与公开红绿均核验。3579份原件/632,688,371逻辑字节内容和mtime前后不变；合并树同源/双树clean/diffcheck、Ubuntu input-lock、两窄CI和真实bootstrap通过，未重复矩阵或建新SDK。父Python profile未覆盖make/test子进程实际imports的限定明确保留，静态全repo前后身份与实际profile分开记录。见 `out/qaplet-m2/merge-11/AUDIT.md`、`post.json`。11保持awaiting_cross，准备与13最小查询/诊断阶段一同验证新Full；12/15尚未放行。
 
 已完成08/10及文件修复worktree已在完整归档/源对档核验及独立Git/绝对路径/reparse/遗漏输出审计后清理：各4352/2591/1203文件、717,661,830/620,370,368/213,567,341逻辑字节，out外各79个可再生pyc；分支实际SHA与归档保留，共享Git config不变。收据 `store-08/10/10-file-fix-{created,verified}.json`、`completed-08-10-{audit,cleanup}.json`。历史full08/f2等helper原源码绝对路径已不存在，重放须以保留分支重建原worktree并restore/materialize，或另存新映射，不改历史脚本/报告。02新修复冻结out也已保存并源对档核验360文件/52,371,986字节，源树暂保留；13/11/13-cross-fix不清理。
+
+13 fresh `codex/m2-13-cross-fix` 已实际融合 `6b0de319`，最终产品 `0b725cc` 本地供应通过：
+B02新增 `qaplet_get_process_status` 纯POD任意线程查询，保留旧owner collect和POD布局，
+首次slots发布同步。旧密封SDK双宿主WrongThread3真实red、缺新符号red与永久query新ZIP
+包外双宿主绿均保存。normal Linux170/Windows169+旧optional1，package46/fault2各两宿主，
+Process永久公开10各两宿主/系统8与4、check370中177实际193skip/bootstrap通过。
+77 raw/Gitblob/LF、ZIP79、三APE、双archive各15实际ELF64 REL及623唯一命令/1246 raw日志/
+18父解释器动态repo Python闭包与370静态superset输入前后一致，限定不冒称child动态imports。
+原件见新树 `out/m2-13-cross-fix/final/handoff-002.json`；首次审计schema字段错误与stage1
+旧候选均保留。Mac仅新增失败时公开code/domain/error/helper及实测rlimit诊断，排序假设先行，
+未改FD继承或spawn行为。13保持in_progress，待独立合并及新的原生Full取得Mac事实；两Mac16
+原失败、14未放行与最终整体Review边界不变。

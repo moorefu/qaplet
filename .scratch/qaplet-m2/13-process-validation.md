@@ -140,3 +140,60 @@ ZIP `7d9cabfc64f5cbaab32a806d09da4b825c6b638dde293289d7ed3deafb684e49`（16,247,
 
 当前本地 handoff 为 `closure/handoff.json`。本票不签发新的 macOS/ARM64/64K、完整
 cancel/pipe/JS process、父验收组或 release-ready；旧红灯、旧供应与候选映射各保留其原范围。
+
+## 2026-11-04 · B02 纯 POD 查询与 Mac 失败诊断阶段
+
+新树 `.cache/worktrees/m2-13-cross-fix` / `codex/m2-13-cross-fix` 从实际集成
+`5c2f019` 建立，旧 `m2-13` 源码和输出冻结。实现 `6e34aeb` 先供应阶段候选；
+随后实际融合含 11 的集成 `6b0de319`（merge `f6159b6`），最终产品冻结
+`0b725ccf4e413cf55f6250c428ff4b5aab1af829`。没有使用旧 `main`。
+
+新增 `qaplet_get_process_status`，任意普通线程只在 mutex 内检查 Runtime/slot/
+generation/released 并复制既有 status POD；不执行 collect、join、owner handoff、JS
+或通知。旧 `qaplet_process_get_status` 保留 owner 原生观察/非阻塞退休语义。
+首次 slots 发布移到同一 mutex 下；POD 布局、既有 code/domain/能力位不变。
+HostNotify TLS 仍先拒绝 BUSY，CLOSED 的 token 已失效；destroy 前宿主仍须 join 调用方。
+
+旧密封 SDK 的原最小场景在正常 Ubuntu/Windows 重新真实执行：worker 查询返回
+WRONG_THREAD3，owner/aggregate/lifecycle 都是 OK0；真实 child exit37/reap/release/
+quiesce/destroy 完成。`out/m2-13-cross-fix/b02-red-{linux,windows}.json` 保留 Linux
+exit1 与 Windows exit256，不改其原始退出值。新永久 C 合同先以旧 archive 实际链接，
+缺少新查询符号的 red 保存在 `query-api-red.json`。B02 的 owner guard 原因已有公开
+真实红与明确源码，沿用该已证诊断；没有再造不相关候选假设。
+
+永久 `tests/native/sdk_process.c` query 模式加入 HOST_CASES 并随 ZIP 供应，验证任意
+线程/交叉 Runtime/旧 generation、release 竞争、无 collect/交付/JS、HostNotify BUSY
+和 CLOSED 失效。阶段 `6e34aeb` 的 ZIP 在 `/tmp` 包外编译后，同 APE 两宿主各 1/1
+绿；`stage1/` 原件保留。最终新夹具在无 collect 断言之后用既有 owner 观察入口确认
+helper 物理退休，再测 one-slot 复用，避免合法 tryjoin 调度差异成为夹具误判。
+
+最终原件均在新树 `out/m2-13-cross-fix/final/`：
+
+| 报告 | 本阶段实际范围 |
+|---|---|
+| `build.json` | Ubuntu 普通供应；77 RECIPE、79 ZIP 成员、三 fat APE、双 archive |
+| `linux.json` / `windows.json` | normal170 pass / 169 pass + 1 既有可选 symlink blocked |
+| `package.json` / `package-windows.json` | 两宿主各46条密封 ZIP 包外 application/work/timer 合同 |
+| `fault.json` / `fault-windows.json` | 两宿主各2条受控 core/work 系统故障组 |
+| `process-package-build.json` | ZIP 在 `/tmp` 两源树外解包，只用供应头/archive/source 编译 |
+| `process-package-linux.json` / `process-package-windows.json` | 永久公开 Process 各10；独立系统 seam Linux8/Windows4；同 APE 字节 |
+| `devcheck.json` | Ubuntu check370；177实际通过、193按显式输入条件 skip；真实 C bootstrap pass |
+| `handoff-002.json` | 77 raw/Git blob/LF、三 APE、双 archive各15个ELF64 REL机器62/183；623唯一命令、1246 raw logs、18父解释器实际repo Python闭包 |
+
+配方 `39db413fbce0b034c8ff790065b6625025b146896e8e43ece96597a80f4c39bb`，SDK
+`552288cdfe56a2eaf44d5d327e11e7f5c58b20b4daef589884af909726a256e0`，ZIP
+`fdc87eeb691a6fe45f2e714659f5f128aa36f7dd0ad661a4047fb563d60127a9`。
+报告嵌实际 driver/父解释器 imports 执行前后身份。子 Python 的 argv/raw 日志与 RECIPE
+来源另核；父 profile 不声称捕获子进程动态 imports。`execution-inputs-before/after.json`
+对最终消费者前后的370项全部 tracked 源码与本任务 helpers 静态 superset 核验相同，
+与实际动态观测分开。首次收口脚本误用 `files.file` 字段的 KeyError 保留在
+`handoff.imports.json`，旧脚本为 `audit-001.py`；改读真实 `files.path` 后独立002通过。
+
+Mac 的 `453fe76` / Full41817613432 仍为两原生目标共16个必需 Process 失败，
+不是本地通过范围。已在修改 Mac 行为之前向 root 公布可证伪排序：hard RLIMIT_NOFILE
+大于 INT_MAX 的提前拒绝、fork/exec 原生拒绝、helper pthread 建立失败、已接受 child 的
+loader/waitid 失败。当前只给原来预期成功的 spawn 增加失败诊断：实际 return code、
+status code/domain/error/helper_active 与原生 getrlimit soft/hard/result/error。
+不再从断言时的旧 errno115 猜错误域；没有改 spawn_posix/继承上界/白名单或等待判据。
+下一次原生 Full 取得这些事实后才选择 Mac 产品修复。13保持 claimed/in_progress，14
+未放行，整体 Review 未派发，也未签发父 M2、最终 T03 或发布完成。
