@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** resolved
+**Status:** claimed
 
-**Execution state:** completed；2026-11-03 当前 `196cd75` 五原生及实际 ARM64 64K 各 19 项原件已严格重放，含真实 loader、源/配方/CI、guest transport 与当前 M0 Full 回归。首次 Mac 失败及当前 run 的独立 04/05 失败均保留。
+**Execution state:** in_progress；旧 `196cd75` 六目标各19项验收保留；当前 `867356c` Windows socket.connect-error 回归另行调查。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -66,3 +66,5 @@
 2026-11-03：合入最新 integration tip `af6c0ff`。第一次完整 Ubuntu check 的真实供应物单测出现一次未归因失败，原笼统断言及临时目录清理未留下具体失败 case；保留首跑红灯，新增非 pass case / actual 失败诊断。相同环境随后 100 次公开 CLI 均通过，第二次完整 check 的 345 tests（169 skipped）及真实 C bootstrap 通过。未扩大时限或放宽判据，不把未复现的首次红灯称为已确诊/已修复；具体边界见验收记录，本票仍 awaiting_cross。
 
 2026-11-03（集成验收）：196cd75 / Full 41607608424 的五原生及实际 64K 各 19 项严格重放通过，原件、真实 loader、源配方、CI、guest serial/payload/cleanup 与当前 M0 Full 235 项均核验；见主 out/qaplet-m2/full-196cd75/verify02/VERIFICATION.md。02 自身完成并放行 06；当前 run 整体 failure（独立 04/05 失败）、首次 Mac 失败及父 M2 未完成事实均保留。
+
+2026-11-04：867356c / Full41799595408 Windows socket.connect-error再次失败：connect=-1/errno115，poll=0/2000ms/revents0，select=-2未得readiness，SO_ERROR记录10061但connection_failed=false；reserve_closed_before_connect=true。原ZIP及waker.json保留在主out/qaplet-m2/full-867356c。重新领取codex/m2-02-win-error-fix / .cache/worktrees/m2-02-win-error-fix，先真实复现/区分具体OS事实与判据，不凭errno数字猜唯一根因或以延长timeout替修复。旧196cd75验收及后续独立产品scope保留原范围。

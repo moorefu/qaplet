@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** awaiting_cross
+**Execution state:** in_progress；当前 `867356c` Full 的 Windows 文件用例在work提交前失败，原范围保留并定向修复，11不放行。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -58,3 +58,4 @@
 
 2026-11-04：07/09 融合后冻结产品 `9c69877`，提交原字节、70项 RECIPE、双 CPU archive、SDK metadata 已核对。完整 Linux 142/142 pass；Windows 原生同字节141 pass / 1既有 optional symlink blocked，必需缺口0；密封ZIP包外普通8+work13=21及受控系统故障2项均在Linux与Windows通过。本地check通过；新增三类持久轮转、work允许unref timer存活、真实HostNotify lease和物理pthread退出的失败原件及最终身份见[10验证记录](../10-work-validation.md)。保持 claimed / awaiting_cross，待root当前配方五原生/实际64K及组合Full签发，不自行resolved，不声明11任务取消公开API或12 JS work Promise。
 
+2026-11-04：867356c / Full41799595408 的唯一Windows SDK nonpass是m2-work-file，在首次submit之前的mkstemp/write/close复合断言失败，exit256无timeout，原errno未知；原件见主out/qaplet-m2/full-867356c。领取codex/m2-10-file-fix / .cache/worktrees/m2-10-file-fix建立紧反馈循环、区分阶段后修复，保留旧红与全部供应，不把其他scope通过外推本票完成。

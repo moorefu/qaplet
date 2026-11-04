@@ -20,7 +20,7 @@
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
-| 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
+| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix`；新 `.cache/worktrees/m2-02-win-error-fix` | in_progress（旧验收保留，当前Windows connect-error回归） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | 旧分支及 `codex/m2-05-resize-fix` | 旧原件见 `tickets/05` / `05-cross-fix`；新 `.cache/worktrees/m2-05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
@@ -28,7 +28,7 @@
 | 07 | `codex/m2-07-timers` | `.cache/worktrees/m2-07` | completed（`46e5cf4` 五原生645+实际64K129本票验收通过） |
 | 08 | `codex/m2-08-scheduling` | `.cache/worktrees/m2-08` | in_progress，interval/immediate与四类检查点轮转 |
 | 09 | `codex/m2-09-host-notify` | `.cache/worktrees/m2-09`；归档 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
-| 10 | `codex/m2-10-work` | `.cache/worktrees/m2-10` | awaiting_cross（C WorkPool 已合 `01e72a6`） |
+| 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原 `.cache/worktrees/m2-10`；新 `.cache/worktrees/m2-10-file-fix` | in_progress（已合WorkPool；867 Windows文件夹具失败待修复） |
 | 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | in_progress，C spawn 与实际退出回收 |
 | 11–12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
 
@@ -119,6 +119,8 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 06 按自身范围 resolved，07、09、10 已领取；13 的直接 blocker 也满足，待槽位。并行实现能力位分别为 timer bit 19、HostNotify bit 20、C work bit 21，接口具体形状依父规格由公开头文件落实，新的全局错误码若需要由 root 协调避免碰撞。每票首个资源即保持预算及 close/quiesce 安全，不延后 19/20；全部票完成后才做一次整体独立审查。当前旧 M1 1,000 循环及 06 本地重复范围不冒充最终 T03 全资源混合，父 M2 仍 in_progress。
 
 ## 一次性测试入口修复
+
+WorkPool `867356c` / Full `41799595408` 最终 completed/failure：Windows native与startup-matrix失败。Windows SDK142项中唯一nonpass为`qaplet-host.m2-work-file`，exit256、无timeout，stderr `work contract line 49: fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd)`；代码显示该断言位于首次submit前，原`/tmp/qaplet-work-XXXXXX`创建/写/关哪个阶段及原errno仍未区分，不能猜测故障归因。fresh `codex/m2-10-file-fix` 定向诊断，票10不关闭/不放行11。另有02 Windows `socket.connect-error`：connect -1/errno115，poll0/timeout2000ms/revents0、select -2、socket_error10061、connection_failed=false，reserve已在connect前关闭。02重新claimed定向调查，旧196cd75范围保留，不因当前探针失败改标此前通过的各产品scope。四健康native各142、实际64K142、包外21/fault2、双archive14与M0Full235本轮已独立重放通过；Windows失败不得据此伪造710完整通过。原件/typed失败及29原ZIP、12nested、11job日志保留于 `out/qaplet-m2/full-867356c/`，待独立handoff收尾。
 
 `46e5cf4` / Full `41796608784` 最终 completed/success，11 jobs成功；fresh严格消费 SDK五原生645、实际64K129、包外应用8、controlled fault1（当前六行合同）、双archive各13 ELF64 REL、当前M0六目标235，05正常TTY五原生97+实际64K19全部通过，必需缺口0。29原ZIP、12nested、11job原日志/UTF8copy、冻结05树对精确提交的67SDK+9eval/锁+12TTY去重81文件raw身份、三guest journal/seal/实际argv/清理均核验；SDK journal129项/27payload，M0 21/6，M2四suite/8payload，未用console镜像补字段。WinServer实际正常probe在最终通知后查询100×33，模式恢复与四项资源清理通过，未将受控fixture当正常CI，旧563失败仍失败，原Server唯一调度原因仍未证明。`out/qaplet-m2/full-46e5cf4/HANDOFF.md`、`verify/scope-summary.json`、`05-07-acceptance-check.json` 与 root `root-scope-acceptance.json` 保存全选择。按自身scope重新关闭05并完成07，放行08；当前更新的WorkPool另由867新Full验收，父M2/最终T03/发布未完成。
 
