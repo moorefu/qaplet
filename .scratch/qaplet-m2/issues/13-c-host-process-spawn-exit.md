@@ -84,3 +84,16 @@ Raw/Git blob/LF/ZIP/SDK/loader和实际驱动 imports已核验。详见[13验证
 `out/m2-13-cross-fix/final/handoff-002.json`。Mac仅增强失败时实际code/domain/error/
 helper/原生rlimit诊断；Full453两Mac16失败仍未关闭，等新原生Full事实后定向修复。
 本票继续claimed/in_progress，不放行14或派发整体Review。
+
+2026-11-04（当前Mac unlimited NOFILE定向修复本地交付）：fresh新树从实际4d13c20
+实施，产品54b03c8。先旧密封SDK公开hard无限red，再固定双arch thunk/原对象审计，
+临时实验aa76dc7 / run41834422457两Mac真实验证FD8192、soft256、188项/6页、父不变
+和真实reap；ARM实验loader与早报摘要不同明确记录。Darwin改为额度内CLOEXEC目录
+FD、fork child实际FD表枚举关闭非stdio并保留exec-error ack；不截断上界、不用soft/
+私有cap、不改PID身份或物理join。永久inherit加强高FD/降soft/父状态并修复诊断被
+重定向隐藏的问题；临时workflow只留实验分支。新正式供应normal Linux170、Win169+
+旧optional1、package46/fault2各双宿主、Process公开10+系统8/4、同scoped hard无限绿
+和check370/177实际193skip/bootstrap通过；77 raw/Gitblob/LF、ZIP79、三APE、双archive
+各15及原日志/输入闭包已核，详[13验证记录](../13-process-validation.md)和新树
+`out/m2-13-macos-fix/final/handoff.json`。Mac SDK完整原生链/实际64K仍等新Full；保持
+claimed/in_progress，旧失败不改标，14与整体Review未放行。

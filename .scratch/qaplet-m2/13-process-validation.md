@@ -197,3 +197,70 @@ status code/domain/error/helper_active 与原生 getrlimit soft/hard/result/erro
 不再从断言时的旧 errno115 猜错误域；没有改 spawn_posix/继承上界/白名单或等待判据。
 下一次原生 Full 取得这些事实后才选择 Mac 产品修复。13保持 claimed/in_progress，14
 未放行，整体 Review 未派发，也未签发父 M2、最终 T03 或发布完成。
+
+## 2026-11-04 · 当前 Mac unlimited NOFILE 定向修复本地交付
+
+fresh `codex/m2-13-macos-fix` / `.cache/worktrees/m2-13-macos-fix` 从实际集成
+`4d13c20fc702cdaaa2904ce19d5e5c349828202b` 建立，旧 `m2-13` 与
+`m2-13-cross-fix` 的源码和 out 均未修改。当前产品冻结
+`54b03c8137bc28a0c7f10593757a321753fb0dcd`。
+
+Full434 / run41827244833 的两 Mac 原件各161pass/9required fail，全部失败均无
+timeout。8个模式的公开诊断明确为 PROCESS_ERROR27 / errno域1 / 原值75，实测
+getrlimit成功、soft10240、hard18446744073709551615；固定源码的 hard>INT_MAX
+guard 在 fork 前拒绝合法 unlimited。inherit 的原诊断写入已重定向 fd2、恢复后
+未读该管道，因此它原先的根因仍不能由旧 errno115 或 rmdir39 推定。
+
+在改变产品行为前，旧密封 SDK 的包外纯 C 回归先实际 red：只在公开 spawn 调用
+期间将真实 getrlimit 的 hard 字段改为 RLIM_INFINITY，inputs/inherit 都返回
+27/domain1/error75。新 inherit 夹具在普通 Linux 旧 SDK 下先通过真实197/1023/
+8192描述符、soft降256和父状态保留，限定系统输入后仍 red。第一次全局 wrapper
+污染了夹具恢复值，其失败、原始日志及两版精确源码均保留；后续 scoped wrapper
+只影响公开 spawn 的调用线程，不触及私有 Runtime 布局。
+
+固定 libcosmo.a 的双架构原对象、原 archive 比较和实际反汇编保存于
+`out/m2-13-macos-fix/abi-audit.json`。close_range 的当前 wrapper 不支持 Darwin；
+closefrom 的 Darwin fallback 读取 soft 或1024，不能承担本合同。固定
+sys_getdirentries 与 readdir 使用的 sys_getdents 双架构都选择 Darwin196；实际
+readdir 的原生格式为 reclen+4/type+6/namlen+7/name+8，未把最新上游当固定库身份。
+
+root 授权的临时实验分支 `codex/m2-13-fd-probe` / `aa76dc7f68cbf611316f6b2af185d663d56071a6`
+在 run41834422457 由 Ubuntu 生产单一 fat APE，两 Mac 只消费供应字节。
+两原生 Darwin24.6（x64/4096、ARM64/16384）的原 stdout 都为 hard无限、soft10240
+降256、实际 FD8192、188entries/6pages、sweep_error0/high_closed1/low_closed1/
+parent_unchanged1/wait_status0；均exit0、无stderr/timeout。provider IDs
+13325510099 / 13325430149 / 13323668275 的三原 ZIP、源 Gitblob/LF、Python静态
+前后与324条原日志引用已核。Intel loader与早报相同；ARM为当前锁定 ape-m1.c/
+Zig派生3af169f8…（58672B），与早报c22edb00…不同，不能称同一个早报 loader。
+首轮 e2eb687 / run41833620337 因误以为原 archive 有 ARM Mac loader 而失败，
+本地首轮同类失败也保留；改用既有 startup_loaders.py 的 Ubuntu 单独构建路线。
+临时 workflow、实验驱动和 C 探针只在实验分支，不进入产品分支。
+
+产品在 Darwin 额度内额外打开一个 CLOEXEC `/dev/fd` 目录；fork child 使用已验证
+的原生 thunk 读取自己的实际 FD 表，关闭非stdio，保留原 exec-error ack 到 exec，
+最后关闭目录。没有父枚举竞争、soft/hard 截断或私有 FD 上限；解析或关闭失败
+经 ack 返回且不 exec，不按未知编号重试 close。Linux 保持 close_range，只有实际
+fallback 无法覆盖大 hard 时才拒绝，去掉其无条件提前 guard。PID WNOWAIT、锁内
+reap身份、物理 tryjoin、stop即启动清理、纯POD查询和默认Pipe明确拒绝均保留。
+
+永久 inherit 现在验证197/1023/8192三个实际非CLOEXEC描述符、soft256与父状态不变。
+失败诊断移到 fd2 恢复后，另补公开 status/native exit/reap/drive 诊断，不改变成功
+stdout、期望或等待时限。正式原件均在新树 `out/m2-13-macos-fix/final/`：
+
+| 报告 | 当前实际范围 |
+|---|---|
+| build.json | 普通 Ubuntu 正式供应；77 RECIPE、79 ZIP成员、三fat APE、双archive各15 |
+| linux.json / windows.json | normal170pass /169pass+既有optional symlink1 |
+| package.json / package-windows.json | 密封ZIP包外纯C应用/Work/timer各46pass |
+| fault.json / fault-windows.json | 既有core/work系统故障各2pass |
+| process-package-build.json | 实际ZIP在 `/tmp` 两源树外解包，仅用供应公开头/archive/source编译 |
+| process-package-linux.json / process-package-windows.json | 公开Process各10pass；系统seam Linux8/Windows4 |
+| unlimited-green.json | 与旧SDK同scoped hard无限输入，包外inherit/inputs各exit0、无stderr；只证明Linux seam |
+| devcheck.json / devcheck-complete.json | 规定check与真实C bootstrap通过；370项177实际193条件skip；额外闭包重放单列，非新增门禁 |
+| handoff.json | 77 raw/Gitblob/LF、ZIP79、三APE、双archive15 ELF64 REL机器62/183；627唯一命令/1254 raw日志/20父动态Python闭包及88静态Python/helpers |
+
+未来消费使用每scope完整 tracked Python/helpers 静态前后及父实际导入记录；首轮
+producer/devcheck 的旧guard范围原样保留，未反补子进程动态imports。独立原生
+Mac产品spawn/exec/waitid/reap链和实际64K仍须新Full；OS探针成功不是SDK完成，
+旧18个Mac失败及独立guest输入HTTP503不改标。本票继续claimed/in_progress，14
+未放行，整体Review未派发，不签发父M2/T03/发布完成。

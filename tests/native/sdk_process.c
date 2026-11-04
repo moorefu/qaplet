@@ -27,8 +27,7 @@ static char executable[PATH_MAX],root[PATH_MAX],cwd[PATH_MAX],native_cwd[PATH_MA
 static const char *special[]={"","参数 空格","two words","quote\"double","slash\\tail\\","literal&|;$()<>*","apostrophe'"};
 static qaplet_string arguments[16];
 static double milliseconds(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC,&ts); return ts.tv_sec*1000.0+ts.tv_nsec/1000000.0; }
-static qaplet_code spawn_ok(qaplet_runtime *r,const qaplet_process_options *options,qaplet_process *p,qaplet_process_status *status,qaplet_diagnostic *diagnostic) {
-  qaplet_code code=qaplet_process_spawn(r,options,p,status,diagnostic);
+static void spawn_failure(qaplet_code code,const qaplet_process_status *status) {
   if (code!=QAPLET_OK) {
     int saved_errno=errno;struct rlimit limits={0};int result=getrlimit(RLIMIT_NOFILE,&limits),limit_error=result ? errno : 0;
     fprintf(stderr,"process spawn failure: return_code=%d status_code=%d error_domain=%u native_error=%d helper_active=%u nofile_result=%d nofile_error=%d nofile_soft=%llu nofile_hard=%llu int_max=%d\n",
@@ -36,7 +35,16 @@ static qaplet_code spawn_ok(qaplet_runtime *r,const qaplet_process_options *opti
       (unsigned long long)limits.rlim_cur,(unsigned long long)limits.rlim_max,INT_MAX);
     errno=saved_errno;
   }
+}
+static qaplet_code spawn_ok(qaplet_runtime *r,const qaplet_process_options *options,qaplet_process *p,qaplet_process_status *status,qaplet_diagnostic *diagnostic) {
+  qaplet_code code=qaplet_process_spawn(r,options,p,status,diagnostic);
+  spawn_failure(code,status);
   return code;
+}
+static void status_failure(const char *stage,qaplet_code code,const qaplet_process_status *s,const qaplet_drive_result *drive) {
+  fprintf(stderr,"process status failure: stage=%s return_code=%d status_code=%d error_domain=%u native_error=%d exited=%u reaped=%u delivered=%u referenced=%u helper_active=%u exit_code=%u signal=%u raw_wait_status=%d drive_reason=%u drive_code=%d progressed=%u\n",
+    stage,code,s->code,s->error_domain,s->error,s->exited,s->reaped,s->delivered,s->referenced,s->helper_active,s->native_exit_code,s->native_signal,s->raw_wait_status,
+    drive ? drive->reason : 0,drive ? drive->code : 0,drive ? drive->progressed : 0);
 }
 static int copy_file(const char *from,const char *to) {
   int in=open(from,O_RDONLY|O_CLOEXEC),out=open(to,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,0700);
@@ -66,8 +74,15 @@ static int finish(qaplet_runtime *runtime) {
 }
 static int completed(qaplet_runtime *r,qaplet_process *p,uint32_t expected) {
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
-  CHECK(qaplet_run(r,&d,NULL)==QAPLET_OK && d.reason==QAPLET_DRIVE_IDLE && d.progressed);
-  CHECK(qaplet_process_get_status(r,p,&s,NULL)==QAPLET_OK && s.exited && s.reaped && s.delivered && !s.referenced && !s.code && s.native_exit_code==expected && !s.native_signal);
+  qaplet_code code=qaplet_run(r,&d,NULL);
+  if (code!=QAPLET_OK || d.reason!=QAPLET_DRIVE_IDLE || !d.progressed) {
+    qaplet_get_process_status(r,p,&s,NULL);status_failure("run",code,&s,&d);
+  }
+  CHECK(code==QAPLET_OK && d.reason==QAPLET_DRIVE_IDLE && d.progressed);
+  code=qaplet_process_get_status(r,p,&s,NULL);
+  if (code!=QAPLET_OK || !s.exited || !s.reaped || !s.delivered || s.referenced || s.code || s.native_exit_code!=expected || s.native_signal)
+    status_failure("completed",code,&s,&d);
+  CHECK(code==QAPLET_OK && s.exited && s.reaped && s.delivered && !s.referenced && !s.code && s.native_exit_code==expected && !s.native_signal);
   CHECK(qaplet_process_release(r,p,NULL)==QAPLET_OK);
   CHECK(qaplet_process_release(r,p,NULL)==QAPLET_INVALID_HANDLE);
   return 0;
@@ -98,6 +113,7 @@ static int inherit(void) {
   char name[PATH_MAX],identity[128]="197";
   snprintf(name,sizeof(name),"%s/sentinel",cwd);
   int sentinel=-1; int64_t native=0;
+  int inherited_fds[3]={-1,-1,-1};struct rlimit original={0},lowered={0},after={0};
   if (IsWindows()) {
     char16_t path[PATH_MAX]; tprecode8to16(path,PATH_MAX,native_cwd);
     size_t n=0; while(path[n]) ++n; const char16_t suffix[]=u"\\sentinel"; memcpy(path+n,suffix,sizeof(suffix));
@@ -105,7 +121,12 @@ static int inherit(void) {
     native=CreateFile(path,0xc0000000,7,&security,2,128,0); CHECK(native && native!=-1);
     struct NtByHandleFileInformation info; CHECK(GetFileInformationByHandle(native,&info));
     snprintf(identity,sizeof(identity),"%lld:%u:%u:%u",(long long)native,info.dwVolumeSerialNumber,info.nFileIndexHigh,info.nFileIndexLow);
-  } else { sentinel=open(name,O_CREAT|O_TRUNC|O_RDWR,0600); CHECK(sentinel>=0 && dup2(sentinel,197)==197 && !fcntl(197,F_SETFD,0)); }
+  } else {
+    sentinel=open(name,O_CREAT|O_TRUNC|O_RDWR,0600);CHECK(sentinel>=0 && !getrlimit(RLIMIT_NOFILE,&original));
+    const int minimum[]={197,1023,8192};
+    for(unsigned i=0;i<3;++i) { inherited_fds[i]=fcntl(sentinel,F_DUPFD,minimum[i]);CHECK(inherited_fds[i]>=minimum[i] && !fcntl(inherited_fds[i],F_SETFD,0)); }
+    snprintf(identity,sizeof(identity),"%d,%d,%d",inherited_fds[0],inherited_fds[1],inherited_fds[2]);
+  }
   qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT; qaplet_runtime *r=NULL;
   CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   int io[3][2],saved[3];
@@ -113,9 +134,19 @@ static int inherit(void) {
   qaplet_process_options o; prepare(&o,"--inherit"); for (int i=0;i<3;++i) o.stdio[i]=QAPLET_PROCESS_INHERIT;
   arguments[IsWindows() ? 2 : 4]=(qaplet_string){identity,strlen(identity)};
   qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
-  qaplet_code code=spawn_ok(r,&o,&p,&s,NULL);
+  if (!IsWindows()) { lowered=original;lowered.rlim_cur=256;CHECK(!setrlimit(RLIMIT_NOFILE,&lowered)); }
+  /* Report only after restoring fd2: a failed spawn's diagnostic must not be
+   * stranded in the child's redirected stderr pipe. */
+  qaplet_code code=qaplet_process_spawn(r,&o,&p,&s,NULL);
+  int limit_unchanged=1,restore_limit_error=0;
+  if (!IsWindows()) {
+    limit_unchanged=!getrlimit(RLIMIT_NOFILE,&after) && after.rlim_cur==lowered.rlim_cur && after.rlim_max==original.rlim_max;
+    restore_limit_error=setrlimit(RLIMIT_NOFILE,&original) ? errno : 0;
+    for(unsigned i=0;i<3;++i) limit_unchanged=limit_unchanged && fcntl(inherited_fds[i],F_GETFD)==0;
+  }
   for(int i=0;i<3;++i) { CHECK(dup2(saved[i],i)==i); close(saved[i]); close(io[i][i ? 1 : 0]); }
-  CHECK(code==QAPLET_OK);
+  spawn_failure(code,&s);
+  CHECK(code==QAPLET_OK && limit_unchanged && !restore_limit_error);
   const unsigned char input[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'};
   CHECK(write(io[0][1],input,sizeof(input))==sizeof(input)); close(io[0][1]);
   unsigned char output[16]={0},error[16]={0};
@@ -129,7 +160,7 @@ static int inherit(void) {
   CHECK(output_bytes==sizeof(input) && !memcmp(output,input,sizeof(input)) && read(io[1][0],output,sizeof(output))==0);
   CHECK(error_bytes==sizeof(errors) && !memcmp(error,errors,sizeof(errors)) && read(io[2][0],error,sizeof(error))==0);
   close(io[1][0]); close(io[2][0]); CHECK(!completed(r,&p,37)); CHECK(!finish(r));
-  if (IsWindows()) CHECK(CloseHandle(native)); else { CHECK(!close(197)); CHECK(!close(sentinel)); }
+  if (IsWindows()) CHECK(CloseHandle(native)); else { for(unsigned i=0;i<3;++i) CHECK(!close(inherited_fds[i]));CHECK(!close(sentinel)); }
   CHECK(!unlink(name));
   puts("M2 process inherit: binary authorized stdio; extra native descriptor excluded; actual exit/reap: pass"); return 0;
 }
@@ -245,10 +276,13 @@ static int limits(void) {
 static int observed_exit(qaplet_runtime *r,qaplet_process *p,qaplet_process_status *s) {
   double until=milliseconds()+5000;
   do {
-    CHECK(qaplet_process_get_status(r,p,s,NULL)==QAPLET_OK);
+    qaplet_code code=qaplet_process_get_status(r,p,s,NULL);
+    if (code!=QAPLET_OK || s->code) status_failure("observe",code,s,NULL);
+    CHECK(code==QAPLET_OK && !s->code);
     if (s->reaped && !s->helper_active) return 0;
     sched_yield();
   } while (milliseconds()<until);
+  status_failure("observe-deadline",QAPLET_OK,s,NULL);
   CHECK(0); return 1;
 }
 static int ledger(void) {
@@ -461,11 +495,18 @@ static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
   if (!strcmp(mode,"--inherit")) {
-    errno=0; int flags=fcntl(197,F_GETFD),cached_error=errno; char probe;
-    errno=0; int observed=read(197,&probe,1),native_error=errno;
-    if (flags!=-1 || cached_error!=EBADF || observed!=-1 || native_error!=EBADF) {
-      fprintf(stderr,"inherited descriptor: flags=%d errno=%d read=%d errno=%d\n",flags,cached_error,observed,native_error); return 98;
-    }
+    const char *cursor=argv[3];unsigned count=0;
+    do {
+      char *end;long fd=strtol(cursor,&end,10);
+      if (end==cursor || fd<3 || fd>INT_MAX || (*end && *end!=',')) return 98;
+      errno=0;int flags=fcntl(fd,F_GETFD),cached_error=errno;char probe;
+      errno=0;int observed=read(fd,&probe,1),native_error=errno;
+      if (flags!=-1 || cached_error!=EBADF || observed!=-1 || native_error!=EBADF) {
+        fprintf(stderr,"inherited descriptor: fd=%ld flags=%d errno=%d read=%d errno=%d\n",fd,flags,cached_error,observed,native_error);return 98;
+      }
+      ++count;cursor=*end ? end+1 : end;
+    } while (*cursor);
+    if (count!=3) return 98;
     const unsigned char expected[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'};
     unsigned char data[16]; ssize_t n=read(0,data,sizeof(data));
     if (n!=sizeof(expected) || memcmp(data,expected,sizeof(expected)) || read(0,data,sizeof(data))!=0) return 98;

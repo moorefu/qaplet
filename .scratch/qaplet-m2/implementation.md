@@ -175,3 +175,17 @@ Process永久公开10各两宿主/系统8与4、check370中177实际193skip/boot
 旧候选均保留。Mac仅新增失败时公开code/domain/error/helper及实测rlimit诊断，排序假设先行，
 未改FD继承或spawn行为。13保持in_progress，待独立合并及新的原生Full取得Mac事实；两Mac16
 原失败、14未放行与最终整体Review边界不变。
+
+13 当前Mac定向修复已在fresh `codex/m2-13-macos-fix` 基于实际4d13c20本地交付，
+产品54b03c8：Full434两Mac18原失败中8×2的公开domain1/error75与hard无限guard明确；
+inherit旧诊断隐藏仍独立保留。旧密封SDK scoped hard无限公开red、固定原对象/thunk
+审计及实验aa76dc7 /41834422457两Mac FD8192/soft256/188项6页/父不变/真实reap先行。
+产品Darwin以额度内CLOEXEC目录FD在fork child枚举真实FD表关闭非stdio，保留ack，
+不截断范围或弱化继承白名单；永久高FD回归和失败公开诊断同步加强。正式normal170/
+Windows169+旧optional1、package46/fault2各双宿主、Process公开10与系统8/4、同scoped
+hard无限绿、370项177实际193skip及bootstrap通过。77 raw/Gitblob/LF、ZIP79、三APE/
+双archive各15、627唯一命令/1254 raw与父动态/完整静态Python闭包已核，详新树
+`out/m2-13-macos-fix/final/handoff.json`与[13验证记录](13-process-validation.md)。
+临时workflow只留实验branch；ARM实验loader不同于早报的限定保留。继续等当前产品
+Mac SDK原生完整链和实际64K新Full，旧失败/独立guest输入503不改标；13仍in_progress，
+14未放行，不派发整体Review或签发父M2/T03/发布。

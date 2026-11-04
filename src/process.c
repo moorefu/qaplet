@@ -28,6 +28,9 @@ extern char **environ;
  * dispatch thunk and mapped wait options; the native siginfo payload is opaque
  * and never decoded. Linux and Darwin both define P_PID=1. */
 extern int sys_waitid(int,int,void *,int,void *);
+/* Pinned x64/ARM64 thunks and readdir use Darwin getdirentries(196), whose
+ * native entries have a 32-bit inode and name/reclen at offsets 8/4. */
+extern long sys_getdirentries(int,void *,size_t,long *);
 
 typedef struct {
   qaplet_runtime *runtime;
@@ -280,12 +283,46 @@ void qaplet_process_shutdown(qaplet_runtime *r) {
   pthread_mutex_unlock(&r->mutex);
   qaplet_process_collect(r);
 }
+static int close_child_directory(int directory,int acknowledgement) {
+  unsigned char buffer[512];long base=0;
+  for (;;) {
+    long length;
+    do { length=sys_getdirentries(directory,buffer,sizeof(buffer),&base); } while (length<0 && errno==EINTR);
+    if (length<0) return errno;
+    if (!length) return close(directory) ? errno : 0;
+    if (length>sizeof(buffer)) return EIO;
+    for (size_t offset=0;offset<(size_t)length;) {
+      if ((size_t)length-offset<8) return EIO;
+      uint16_t record;memcpy(&record,buffer+offset+4,sizeof(record));
+      unsigned name_length=buffer[offset+7];
+      if (record<9 || record>(size_t)length-offset || name_length>=record-8 || buffer[offset+8+name_length]) return EIO;
+      const unsigned char *name=buffer+offset+8;
+      if (name_length && name[0]>='0' && name[0]<='9') {
+        unsigned fd=0;
+        for (unsigned i=0;i<name_length;++i) {
+          if (name[i]<'0' || name[i]>'9' || fd>(INT_MAX-(name[i]-'0'))/10u) return EIO;
+          fd=fd*10+name[i]-'0';
+        }
+        /* This is the child's actual FD table after fork: no parent snapshot
+         * race, resource-limit bound, allocation, or inherited metadata. Keep
+         * only authorized stdio and the CLOEXEC exec-error acknowledgement. */
+        if (fd>2 && fd!=directory && fd!=acknowledgement && close(fd) && errno!=EBADF) return errno;
+      }
+      offset+=record;
+    }
+  }
+}
 static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char **argv,char **env,const char *cwd,const qaplet_process_options *o) {
-  struct rlimit limits;
-  if (getrlimit(RLIMIT_NOFILE,&limits)) return errno;
-  if (limits.rlim_max>INT_MAX) return EOVERFLOW;
-  int io[2]={-1,-1},nulls[3]={-1,-1,-1},error=0;
-  if (pipe2(io,O_CLOEXEC)) return errno;
+  struct rlimit limits={0};
+  if (!IsXnu() && getrlimit(RLIMIT_NOFILE,&limits)) return errno;
+  int directory=-1,io[2]={-1,-1},nulls[3]={-1,-1,-1},error=0;
+  if (IsXnu()) {
+    directory=open("/dev/fd",O_RDONLY|O_DIRECTORY|O_CLOEXEC);
+    if (directory<0) return errno;
+    acquired(r);error=private_fd(r,&directory);
+    if (error) return error;
+  }
+  if (pipe2(io,O_CLOEXEC)) { error=errno;closed_fd(r,&directory);return error; }
   acquired(r); acquired(r);
   error=private_fd(r,&io[0]);
   if (!error) error=private_fd(r,&io[1]);
@@ -299,16 +336,23 @@ static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char *
       int fail=0;
       if (chdir(cwd)) fail=errno;
       for (int i=0;i<3 && !fail;++i) if (nulls[i]>=0 && dup2(nulls[i],i)<0) fail=errno;
-      /* close_range is the supplied libc API. Unsupported kernels use the
-       * captured hard fd bound; no parent enumeration race or private fd cap. */
-      if (io[1]>3 && close_range(3,io[1]-1,0)) for (int fd=3;fd<io[1];++fd) close(fd);
-      if (close_range(io[1]+1,UINT_MAX,0)) for (int fd=io[1]+1;fd<(int)limits.rlim_max;++fd) close(fd);
+      int closed=0;
+      if (IsXnu()) closed=close_child_directory(directory,io[1]);
+      else {
+        if (io[1]>3 && close_range(3,io[1]-1,0)) for (int fd=3;fd<io[1];++fd) close(fd);
+        if (close_range(io[1]+1,UINT_MAX,0)) {
+          if (limits.rlim_max>INT_MAX) closed=EOVERFLOW;
+          else for (int fd=io[1]+1;fd<(int)limits.rlim_max;++fd) close(fd);
+        }
+      }
+      if (!fail) fail=closed;
       if (!fail) { execve(path,argv,env); fail=errno; }
       ssize_t n; do { n=write(io[1],&fail,sizeof(fail)); } while (n<0 && errno==EINTR);
       _exit(127);
     }
     if (s->pid<0) error=errno;
   }
+  closed_fd(r,&directory);
   for (int i=0;i<3;++i) closed_fd(r,&nulls[i]);
   closed_fd(r,&io[1]);
   if (!error) {
@@ -423,7 +467,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
     if (envchars>(SIZE_MAX-attributes)/2-32768-2*PATH_MAX) { code=QAPLET_RESOURCE_LIMIT; goto rejected; }
     scratch=(envchars+32768+2*PATH_MAX)*2+attributes;
   }
-  size_t handles=IsWindows() ? 6 : 3;
+  size_t handles=IsWindows() ? 6 : 3+!!IsXnu();
   for (int i=0;i<3;++i) handles+=o->stdio[i]==QAPLET_PROCESS_IGNORE;
   if (!IsWindows()) for (int i=0;i<3;++i) if (fcntl(i,F_GETFD)<0) { ++handles; break; }
   pthread_mutex_lock(&r->mutex);
