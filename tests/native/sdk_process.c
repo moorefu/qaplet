@@ -109,11 +109,41 @@ static int inputs(void) {
   CHECK(!finish(r)); unsetenv("QAPLET_AFTER_CREATE"); unsetenv("QAPLET_SNAPSHOT");
   puts("M2 process inputs: explicit Unicode path; copied argv/env/cwd; factory snapshot and complete replacement; actual exit/reap: pass"); return 0;
 }
+static int inherit_descriptors(int sentinel,int fds[3],struct rlimit *original,struct rlimit *prepared) {
+  CHECK(!getrlimit(RLIMIT_NOFILE,original));
+  /* F_DUPFD uses the current soft limit. Prepare real high descriptors before
+   * lowering it, without asking for a larger hard limit or retaining the raise. */
+  int high=original->rlim_max>8192 ? 8192 : original->rlim_max>256 ? (int)original->rlim_max-1 : 0;
+  int minimum[]={197,high>1023 ? 1023 : high-1,high};
+  *prepared=*original;
+  if (prepared->rlim_cur<(rlim_t)high+1) prepared->rlim_cur=(rlim_t)high+1;
+  int error=0;
+  if (high<=256) error=EMFILE;
+  else if (setrlimit(RLIMIT_NOFILE,prepared)) error=errno;
+  else for(unsigned i=0;i<3;++i) {
+    fds[i]=fcntl(sentinel,F_DUPFD,minimum[i]);
+    if (fds[i]<minimum[i] || fcntl(fds[i],F_SETFD,0)) { error=errno;break; }
+  }
+  int restore_error=setrlimit(RLIMIT_NOFILE,original) ? errno : 0;
+  struct rlimit restored={0};
+  int restored_ok=!getrlimit(RLIMIT_NOFILE,&restored) && restored.rlim_cur==original->rlim_cur && restored.rlim_max==original->rlim_max;
+  if (error || restore_error || !restored_ok) {
+    fprintf(stderr,"inherit fixture preparation: original=%llu/%llu prepared=%llu/%llu selected=%d,%d,%d minimum=%d,%d,%d error=%d restore_error=%d restored=%llu/%llu requires_high_fd_above=256\n",
+      (unsigned long long)original->rlim_cur,(unsigned long long)original->rlim_max,
+      (unsigned long long)prepared->rlim_cur,(unsigned long long)prepared->rlim_max,
+      fds[0],fds[1],fds[2],minimum[0],minimum[1],minimum[2],error,restore_error,
+      (unsigned long long)restored.rlim_cur,(unsigned long long)restored.rlim_max);
+    for(unsigned i=0;i<3;++i) if (fds[i]>=0) { close(fds[i]);fds[i]=-1; }
+    return 1;
+  }
+  CHECK(fds[2]>256 && (original->rlim_max<=8192 || fds[2]>=8192));
+  return 0;
+}
 static int inherit(void) {
   char name[PATH_MAX],identity[128]="197";
   snprintf(name,sizeof(name),"%s/sentinel",cwd);
   int sentinel=-1; int64_t native=0;
-  int inherited_fds[3]={-1,-1,-1};struct rlimit original={0},lowered={0},after={0};
+  int inherited_fds[3]={-1,-1,-1};struct rlimit original={0},prepared={0},lowered={0},after={0},restored={0};
   if (IsWindows()) {
     char16_t path[PATH_MAX]; tprecode8to16(path,PATH_MAX,native_cwd);
     size_t n=0; while(path[n]) ++n; const char16_t suffix[]=u"\\sentinel"; memcpy(path+n,suffix,sizeof(suffix));
@@ -122,9 +152,8 @@ static int inherit(void) {
     struct NtByHandleFileInformation info; CHECK(GetFileInformationByHandle(native,&info));
     snprintf(identity,sizeof(identity),"%lld:%u:%u:%u",(long long)native,info.dwVolumeSerialNumber,info.nFileIndexHigh,info.nFileIndexLow);
   } else {
-    sentinel=open(name,O_CREAT|O_TRUNC|O_RDWR,0600);CHECK(sentinel>=0 && !getrlimit(RLIMIT_NOFILE,&original));
-    const int minimum[]={197,1023,8192};
-    for(unsigned i=0;i<3;++i) { inherited_fds[i]=fcntl(sentinel,F_DUPFD,minimum[i]);CHECK(inherited_fds[i]>=minimum[i] && !fcntl(inherited_fds[i],F_SETFD,0)); }
+    sentinel=open(name,O_CREAT|O_TRUNC|O_RDWR,0600);CHECK(sentinel>=0);
+    if (inherit_descriptors(sentinel,inherited_fds,&original,&prepared)) { close(sentinel);unlink(name);return 1; }
     snprintf(identity,sizeof(identity),"%d,%d,%d",inherited_fds[0],inherited_fds[1],inherited_fds[2]);
   }
   qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT; qaplet_runtime *r=NULL;
@@ -142,10 +171,18 @@ static int inherit(void) {
   if (!IsWindows()) {
     limit_unchanged=!getrlimit(RLIMIT_NOFILE,&after) && after.rlim_cur==lowered.rlim_cur && after.rlim_max==original.rlim_max;
     restore_limit_error=setrlimit(RLIMIT_NOFILE,&original) ? errno : 0;
+    limit_unchanged=limit_unchanged && !getrlimit(RLIMIT_NOFILE,&restored) && restored.rlim_cur==original.rlim_cur && restored.rlim_max==original.rlim_max;
     for(unsigned i=0;i<3;++i) limit_unchanged=limit_unchanged && fcntl(inherited_fds[i],F_GETFD)==0;
   }
   for(int i=0;i<3;++i) { CHECK(dup2(saved[i],i)==i); close(saved[i]); close(io[i][i ? 1 : 0]); }
   spawn_failure(code,&s);
+  if (code!=QAPLET_OK || !limit_unchanged || restore_limit_error)
+    fprintf(stderr,"inherit fixture spawn: original=%llu/%llu prepared=%llu/%llu lowered=%llu/%llu selected=%d,%d,%d observed=%llu/%llu restored=%llu/%llu parent_unchanged=%d restore_error=%d\n",
+      (unsigned long long)original.rlim_cur,(unsigned long long)original.rlim_max,
+      (unsigned long long)prepared.rlim_cur,(unsigned long long)prepared.rlim_max,
+      (unsigned long long)lowered.rlim_cur,(unsigned long long)lowered.rlim_max,
+      inherited_fds[0],inherited_fds[1],inherited_fds[2],(unsigned long long)after.rlim_cur,(unsigned long long)after.rlim_max,
+      (unsigned long long)restored.rlim_cur,(unsigned long long)restored.rlim_max,limit_unchanged,restore_limit_error);
   CHECK(code==QAPLET_OK && limit_unchanged && !restore_limit_error);
   const unsigned char input[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'};
   CHECK(write(io[0][1],input,sizeof(input))==sizeof(input)); close(io[0][1]);
@@ -160,7 +197,11 @@ static int inherit(void) {
   CHECK(output_bytes==sizeof(input) && !memcmp(output,input,sizeof(input)) && read(io[1][0],output,sizeof(output))==0);
   CHECK(error_bytes==sizeof(errors) && !memcmp(error,errors,sizeof(errors)) && read(io[2][0],error,sizeof(error))==0);
   close(io[1][0]); close(io[2][0]); CHECK(!completed(r,&p,37)); CHECK(!finish(r));
-  if (IsWindows()) CHECK(CloseHandle(native)); else { for(unsigned i=0;i<3;++i) CHECK(!close(inherited_fds[i]));CHECK(!close(sentinel)); }
+  if (IsWindows()) CHECK(CloseHandle(native)); else {
+    CHECK(!getrlimit(RLIMIT_NOFILE,&restored) && restored.rlim_cur==original.rlim_cur && restored.rlim_max==original.rlim_max);
+    for(unsigned i=0;i<3;++i) CHECK(fcntl(inherited_fds[i],F_GETFD)==0 && !close(inherited_fds[i]));
+    CHECK(!close(sentinel));
+  }
   CHECK(!unlink(name));
   puts("M2 process inherit: binary authorized stdio; extra native descriptor excluded; actual exit/reap: pass"); return 0;
 }
