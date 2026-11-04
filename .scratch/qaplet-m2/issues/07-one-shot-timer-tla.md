@@ -58,3 +58,5 @@
 
 2026-11-03：本地纵向红绿实现与合同记录见 [07 验证记录](../07-timer-validation.md)。独立 timer snapshot 不扩大既有快照；CLI 私有 entry-drive 在完整入口检查点交还并保存入口结果。当前保持 claimed / awaiting_cross，由 root 合并后统一签发当前 Cross/Full/实际 64K，不据本地通过 resolved 本票或父规格。
 
+
+2026-11-04：已完成 HostNotify 融合及当前 `563ff33` integration 同步；最终 RECIPE 源码 `ddf00aa`。本地同字节 Linux 129 项、Windows 128 pass / 1 optional symlink blocked，必需缺口 0；各 1,000 次 timer 生命周期和 100 次 timer 混合、密封 ZIP 包外 timer 10 项及受控 fault 的双宿主重放、普通包外 C 应用 8 项、完整 dev check 均通过。元数据能力名称与累计等待预算夹具追加红绿、失败原件、最终供应身份见 [07 验证记录](../07-timer-validation.md)。保持 claimed / awaiting_cross，等待 root 新配方集成 Full/实际 64K 后关闭，不以本地成功 resolved。

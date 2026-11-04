@@ -24,6 +24,8 @@ timer 默认 ref。入口 DONE 后 ref timer 仍驱动，unref 只解除自然�
 自动 `run` 在完整 jobs 检查点跳过 unref-only 资源；显式 `pump/run_once` 可推进
 已就绪的 unref timer，但不为未来 unref-only timer 持续等待。
 等待取 max_wait、最近 timer 与活跃入口绝对期限的最小值；纯等待不新建执行账本。
+max_wait 限制累计主动等待，不是整个调用的硬耗时上限；OS 等待或调度暂停跨过
+timer deadline 后，驱动可正常交付已到期回调。
 活跃入口（含 TLA）与回调共用累计账本，独立回调及其完整 jobs 检查点另起账本。
 
 每实例预留有限槽表，timer 与后续 immediate 共用配置的合计上限（默认 1024）。

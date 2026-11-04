@@ -89,3 +89,98 @@ fixture 参数，在产品执行前以 exit 2 拒绝，保留原件且不算产�
 191 条件 skip，真实系统 C bootstrap pass。两次 dev 的默认原日志在 out/dev；
 `dev-evidence/` 保存全部 36 文件逐字节副本，`dev-evidence-map.json` 记录
 原路径、保存路径、SHA/长度与一致收据；没有改写原报告的真实日志路径。
+
+## 2026-11-04 · HostNotify 融合与追加红绿
+
+接续时保留 `814290f` 及在途 `2c44fc3` merge，核实 MERGE_HEAD 后完成
+`097885a`，再合入仅文档集成至 `563ff33`。timer bit19 与 HostNotify bit20
+同时保留；能力掩码、公开元数据、Host 单元和受控输出累积，不以一方覆盖另一方。
+通知 TLS guard 对 timer create/cancel/ref/snapshot 同样返回 BUSY；固定通知控制字段
+通过 Runtime 本体计费，与 timer 槽表继续累积计入原生总存储。
+
+`integrated-b481efc/` 保留首轮融合供应和通过的 dev check；其密封 ZIP 的公开
+metadata 断言真实失败：能力整数含 bit19，但 capability_names 缺少 m2-timers。
+增加该名称后转绿。编辑时 Windows 默认文本解码曾误改两条 Unicode 夹具，
+`2794342` 已按前一提交 Git blob 恢复原字节，最终净差异只有能力名称；没有供应
+误编码版本。`final-a37c4bc/` 仅保留该中间提交的配方检查，不作为 SDK 供应。
+
+`final-2794342/` 的完整 Linux 129 项及 Windows 128 pass / 1 optional blocked、
+两宿主各 1,000 次 timer 生命周期和 100 次 timer 混合序列、包外应用 8 项、
+Linux/Windows 同字节受控 fault 均通过。额外密封 ZIP 包外 timer Host 的 Linux
+10 项通过，Windows 在旧 liveness 夹具中真实失败 1 项：注册 15ms timer 后要求
+run_once(1ms) 必须 WAIT_TIMEOUT。该次命令约 23ms；原始复合断言没有分别记录
+reason/calls/回调时刻，因此不能仅凭总耗时断言具体在哪个调度位置暂停。
+该红原件 `timer-package-windows.json` 保持 fail，没有用重跑覆盖。
+
+公开 C 最小观察探针 `timing-observer-build/` 与 `timing-observer-windows/`
+各实际 102 例，记录注册前/驱动前后/实际回调 CLOCK_MONOTONIC。确定性注册后
+暂停 30ms 时，旧超时断言在两宿主均 false，而实际回调分别约 30.0806ms、
+30.3626ms，符合已接受 timer 的最早 deadline；远期 5,000ms timer 的 1ms
+等待均返回 WAIT_TIMEOUT。它证明旧夹具排除了合法调度，不声称捕获原始自然红的
+具体暂停位置。B05/Q51 的累计主动等待预算不是整个调用的硬耗时上限。
+
+`ddf00aa` 仅修改验收 C：正常 liveness 用实际回调单调时钟约束，不早于注册前
+时刻 + 15ms；WAIT_TIMEOUT 必须仍保留一个 ref timer，PROGRESS 必须恰好交付
+一次。受控时钟另设 1,000ms timer / 1ms max_wait 必须超时，再保留原 5ms timer
+与 max_wait/entry 最小值断言。`liveness-fixture-green-build/` 与 Windows 原件
+对单一 30ms 暂停注入均通过；候选明确单独标记，不当作最终供应。Core 与等待
+实现没有因这次夹具修复改变，未增加错误码或延长 timeout。
+
+一次性 timer 包外 adapter 首次在筛选空参数列表时 IndexError，Windows fault
+adapter 首次在 Python 解析阶段有多余括号；均发生于产品执行前。对应
+`timer-package-adapter-error.json`、`fault-windows-adapter-error.json` 保存失败阶段，
+原工具输出留在工作记录；修正使用分别命名的 fixed 报告，产品失败未被改写。
+
+## 最终供应 ddf00aa 与本地交接
+
+最终 RECIPE 源码为 `ddf00aa3ad67547ed3f874e13cfc42d69b95d3ea`，已包含
+`563ff33` integration。全部新原件在本树 `out/m2-07/final-ddf00aa/`；
+[handoff.json](../../out/m2-07/final-ddf00aa/handoff.json) 汇总原件身份与范围，
+不替代原报告、命令、stdout/stderr。Windows 与 Ubuntu 的 67 项 RECIPE
+逐文件原字节 = Git blob、CRLF 为零；Ubuntu producer 的
+`working_tree_dirty=true` 原样保留，没有改写为 clean。
+
+| 原件 | 实际结果与范围 |
+|---|---|
+| `build.json` | Ubuntu 新版供应 pass；密封 ZIP、公开 SDK 双目标 archive、Host/CLI/完整应用 APE 审计通过 |
+| `metadata-green.json` | 密封 ZIP 的 bit19/bit20 和 m2-timers/host-notify 名称同时存在 |
+| `linux.json` | Linux x86-64 / WSL2 6.6.87.2 / 4096，129 pass，必需缺口 0 |
+| `windows.json` | Windows 10.0.22000 x86-64 / 4096，128 pass / 1 optional symlink blocked，必需缺口 0 |
+| `repeat-linux/report.json` | 实际 1,000 次 timer 生命周期、100 次 timer 混合序列，约 25.323 秒，供应字节前后相同 |
+| `repeat-windows/report.json` | 同字节 Host，实际相同次数，约 10.918 秒，供应字节前后相同 |
+| `package-consume.json` | 最终 ZIP 在 `/tmp/qaplet-sdk-consumer-1xvf6i0v` 包外仅用公开头/供应 archive 编译普通 C 应用，8/8 pass |
+| `fault-consume.json` | 最终 ZIP 在 `/tmp/qaplet-sdk-consumer-duij2mij` 包外编译受控系统 fixture，1/1 pass；包括确定性远期 timer 等待、HostNotify 与 timer BUSY guard、原始首因和 uncertain fd 保留 |
+| `fault-windows.json` | Windows 执行同字节 Ubuntu 包外故障 APE，1/1 pass，非普通随机 OS 故障覆盖 |
+| `timer-package-consume.json` | 最终 ZIP 在 `/tmp/qaplet-sdk-consumer-bnp_84v6` 包外编译独立 timer C Host，10/10 pass；仅公开头、原供应 archive，不重编 SDK |
+| `timer-package-windows.json` | Windows 执行同字节包外 timer APE，10/10 pass，包含按实际回调时钟验证的 liveness |
+| `dev-check.json` | Ubuntu 完整 check pass：368 总、177 实际通过、191 显式输入条件 skip、87.114 秒；真实系统 C bootstrap pass |
+
+普通完整目录还分别实际执行了既有 M1 1,000 次生命周期；新增 1,000/100 只证明
+本票 timer 资源范围，不冒充最终 T03 全资源混合。全部最终必需报告均无 timeout、
+必需 skip 或 fail。`dev-evidence/` 保存本轮 18 文件逐字节副本，
+`dev-evidence-map.json` 保存 SHA/长度/一致收据；原报告的原日志路径未被修改。
+
+最终 SDK recipe SHA-256 为
+`1715c5a60616841c680576efc8334c823e82d19d7871d172a0a3aabbfc41c1ca`，
+SDK aggregate 为
+`4d56905b72a9d9e559b52e8e27bf3bf0241f8293082b9badf2462156c149ea5a`，
+密封 ZIP 为
+`84b24406d2efecc15e55abe225fc7c9f74049aea5be947ed9aeb8ab8a2740de5`。
+Host APE 为
+`bce26b62ee6ded78b7314526370a04ed9251f236a932d562928fa4a6252835dd`，
+CLI APE 为
+`3e2c0b422187084e89ef2486894b2df2f2884c15a1889f71b9200c69093ffa49`。
+两 archive 分别为 x86-64
+`c50bfad9d1e4b298d665783895d7fc6fd4cc08be672556761e7fe2e5402cacb5`、
+ARM64 `a212b002199ecc867e61422b0d409ddce38e623930760f44491df58a280a7915`，
+没有声称不同架构共享一份原生 archive。
+
+一次性 `timer_consume.py`、`consume_timers_windows.py` 和
+`consume_fault_windows.py` 位于 `out/m2-07/`，身份/源文件/完整命令由对应报告保留；
+辅助入口自身身份另见 `adapter-identities.json`。
+Windows 只重放 Ubuntu 已编译的同字节 APE。包外 timer 的 modules 显式映射到
+同一密封 SDK 的 modules，前后整包逐项核对未变，不包含引擎或私有头。
+
+本票本地交付完成，仍为 **claimed / awaiting_cross**。新的五原生、实际 64K、
+集成 Full 和最终父 M2 全资源长测由 root 继续签发；旧 09 Full 不覆盖本配方。
+没有触发 CI、push、合并到主树、关闭本票或父规格，也没有签发 release-ready。
