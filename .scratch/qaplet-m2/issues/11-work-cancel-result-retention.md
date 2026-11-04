@@ -4,9 +4,9 @@
 
 **Blocked by:** [10 · 纯 C Host 的有界原生工作闭环](10-c-host-bounded-work.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -54,3 +54,4 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+2026-11-04：10当前严格Cross/实际64K闭包完成，领取codex/m2-11-cancel / .cache/worktrees/m2-11，从已含08四类scheduler的当前集成开展公开取消竞争、C结果release与物理保留的TDD。13在并行候选预留PROCESS_ERROR27/domainWIN32=2/cap22；本票如需CANCELLED/ALREADY_COMPLETED新code可用28/29，避免冲突。所有直接blocker已满足，不为共享文件虚构前置。
