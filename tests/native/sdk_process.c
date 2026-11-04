@@ -213,6 +213,44 @@ static int limits(void) {
   free(large); CHECK(!finish(r));
   puts("M2 process limits: independent process/helper/native handle/registration quotas; encoded bytes and simultaneous native total; ordinary refusal: pass"); return 0;
 }
+static int observed_exit(qaplet_runtime *r,qaplet_process *p,qaplet_process_status *s) {
+  double until=milliseconds()+5000;
+  do {
+    CHECK(qaplet_process_get_status(r,p,s,NULL)==QAPLET_OK);
+    if (s->reaped && !s->helper_active) return 0;
+    sched_yield();
+  } while (milliseconds()<until);
+  CHECK(0); return 1;
+}
+static int ledger(void) {
+  for (int pending=0;pending<2;++pending) {
+    qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+    b.limits.execution_dispatches=1;
+    qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    const char *source=pending ? "new Promise(()=>{})" : "42";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;
+    CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    qaplet_process_options o; prepare(&o,"--empty"); o.flags=QAPLET_PROCESS_REPLACE_ENV;
+    qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+    CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+    CHECK(status.reaped && !status.delivered && status.referenced);
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT; CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK);
+    CHECK(snapshot.execution_dispatches==(pending ? 1 : 0));
+    CHECK(qaplet_process_get_status(r,&p,&status,NULL)==QAPLET_OK && status.delivered && !status.referenced);
+    CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
+    if (pending) {
+      CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+      CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_DISPATCH_LIMIT);
+      CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_DISPATCH_LIMIT && snapshot.execution_dispatches==1);
+    } else {
+      qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
+    }
+    CHECK(!finish(r));
+  }
+  puts("M2 process ledger: native observation precedes owner handoff; pending entry cumulative dispatch; pure C preserves completed JS result: pass"); return 0;
+}
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
@@ -251,7 +289,7 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
-  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

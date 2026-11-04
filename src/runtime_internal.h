@@ -98,7 +98,8 @@ qaplet_code qaplet_process_init(qaplet_runtime *);
 void qaplet_process_shutdown(qaplet_runtime *);
 void qaplet_process_close(qaplet_runtime *);
 /* Owner only, no JS. Called before waiting and after every native wake. */
-unsigned qaplet_process_collect(qaplet_runtime *);
+void qaplet_process_collect(qaplet_runtime *);
+unsigned qaplet_process_handoff(qaplet_runtime *, uint64_t);
 int qaplet_process_referenced_locked(qaplet_runtime *);
 int qaplet_process_pending_locked(qaplet_runtime *);
 /* Requires mutex. Never invokes JS. A wake fault cannot undo accepted state. */

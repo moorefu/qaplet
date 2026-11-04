@@ -180,18 +180,13 @@ static void retire_locked(qaplet_runtime *r,process_slot *s) {
   s->active=0; --r->process_snapshot.processes;
   if (s->accepted && !s->released) --r->process_snapshot.retained_results;
 }
-unsigned qaplet_process_collect(qaplet_runtime *r) {
-  if (!r->process_pool) return 0;
-  unsigned progressed=0;
+void qaplet_process_collect(qaplet_runtime *r) {
+  if (!r->process_pool) return;
   pthread_mutex_lock(&r->mutex);
   qaplet_process_pool *pool=r->process_pool;
   if (pool->slots) for (uint64_t i=0;i<r->m2_limits.processes;++i) {
     process_slot *s=&pool->slots[i];
     if (!s->active || !s->finished) continue;
-    if (s->accepted && !s->status.delivered) {
-      s->status.delivered=1; progressed=1; increment(&r->process_snapshot.completed);
-      if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
-    }
     if (s->helper && !s->join_retired) {
       s->join_retired=1;
       pthread_mutex_unlock(&r->mutex);
@@ -217,13 +212,28 @@ unsigned qaplet_process_collect(qaplet_runtime *r) {
   }
   if (r->loop_closed && !r->native_retained && !r->notify_inflight && !r->native_handles && !r->native_uncertain_handles) r->native_state=QAPLET_NATIVE_QUIESCENT;
   pthread_mutex_unlock(&r->mutex);
-  return progressed;
+}
+unsigned qaplet_process_handoff(qaplet_runtime *r,uint64_t maximum) {
+  unsigned count=0;
+  pthread_mutex_lock(&r->mutex);
+  qaplet_process_pool *pool=r->process_pool;
+  if (pool && pool->slots) for (uint64_t i=0;i<r->m2_limits.processes && count<maximum;++i) {
+    process_slot *s=&pool->slots[i];
+    if (!s->active || !s->accepted || s->released || !s->finished || s->status.delivered) continue;
+    /* The active entry owns its existing ledger. Native-only C completion
+     * creates no JS execution and cannot replace the last completed result. */
+    if (r->execution_active && qaplet_execution_dispatch_locked(r)) break;
+    s->status.delivered=1; ++count; increment(&r->process_snapshot.completed);
+    if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
+  }
+  pthread_mutex_unlock(&r->mutex);
+  return count;
 }
 int qaplet_process_pending_locked(qaplet_runtime *r) {
   if (!r->process_pool || !r->process_pool->slots) return 0;
   for (uint64_t i=0;i<r->m2_limits.processes;++i) {
     process_slot *s=&r->process_pool->slots[i];
-    if (s->active && s->accepted && s->finished && !s->status.delivered) return 1;
+    if (s->active && s->accepted && !s->released && s->finished && !s->status.delivered) return 1;
   }
   return 0;
 }
@@ -497,7 +507,10 @@ qaplet_code qaplet_process_release(qaplet_runtime *r,const qaplet_process *token
   qaplet_process_collect(r); pthread_mutex_lock(&r->mutex); process_slot *s=lookup_locked(r,token);
   if (!s) code=QAPLET_INVALID_HANDLE;
   else if (!s->status.reaped) code=QAPLET_BUSY;
-  else { s->released=1; --r->process_snapshot.retained_results; }
+  else {
+    s->released=1; --r->process_snapshot.retained_results;
+    if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
+  }
   pthread_mutex_unlock(&r->mutex); qaplet_process_collect(r); return qaplet_report(d,code);
 }
 qaplet_code qaplet_get_process_snapshot(qaplet_runtime *r,qaplet_process_snapshot *out,qaplet_diagnostic *d) {

@@ -135,7 +135,7 @@ static int wait_probe(void) {
   if (!pid) { close(gate[1]); char byte; read(gate[0],&byte,1); _exit(99); }
   close(gate[0]); CHECK(!kill(pid,SIGKILL)); CHECK(!sys_waitid(1,pid,&info,WEXITED|WNOWAIT,NULL));
   CHECK(waitpid(pid,&status,0)==pid && WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL); close(gate[1]);
-  printf("{\"invalid_errno\":%d,\"interrupted_errno\":%d,\"reaped_errno\":%d,\"exit_first\":37,\"kill_first_signal\":%d,\"waitnowait_twice\":true}\n",invalid_errno,observed_error,child_errno,SIGKILL);
+  printf("{\"invalid_errno\":%d,\"interrupted_errno\":%d,\"reaped_errno\":%d,\"exit_first\":37,\"kill_first_signal\":%d,\"waitnowait_twice\":true,\"WEXITED\":%d,\"WNOWAIT\":%d,\"opaque_siginfo_bytes\":%zu}\n",invalid_errno,observed_error,child_errno,SIGKILL,WEXITED,WNOWAIT,sizeof(info));
   puts("M2 process waitid: actual pinned thunk; WNOWAIT; EINTR/EINVAL/ECHILD; exit/kill orders; real reap: pass"); return 0;
 }
 int main(int argc,char **argv) {

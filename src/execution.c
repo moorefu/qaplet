@@ -276,7 +276,8 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
   }
   runtime->host_registration_locked = 1;
   uint64_t jobs = 0, events = 0, deliveries = 0;
-  unsigned progressed = qaplet_process_collect(runtime);
+  unsigned progressed = 0;
+  int process_collected = 0;
   for (;;) {
     if (runtime->execution_active) {
       pthread_mutex_lock(&runtime->mutex);
@@ -301,6 +302,18 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       code = qaplet_execution_checkpoint(runtime, progress, progressed);
       if (code || JS_IsJobPending(runtime->engine)) break;
       if (automatic == 2 && !runtime->execution_active) break;
+    }
+    if (!process_collected) {
+      qaplet_process_collect(runtime);
+      pthread_mutex_lock(&runtime->mutex);
+      int eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth ||
+        qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
+      pthread_mutex_unlock(&runtime->mutex);
+      unsigned completed = eligible ? qaplet_process_handoff(runtime, 32) : 0;
+      deliveries += completed;
+      if (completed) progressed = 1;
+      process_collected = 1;
+      if (qaplet_execution_check(runtime)) break;
     }
     pthread_mutex_lock(&runtime->mutex);
     int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
