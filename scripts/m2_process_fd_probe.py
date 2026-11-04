@@ -55,7 +55,7 @@ def build(args, report, evidence):
     publish_ape(work, output, "fd-probe", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve()))
     report["artifacts"].append(audit(args, report, evidence, tree, "fd-probe", output))
     report["official_loaders"] = []
-    for name in ("ape-x86_64.macho", "ape-aarch64.macho"):
+    for name in ("ape-x86_64.macho",):
         entry = next(item for item in component("cosmocc")["files"] if item["path"] == "bin/" + name)
         source = original / "bin" / name
         if identity(source)["sha256"] != entry["sha256"] or source.stat().st_size != entry["size_bytes"]:
@@ -135,7 +135,7 @@ def main():
         if report["static_python_inputs_before"] != report["static_python_inputs_after"]:
             raise BuildError("Tracked Python inputs changed during execution")
     except Exception as error:
-        report.update(status="fail", reason=str(error))
+        report.update(status="fail", reason=type(error).__name__ + ": " + str(error))
     report["finished_at"] = now()
     write_json(args.report, report)
     print(json.dumps({"status": report["status"], "report": str(args.report), "reason": report.get("reason")}))

@@ -14,6 +14,8 @@
         {"name": "Populate and verify exact toolchain", "run": "make toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/fd-probe/inputs"},
         {"name": "Acquire locked packer sources", "run": "python scripts/ape_helpers.py fetch --report out/fd-probe/inputs/helpers.json"},
         {"name": "Ubuntu-build and audit one fat OS probe", "run": "python scripts/m2_process_fd_probe.py build --output-dir out/fd-probe/artifacts --report out/fd-probe/build.json"},
+        {"name": "Acquire locked Ubuntu native-helper compiler", "run": "python scripts/startup_loaders.py fetch --report out/fd-probe/inputs/startup-loaders.json"},
+        {"name": "Ubuntu-build separate native Mac ARM64 loader", "run": "python scripts/startup_loaders.py build --output-dir out/fd-probe/loaders --report out/fd-probe/loaders/helpers.json"},
         {"name": "Preserve producer and failures", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "fd-probe-producer-${{ github.sha }}", "path": "out/fd-probe/", "if-no-files-found": "error", "retention-days": 7}}
       ]
     },
@@ -26,7 +28,7 @@
         {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
         {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
         {"uses": "actions/download-artifact@v8", "with": {"name": "fd-probe-producer-${{ github.sha }}", "path": "out/fd-probe-supplied"}},
-        {"name": "Consume same supplied APE and official loader", "run": "python scripts/m2_process_fd_probe.py run --build-report out/fd-probe-supplied/build.json --artifact out/fd-probe-supplied/artifacts/fd-probe.com --loader-dir out/fd-probe-supplied/artifacts --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/fd-probe-native/${{ matrix.runner }}/run.json"},
+        {"name": "Consume same supplied APE and locked native loader", "run": "python scripts/m2_process_fd_probe.py run --build-report out/fd-probe-supplied/build.json --artifact out/fd-probe-supplied/artifacts/fd-probe.com --loader-dir out/fd-probe-supplied/loaders --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/fd-probe-native/${{ matrix.runner }}/run.json"},
         {"name": "Preserve native facts and failures", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "fd-probe-native-${{ matrix.runner }}-${{ github.sha }}", "path": "out/fd-probe-native/", "if-no-files-found": "error", "retention-days": 7}}
       ]
     }
