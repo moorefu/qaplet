@@ -245,7 +245,7 @@ finished:
   progress->progressed = progressed;
   progress->code = pending ? QAPLET_OK : runtime->execution_code;
   pthread_mutex_unlock(&runtime->mutex);
-  if (runtime->m2_enabled && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) qaplet_loop_shutdown(runtime);
+  if (runtime->m2_enabled && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) { qaplet_process_shutdown(runtime); qaplet_loop_shutdown(runtime); }
   return progress->code;
 }
 
@@ -261,6 +261,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   code = qaplet_pump_ready(runtime, progress, diagnostic, 0);
+  if (code && runtime->m2_enabled) qaplet_process_shutdown(runtime);
   qaplet_driver_set(runtime, 0);
   return code;
 }
@@ -269,6 +270,7 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
                              qaplet_diagnostic *diagnostic, int automatic) {
   qaplet_code code = QAPLET_OK;
   if (qaplet_execution_check(runtime)) {
+    qaplet_process_shutdown(runtime);
     code = qaplet_execution_checkpoint(runtime, progress, 0);
     return qaplet_report_result(runtime, diagnostic, code);
   }
@@ -303,14 +305,16 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       if (code || JS_IsJobPending(runtime->engine)) break;
       if (automatic == 2 && !runtime->execution_active) break;
     }
+    qaplet_process_collect(runtime);
     pthread_mutex_lock(&runtime->mutex);
-    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || runtime->work_snapshot.pending_handoffs || qaplet_timers_ref_locked(runtime);
+    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || runtime->work_snapshot.pending_handoffs || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
     int work_ready = qaplet_work_ready_locked(runtime);
+    int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
     pthread_mutex_unlock(&runtime->mutex);
     int timer_ready = timer_eligible && qaplet_timers_pending(runtime,0,0);
     int immediate_ready = timer_eligible && qaplet_timers_pending(runtime,1,immediate_cutoff);
     int event_ready = events < runtime->snapshot.limits.pump_events && qaplet_events_pending(runtime);
-    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !immediate_ready && !event_ready && !work_ready)) {
+    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !immediate_ready && !event_ready && !work_ready && !process_ready)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
       progress->code = QAPLET_OK;
@@ -318,13 +322,15 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     }
     /* Resume after the last claimed category, including across a pump which
      * returned halfway through its jobs checkpoint. Empty categories skip. */
-    int ready[4]={work_ready,timer_ready,immediate_ready,event_ready};
+    int ready[4]={work_ready || process_ready,timer_ready,immediate_ready,event_ready};
     unsigned selected=runtime->ready_cursor;
     while (!ready[selected]) selected=(selected+1)%4;
     if (selected==0) {
-      unsigned completed=qaplet_work_handoff(runtime,1);
+      unsigned provider=runtime->completion_cursor;
+      if ((provider==0 && !work_ready) || (provider==1 && !process_ready)) provider=1-provider;
+      unsigned completed=provider==0 ? qaplet_work_handoff(runtime,1) : qaplet_process_handoff(runtime,1);
       deliveries+=completed;
-      if (completed) { progressed=1;runtime->ready_cursor=1; }
+      if (completed) { progressed=1;runtime->ready_cursor=1;runtime->completion_cursor=1-provider; }
       if (qaplet_execution_check(runtime)) break;
       continue;
     }

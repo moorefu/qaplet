@@ -28,12 +28,12 @@ def catalog(page):
         if suffix == "facts":
             expected = json.dumps({"probe": "qaplet-host", "arch": "aarch64", "page_size": page}, separators=(",", ":")) + "\n"
         result.append({"case_id": "qaplet-host." + suffix,
-            "argv": [loader, "/payload/qaplet-host.com", *[value.replace("{modules}", modules) for value in arguments]],
+            "argv": [loader, "/payload/qaplet-host.com", *[value.replace("{modules}", modules).replace("{self}", "/payload/qaplet-host.com").replace("{launcher}", loader) for value in arguments]],
             "expected_exit_code": 0, "expected_stdout": expected, "expected_stderr": ""})
     for name, cases in (("qaplet", sdk.CLI_CASES), ("qaplet-example", sdk.EXAMPLE_CASES)):
         for suffix, arguments, code, stdout, stderr in cases:
             result.append({"case_id": name + "." + suffix,
-                "argv": [loader, "/payload/" + name + ".com", *[value.replace("{modules}", modules) for value in arguments]],
+                "argv": [loader, "/payload/" + name + ".com", *[value.replace("{modules}", modules).replace("{self}", "/payload/qaplet-host.com").replace("{launcher}", loader) for value in arguments]],
                 "expected_exit_code": code, "expected_stdout": stdout,
                 **({"stderr_contains": stderr} if stderr else {"expected_stderr": ""})})
     return result
