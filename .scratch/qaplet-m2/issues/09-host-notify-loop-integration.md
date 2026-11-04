@@ -4,9 +4,9 @@
 
 **Blocked by:** [06 · 等待中的 Runtime 接收事件与停止](06-wait-events-keepalive-stop.md)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross
+**Execution state:** completed；当前配方五原生及实际 64K 的本票 SDK/HostNotify 范围严格验收通过，整体 Full 的独立 TTY 失败保留。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -57,4 +57,6 @@
 2026-11-03：06 自身当前五原生及实际 64K 严格验收已完成，领取 `codex/m2-09-host-notify` / `.cache/worktrees/m2-09`，fresh implementer 执行公开 SDK/真实宿主等待接入的 TDD。并行能力位协调：HostNotify 使用 bit 20，保留既有 ABI 数值；内部 waker、原生在途和 userdata 保留期不得延后实现。
 
 2026-11-03：本地产品 `f0feb5c` 已完成，保持 claimed / awaiting_cross。独立通知声明/POD、锁下 lease 与锁外 hook、内部 waker 独立、close 重叠、finite quiesce 与原生/外部双重保留期均经公开 SDK 及包外 Host 验证；不虚构后续 work/process 完成。64 项 RECIPE Git blob/LF 相同，最终 Linux 115 pass、Windows 114 pass + 1 可选 symlink blocked（必需缺口 0），包外应用 8、受控 fixture Linux/Windows 各 1、独立 Notify Host 各 4 全通过，两平台各实际 100 组进程内/12,800 业务事件。当前完整本地 check 通过。受限 Windows pre-main timeout、错误 loader 选择和一次性报告 adapter 失败原件保留；最终五原生/实际 64K 与全资源 T03 待 integration 新 Full。详见[09 独立验证记录](../09-host-notify-validation.md)，冻结原件为本树 `out/m2-09/final/`。
+
+2026-11-04：当前 `563ff33` 的 [Full 41788055889](https://github.com/moorefu/qaplet/actions/runs/41788055889) 整体 completed/failure，唯一 Windows TTY resize 失败另行调查，不能称全 run 通过。09 自身范围由 fresh 独立核验及 root 二次核验完成：五原生 SDK 各 115（575）、实际 64K 115、包外应用 8、独立 controlled fixture 1、当前 M0 Full 235 全部通过，必需缺口 0；本次 Windows optional symlink 也实际通过。29 provider 原 ZIP、12 嵌套供应物、11 job 日志、64 RECIPE 与精确提交/冻结 evaluator、密封 SDK/双 archive 各 12 ELF64 REL、原生 loader、guest journal seal/argv/清理均核验。`out/qaplet-m2/full-563ff33/verify/scope-summary.json`、`HANDOFF.md` 与 `09-acceptance-check.json` 保存选择、边界和失败历史。按本票 scope resolved，不关闭父 M2、最终 T03 或发布门禁；旧整体失败不改标。
 
