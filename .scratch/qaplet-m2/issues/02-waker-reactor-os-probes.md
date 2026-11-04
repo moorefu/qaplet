@@ -54,8 +54,6 @@
 
 ## Comments
 
-2026-11-04（独立合并）：当前Windows分路修复 `d547150` 已无冲突合入 `620b996`，原件身份、当前9项producer输入、合并Git blob/LF及窄UbuntuCI通过；详主 `out/qaplet-m2/merge-02-win-error/HANDOFF.md`。保留旧867失败与旧196验收范围，继续awaiting_cross；将与13当前集成同一Full取得五原生及实际64K新原件。
-
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 
@@ -72,3 +70,5 @@
 2026-11-04：867356c / Full41799595408 Windows socket.connect-error再次失败：connect=-1/errno115，poll=0/2000ms/revents0，select=-2未得readiness，SO_ERROR记录10061但connection_failed=false；reserve_closed_before_connect=true。原ZIP及waker.json保留在主out/qaplet-m2/full-867356c。重新领取codex/m2-02-win-error-fix / .cache/worktrees/m2-02-win-error-fix，先真实复现/区分具体OS事实与判据，不凭errno数字猜唯一根因或以延长timeout替修复。旧196cd75验收及后续独立产品scope保留原范围。
 
 2026-11-04（Windows 分路修复）：正常 Windows 的单 socket 真实完成闸门连续三次复现 CI 同形红灯；公开 CLI 新回归也在修复前实际失败。根因是旧分路在首次 SO_ERROR 已非零时跳过 select，但用例仍要求真实 readiness。现先完成 poll/必要的显式 Cosmopolitan select，再单次读取 SO_ERROR，保留原时限、关闭预留端口、全部原始 errno/option 观察及清理。原生 Winsock select 的异常集合与 APE 包装 select 的可写集合分开记录，不根据错误数字猜 errno 域。正式同字节 APE 在 Windows、Ubuntu x64、完整系统 ARM64/64K 各 19 项通过；Windows 7 项公开 CLI 合同含新回归及负向均通过。具体身份、先红后绿、源码/API边界与 required checks 见 [Windows 回归验收](../02-windows-connect-error-validation.md)。本票仍 claimed / awaiting_cross，独立 merger 和新五原生 Full 决定再次验收；未更改旧原件，也不回退 Runtime 06 / Timer 07 的原范围。
+
+2026-11-04（独立合并）：当前Windows分路修复 `d547150` 已无冲突合入 `620b996`，原件身份、当前9项producer输入、合并Git blob/LF及窄UbuntuCI通过；详主 `out/qaplet-m2/merge-02-win-error/HANDOFF.md`。保留旧867失败与旧196验收范围，继续awaiting_cross；将与13当前集成同一Full取得五原生及实际64K新原件。
