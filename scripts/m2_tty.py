@@ -42,7 +42,8 @@ def build(args, report, directory):
     (work / "tmp").mkdir()
     output.mkdir(parents=True, exist_ok=True)
     source = ROOT / "tests/native/m2_tty.c"
-    recipe_files = [source, *(ROOT / "scripts" / name for name in
+    resize_fixture = ROOT / "tests/native/m2_tty_resize_order.h"
+    recipe_files = [source, resize_fixture, *(ROOT / "scripts" / name for name in
         ("m2_tty.py", "m2_tty_terminal.py", "native_io_terminal.py", "build_ape.py", "ape_helpers.py", "native_toolchain.py", "foundation.py", "evidence.py", "nightly_toolchain.py", "workflow_support.py"))]
     files = [identity(p) for p in recipe_files]
     git = shutil.which("git")
@@ -66,6 +67,7 @@ def build(args, report, directory):
     environment["BUILDLOG"] = str(output / "m2-tty.build-commands.log")
     own = work / source.name
     shutil.copyfile(source, own)
+    shutil.copyfile(resize_fixture, work / resize_fixture.name)
     flags = ["-Os", "-D_GNU_SOURCE", "-ffile-prefix-map=" + str(work) + "=build", *args.cflag]
     report["build"] = {"flags": flags, "recipe_files": files,
                        "portable_helpers_sha256": helpers["sha256"],
@@ -195,7 +197,9 @@ def matches_contract(record, execution):
     if expected is None or any(actual.get(key) != value for key, value in expected.items()):
         return False
     if case == "tty.resize":
-        return (actual.get("notifications", 0) >= 1 and (execution["os"] == "Windows" or
+        return (actual.get("notifications", 0) >= 1 and (all(actual.get(key) is True for key in
+                ("mode_restored", "query_after_final_notification")) and actual.get("resize_wait_timed_out") is False
+                and actual.get("notification") == "WINDOW_BUFFER_SIZE_EVENT" if execution["os"] == "Windows" else
                 actual.get("notification") == "SIGWINCH-self-pipe" and all(actual.get(key) is True for key in
                 ("controlled_foreground", "child_reaped", "fixture_pipes_closed", "query_before_child_exit", "private_terminal_closed"))))
     if case == "text.chunks":

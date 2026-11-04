@@ -14,7 +14,7 @@ import time
 from foundation import now
 
 
-def conpty(argv, directory, timeout):
+def conpty(argv, directory, timeout, *, resize_order_fixture=False):
     """Bounded explicit CreateProcessW argv; close all handles and reap only our child."""
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     HANDLE = W.HANDLE
@@ -111,6 +111,15 @@ def conpty(argv, directory, timeout):
                     actions.append({"operation": "ResizePseudoConsole", "cols": cols, "rows": rows, "hresult": hr})
                     if hr != 0:
                         raise OSError(hr, "ResizePseudoConsole HRESULT")
+                    if resize_order_fixture and cols == 90:
+                        # Controlled system-boundary fixture: the child records
+                        # the real intermediate size before the final resize.
+                        (directory / "resize.done").write_bytes(b"done")
+                        while not (directory / "resize-query.ready").is_file():
+                            if kernel.WaitForSingleObject(process.process, 1) != 258 or time.monotonic() >= deadline:
+                                raise OSError("Controlled resize query handshake did not complete")
+                    if resize_order_fixture and cols == 100:
+                        (directory / "resize-query.done").write_bytes(b"done")
                 (directory / "resize.done").write_bytes(b"done")
             if (directory / "text.ready").is_file() and not (directory / "text.done").exists():
                 for byte in bytes.fromhex("41e4b8ad5a"):
@@ -179,6 +188,6 @@ def conpty(argv, directory, timeout):
     record = {"argv": list(map(str, argv)), "cwd": str(directory), "started_at": started, "finished_at": now(),
               "exit_code": exit_code, "timed_out": timed_out, "timeout_seconds": timeout,
               "stdout_log": str(directory / "conpty.stdout.log"), "stderr_log": str(directory / "conpty.stderr.log"),
-              "cleanup": cleanup, "actions": actions,
+              "cleanup": cleanup, "actions": actions, "resize_order_fixture": resize_order_fixture,
               "api": "CreatePseudoConsole + CreateProcessW + ResizePseudoConsole (private fixture, no shell)", "error": failure}
     return record, stdout

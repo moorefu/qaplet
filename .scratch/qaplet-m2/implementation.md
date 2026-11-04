@@ -23,9 +23,9 @@
 | 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
-| 05 | 旧分支及 `codex/m2-05-resize-fix` | 旧原件见 `tickets/05` / `05-cross-fix`；新 `.cache/worktrees/m2-05-resize-fix` | in_progress（旧 116 项验收保留，当前 Windows resize 回归调查） |
+| 05 | 旧分支及 `codex/m2-05-resize-fix` | 旧原件见 `tickets/05` / `05-cross-fix`；新 `.cache/worktrees/m2-05-resize-fix` | awaiting_cross（修复已合 `d0ee29e`，旧验收/失败保留） |
 | 06 | `codex/m2-06-wait` 及两条定向修复分支 | 原件见 `tickets/06`、`06-creation-fix`、`06-guest-fix` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
-| 07 | `codex/m2-07-timers` | `.cache/worktrees/m2-07` | in_progress，一次 timer 与 TLA |
+| 07 | `codex/m2-07-timers` | `.cache/worktrees/m2-07` | awaiting_cross（一次 timer/TLA 已合 `fa4d768`） |
 | 09 | `codex/m2-09-host-notify` | `.cache/worktrees/m2-09`；归档 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
 | 10 | `codex/m2-10-work` | `.cache/worktrees/m2-10` | in_progress，C 有界工作闭环 |
 | 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | in_progress，C spawn 与实际退出回收 |
@@ -118,6 +118,10 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 06 按自身范围 resolved，07、09、10 已领取；13 的直接 blocker 也满足，待槽位。并行实现能力位分别为 timer bit 19、HostNotify bit 20、C work bit 21，接口具体形状依父规格由公开头文件落实，新的全局错误码若需要由 root 协调避免碰撞。每票首个资源即保持预算及 close/quiesce 安全，不延后 19/20；全部票完成后才做一次整体独立审查。当前旧 M1 1,000 循环及 06 本地重复范围不冒充最终 T03 全资源混合，父 M2 仍 in_progress。
 
 ## 一次性测试入口修复
+
+07 由独立 merger 合入 `fa4d76892d164721bf078d629f87830c410abf6e`：源 tip `eddee103`、最终供应产品 `ddf00aa` 与合并 raw/Git blob 的 67 RECIPE 全等且零 CR；74 供应文件、密封 ZIP、三 APE、双 archive 各 13 ELF64 REL、正常/包外/故障 raw 原件均核验。Linux 129、Windows 128 pass + 1 optional blocked；每宿主各 1,000 timer 生命周期/100 本票混合、包外应用 8、timer 两宿主各 10、fault 各 1 全通过。Windows fault 原报告只有事后侧车身份，保留该限定，merger 冻结新 driver 同 APE 新 scope 实际重跑 1 次并嵌前后 driver/导入脚本身份。历史 metadata 红、计时红、两宿主各 102 observer 与暂停绿均保留，候选源码后来变化明确记录并用保存的 controlled_source 重构原 hash，不冒充当前文件。见 `out/qaplet-m2/merge-07/handoff-001.json`；仅本地完成，不提前关闭07或放行08。
+
+05 resize 修复由独立 merger 合入 `d0ee29e877d412473da783b92c20f0609cacdabe`：真实受控顺序 loop 3/3 红，修复后 controlled20/20、normal20/20；正常 Linux19、Windows21、实际64K19，CLI与 dev check369/183实际186条件skip/bootstrap通过。两供应各12 RECIPE与源HEAD/产品`527bfd8`/合并 raw/blob/LF、681身份引用、316 raw语义检查及公开64K重放均通过，合并后窄公共CI/diff/双树clean。原WinServer具体调度只记与已复现顺序兼容，不声称唯一归因；缺最终resize负向在内部2秒明确失败且模式/资源清理完成，无外层timeout通过。见 `out/qaplet-m2/merge-05-resize/handoff.json`。当前准备共推07+05取得新五原生/实际64K与WinServer验收，两票保持awaiting_cross，父M2继续in_progress。
 
 `563ff33` / Full `41788055889` 最终 completed/failure，仅 Windows TTY resize 失败；09 的独立严格闭包及 root 再核均通过，按本票范围 resolved。五原生各 115/合计 575、实际 64K 115、包外应用 8、controlled fault 1、当前 M0 六目标 235；29 原 ZIP、12 nested、11 job 原日志及64 RECIPE/冻结 evaluator/同密封 SDK/双 archives/原生 loader/journal seal 与实际清理均核验，见 `out/qaplet-m2/full-563ff33/HANDOFF.md`、`verify/scope-summary.json`、`09-acceptance-check.json`。M0 console 镜像本次与完整 journal 不同，严格 transport 仍按实际密封 journal 通过，不要求诊断镜像完整。旧 adapter 故障及首次 SDK 下载 EOF、未校验 partial 被重试覆盖的过程缺口如实保留，不谎称该 partial 已归档。
 
