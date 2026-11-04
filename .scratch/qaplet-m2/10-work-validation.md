@@ -98,6 +98,23 @@ Windows 唯一 optional blocked 是旧 symlink fixture 的 winerror 1314，未�
 
 ## 待最终集成验收
 
+接续实施保留前代理未提交的公开 `--m2-work-notify` tracer。合入真实 09 后，
+`out/m2-10/notify-red.json` 编译成功，但 Host 自有条件变量等不到 native 完成
+提示，被外层 5 秒 supervisor 终止，明确为失败。worker 完成、worker 退出、
+成功 submit 与逻辑 release 改为锁内取得真实通知 lease、锁外调用 hook；
+reaper 的 quiescent 判定同时检查 notify inflight。
+`notify-green.json` 同一公开 seam 通过；增强后的 `notify-lease-green.json`
+实测完成 hook 在途期间 owner 可交接结果、close，0 quiesce 返回 pending、
+destroy BUSY，解除 hook 后实际 join、销毁 userdata 同步原语。
+`notify-work-regression.json` 的13个 work tracer 全部通过。上述仍是显式增量
+候选 SDK，不冒充最终密封供应。
+
+一次性旧 runner 直接选 raw toolchain，编译子调用误返0但无对象、cosmoar失败，
+保留 `notify-red/candidate.json` 及各原日志；改选仓库已验的
+`official-assimilate-linux-x86_64-v1` 后实际产生对象。一次空对象列表 runner
+把目录当文件读取导致 IsADirectoryError，未运行产品；修正 runner 后保存了
+上述真实红绿。未改产品以绕过环境失败，未改全局 Git 或共享 core.worktree。
+
 本票保持 claimed，未 resolved、未 push、未做整体 Standards/Spec review。
 最终需合入最新 integration，保留07/09能力、目录和生命周期合同，接真实
 HostNotify lease 后重新冻结全部 RECIPE 并供应；重新跑完整双宿主、包外

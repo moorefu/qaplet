@@ -170,11 +170,17 @@ static void *worker_main(void *opaque) {
     if (task->released) retire_task(runtime,task);
     /* The pre-reserved record is the completion. No business event or malloc. */
     qaplet_wake_locked(runtime);
+    qaplet_notification notification=qaplet_notify_prepare_locked(runtime);
     pthread_cond_broadcast(&runtime->native_condition);
+    pthread_mutex_unlock(&runtime->mutex);
+    qaplet_notify_dispatch(runtime,notification);
+    pthread_mutex_lock(&runtime->mutex);
   }
   worker->exited=1;
+  qaplet_notification notification=qaplet_notify_prepare_locked(runtime);
   pthread_cond_broadcast(&runtime->native_condition);
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime,notification);
   return NULL;
 }
 static qaplet_code storage(qaplet_runtime *runtime) {
@@ -253,6 +259,7 @@ qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t n
   unsigned char *data=qaplet_native_alloc(runtime,bytes);
   if (bytes && !data) { code=QAPLET_MEMORY_LIMIT; goto rejected; }
   if (input_length) memcpy(data,input,input_length);
+  qaplet_notification notification={0};
   pthread_mutex_lock(&runtime->mutex);
   work_task *task=NULL; uint64_t slot=0;
   if (runtime->snapshot.lifecycle!=QAPLET_OPEN) code=QAPLET_BAD_STATE;
@@ -273,8 +280,10 @@ qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t n
     increment(&runtime->work_snapshot.accepted);
     pthread_cond_broadcast(&runtime->native_condition);
     qaplet_wake_locked(runtime);
+    notification=qaplet_notify_prepare_locked(runtime);
   }
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime,notification);
   if (code) qaplet_native_free(runtime,data,bytes);
 rejected:
   if (code) { pthread_mutex_lock(&runtime->mutex); increment(&runtime->work_snapshot.rejected); pthread_mutex_unlock(&runtime->mutex); }
@@ -323,6 +332,7 @@ qaplet_code qaplet_work_release(qaplet_runtime *runtime,const qaplet_work_task *
   if (!code) code=qaplet_owner(runtime);
   if (!code && !runtime->m2_enabled) code=QAPLET_UNSUPPORTED;
   if (code) return qaplet_report(diagnostic,code);
+  qaplet_notification notification={0};
   pthread_mutex_lock(&runtime->mutex);
   work_task *task=lookup(runtime,token);
   if (!task) code=QAPLET_INVALID_HANDLE;
@@ -331,8 +341,11 @@ qaplet_code qaplet_work_release(qaplet_runtime *runtime,const qaplet_work_task *
     task->released=1;
     if (task->handoff) { task->handoff=0; --runtime->work_snapshot.pending_handoffs; }
     if (!task->physical) retire_task(runtime,task);
+    qaplet_wake_locked(runtime);
+    notification=qaplet_notify_prepare_locked(runtime);
   }
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime,notification);
   return qaplet_report(diagnostic,code);
 }
 int qaplet_work_cancelled(qaplet_work_context *context) {
@@ -430,6 +443,6 @@ void qaplet_work_reap_locked(qaplet_runtime *runtime) {
   free_locked(runtime,pool->tasks,pool->task_bytes); free_locked(runtime,pool->workers,pool->worker_bytes);
   free_locked(runtime,pool,sizeof(*pool)); runtime->work_pool=NULL;
   --runtime->native_retained;
-  if (!runtime->native_retained && !runtime->native_handles && !runtime->native_uncertain_handles && runtime->loop_closed)
+  if (!runtime->native_retained && !runtime->notify_inflight && !runtime->native_handles && !runtime->native_uncertain_handles && runtime->loop_closed)
     runtime->native_state=QAPLET_NATIVE_QUIESCENT;
 }

@@ -441,6 +441,45 @@ static int completion_contract(void) {
   puts("M2 work completion: explicit handler concurrency; saturated business queue cannot lose native records; worker publication retains ref; owner handoff; exact results: pass");
   return 0;
 }
+typedef struct { pthread_mutex_t mutex;pthread_cond_t condition;pthread_t owner;int ready,hold,released; } host_hint;
+static void host_notify(void *opaque) {
+  host_hint *hint=opaque;
+  pthread_mutex_lock(&hint->mutex);hint->ready=1;pthread_cond_broadcast(&hint->condition);
+  while (hint->hold && !hint->released && !pthread_equal(pthread_self(),hint->owner))
+    pthread_cond_wait(&hint->condition,&hint->mutex);
+  pthread_mutex_unlock(&hint->mutex);
+}
+static int notify_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  host_hint hint={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER,.owner=pthread_self()};
+  qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=host_notify;hook.userdata=&hint;
+  CHECK(qaplet_set_host_notify(runtime,&hook,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_work_task task=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  pthread_mutex_lock(&hint.mutex);hint.ready=0;hint.hold=1;pthread_mutex_unlock(&hint.mutex);
+  release_gate(&g);
+  /* A real external native wait, with no SDK run/poll loop or onEvent. */
+  pthread_mutex_lock(&hint.mutex);while (!hint.ready) pthread_cond_wait(&hint.condition,&hint.mutex);pthread_mutex_unlock(&hint.mutex);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  qaplet_work_result result=QAPLET_WORK_RESULT_INIT;result.buffer=&input;result.capacity=1;
+  CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && input==17 && result.state==QAPLET_WORK_SUCCEEDED);
+  qaplet_notify_snapshot notification=QAPLET_NOTIFY_SNAPSHOT_INIT;
+  CHECK(qaplet_get_notify_snapshot(runtime,&notification,NULL)==QAPLET_OK && notification.inflight);
+  CHECK(qaplet_close(runtime,NULL)==QAPLET_OK);
+  CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  CHECK(qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+  pthread_mutex_lock(&hint.mutex);hint.released=1;pthread_cond_broadcast(&hint.condition);pthread_mutex_unlock(&hint.mutex);
+  CHECK(!finish(runtime) && !destroy_gate(&g));
+  CHECK(!pthread_cond_destroy(&hint.condition) && !pthread_mutex_destroy(&hint.mutex));
+  puts("M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass");
+  return 0;
+}
 static int request_contract(void) {
   qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.worker_threads=1;
   qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
@@ -500,6 +539,7 @@ int sdk_work(const char *mode) {
   if (!strcmp(mode,"--m2-work-retention")) return retention_contract();
   if (!strcmp(mode,"--m2-work-scheduling")) return scheduling_contract();
   if (!strcmp(mode,"--m2-work-stop-request")) return request_contract();
+  if (!strcmp(mode,"--m2-work-notify")) return notify_contract();
   return 2;
 }
 #ifdef SDK_STANDALONE

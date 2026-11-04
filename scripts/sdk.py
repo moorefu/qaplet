@@ -80,6 +80,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 3637247, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-work-notify", ["--m2-work-notify"], "M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass\n"),
     ("m2-work-registration", ["--m2-work-registration"], "M2 work registration: explicit capability; lazy threads; copied finite declarations; invalid ABI/flags/concurrency; duplicate/frozen rejection: pass\n"),
     ("m2-work-fairness", ["--m2-work-fairness"], "M2 work fairness: two bounded workers; default handler serial; runnable handler bypasses blocked head; copied input; owner handoff; retained capacity: pass\n"),
     ("m2-work-capacity", ["--m2-work-capacity"], "M2 work capacity: count/data reservations; atomic refusal; instance/generation isolation; retained results charged; output bound; JS result preserved; ordinary reuse: pass\n"),
