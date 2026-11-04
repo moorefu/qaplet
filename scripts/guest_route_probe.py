@@ -5,6 +5,7 @@ import argparse
 import datetime
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -87,6 +88,18 @@ def curl_probe(output, name, extra, expected):
     return result
 
 
+def dns_member_plan(addresses, url):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != "snapshot.ubuntu.com" or parsed.port not in (None, 443) or parsed.username or parsed.password:
+        raise ValueError("DNS member probe requires the original credential-free HTTPS authority")
+    members = sorted({ipaddress.ip_address(address) for address in addresses}, key=lambda address: (address.version, int(address)))
+    if not members or len(members) > 4 or not all(address.is_global for address in members):
+        raise ValueError("DNS member set must contain one to four public addresses")
+    return [("dns-member-%02d" % index, str(address), ["--resolve", "snapshot.ubuntu.com:443:" +
+             ("[" + str(address) + "]" if address.version == 6 else str(address))])
+            for index, address in enumerate(members, 1)]
+
+
 def python_worker(output):
     """Default urllib proxy/TLS policy; no supplied Authorization or credentials."""
     expected = json.loads((output / "expected.json").read_text(encoding="utf-8"))
@@ -139,6 +152,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--python-worker", action="store_true")
+    parser.add_argument("--mode", choices=("clients", "dns-members"), default="clients")
     args = parser.parse_args()
     output = args.output_dir.resolve()
     if args.python_worker:
@@ -152,7 +166,7 @@ def main():
     expected = {**lock["metadata"]["noble-updates-InRelease"], "signer_fingerprint": lock["signer_fingerprint"]}
     write(output / "expected.json", expected)
     report = {"schema_version": 1, "report_kind": "temporary-guest-http-route-diagnostic", "started_at": now(),
-              "collection_status": "running", "product_evidence_verified": False, "guest_execution_performed": False,
+              "collection_status": "running", "mode": args.mode, "product_evidence_verified": False, "guest_execution_performed": False,
               "lock": identity(lock_path), "driver": identity(Path(__file__)), "expected": expected,
               "host": {"platform": platform.platform(), "machine": platform.machine(), "python": sys.version,
                        "os_release": platform.freedesktop_os_release()},
@@ -176,19 +190,37 @@ def main():
             report["default_dns_addresses"] = sorted({item[4][0] for item in socket.getaddrinfo("snapshot.ubuntu.com", 443, type=socket.SOCK_STREAM)})
         except OSError as error:
             report["dns_error_type"] = type(error).__name__
-        for name, extra in (("curl-original", []), ("curl-ipv4", ["--ipv4"]), ("curl-http11", ["--http1.1"])):
-            result = curl_probe(output, name, extra, expected)
-            report["requests"].append(result)
+        if args.mode == "dns-members":
+            # Do not bypass an existing proxy policy. This experiment requires direct
+            # connections and accepts only the current normal system DNS answer.
+            if any(report["proxy_variable_presence"].values()):
+                raise ValueError("Proxy variables present; DNS member probe not attempted")
+            plan = dns_member_plan(report.get("default_dns_addresses", []), expected["url"])
+            report["dns_member_plan"] = [{"name": name, "address": address} for name, address, _ in plan]
             write(output / "report.json", report)
-            print(json.dumps({"probe": name, "http_code": result["metrics"].get("http_code"), "exit_code": result["command"]["exit_code"]}), flush=True)
-        python_dir = output / "python-stdlib"
-        python_dir.mkdir()
-        write(python_dir / "expected.json", expected)
-        record, _ = command(python_dir, [sys.executable, str(Path(__file__)), "--python-worker", "--output-dir", str(python_dir)])
-        transport_path = python_dir / "transport.json"
-        transport = json.loads(transport_path.read_text(encoding="utf-8")) if transport_path.is_file() else {}
-        report["requests"].append({"name": "python-stdlib", "command": record, "transport": transport,
-                                   **verify_body(python_dir, expected, transport.get("http_code"))})
+            for name, address, extra in plan:
+                result = curl_probe(output, name, extra, expected)
+                observed = result["metrics"].get("remote_ip")
+                result.update(dns_member=address, observed_dns_member_matches=observed == address)
+                write(output / name / "report.json", result)
+                report["requests"].append(result)
+                write(output / "report.json", report)
+                print(json.dumps({"probe": name, "dns_member": address, "http_code": result["metrics"].get("http_code"),
+                                  "exit_code": result["command"]["exit_code"], "locked_bytes_match": result["locked_bytes_match"]}), flush=True)
+        else:
+            for name, extra in (("curl-original", []), ("curl-ipv4", ["--ipv4"]), ("curl-http11", ["--http1.1"])):
+                result = curl_probe(output, name, extra, expected)
+                report["requests"].append(result)
+                write(output / "report.json", report)
+                print(json.dumps({"probe": name, "http_code": result["metrics"].get("http_code"), "exit_code": result["command"]["exit_code"]}), flush=True)
+            python_dir = output / "python-stdlib"
+            python_dir.mkdir()
+            write(python_dir / "expected.json", expected)
+            record, _ = command(python_dir, [sys.executable, str(Path(__file__)), "--python-worker", "--output-dir", str(python_dir)])
+            transport_path = python_dir / "transport.json"
+            transport = json.loads(transport_path.read_text(encoding="utf-8")) if transport_path.is_file() else {}
+            report["requests"].append({"name": "python-stdlib", "command": record, "transport": transport,
+                                       **verify_body(python_dir, expected, transport.get("http_code"))})
         report["collection_status"] = "complete"
     except (OSError, ValueError, KeyError) as error:
         report.update(collection_status="failed", error_type=type(error).__name__)
