@@ -88,3 +88,17 @@ GIT_DIR/core.worktree，也没有修改旧冻结树。共享 `.git/config` SHA �
 
 实际新 CI/64K/SDK/Core 仍由主代理组合当前代码后独立 Full 验证；历史 upstream 503
 与零 guest case 失败保持原状态。本地输入供给和 verifier 成功均不替代该验收。
+
+## 2026-11-05 · 当前 CI 固定输入供给实测
+
+独立合并 `94cda36` 的 Full `41859852472` 已实际消费固定data commit `c67014e`。
+完整manifest原件、当前lock/profile、七件source与canonical长度/SHA/URL、7 imported、
+gpgv原日志及InRelease→Packages→五包关系均经独立消费者核验。原fetch仅执行
+gpgv缓存命中，无curl，不称新HTTP200；原cache9/data8前后内容与mtime相同。
+
+当前实际64K SDK执行170项，169pass/1inherit fixture准备失败；M0 21命令与M2四
+suite通过各自完整journal/seal和清理。输入供给已恢复当前guest执行，但完整SDK、
+11/13及Core仍有必需缺口：两Mac当前原矩阵reports=[]，SDK继承fixture待修复，
+Core因缺Mac仅可得161pass而非235。初次边界原件封存在主
+`out/qaplet-m2/full-94cda36/HANDOFF.md`、`verify/input-supply-audit.json`，完整性通过
+不等于Full通过；后到原件单独增量，不覆盖旧503或当前失败。
