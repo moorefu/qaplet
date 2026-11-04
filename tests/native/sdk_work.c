@@ -44,9 +44,23 @@ static int file_contract(void) {
   handler.name=name; handler.name_length=4; handler.function=read_file; handler.output_bytes=4;
   CHECK(qaplet_register_work_handler(runtime,&handler,NULL)==QAPLET_OK);
   memset(name,'x',4); handler.function=NULL;
-  char path[]="/tmp/qaplet-work-XXXXXX";
+  /* Own the fixture below the runner's writable cwd; a Windows host need not
+   * provide a POSIX /tmp directory. Never change cwd after Runtime creation. */
+  char directory[]="./qaplet-work-XXXXXX";
+  char *created=mkdtemp(directory);
+  if (!created) fprintf(stderr,"work file fixture: mkdtemp errno=%d\n",errno);
+  CHECK(created);
+  char path[sizeof(directory)+sizeof("/input-XXXXXX")];
+  int path_length=snprintf(path,sizeof(path),"%s/input-XXXXXX",directory);
+  CHECK(path_length>0 && path_length<sizeof(path));
   int fd=mkstemp(path); unsigned char expected[]={0,255,17,42,99};
-  CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+  if (fd<0) fprintf(stderr,"work file fixture: mkstemp fd=%d errno=%d\n",fd,errno);
+  CHECK(fd>=0);
+  ssize_t written=write(fd,expected,sizeof(expected));int write_error=errno;
+  int closed=close(fd);int close_error=errno;
+  if (written!=sizeof(expected)) fprintf(stderr,"work file fixture: write bytes=%zd errno=%d\n",written,write_error);
+  if (closed) fprintf(stderr,"work file fixture: close result=%d errno=%d\n",closed,close_error);
+  CHECK(written==sizeof(expected) && !closed);
   qaplet_work_task task=QAPLET_WORK_TASK_INIT;
   CHECK(qaplet_work_submit(runtime,"read",4,path,strlen(path)+1,&task,NULL)==QAPLET_OK);
   char saved[sizeof(path)]; memcpy(saved,path,sizeof(path)); memset(path,'?',sizeof(path));
@@ -66,6 +80,7 @@ static int file_contract(void) {
   CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
   CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_FAILED && result.code==QAPLET_HOST_ERROR && result.error_domain==QAPLET_ERROR_DOMAIN_ERRNO && result.error==ENOENT);
   CHECK(qaplet_work_release(runtime,&task,NULL)==QAPLET_OK);
+  CHECK(!rmdir(directory));
   CHECK(!finish(runtime));
   puts("M2 work file: copied declaration/input; real bounded bytes; independent completion; retry result; ordinary errno; release; joined cleanup: pass");
   return 0;
