@@ -264,3 +264,44 @@ producer/devcheck 的旧guard范围原样保留，未反补子进程动态import
 Mac产品spawn/exec/waitid/reap链和实际64K仍须新Full；OS探针成功不是SDK完成，
 旧18个Mac失败及独立guest输入HTTP503不改标。本票继续claimed/in_progress，14
 未放行，整体Review未派发，不签发父M2/T03/发布完成。
+
+## 低 soft NOFILE 的 inherit fixture 准备修复
+
+fresh `codex/m2-13-nofile-fixture` 从实际 `94cda36` 建树，测试配方提交
+`034f3c89cb9b13e936e7bce5012fe6c35024c5a8`，融合 integration `0c8d7da`。
+只改 `tests/native/sdk_process.c`；`src/`、公开头、CI 和锁均未改。
+原 red 保留在主 `out/qaplet-m2/nofile-fixture-probe/`：相同供应 SDK/Host/loader
+在实际 soft1024、hard1048576 或4096时先于 SDK 调用失败于 line127 F_DUPFD；
+soft16384正对照通过。它不证明产品 spawn 失败或 guest 实际限额。
+
+fixture 按 hard 选择合法高位：hard允许时仍使用8192，hard4096时最低高位为4095，
+另保留197/1023。准备时仅临时提高 soft，不提高 hard；准备成功或失败均恢复并读回
+原限额，然后按原合同将 soft 降256调用公开 SDK。三个实际 FD 的子 fcntl/read
+EBADF、二进制 stdio、exit37/reap，以及父 flags/soft/hard 恢复均保留严格断言。
+不能提供高于256描述符的极低 hard 会明确诊断失败，不 skip 或弱化产品断言。
+成功路径没有打印各个实际 FD，证据限于真实 F_DUPFD 及上述源断言，不把选定最低位
+冒充独立打印的实际 FD。
+
+主输出为 `out/qaplet-m2/13-nofile-fixture-fix/`。`minimal.json` 用新公开 fixture
+链接原密封供应 SDK，在实际1024/1048576、1024/4096和16384/1048576均绿；
+`limits.json` 消费新正式 Host/SDK/loader，在前两组实际限额均绿。
+两个 driver 父限额均为10240/1048576且前后不变；无 timeout。
+新正式 recipe `35d10266c446ebb1132b1c86b74832e416d630810616b27094a336a19fa828b5`，
+SDK `c65a6db877c653e705f1b17bf89bd2d2fb29d67d0d6da35c90b37739b2805b87`，
+ZIP `799917e3300a2bb3e456289a36bebf9fc724bf7bf87b198a4b555e6371e96165`。
+normal Linux170 / Windows169+既有optional symlink1；密封ZIP包外应用/Work/timer
+各46（含Work20），包外Process各10，既有core/work故障各2均有新同字节消费。
+
+保留一处外围证据失败：原 `fault.json` 产品2pass、14个实际 driver/import 文件
+前后稳定，但运行期间编辑未执行的 `audit.py`，使静态 superset 摘要检查失败、
+`fault.command.json` exit1。原件不改写；`fault-replay-linux.json` 对相同故障 APE
+作无重构纯消费2pass，新实际闭包完整。精确单文件差异及原件指针见
+`fault-static-difference.json`，汇总见 `handoff.json`。父 driver 的实际 imports
+已记录；未对 Python 子进程动态 imports 作 profile，不冒称该范围。
+
+本地检查、77项配方 raw/LF/Gitblob、ZIP/APE/loader/双archive及原始日志的最终收据
+统一见主输出 `devcheck.json`、`handoff.json`。此修复未执行新的 Mac 或 actual64K
+产品矩阵，不改变旧失败成绩，不关闭11/13、不放行14、不触发整体Review或push。
+本次规定 check 实际380项、180执行通过、200项需显式数据或环境而skip，真实C
+bootstrap通过；原check输出逐字复制到主输出 `devcheck-artifacts/`，对应路径映射和
+前后摘要见 `devcheck-copy.json`，不将这些条件skip计为产品平台成绩。

@@ -105,3 +105,13 @@ HTTP503仍为0，保持claimed/in_progress。固定输入供给独立合入94c�
 fixture在合法soft1024时于SDK调用前创建高FD失败；高soft和低soft inputs正对照通过，
 未推断guest限额或产品失败。fresh `codex/m2-13-nofile-fixture` 只修复fixture准备，
 原始red与全部身份见主 `out/qaplet-m2/nofile-fixture-probe/README.md`。14仍未放行。
+
+2026-11-05（低soft NOFILE fixture准备修复）：fresh分支从94cda36实施，仅测试配方
+034f3c8，融合integration0c8d7da。真实原SDK低soft red先于SDK调用；新fixture临时
+提高soft准备合法高FD后立即恢复，hard允许仍8192、hard4096最低4095，再降soft256。
+子三FD的fcntl/read EBADF、二进制stdio、exit37/reap及父flags/limits恢复不弱化。
+新旧供应的公开低限额green、normal Linux170/Win169+optional1、包外46含Work20/
+Process10/fault2及原件边界见[新增验证记录](../13-process-validation.md#低-soft-nofile-的-inherit-fixture-准备修复)
+和主out/qaplet-m2/13-nofile-fixture-fix/handoff.json。原fault产品pass但unused audit.py
+静态superset fail保留，同故障APE新scope纯消费补证，不重写原件。本票保持in_progress，
+新actual64K/Mac矩阵仍由新Full验证；未关闭11/13、放行14、提前Review或push。
