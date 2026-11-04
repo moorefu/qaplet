@@ -245,7 +245,7 @@ finished:
   progress->progressed = progressed;
   progress->code = pending ? QAPLET_OK : runtime->execution_code;
   pthread_mutex_unlock(&runtime->mutex);
-  if (runtime->m2_enabled && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) qaplet_loop_shutdown(runtime);
+  if (runtime->m2_enabled && qaplet_get_lifecycle(runtime) != QAPLET_OPEN) { qaplet_process_shutdown(runtime); qaplet_loop_shutdown(runtime); }
   return progress->code;
 }
 
@@ -261,6 +261,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   code = qaplet_pump_ready(runtime, progress, diagnostic);
+  if (code && runtime->m2_enabled) qaplet_process_shutdown(runtime);
   qaplet_driver_set(runtime, 0);
   return code;
 }
@@ -269,12 +270,13 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
                              qaplet_diagnostic *diagnostic) {
   qaplet_code code = QAPLET_OK;
   if (qaplet_execution_check(runtime)) {
+    qaplet_process_shutdown(runtime);
     code = qaplet_execution_checkpoint(runtime, progress, 0);
     return qaplet_report_result(runtime, diagnostic, code);
   }
   runtime->host_registration_locked = 1;
   uint64_t jobs = 0, events = 0;
-  unsigned progressed = 0;
+  unsigned progressed = qaplet_process_collect(runtime);
   for (;;) {
     if (runtime->execution_active) {
       pthread_mutex_lock(&runtime->mutex);

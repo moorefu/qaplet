@@ -10,6 +10,8 @@ from pathlib import Path
 import platform
 import shutil
 import sys
+import struct
+import m2_process_pe
 import tempfile
 import uuid
 import zipfile
@@ -28,6 +30,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
+    ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
     ("tests/native/sdk_notify.c", "host-notify.c", "notify.o", "host-notify-compile"),
     ("tests/native/sdk_wait.c", "host-wait.c", "wait.o", "host-wait-compile"),
     ("tests/native/sdk_host.c", "host-contract.c", "embed.o", "host-compile"),
@@ -48,7 +52,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -57,7 +61,7 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/lo
           "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
-RECIPE += ("src/cli.c",)
+RECIPE += ("src/cli.c", "tests/native/sdk_process_winchild.c", "scripts/m2_process_pe.py", "scripts/sdk_matrix.py", "scripts/sdk_guest.py")
 RECIPE += ("examples/application.c", "examples/SDK-README.md")
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
@@ -70,7 +74,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 1540095, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 5734399, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -78,6 +82,11 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 1540095, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-limits", ["--m2-process-limits", "{self}", "{launcher}"], "M2 process limits: independent process/helper/native handle/registration quotas; encoded bytes and simultaneous native total; ordinary refusal: pass\n"),
+    ("m2-process-inherit", ["--m2-process-inherit", "{self}", "{launcher}"], "M2 process inherit: binary authorized stdio; extra native descriptor excluded; actual exit/reap: pass\n"),
+    ("m2-process-inputs", ["--m2-process-inputs", "{self}", "{launcher}"], "M2 process inputs: explicit Unicode path; copied argv/env/cwd; factory snapshot and complete replacement; actual exit/reap: pass\n"),
+    ("m2-process-errors", ["--m2-process-errors", "{self}", "{launcher}"], "M2 process errors: strict UTF-8/NUL/limits; no PATH search; missing cwd/program native errors; result retained; safe rollback: pass\n"),
+    ("m2-process-cleanup", ["--m2-process-cleanup", "{self}", "{launcher}"], "M2 process cleanup: default ref; independent process/helper/handle limits; unref stays alive; stop force/reap; close/quiesce/destroy: pass\n"),
     ("m2-notify", ["--m2-notify"], "M2 HostNotify: real Host socket wait; producer hints; copied FIFO; coalesced and redundant hints preserve 128 events; owner pump; joined cleanup: pass\n"),
     ("m2-notify-controls", ["--m2-notify-controls"], "M2 HostNotify controls: cross-thread stop wakes Host; silent hook cannot prevent internal wait/token release; independent instances; cleanup: pass\n"),
     ("m2-notify-registration", ["--m2-notify-registration"], "M2 HostNotify registration: M1 disabled; copied one-time declaration; ABI/tails/flags; owner thread; execution freeze; independent POD: pass\n"),
@@ -268,7 +277,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "host-notify"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "host-notify", "process"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -423,6 +432,7 @@ def build(args, report, directory):
         shutil.copyfile(ROOT / source_name, distribution / delivered)
     shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
     shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
+    shutil.copyfile(ROOT / "tests/native/sdk_process_winchild.c", distribution / "process-child.c")
     shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
     files = recipe()
     flags = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
@@ -448,11 +458,17 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
         objects.append(obj)
+    child_flags = ["-Os", "-mcmodel=large", "-mabi=ms", "-ffreestanding", "-fno-builtin", "-fno-stack-protector", "-fno-pie", "-fno-asynchronous-unwind-tables", "-mno-red-zone"]
+    run(report, directory, "process-child-compile", [tree / "bin/x86_64-linux-cosmo-gcc", *child_flags, "-c", distribution / "process-child.c", "-o", work / "process-child.o"], args.compile_timeout, work, environment)
+    run(report, directory, "process-child-link", [tree / "bin/x86_64-linux-cosmo-ld", "-Ttext=0x140001000", "-e", "entry", *m2_process_pe.link_flags(), work / "process-child.o", "-o", work / "process-child.elf"], args.compile_timeout, work, environment)
+    run(report, directory, "process-child-binary", [tree / "bin/x86_64-linux-cosmo-objcopy", "-O", "binary", "-j", ".text", "-j", ".rodata", work / "process-child.elf", work / "process-child.bin"], args.compile_timeout, work, environment)
+    entry = struct.unpack_from("<Q", (work / "process-child.elf").read_bytes(), 24)[0]
+    m2_process_pe.package(work / "process-child.bin", distribution / "process-child.exe", entry - m2_process_pe.BASE - 0x1000)
     archive = distribution / "lib/libqaplet.a"
     run(report, directory, "sdk-archive", [tree / "bin/cosmoar", "rcsD", archive, *objects], args.compile_timeout, work, environment)
     # Compile only against the distributed public header and link the supplied archive.
@@ -563,7 +579,7 @@ def consume(args, report, directory):
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
         cli_path.chmod(cli_path.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
-        arguments = [str(args.artifact.parent.resolve() / "sdk/modules") if value == "{modules}" else value for value in arguments]
+        arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")).replace("{self}", str(args.artifact.resolve())).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
                                       [*loader, args.artifact, *arguments], args.timeout, expected=None)
         if suffix == "facts":

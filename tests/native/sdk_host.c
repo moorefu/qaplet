@@ -260,6 +260,7 @@ int main(int argc, char **argv) {
     puts("scalar: 42; closed: true");
     return 0;
   }
+  if (argc > 1 && !strncmp(argv[1], "--m2-process", 12)) { extern int sdk_process(int,char **); return sdk_process(argc,argv); }
   if (argc != 2) return 2;
   if (!strncmp(argv[1], "--m2-notify", 11)) { extern int sdk_notify(const char *); return sdk_notify(argv[1]); }
   if (!strncmp(argv[1], "--m2-wait", 9)) { extern int sdk_wait(const char *); return sdk_wait(argv[1]); }

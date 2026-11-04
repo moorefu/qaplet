@@ -135,7 +135,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 
@@ -247,10 +247,12 @@ qaplet_code qaplet_create_internal(const qaplet_config *config, const qaplet_m2_
   code = qaplet_modules_init(runtime, config);
   if (!code) code = qaplet_events_init(runtime);
   if (!code) code = qaplet_loop_init(runtime);
+  if (!code) code = qaplet_process_init(runtime);
   if (!code) code = qaplet_execution_check(runtime);
   if (code) {
     int primary_error = code == QAPLET_CONTROL_FAILURE ? runtime->control_error : 0;
     qaplet_loop_shutdown(runtime);
+    qaplet_process_close(runtime);
     if (detail) {
       detail->primary_error_domain = primary_error ? QAPLET_ERROR_DOMAIN_ERRNO : QAPLET_ERROR_DOMAIN_NONE;
       detail->primary_error = primary_error;
@@ -360,6 +362,7 @@ qaplet_code qaplet_close(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic)
   qaplet_driver_set(runtime, 1);
   if (qaplet_get_lifecycle(runtime) != QAPLET_CLOSED) {
     qaplet_loop_shutdown(runtime);
+    qaplet_process_close(runtime);
     qaplet_events_dispose(runtime);
     qaplet_execution_dispose(runtime);
     qaplet_modules_dispose(runtime);

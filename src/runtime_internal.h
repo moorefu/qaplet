@@ -10,6 +10,7 @@ typedef struct qaplet_rejection qaplet_rejection;
 typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
+typedef struct qaplet_process_pool qaplet_process_pool;
 typedef struct { uint64_t generation; int active; } qaplet_keepalive_slot;
 typedef struct { qaplet_notify_function function; void *userdata; } qaplet_notification;
 extern _Thread_local unsigned qaplet_in_notify;
@@ -34,8 +35,14 @@ struct qaplet_runtime {
   int wake_fd[2], wake_pending, loop_closed;
   uint64_t native_handles, native_handles_peak, reactor_registrations, reactor_registrations_peak;
   uint64_t native_uncertain_handles;
+  /* Shared auxiliary-thread capacity, including physical exit and requested
+   * stacks. Process and future stdio helpers use this same instance ledger. */
+  uint64_t helper_threads, helper_stack_bytes;
+  qaplet_process_pool *process_pool;
+  qaplet_process_snapshot process_snapshot;
   uint64_t keepalive_tokens, keepalive_tokens_peak, wake_requests, wake_signals, wait_calls;
   int control_error, cleanup_error, primary_error;
+  uint32_t process_cleanup_error_domain;
   JSRuntime *engine;
   JSContext *context;
   qaplet_allocation *engine_allocations;
@@ -82,6 +89,13 @@ qaplet_code qaplet_m2_configure(const qaplet_m2_config *, const qaplet_limits *,
 void qaplet_driver_set(qaplet_runtime *, int);
 qaplet_code qaplet_loop_init(qaplet_runtime *);
 void qaplet_loop_shutdown(qaplet_runtime *);
+qaplet_code qaplet_process_init(qaplet_runtime *);
+void qaplet_process_shutdown(qaplet_runtime *);
+void qaplet_process_close(qaplet_runtime *);
+/* Owner only, no JS. Called before waiting and after every native wake. */
+unsigned qaplet_process_collect(qaplet_runtime *);
+int qaplet_process_referenced_locked(qaplet_runtime *);
+int qaplet_process_pending_locked(qaplet_runtime *);
 /* Requires mutex. Never invokes JS. A wake fault cannot undo accepted state. */
 void qaplet_wake_locked(qaplet_runtime *);
 /* Reserve under the publication lock, dispatch after unlocking. Every returned
