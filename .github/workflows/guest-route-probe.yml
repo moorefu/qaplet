@@ -1,0 +1,29 @@
+{
+  "name": "Temporary locked guest HTTP route probe",
+  "on": {
+    "push": {"branches": ["codex/m2-guest-route-probe"]}
+  },
+  "permissions": {"contents": "read"},
+  "jobs": {
+    "locked-guest-http-route": {
+      "runs-on": "ubuntu-22.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"name": "Capture four bounded requests to the exact locked URL", "run": "python scripts/guest_route_probe.py --output-dir out/guest-route-probe"},
+        {
+          "name": "Preserve all response and failure evidence",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "guest-route-probe-${{ github.sha }}-attempt-${{ github.run_attempt }}",
+            "path": "out/guest-route-probe/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}
