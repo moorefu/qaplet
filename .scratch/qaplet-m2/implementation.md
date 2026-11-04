@@ -222,3 +222,14 @@ soft16384的inherit与soft1024的inputs通过，四项均无timeout。实际gues
 `out/qaplet-m2/full-94cda36/HANDOFF.md`、`final-handoff-001.json`。API仍将部分已有
 制品的job显示queued，保留观测矛盾；GitHub官方Actions同期partial_outage仅作背景，
 不归因具体job。11/13继续不足，后到原件另建增量，不改已封存初次边界。
+
+2026-11-05（NOFILE fixture修复独立合并）：`ae6d7ce` 已no-ff合入source `5e6efd7` /
+产品及配方提交 `034f3c8`，tree同源、两树clean，77 RECIPE raw/Gitblob/LF全等。
+新recipe `35d10266…`、ZIP79/三APE/双archive各15及636实际命令/1272原日志均核验，
+两个archive与旧54b供应同字节；只有fixture行为及两份13记录变更。Linux170、
+Windows169+既有optional1、包外各46/Process各10/fault各2、低NOFILE三组最小绿和
+最终Host两组绿、本地380项中180实际通过/200条件skip与bootstrap均核验。
+源1561文件内容/长度/mtime前后不变，未重复构建或完整矩阵，原checker与静态全集
+失败均保留并有独立成功后继。详主 `out/qaplet-m2/merge-13-nofile-fixture/HANDOFF.md`
+及源 `out/qaplet-m2/13-nofile-fixture-fix/README.md`。13转awaiting_cross，11/13均未
+resolved，准备推送新的Full；当前Mac及实际64K仍须新配方证据，不放行后续blocker。
