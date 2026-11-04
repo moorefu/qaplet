@@ -168,12 +168,28 @@ static int infinite_ledgers(void) {
   }
   puts("M2 scheduling ledgers: active entry and independent idle callback accumulate jobs across pumps; infinite jobs terminate at exact dispatch limit: pass");return 0;
 }
+static int discarded_handles(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT;b.limits.engine_heap_bytes=4*1024*1024;
+  qaplet_m2_config c=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;qaplet_progress p=QAPLET_PROGRESS_INIT;trace_state trace={0};
+  CHECK(qaplet_create_m2(&b,&c,&r,NULL)==QAPLET_OK && !register_marks(r,&trace));
+  const char *s="Promise.all([import('qaplet:timers'),import('host:trace')]).then(([t,h])=>{globalThis.install=()=>{t.setTimeout(()=>h.mark('T'),0);t.setImmediate(()=>h.mark('I'));for(let i=0;i<1000;++i){const a={bytes:new ArrayBuffer(65536)};a.self=a}}})";
+  CHECK(qaplet_eval(r,s,strlen(s),&p,NULL)==QAPLET_OK);
+  while (p.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK);
+  /* 64 MiB of unreachable cyclic ArrayBuffer payloads under a 4 MiB engine
+   * budget requires cycle collection; plain reference counting cannot reclaim
+   * these cycles. The two discarded resource handles must remain scheduled. */
+  CHECK(qaplet_eval(r,"install();42",12,&p,NULL)==QAPLET_OK && !trace.length);
+  CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK && trace.length==2 && !memcmp(trace.text,"TI",2));
+  CHECK(!finish(r));
+  puts("M2 scheduling GC: discarded timer/immediate handles survive cyclic garbage collection under finite engine budget: pass");return 0;
+}
 int sdk_timers(const char *mode, const char *modules) {
   (void)modules;
   if (!strcmp(mode,"--m2-timers-fairness")) return scheduling(0);
   if (!strcmp(mode,"--m2-timers-checkpoints")) return scheduling(1);
   if (!strcmp(mode,"--m2-timers-errors")) return checkpoint_errors();
   if (!strcmp(mode,"--m2-timers-ledgers")) return infinite_ledgers();
+  if (!strcmp(mode,"--m2-timers-gc")) return discarded_handles();
   qaplet_config base = QAPLET_CONFIG_INIT;
   qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
   qaplet_runtime *runtime = NULL;

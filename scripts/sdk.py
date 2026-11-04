@@ -81,6 +81,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 4161535, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-timers-gc", ["--m2-timers-gc"], "M2 scheduling GC: discarded timer/immediate handles survive cyclic garbage collection under finite engine budget: pass\n"),
     ("m2-timers-interval", ["--m2-timers-interval"], "M2 interval: strict minimum 1ms; repeated original schedule; ignored Promise; self cancel; cleanup: pass\n"),
     ("m2-timers-immediate", ["--m2-timers-immediate"], "M2 immediate: asynchronous registration; FIFO; nested callback waits next pump; discarded handles retained; cancel; cleanup: pass\n"),
     ("m2-timers-fairness", ["--m2-timers-fairness"], "M2 scheduling fairness: completion/timer/immediate/event share 32 deliveries; public bounded order within one pump: pass\n"),
