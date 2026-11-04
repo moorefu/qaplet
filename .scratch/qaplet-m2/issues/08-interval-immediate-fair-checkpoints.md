@@ -4,9 +4,9 @@
 
 **Blocked by:** [07 · 一次 timer 推进 TLA 与自然退出](07-one-shot-timer-tla.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -53,4 +53,6 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-04：07 已取得当前五原生/实际64K严格闭包并 resolved，领取 `codex/m2-08-scheduling` / `.cache/worktrees/m2-08`。当前集成已含10的真实C WorkPool候选，需在已有 work/timer/event 持久轮转上加入immediate，保留完整jobs检查点、累计账本和统一timer/immediate额度；10本身仍等待独立新Full，不能将其合入当作完成。
 

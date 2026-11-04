@@ -184,3 +184,6 @@ Windows 只重放 Ubuntu 已编译的同字节 APE。包外 timer 的 modules �
 本票本地交付完成，仍为 **claimed / awaiting_cross**。新的五原生、实际 64K、
 集成 Full 和最终父 M2 全资源长测由 root 继续签发；旧 09 Full 不覆盖本配方。
 没有触发 CI、push、合并到主树、关闭本票或父规格，也没有签发 release-ready。
+
+
+2026-11-04：`46e5cf4` / Full `41796608784` 已 completed/success。当前本票范围由独立 typed consumer 重读原件通过，并经 root 核验：SDK 五原生645/实际64K129、TTY五原生97/实际64K19、包外应用8、controlled fault1、当前M0 Full235；29原ZIP/12nested/11job日志及三guest seal/argv/清理完整。WinServer正常probe最终通知后实际查询100×33、模式恢复和四项清理通过，旧563失败不改标。详主 `out/qaplet-m2/full-46e5cf4/HANDOFF.md`、`verify/scope-summary.json`、`05-07-acceptance-check.json`、`root-scope-acceptance.json`。仅按各票scope验收，不外推最终T03混合/长测、父M2或发布完成。

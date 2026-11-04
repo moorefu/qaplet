@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross；旧 `0e4ba21` 五原生及实际 64K 验收保留；当前 `563ff33` Windows resize 回归已完成真实受控 red/green、本地三目标及必需检查，待新 Windows Server 原生 Full。
+**Execution state:** completed；新 `46e5cf4` Full 的五原生及实际 64K 共116项严格验收通过，Windows resize 回归已闭合，旧验收/失败均保留。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -19,7 +19,7 @@
 ## Acceptance criteria
 
 - [x] 区分真实标准输入和私有 CONIN$/PTY，不能从私有 Console 成功推断 fd0 是 Console。
-- [ ] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。（旧验收保留；当前 Windows resize 回归待重新闭合。）
+- [x] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。（`46e5cf4` 新原件已闭合 Windows resize 回归。）
 - [x] 验证 UTF-8、Unicode、分块输入/输出和非法数据，不能用替换解码或剥离控制字符当作逐字节证明。
 - [x] 观察取消/关闭与共享模式、借用端点的影响，明确安全可用及 UNSUPPORTED 的范围。
 - [x] 受控设施、失败历史、供应字节及各适用目标原始证据完整；不增加面向用户的完整 PTY 创建 API。
@@ -72,3 +72,5 @@
 
 2026-11-04：独立修复 `527bfd8` 先取得0.60秒3/3精确旧症状的真实受控ConPTY red，新回归测试再先red；最终通知后重新查询且有界等待的修复后，受控20/20（早期90×31、最终100×33）、正常20/20均pass并完整清理。Ubuntu正常同字节供应物在Linux19/19、Windows21/21、完整系统ARM64 64K19/19通过；Windows9/9合同无跳过，Linux8项适用合同全过，Windows专属受控用例不适用。合并最新集成`fa4d768`后，既有dev.py check 369项/183执行/186条件跳过成功。配方原字节、LF、Git blob、producer与实际制品均重核；省略最后resize的真实负向在内部等待耗尽后保持fail且恢复/回收。详见[当前resize诊断、身份与交接](../05-resize-validation.md)。票继续claimed / awaiting_cross，尚不宣称Windows Server当前Full通过；原CI具体调度顺序仍未知，原失败与旧成绩均保留。
 
+
+2026-11-04：`46e5cf4` / Full `41796608784` 已 completed/success。当前本票范围由独立 typed consumer 重读原件通过，并经 root 核验：SDK 五原生645/实际64K129、TTY五原生97/实际64K19、包外应用8、controlled fault1、当前M0 Full235；29原ZIP/12nested/11job日志及三guest seal/argv/清理完整。WinServer正常probe最终通知后实际查询100×33、模式恢复和四项清理通过，旧563失败不改标。详主 `out/qaplet-m2/full-46e5cf4/HANDOFF.md`、`verify/scope-summary.json`、`05-07-acceptance-check.json`、`root-scope-acceptance.json`。仅按各票scope验收，不外推最终T03混合/长测、父M2或发布完成。
