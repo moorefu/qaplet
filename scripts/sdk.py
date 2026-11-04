@@ -89,6 +89,13 @@ HOST_CASES = (
     ("m2-timers-shared-limits", ["--m2-timers-shared-limits"], "M2 scheduling resource budget: timer/interval/immediate share finite slots; callback cancel retains slot; unref-only natural return and explicit pump; terminal cleanup: pass\n"),
     ("m2-timers-errors", ["--m2-timers-errors"], "M2 scheduling errors: late handled rejection waits full cross-pump checkpoint; ordinary throw settles jobs then returns; next independent callback ledger recovers: pass\n"),
     ("m2-timers-ledgers", ["--m2-timers-ledgers"], "M2 scheduling ledgers: active entry and independent idle callback accumulate jobs across pumps; infinite jobs terminate at exact dispatch limit: pass\n"),
+    ("m2-work-cancel", ["--m2-work-cancel"], "M2 work cancel: queued never starts; foreign accepted cancellation wins once; running side effect survives; repeat idempotent; owner handoff ends ref; release retains physical bytes; late result discarded: pass\n"),
+    ("m2-work-cancel-result", ["--m2-work-cancel-result"], "M2 work cancel result: native completion wins before owner; already-completed stable; short result retry never reruns; release invalidates immediately; complete jobs precede ref/capacity handoff: pass\n"),
+    ("m2-work-cancel-status", ["--m2-work-cancel-status"], "M2 work cancel status: versioned zero-tail POD; any-thread query/cancel wakes waiting owner; queued/running/logical/physical/ref distinct; instance and generation rejection; CLOSED invalidation; native retry: pass\n"),
+    ("m2-work-cancel-file", ["--m2-work-cancel-file"], "M2 work cancel file: real bounded binary read with copied path; cancellation before syscall and after bytes never rolls back; completion publication wins independently of owner; released physical buffers survive close and join: pass\n"),
+    ("m2-work-cancel-permissions", ["--m2-work-cancel-permissions"], "M2 work cancel permissions: owner callback controls and POD query allowed; owner result/release remain BUSY; HostNotify rejects both APIs through TLS guard; native lifetime joined: pass\n"),
+    ("m2-work-cancel-limits", ["--m2-work-cancel-limits"], "M2 work cancel limits: actual default 128 operations and 8MiB copied/reserved data within 16MiB total; cancel/release waits for owner and physical use; saturation atomic; physical bytes remain charged; ordinary capacity recovers: pass\n"),
+    ("m2-work-cancel-nonreturning", ["--m2-work-cancel-nonreturning"], "M2 work cancel nonreturning: gate remains held through process termination; CLOSED retains physical bytes/code/userdata; zero and finite quiesce retry pending; destroy BUSY; no cleanup success claimed: pass\n"),
     ("m2-work-notify", ["--m2-work-notify"], "M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass\n"),
     ("m2-work-registration", ["--m2-work-registration"], "M2 work registration: explicit capability; lazy threads; copied finite declarations; invalid ABI/flags/concurrency; duplicate/frozen rejection: pass\n"),
     ("m2-work-fairness", ["--m2-work-fairness"], "M2 work fairness: two bounded workers; default handler serial; runnable handler bypasses blocked head; copied input; owner handoff; retained capacity: pass\n"),
@@ -301,7 +308,7 @@ def package_consume(args, report, directory):
         executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
         expected = (next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
-                    "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass\n")
+                    "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion/cancel survives wake failure; join error independently retained CLOSED/BUSY without identity retry or false cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,

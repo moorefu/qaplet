@@ -158,6 +158,7 @@ static void *worker_main(void *opaque) {
     task->physical=0; --handler->running; --runtime->work_snapshot.running;
     if (!task->cancelled && runtime->snapshot.lifecycle!=QAPLET_OPEN) {
       task->cancelled=1;task->state=QAPLET_WORK_CANCELLED;task->length=0;
+      task->code=QAPLET_CANCELLED;task->error_domain=0;task->error=0;
       ++runtime->work_snapshot.retained_results;increment(&runtime->work_snapshot.cancelled);
     }
     if (!task->cancelled) {
@@ -167,7 +168,7 @@ static void *worker_main(void *opaque) {
       task->state=code ? QAPLET_WORK_FAILED : QAPLET_WORK_SUCCEEDED;
       ++runtime->work_snapshot.retained_results; increment(&runtime->work_snapshot.completed);
     }
-    if (task->released) retire_task(runtime,task);
+    if (task->released && !task->handoff) retire_task(runtime,task);
     /* The pre-reserved record is the completion. No business event or malloc. */
     qaplet_wake_locked(runtime);
     qaplet_notification notification=qaplet_notify_prepare_locked(runtime);
@@ -296,6 +297,49 @@ static work_task *lookup(qaplet_runtime *runtime,const qaplet_work_task *token) 
   work_task *task=&pool->tasks[token->slot];
   return task->active && !task->released && task->generation==token->generation ? task : NULL;
 }
+qaplet_code qaplet_work_cancel(qaplet_runtime *runtime,const qaplet_work_task *token,qaplet_diagnostic *diagnostic) {
+  qaplet_code code=qaplet_check_diagnostic(diagnostic);
+  if (code) return code;
+  if (!runtime || !token) return qaplet_report(diagnostic,QAPLET_INVALID_ARGUMENT);
+  qaplet_notification notification={0};
+  pthread_mutex_lock(&runtime->mutex);
+  work_task *task=lookup(runtime,token);
+  if (!runtime->m2_enabled) code=QAPLET_UNSUPPORTED;
+  else if (!task) code=QAPLET_INVALID_HANDLE;
+  else if (terminal(task)) code=task->state==QAPLET_WORK_CANCELLED ? QAPLET_OK : QAPLET_ALREADY_COMPLETED;
+  else {
+    if (task->state==QAPLET_WORK_QUEUED) --runtime->work_snapshot.queued;
+    task->cancelled=1; task->state=QAPLET_WORK_CANCELLED;
+    task->code=QAPLET_CANCELLED; task->length=0; task->error_domain=0; task->error=0;
+    ++runtime->work_snapshot.retained_results; increment(&runtime->work_snapshot.cancelled);
+    /* Publication is accepted even if its following wake records failure. */
+    qaplet_wake_locked(runtime);
+    notification=qaplet_notify_prepare_locked(runtime);
+    pthread_cond_broadcast(&runtime->native_condition);
+  }
+  pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime,notification);
+  return qaplet_report(diagnostic,code);
+}
+qaplet_code qaplet_get_work_status(qaplet_runtime *runtime,const qaplet_work_task *token,
+                                   qaplet_work_status *output,qaplet_diagnostic *diagnostic) {
+  qaplet_code code=qaplet_check_diagnostic(diagnostic);
+  if (code) return code;
+  code=qaplet_check_structure(output,sizeof(*output));
+  if (!code && (!runtime || !token)) code=QAPLET_INVALID_ARGUMENT;
+  if (code) return qaplet_report(diagnostic,code);
+  pthread_mutex_lock(&runtime->mutex);
+  work_task *task=lookup(runtime,token);
+  if (!runtime->m2_enabled) code=QAPLET_UNSUPPORTED;
+  else if (!task) code=QAPLET_INVALID_HANDLE;
+  else {
+    output->state=task->state; output->code=task->code; output->length=task->length;
+    output->error_domain=task->error_domain; output->error=task->error;
+    output->physical_pending=task->physical; output->pending_handoff=task->handoff;
+  }
+  pthread_mutex_unlock(&runtime->mutex);
+  return qaplet_report(diagnostic,code);
+}
 qaplet_code qaplet_work_copy_result(qaplet_runtime *runtime,const qaplet_work_task *token,
                                     qaplet_work_result *output,qaplet_diagnostic *diagnostic) {
   qaplet_code code=qaplet_check_diagnostic(diagnostic);
@@ -339,8 +383,9 @@ qaplet_code qaplet_work_release(qaplet_runtime *runtime,const qaplet_work_task *
   else if (!terminal(task)) code=QAPLET_BAD_STATE;
   else {
     task->released=1;
-    if (task->handoff) { task->handoff=0; --runtime->work_snapshot.pending_handoffs; }
-    if (!task->physical) retire_task(runtime,task);
+    /* Token invalidation is immediate. Ref/record retirement remains an owner
+     * handoff after a complete jobs checkpoint, even if C has copied/released. */
+    if (!task->physical && !task->handoff) retire_task(runtime,task);
     qaplet_wake_locked(runtime);
     notification=qaplet_notify_prepare_locked(runtime);
   }
@@ -384,6 +429,7 @@ unsigned qaplet_work_handoff(qaplet_runtime *runtime,uint64_t maximum) {
      * owns its cumulative dispatch/deadline ledger across this completion. */
     if (runtime->execution_active && qaplet_execution_dispatch_locked(runtime)) break;
     task->handoff=0; --runtime->work_snapshot.pending_handoffs; ++count;
+    if (task->released && !task->physical) retire_task(runtime,task);
   }
   pthread_mutex_unlock(&runtime->mutex);
   return count;
@@ -400,6 +446,7 @@ void qaplet_work_shutdown(qaplet_runtime *runtime) {
       if (!terminal(task)) {
         if (task->state==QAPLET_WORK_QUEUED) --runtime->work_snapshot.queued;
         task->cancelled=1; task->state=QAPLET_WORK_CANCELLED; task->length=0;
+        task->code=QAPLET_CANCELLED; task->error_domain=0; task->error=0;
         ++runtime->work_snapshot.retained_results; increment(&runtime->work_snapshot.cancelled);
       }
       if (task->handoff) { task->handoff=0; --runtime->work_snapshot.pending_handoffs; }

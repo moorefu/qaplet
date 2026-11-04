@@ -24,7 +24,8 @@ typedef enum {
   QAPLET_HOST_ERROR = 19, QAPLET_NO_HANDLER = 20, QAPLET_QUEUE_FULL = 21,
   QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23,
   QAPLET_RESOURCE_LIMIT = 24, QAPLET_INVALID_HANDLE = 25,
-  QAPLET_CONTROL_FAILURE = 26
+  QAPLET_CONTROL_FAILURE = 26,
+  QAPLET_CANCELLED = 28, QAPLET_ALREADY_COMPLETED = 29
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -444,6 +445,17 @@ typedef struct {
   void *buffer;
   size_t capacity, length;
 } qaplet_work_result;
+/* Snapshot of logical outcome and independent native/ref responsibilities.
+ * physical_pending covers this task's native call, not a standby pool thread
+ * or its later TLS destruction. Code/userdata live until native QUIESCENT. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_work_state state;
+  qaplet_code code;
+  uint32_t error_domain;
+  int32_t error;
+  uint64_t length, physical_pending, pending_handoff;
+} qaplet_work_status;
 typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t handlers, handlers_peak, operations, operations_peak;
@@ -457,6 +469,7 @@ typedef struct {
 #define QAPLET_WORK_HANDLER_INIT {sizeof(qaplet_work_handler), QAPLET_ABI_VERSION, NULL, 0, NULL, NULL, 0, 0, 0, 0, {0}}
 #define QAPLET_WORK_TASK_INIT {0, 0, 0}
 #define QAPLET_WORK_RESULT_INIT {sizeof(qaplet_work_result), QAPLET_ABI_VERSION, 0, 0, 0, 0, NULL, 0, 0}
+#define QAPLET_WORK_STATUS_INIT {sizeof(qaplet_work_status), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_WORK_SNAPSHOT_INIT {sizeof(qaplet_work_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 /* Owner, outside drives/callbacks. Submit copies input and reserves the complete
  * output/record before publishing acceptance. Saturation is RESOURCE_LIMIT,
@@ -467,11 +480,25 @@ typedef struct {
 qaplet_code qaplet_register_work_handler(qaplet_runtime *, const qaplet_work_handler *, qaplet_diagnostic *);
 qaplet_code qaplet_work_submit(qaplet_runtime *, const char *name, size_t name_length,
                                const void *input, size_t input_length, qaplet_work_task *, qaplet_diagnostic *);
+/* Any thread. Acceptance and native completion share one mutex order. OK
+ * records cancellation (also for repeated cancellation of a retained record);
+ * ALREADY_COMPLETED means completion won. CANCELLED is a logical task result,
+ * with no invented native error. Running native calls may still have effects.
+ * The owner must still hand off completion before its default ref is removed.
+ * No JS is run and no business queue slot or allocation is required. */
+qaplet_code qaplet_work_cancel(qaplet_runtime *, const qaplet_work_task *, qaplet_diagnostic *);
+/* Any thread. Full versioned POD size required, unknown tail bytes zero.
+ * No borrowed pointer. Released/stale/cross-Runtime/CLOSED tokens are invalid.
+ * Like all SDK APIs, cancel and this query reject HostNotify reentry as BUSY;
+ * thread-safe does not mean signal-safe. */
+qaplet_code qaplet_get_work_status(qaplet_runtime *, const qaplet_work_task *, qaplet_work_status *, qaplet_diagnostic *);
 /* Owner only. Nonterminal results/releases return BAD_STATE. BUFFER_TOO_SMALL
  * reports length without copying bytes; retry never reruns the task. Release
  * invalidates this token; cross-Runtime and stale generations are INVALID_HANDLE.
  * A released logically cancelled task keeps physical buffers/record charged
  * until its native call returns. Release never proves syscall/thread exit.
+ * A pending owner handoff also retains its record/ref through the complete
+ * jobs checkpoint; release itself never skips that handoff.
  * close invalidates result access and retires records only after physical use.
  * Neither logical cancellation nor close proves native exit/join. */
 qaplet_code qaplet_work_copy_result(qaplet_runtime *, const qaplet_work_task *, qaplet_work_result *, qaplet_diagnostic *);

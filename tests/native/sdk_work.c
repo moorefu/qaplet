@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -591,7 +592,324 @@ static int scheduling_contract(void) {
   puts("M2 work scheduling: completion/timer/event bounded rotation; complete jobs before each handoff; persisted cursor across jobs-only pumps; all categories drain: pass");
   return 0;
 }
+typedef struct { qaplet_runtime *runtime; qaplet_work_task task; qaplet_code code; } cancel_call;
+static void *foreign_cancel(void *opaque) {
+  cancel_call *call=opaque;
+  call->code=qaplet_work_cancel(call->runtime,&call->task,NULL);
+  return NULL;
+}
+static int cancel_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  config.limits.worker_threads=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,"42",2,&progress,NULL)==QAPLET_OK);
+  qaplet_work_task running=QAPLET_WORK_TASK_INIT,queued=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&running,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&queued,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_release(runtime,&running,NULL)==QAPLET_BAD_STATE);
+  cancel_call call={runtime,queued,QAPLET_BAD_STATE};pthread_t thread;
+  CHECK(!pthread_create(&thread,NULL,foreign_cancel,&call) && !pthread_join(thread,NULL) && call.code==QAPLET_OK);
+  CHECK(qaplet_work_cancel(runtime,&queued,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_cancel(runtime,&running,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_cancel(runtime,&running,NULL)==QAPLET_OK);
+  qaplet_work_result result=QAPLET_WORK_RESULT_INIT;
+  CHECK(qaplet_work_copy_result(runtime,&queued,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_CANCELLED && result.code==QAPLET_CANCELLED && !result.length && !result.error_domain && !result.error);
+  CHECK(qaplet_work_copy_result(runtime,&running,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_CANCELLED && result.code==QAPLET_CANCELLED);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.cancelled==2 && !stats.completed && !stats.queued && stats.running==1 && stats.pending_handoffs==2 && stats.operations==2 && stats.data_bytes==4);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs && stats.running==1);
+  CHECK(qaplet_work_release(runtime,&queued,NULL)==QAPLET_OK && qaplet_work_release(runtime,&running,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_cancel(runtime,&queued,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_cancel(runtime,&running,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.data_bytes==2 && stats.running==1);
+  release_gate(&g);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (stats.running);
+  CHECK(stats.cancelled==2 && !stats.completed && !stats.operations && !stats.data_bytes && g.entered==1 && g.exited==1 && g.observed_cancel && g.seen==17);
+  qaplet_result js=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(runtime,&js,NULL)==QAPLET_OK && js.number==42);
+  CHECK(!finish(runtime) && !destroy_gate(&g));
+  puts("M2 work cancel: queued never starts; foreign accepted cancellation wins once; running side effect survives; repeat idempotent; owner handoff ends ref; release retains physical bytes; late result discarded: pass");
+  return 0;
+}
+static int cancel_result_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;base.limits.pump_jobs=1;
+  qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_work_task task=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  release_gate(&g);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (!stats.completed);
+  CHECK(stats.pending_handoffs==1 && !stats.running && stats.cancelled==0);
+  char diagnostic_byte='x';qaplet_diagnostic diagnostic=QAPLET_DIAGNOSTIC_INIT;
+  diagnostic.message=&diagnostic_byte;diagnostic.capacity=1;
+  CHECK(qaplet_work_cancel(runtime,&task,&diagnostic)==QAPLET_ALREADY_COMPLETED && diagnostic.code==QAPLET_ALREADY_COMPLETED && diagnostic.length && (diagnostic.flags & QAPLET_DIAGNOSTIC_TRUNCATED) && !diagnostic_byte);
+  CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_ALREADY_COMPLETED);
+  qaplet_work_result result=QAPLET_WORK_RESULT_INIT;unsigned char bytes[2]={99,98};result.buffer=bytes;
+  CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_BUFFER_TOO_SMALL && result.length==1 && bytes[0]==99 && bytes[1]==98);
+  result.capacity=sizeof(bytes);
+  CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_SUCCEEDED && result.code==QAPLET_OK && result.length==1 && bytes[0]==17 && bytes[1]==98);
+  bytes[0]=99;CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && bytes[0]==17 && g.entered==1 && g.exited==1);
+  const char jobs[]="let p=Promise.resolve();for(let i=0;i<8;++i)p=p.then(()=>{});42";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,jobs,sizeof(jobs)-1,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_work_release(runtime,&task,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_release(runtime,&task,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==1 && stats.operations==1 && stats.data_bytes==2);
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==1);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.completed==1 && !stats.cancelled && !stats.pending_handoffs && !stats.operations && !stats.data_bytes);
+  qaplet_result js=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(runtime,&js,NULL)==QAPLET_OK && js.number==42);
+  CHECK(!finish(runtime) && !destroy_gate(&g));
+  puts("M2 work cancel result: native completion wins before owner; already-completed stable; short result retry never reruns; release invalidates immediately; complete jobs precede ref/capacity handoff: pass");
+  return 0;
+}
+static void *cancel_waiting_owner(void *opaque) {
+  cancel_call *call=opaque;qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+  qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+  if (qaplet_get_work_status(call->runtime,&call->task,&status,NULL)!=QAPLET_OK ||
+      status.state!=QAPLET_WORK_RUNNING || !status.physical_pending || !status.pending_handoff) return NULL;
+  do {
+    if (qaplet_get_m2_snapshot(call->runtime,&state,NULL)!=QAPLET_OK) return NULL;
+    sched_yield();
+  } while (!state.driving || !state.wait_calls);
+  call->code=qaplet_work_cancel(call->runtime,&call->task,NULL);
+  return NULL;
+}
+static int cancel_status_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.worker_threads=1;
+  qaplet_runtime *runtime=NULL,*other=NULL,*legacy=NULL;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK && qaplet_create_m2(&base,&config,&other,NULL)==QAPLET_OK && qaplet_create(&base,&legacy,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_work_task running=QAPLET_WORK_TASK_INIT,queued=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&running,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&queued,NULL)==QAPLET_OK);
+  qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+  CHECK(qaplet_get_work_status(runtime,&queued,&status,NULL)==QAPLET_OK && status.state==QAPLET_WORK_QUEUED && !status.physical_pending && status.pending_handoff && !status.length);
+  status.struct_size=8;status.state=QAPLET_WORK_FAILED;
+  CHECK(qaplet_get_work_status(runtime,&running,&status,NULL)==QAPLET_ABI_MISMATCH && status.state==QAPLET_WORK_FAILED);
+  status=(qaplet_work_status)QAPLET_WORK_STATUS_INIT;status.abi_version=99;
+  CHECK(qaplet_get_work_status(runtime,&running,&status,NULL)==QAPLET_ABI_MISMATCH);
+  struct { qaplet_work_status value; uint64_t tail; } extended={QAPLET_WORK_STATUS_INIT,0};extended.value.struct_size=sizeof(extended);
+  CHECK(qaplet_get_work_status(runtime,&running,&extended.value,NULL)==QAPLET_OK && extended.value.physical_pending && !extended.tail);
+  extended.tail=1;CHECK(qaplet_get_work_status(runtime,&running,&extended.value,NULL)==QAPLET_ABI_MISMATCH);
+  status=(qaplet_work_status)QAPLET_WORK_STATUS_INIT;
+  CHECK(qaplet_get_work_status(other,&running,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_cancel(other,&running,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_get_work_status(legacy,&running,&status,NULL)==QAPLET_UNSUPPORTED && qaplet_work_cancel(legacy,&running,NULL)==QAPLET_UNSUPPORTED);
+  CHECK(qaplet_get_work_status(NULL,&running,&status,NULL)==QAPLET_INVALID_ARGUMENT && qaplet_work_cancel(NULL,&running,NULL)==QAPLET_INVALID_ARGUMENT);
+  CHECK(qaplet_get_work_status(runtime,NULL,&status,NULL)==QAPLET_INVALID_ARGUMENT && qaplet_work_cancel(runtime,NULL,NULL)==QAPLET_INVALID_ARGUMENT);
+  CHECK(qaplet_work_cancel(runtime,&queued,NULL)==QAPLET_OK && qaplet_work_release(runtime,&queued,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  cancel_call call={runtime,running,QAPLET_BAD_STATE};pthread_t thread;
+  CHECK(!pthread_create(&thread,NULL,cancel_waiting_owner,&call));
+  CHECK(qaplet_run_once(runtime,3000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_PROGRESS && drive.progressed);
+  CHECK(!pthread_join(thread,NULL) && call.code==QAPLET_OK);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && !drive.progressed);
+  CHECK(qaplet_get_work_status(runtime,&running,&status,NULL)==QAPLET_OK && status.state==QAPLET_WORK_CANCELLED && status.code==QAPLET_CANCELLED && status.physical_pending && !status.pending_handoff && !status.error_domain && !status.error);
+  CHECK(qaplet_get_work_status(runtime,&queued,&status,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&queued,NULL)==QAPLET_OK);
+  qaplet_work_task stale=queued;--stale.generation;
+  CHECK(qaplet_get_work_status(runtime,&stale,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_cancel(runtime,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_close(runtime,NULL)==QAPLET_OK && qaplet_get_work_status(runtime,&running,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_work_cancel(runtime,&running,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+  release_gate(&g);CHECK(!finish(runtime) && !finish(other) && !destroy_gate(&g));
+  CHECK(qaplet_close(legacy,NULL)==QAPLET_OK && qaplet_destroy(legacy,NULL)==QAPLET_OK);
+  puts("M2 work cancel status: versioned zero-tail POD; any-thread query/cancel wakes waiting owner; queued/running/logical/physical/ref distinct; instance and generation rejection; CLOSED invalidation; native retry: pass");
+  return 0;
+}
+typedef struct {
+  pthread_mutex_t mutex;
+  pthread_cond_t condition;
+  unsigned stage, allow_read, allow_return, observed_cancel;
+  qaplet_code native_code;
+  unsigned char bytes[4];
+} file_gate;
+static qaplet_code gated_file(qaplet_work_context *context,const void *input,size_t length,
+                               qaplet_work_output *output,void *opaque) {
+  file_gate *g=opaque;
+  pthread_mutex_lock(&g->mutex);g->stage=1;pthread_cond_broadcast(&g->condition);
+  while (!g->allow_read) pthread_cond_wait(&g->condition,&g->mutex);
+  pthread_mutex_unlock(&g->mutex);
+  qaplet_code code=read_file(context,input,length,output,NULL);
+  pthread_mutex_lock(&g->mutex);g->native_code=code;
+  if (!code && output->length==sizeof(g->bytes)) memcpy(g->bytes,output->data,sizeof(g->bytes));
+  g->observed_cancel=qaplet_work_cancelled(context);g->stage=2;pthread_cond_broadcast(&g->condition);
+  while (!g->allow_return) pthread_cond_wait(&g->condition,&g->mutex);
+  pthread_mutex_unlock(&g->mutex);
+  return code;
+}
+static void file_stage(file_gate *g,unsigned stage) {
+  pthread_mutex_lock(&g->mutex);while (g->stage<stage) pthread_cond_wait(&g->condition,&g->mutex);pthread_mutex_unlock(&g->mutex);
+}
+static void file_allow(file_gate *g,int returning) {
+  pthread_mutex_lock(&g->mutex);if (returning) g->allow_return=1;else g->allow_read=1;
+  pthread_cond_broadcast(&g->condition);pthread_mutex_unlock(&g->mutex);
+}
+static int cancel_file_contract(void) {
+  for (unsigned order=0;order<3;++order) {
+    char directory[]="./qaplet-cancel-file-XXXXXX";CHECK(mkdtemp(directory));
+    char path[sizeof(directory)+sizeof("/input-XXXXXX")];
+    CHECK(snprintf(path,sizeof(path),"%s/input-XXXXXX",directory)>0);
+    int fd=mkstemp(path);const unsigned char expected[]={0,255,17,42};
+    CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+    qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    file_gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+    h.name="file";h.name_length=4;h.function=gated_file;h.userdata=&g;h.output_bytes=4;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    qaplet_work_task task=QAPLET_WORK_TASK_INIT;char input[sizeof(path)];memcpy(input,path,sizeof(path));
+    CHECK(qaplet_work_submit(runtime,"file",4,input,strlen(input)+1,&task,NULL)==QAPLET_OK);memset(input,'?',sizeof(input));file_stage(&g,1);
+    qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+    CHECK(qaplet_get_work_status(runtime,&task,&status,NULL)==QAPLET_OK && status.state==QAPLET_WORK_RUNNING && status.physical_pending);
+    if (!order) CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_OK);
+    file_allow(&g,0);file_stage(&g,2);
+    CHECK(!g.native_code && !memcmp(g.bytes,expected,sizeof(expected)) && g.observed_cancel==(!order));
+    if (order==1) CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_OK);
+    if (order==2) {
+      file_allow(&g,1);
+      do {CHECK(qaplet_get_work_status(runtime,&task,&status,NULL)==QAPLET_OK);sched_yield();} while (status.physical_pending);
+      CHECK(status.state==QAPLET_WORK_SUCCEEDED && status.pending_handoff && qaplet_work_cancel(runtime,&task,NULL)==QAPLET_ALREADY_COMPLETED);
+    }
+    qaplet_work_result result=QAPLET_WORK_RESULT_INIT;unsigned char bytes[4]={9,9,9,9};result.buffer=bytes;result.capacity=sizeof(bytes);
+    CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && !result.error_domain && !result.error);
+    if (order==2) CHECK(result.state==QAPLET_WORK_SUCCEEDED && !result.code && result.length==4 && !memcmp(bytes,expected,4));
+    else CHECK(result.state==QAPLET_WORK_CANCELLED && result.code==QAPLET_CANCELLED && !result.length && bytes[0]==9);
+    CHECK(qaplet_work_release(runtime,&task,NULL)==QAPLET_OK && qaplet_get_work_status(runtime,&task,&status,NULL)==QAPLET_INVALID_HANDLE);
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs && stats.operations==(order!=2) && stats.running==(order!=2));
+    if (order!=2) {
+      CHECK(stats.data_bytes==strlen(path)+1+4 && stats.cancelled==1 && !stats.completed);
+      CHECK(qaplet_close(runtime,NULL)==QAPLET_OK && qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+      file_allow(&g,1);
+    }
+    CHECK(!finish(runtime));
+    CHECK(!pthread_cond_destroy(&g.condition) && !pthread_mutex_destroy(&g.mutex) && !unlink(path) && !rmdir(directory));
+  }
+  puts("M2 work cancel file: real bounded binary read with copied path; cancellation before syscall and after bytes never rolls back; completion publication wins independently of owner; released physical buffers survive close and join: pass");
+  return 0;
+}
+typedef struct { qaplet_runtime *runtime; qaplet_work_task task; _Atomic unsigned hooks,failed; unsigned callback; } cancel_permissions;
+static void forbidden_cancel_notify(void *opaque) {
+  cancel_permissions *p=opaque;qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+  if (qaplet_work_cancel(p->runtime,&p->task,NULL)!=QAPLET_BUSY ||
+      qaplet_get_work_status(p->runtime,&p->task,&status,NULL)!=QAPLET_BUSY) p->failed=1;
+  ++p->hooks;
+}
+static void cancel_timer_callback(qaplet_runtime *runtime,const qaplet_timer *timer,void *opaque) {
+  (void)timer;cancel_permissions *p=opaque;qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+  qaplet_work_result result=QAPLET_WORK_RESULT_INIT;
+  p->callback=qaplet_work_cancel(runtime,&p->task,NULL)==QAPLET_OK &&
+    qaplet_get_work_status(runtime,&p->task,&status,NULL)==QAPLET_OK && status.state==QAPLET_WORK_CANCELLED && status.physical_pending &&
+    qaplet_work_copy_result(runtime,&p->task,&result,NULL)==QAPLET_BUSY && qaplet_work_release(runtime,&p->task,NULL)==QAPLET_BUSY;
+}
+static int cancel_permissions_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  cancel_permissions p={0};CHECK(qaplet_create_m2(&base,&config,&p.runtime,NULL)==QAPLET_OK);
+  qaplet_host_notify notify=QAPLET_HOST_NOTIFY_INIT;notify.function=forbidden_cancel_notify;notify.userdata=&p;
+  CHECK(qaplet_set_host_notify(p.runtime,&notify,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(p.runtime,&h,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_submit(p.runtime,"held",4,NULL,0,&p.task,NULL)==QAPLET_OK);wait_entered(&g,1,0);
+  qaplet_timer timer=QAPLET_TIMER_INIT;
+  CHECK(qaplet_timer_create(p.runtime,0,cancel_timer_callback,&p,&timer,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(p.runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && p.callback && p.hooks && !p.failed);
+  release_gate(&g);CHECK(!finish(p.runtime) && !destroy_gate(&g) && !p.failed);
+  puts("M2 work cancel permissions: owner callback controls and POD query allowed; owner result/release remain BUSY; HostNotify rejects both APIs through TLS guard; native lifetime joined: pass");
+  return 0;
+}
+static int cancel_never_exit_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  /* Deliberately retained heap userdata: no return/scope lifetime can free it
+   * while the native call remains held through process termination. */
+  gate *g=calloc(1,sizeof(*g));CHECK(g && !pthread_mutex_init(&g->mutex,NULL) && !pthread_cond_init(&g->condition,NULL));
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_work_task task=QAPLET_WORK_TASK_INIT;unsigned char input=17;
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);wait_entered(g,1,0);
+  CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_OK && qaplet_work_release(runtime,&task,NULL)==QAPLET_OK && qaplet_close(runtime,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  CHECK(qaplet_quiesce(runtime,5,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+  CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.data_bytes==2 && stats.running==1 && stats.handlers==1);
+  CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && state.native_state==QAPLET_NATIVE_CLEANING && !state.engine_current_bytes);
+  puts("M2 work cancel nonreturning: gate remains held through process termination; CLOSED retains physical bytes/code/userdata; zero and finite quiesce retry pending; destroy BUSY; no cleanup success claimed: pass");
+  return 0;
+}
+static int cancel_limits_contract(void) {
+  for (unsigned limit=0;limit<3;++limit) {
+    qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+    if (limit==2) {base.limits.event_queue_slots=128;base.limits.event_payload_bytes=98304;}
+    qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+    size_t input_length=limit ? 1048576 : 1;unsigned count=limit==0 ? 128 : limit==1 ? 4 : 1;
+    unsigned char *input=malloc(input_length);CHECK(input);memset(input,17,input_length);
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+    h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=input_length;h.output_bytes=input_length;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    qaplet_work_task tasks[128]={{0}},refused={99,98,97};
+    for (unsigned i=0;i<count;++i) CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&tasks[i],NULL)==QAPLET_OK);
+    wait_entered(&g,1,0);
+    CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&refused,NULL)==QAPLET_RESOURCE_LIMIT && refused.runtime_id==99 && refused.slot==98 && refused.generation==97);
+    for (unsigned i=0;i<count;++i) CHECK(qaplet_work_cancel(runtime,&tasks[i],NULL)==QAPLET_OK && qaplet_work_release(runtime,&tasks[i],NULL)==QAPLET_OK);
+    CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&refused,NULL)==QAPLET_RESOURCE_LIMIT);
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==count && stats.data_bytes==count*input_length*2 && stats.running==1 && !stats.queued && stats.pending_handoffs==count);
+    CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_OPEN && !state.termination_reason && state.m2_limits.operations==128 && state.m2_limits.operation_data_bytes==8388608 && state.limits.native_storage_bytes==16777216 && state.native_current_bytes<=16777216);
+    if (limit==1) CHECK(stats.data_bytes==8388608);
+    if (limit==2) CHECK(stats.data_bytes==2097152 && state.native_current_bytes>12582912);
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.data_bytes==input_length*2 && stats.running==1 && !stats.pending_handoffs);
+    if (limit==2) CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&refused,NULL)==QAPLET_RESOURCE_LIMIT);
+    else {
+      unsigned available=limit ? 3 : 127;
+      for (unsigned i=0;i<available;++i) CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&tasks[i],NULL)==QAPLET_OK);
+      CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&refused,NULL)==QAPLET_RESOURCE_LIMIT);
+      for (unsigned i=0;i<available;++i) CHECK(qaplet_work_cancel(runtime,&tasks[i],NULL)==QAPLET_OK && qaplet_work_release(runtime,&tasks[i],NULL)==QAPLET_OK);
+      CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    }
+    release_gate(&g);
+    do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (stats.running);
+    CHECK(!stats.operations && !stats.data_bytes && g.entered==1 && g.exited==1 && g.seen==17 && g.observed_cancel);
+    CHECK(qaplet_work_submit(runtime,"held",4,input,input_length,&refused,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK && qaplet_work_release(runtime,&refused,NULL)==QAPLET_OK);
+    free(input);CHECK(!finish(runtime) && !destroy_gate(&g));
+  }
+  puts("M2 work cancel limits: actual default 128 operations and 8MiB copied/reserved data within 16MiB total; cancel/release waits for owner and physical use; saturation atomic; physical bytes remain charged; ordinary capacity recovers: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
+  if (!strcmp(mode,"--m2-work-cancel-limits")) return cancel_limits_contract();
+  if (!strcmp(mode,"--m2-work-cancel-file")) return cancel_file_contract();
+  if (!strcmp(mode,"--m2-work-cancel-permissions")) return cancel_permissions_contract();
+  if (!strcmp(mode,"--m2-work-cancel-nonreturning")) return cancel_never_exit_contract();
+  if (!strcmp(mode,"--m2-work-cancel-status")) return cancel_status_contract();
+  if (!strcmp(mode,"--m2-work-cancel-result")) return cancel_result_contract();
+  if (!strcmp(mode,"--m2-work-cancel")) return cancel_contract();
   if (!strcmp(mode,"--m2-work-file")) return file_contract();
   if (!strcmp(mode,"--m2-work-registration")) return registration_contract();
   if (!strcmp(mode,"--m2-work-fairness")) return fairness_contract();
