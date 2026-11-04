@@ -88,3 +88,66 @@ driver、真正调用及导入的 repository Python 闭包的执行前/后原字
 本批仅证明已列本地 scope；Process 新集成后的最终供应、当前五 native/实际
 64K 与组合 Full 由后续实际原件另行签发。保持 claimed，不追认当前父 Full、
 独立终审或最终 T03/1h/10k 完成。
+
+## 终止交接补漏与实际 Process 融合
+
+交付前实际融合 `codex/m2-integration` 的 `a5c8b10` Process 合并，得到
+`7267508fe81d5c4e1b106cf2d2d655e6b23101d4`。只有公开头与诊断映射两处预期
+冲突；人工保留 PROCESS_ERROR 27、CANCELLED 28、ALREADY_COMPLETED 29 与全部
+诊断。Process 的 bit 22、WIN32 域 2、共享内部完成 provider 轮转与既有四类
+32 交付预算全部保留。`fusion/build.json` 及 `fusion/dev-check.json` 构建与
+标准检查实际成功，但该中间供应未选择为最终结果，不冒充已经做过 normal/包外。
+
+自查 release 延迟 handoff 的直接终止路径后，先用真正供应的公开 SDK 构建
+最小纯 C Host：`stopped-release-red/report.json` 实际得到
+`operations=1 data=1 handoffs=0 retained=1`，exit 1。任务物理完成、C 已 release，
+随后 owner 确认 STOPPED，记录仍滞留到 close。永久回归加入既有
+`--m2-work-cancel-result`，`stopped-permanent-red/report.json` 同一公开 POD
+断言失败；无私有字段、分配次数或 sleep 猜顺序。
+
+修复 `c29e72e` 只在 owner shutdown 清 handoff 后，对 `released && !physical`
+调用既有 retire。此时没有 C 结果、物理调用或后续交付责任；物理仍运行的记录
+保留。`stopped-permanent-green/report.json` 的 cancel-result、cancel、status、
+STOPPED retention、真实 file、默认容量、不可返回 gate、真实 TLS 析构 8 个
+直接影响 scope 全通过。无需新增 mode，normal/包外 case 数保持原组合计数。
+
+随后实际融合仅 tracker/docs 更新 `453fe767380c52e489c63eb6fa60113646bf644e`，
+产品冻结为 `96e8eb4743c7147356258e7626bab65a1df48691`。最终在新的
+`out/m2-11/fusion-fixed/` 供应及验证，保留首批与中间批原件；最终结果另记如下。
+
+## 最终选择 `96e8eb4` 与待 Cross
+
+最终只选择 `out/m2-11/fusion-fixed/`。交接前再实际融合纯 tracker 更新
+`5c2f019e7178f3221343a5b56dfb14884e4cfed3`，得到 `98ff514`；该更新不改变
+产品配方。最后本票 Markdown 交接提交也不改变任何 SDK RECIPE 原字节。
+
+| 最终原件 | 实际结果 |
+|---|---|
+| `build.json` | Ubuntu 完整 SDK、双 CPU archive、三 APE 与审计 pass，产品 `96e8eb4`，producer dirty=true 原样保留 |
+| `linux.json` | native x86-64 / 4096，169/169 pass，生命周期实际 1000 |
+| `windows.json` | 相同 APE，native x86-64 / 4096，168 pass + 1 既有 optional symlink blocked，必需缺口 0，生命周期实际 1000 |
+| `package.json` / `package-windows.json` | 真 ZIP 树外仅公开 include/archive 编译，相同 APE 两宿主各 46/46 pass |
+| `fault.json` / `fault-windows.json` | 相同 Ubuntu 构建 APE，两宿主各 2/2 pass；故意不确定 join/不可返回负向范围不宣称成功清理 |
+| `dev-check.json` | 370 tests，177 实际执行、193 条件 skip；真实系统 C bootstrap pass |
+| `handoff.json` / `audit-imports.json` | 77 RECIPE raw==产品 blob==当前 HEAD blob 且全 LF；完整 ZIP/SDK/三 APE 与 22 个能力名、8355839 元数据一致；双 archive 实测各 15 个 ELF64 REL、machine 62/183；全部执行身份闭包 pass |
+
+最终 SDK recipe 为
+`67ab830e5df94dc418ceb1c36142638ba6c80fff72c1430b24d6e1a6e18ede13`，
+SDK aggregate 为
+`9742806fbc088d0a5e0a1c7e68f6a6ee21602b5966ecdf9f1f92dfa972597c33`；
+原 ZIP SHA
+`efc133293d88abbc5da33bc68ac761e7a97c704fc47b27d986950f90a9d8ad2f`，
+16,285,449 bytes。两宿主使用各自实际 OS/kernel/CPU/页大小记录，Linux 使用
+原锁摘要匹配的 official-assimilate x86-64 loader，Windows 使用 PE CreateProcess。
+
+实际入口为 Ubuntu-22.04 WSL `--cd` 本工作树后执行 `guarded_fast.py` 包装
+`scripts/sdk.py build/run/package-consume/fault-consume` 和 `scripts/dev.py check`；
+Windows 用同一 driver 运行 `sdk.py run`、`replay_windows.py`，不编译。
+每次精确 target/arguments、实际编译/执行 argv、stdout/stderr 与 timeout 事实
+保存在主报告的 `execution_identity`、`commands` 及对应 `evidence/` 原件。
+最终审计 driver 同样在 import/run 前后绑定真正调用/导入的 repository 闭包。
+
+本票五条 C work 合同的本地正负/竞争范围已完成，保持 `claimed / awaiting_cross`。
+待 root 独立 merger 核对与合入，再以新当前产品签发五 native、实际 64K 和
+适用 Full；此前 08/10/13 或旧配方 Full 不外推为本票新配方成绩。
+没有合并主树、push、关闭本票或父 M2，也没有执行整体 Standards/Spec 终审。
