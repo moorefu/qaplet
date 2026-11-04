@@ -90,6 +90,38 @@ producer的dirty=true保持原样。
 成绩。票08不将13作为新blocker；仅合入实际最新integration，随后用新目录
 重新供应当前统一配方。后续Process会复用同一完成类别与32单元预算。
 
-本票尚未完成当前五原生、实际64K和新 Full 严格集成验收。票10已知 Windows
-文件夹具及票02探针缺口由独立修复处理，不能把旧 Full 的失败归因或改写成
-本票调度成绩。当前仍为 claimed / in_progress，不关闭本票、父 M2 或发布门禁。
+## 当前统一供应与交接
+
+已合入 root 实际 integration `166ab50b1f0d4ef6bfb17aa856791047cbdb421c`，
+产品提交为 `bc5fc49d64a5cbfc6a5463e0d107daa7a7bf8066`。差异仅为票10的
+三个供应 fixture/script 文件，Core 调度源码未改变。新原件全部在
+`out/m2-08/final-filefix/`，前述两个供应目录、红绿和失败原件均保留。
+
+| 原件 | 实际范围与结果 |
+|---|---|
+| `build.json` | Ubuntu正式SDK/双archive/Host/CLI/application审计及密封ZIP通过 |
+| `linux.json` | Linux x86-64 / WSL2 6.6.87.2 / 4096，153/153通过 |
+| `windows.json` | Windows native x86-64 / 10.0.22000 / 4096，152通过、1既有optional symlink blocked；必需缺口0 |
+| `package.json` / `package-windows.json` | 真正密封ZIP在树外抽取，只用公开头及供应archive编译的应用8+work13+timer/scheduler18，两宿主各39/39通过 |
+| `fault.json` / `fault-windows.json` | 同一ZIP树外受控系统夹具，两宿主各2/2通过；含真实文件消费者和本票时钟验收，不外推正常OS覆盖 |
+| `dev-check.json` | Ubuntu完整check通过，369总/177实际执行/192条件skip，98.829秒；真实系统C bootstrap通过 |
+| `handoff.json` | 当前70项RECIPE原字节等于产品Git blob、全部LF；密封包全部成员与供应一致；双archive各14个ELF64 REL成员，目标machine62/183；能力mask4161535与21名称一致 |
+
+当前SDK recipe为
+`0eceff82077e1ab21ae04b3a77d1d33c2007ba84c519291dd5e53a2f955bd684`，
+SDK identity为 `dbfd03bb6b869d3e855cb9d2f9c98c55a4f7e9744f863a04d3a78d73fc83f0f1`，
+密封ZIP为 `5840be70cbeb83c4cb31d9f6496c7330888f6db1a8ff0fe86a9141e4ed3981bc`
+（15,580,718 bytes）。Ubuntu producer的dirty=true原样保留，不以Windows
+Git clean替换。每次driver自身及仓库导入前后哈希、实际命令、stdout/stderr、
+供应字节和宿主身份保存在报告与原日志中。
+
+两static archives与5e7a44e候选逐字节完全相同，独立于变化后的Host和ZIP：
+x86-64 `de1d671fea44fea394d68a6e4dd704a4c8e14361a1c7fbea3345dd8a85a0a320`；
+ARM64 `e5e91aa0e1625f892075513e8971368c0e6b6a46528f45c7aaa8aa8adf7dc683`。
+`static_archives_identical`收据绑定前候选handoff，不把两个目标混为同一份archive。
+
+本票本地实现与全部正负合同完成，保持 **claimed / awaiting_cross**。当前
+五原生、实际64K和新Full严格验收由root继续；当前两宿主成绩不替代它们，
+不关闭本票、父M2或发布门禁。没有push、合并主树、发起整体Standards/Spec
+review或签发最终T03全资源混合/长测。票02原探针失败和旧Full失败保留原范围；
+票10修复当前配方已统一，13仍未合入、不构成本票新blocker。

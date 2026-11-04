@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] interval 至少 1ms，按原计划跳过错过周期且最多补一次；回调返回 Promise 不阻塞后续触发，取消阻止重排。
-- [ ] 相同 deadline 接受顺序、immediate FIFO 和回调中新 immediate 下一轮可复验，丢弃 JS 句柄不隐式取消。
-- [ ] 完整 jobs 检查点前不插入其他回调、不提前判 rejection；配额 yield 保留检查点和轮转位置。
-- [ ] 活跃入口共享账本，空闲交付及其 jobs 使用独立跨 pump 账本；无限 jobs 终止，普通回调错误结算后可继续驱动。
-- [ ] 每轮 jobs/交付/I/O 推进额度与已接受业务事件、最后 ref 释放及 unref-only ready 的边界一致，不增加 Node 钩子语义。
+- [x] interval 至少 1ms，按原计划跳过错过周期且最多补一次；回调返回 Promise 不阻塞后续触发，取消阻止重排。
+- [x] 相同 deadline 接受顺序、immediate FIFO 和回调中新 immediate 下一轮可复验，丢弃 JS 句柄不隐式取消。
+- [x] 完整 jobs 检查点前不插入其他回调、不提前判 rejection；配额 yield 保留检查点和轮转位置。
+- [x] 活跃入口共享账本，空闲交付及其 jobs 使用独立跨 pump 账本；无限 jobs 终止，普通回调错误结算后可继续驱动。
+- [x] 每轮 jobs/交付/I/O 推进额度与已接受业务事件、最后 ref 释放及 unref-only ready 的边界一致，不增加 Node 钩子语义。
 
 ## Blocking details
 
@@ -55,4 +55,6 @@
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-04：07 已取得当前五原生/实际64K严格闭包并 resolved，领取 `codex/m2-08-scheduling` / `.cache/worktrees/m2-08`。当前集成已含10的真实C WorkPool候选，需在已有 work/timer/event 持久轮转上加入immediate，保留完整jobs检查点、累计账本和统一timer/immediate额度；10本身仍等待独立新Full，不能将其合入当作完成。
+
+2026-11-04：本地实现完成，合入实际integration `166ab50` 的票10文件夹具修复后，以产品 `bc5fc49` 重新正式供应。Linux153、Windows152+旧optional1、双宿主包外39/故障2、Ubuntu完整check369及bootstrap全部通过。八项新增公开合同和受控clock证明interval原计划跳过、FIFO/下一pump、真实cycle GC不取消、单pump/跨pump四类32单元轮转、完整rejection检查点和累计账本。70项当前recipe raw/Git blob/LF、双archive14成员及包成员身份统一，producer dirty=true原样保留。详[本票验证](../08-scheduling-validation.md)与本树`out/m2-08/final-filefix/handoff.json`。以上勾选表示已实现并完成局部正负验收；保持claimed/awaiting_cross，当前五原生/实际64K/新Full由root签发后再resolved，不外推最终T03或父M2。
 
