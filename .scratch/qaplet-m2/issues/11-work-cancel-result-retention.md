@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross；本地 C work 取消/释放与物理保留已验证，待独立 merger 及当前组合 Cross/实际 64K/Full。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 排队取消不启动；运行中只记录协作取消，不强杀线程，不把取消当成 syscall 已退出或副作用回滚。
-- [ ] 取消先与完成先各有确定性交接，至多一次终态；保留记录的重复取消幂等，完成先发布报告已完成。
-- [ ] BUFFER_TOO_SMALL 可重读且不重跑，非终态 release 为 BAD_STATE，release 后旧 token 查询/取消/结果明确失效。
-- [ ] 128 操作和 8 MiB 数据子额与物理运行/C 结果保留共同计量；logical cancel/release 不提前归还仍使用的数据。
-- [ ] owner 完成交接才解除默认 ref；过时代次/跨 Runtime 和取消后 close/quiesce 重试无误投或 UAF。
+- [x] 排队取消不启动；运行中只记录协作取消，不强杀线程，不把取消当成 syscall 已退出或副作用回滚。
+- [x] 取消先与完成先各有确定性交接，至多一次终态；保留记录的重复取消幂等，完成先发布报告已完成。
+- [x] BUFFER_TOO_SMALL 可重读且不重跑，非终态 release 为 BAD_STATE，release 后旧 token 查询/取消/结果明确失效。
+- [x] 128 操作和 8 MiB 数据子额与物理运行/C 结果保留共同计量；logical cancel/release 不提前归还仍使用的数据。
+- [x] owner 完成交接才解除默认 ref；过时代次/跨 Runtime 和取消后 close/quiesce 重试无误投或 UAF。
 
 ## Blocking details
 
@@ -55,3 +55,7 @@
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-04：10当前严格Cross/实际64K闭包完成，领取codex/m2-11-cancel / .cache/worktrees/m2-11，从已含08四类scheduler的当前集成开展公开取消竞争、C结果release与物理保留的TDD。13在并行候选预留PROCESS_ERROR27/domainWIN32=2/cap22；本票如需CANCELLED/ALREADY_COMPLETED新code可用28/29，避免冲突。所有直接blocker已满足，不为共享文件虚构前置。
+
+2026-11-04：本地交付候选产品 `96e8eb4`，先融合实际 integration 的 Process `a5c8b10` 与 tracker `453fe76`，交接前再融合纯 tracker `5c2f019`。公开任意线程 cancel/版本化 status、28 CANCELLED/29 ALREADY_COMPLETED 与 Process27 并存；release 立即失效 token，记录/ref 保留到完整 jobs owner 交接与物理调用完成，STOPPED 终止交接则退休已 release 且物理完成的记录。初始接口红、检查点 release 红及额外 STOPPED 真实滞留红均保留并有永久绿；真实 file 三接受顺序、默认128/8MiB/16MiB、权限/HostNotify TLS guard、不可返回与真实 TLS exit 安全保留完成。最终 Ubuntu 全供应、Linux169/169、Windows168+1既有optional symlink且必需缺口0；密封ZIP包外两宿主各46/46、受控故障各2/2、devcheck370(177实际/193skip)+C bootstrap通过。77 RECIPE raw/产品及当前Git blob/LF、完整原ZIP/SDK/三APE、双archive实际各15 ELF64 REL machine62/183及实际driver/import闭包身份通过。详见[11验证记录](../11-work-cancel-validation.md)与本工作树`out/m2-11/fusion-fixed/handoff.json`；保持claimed/awaiting_cross，不自行主树合并、push、resolved或声明本票当前Full/终审/父M2完成。
+
+2026-11-04（独立合并）：`d8a9ba987d59a19caa085756cd6529914f152da5` 已no-ff合入源tip `d8b5e826` / 供应产品 `96e8eb4`。77项raw/Git blob/LF、完整ZIP79成员/SDK/三APE/双archive15、normal169/package46/fault2原始case和实际driver/import身份及历史红绿独立核验；原3579文件/632,688,371逻辑字节内容及mtime前后不变。post树同源、双树clean/diffcheck、Ubuntu input-lock/两窄CI/真实C bootstrap通过。父Python profile未覆盖make/test子进程的限定如实保留，不伪称实际子进程imports已被profile捕获。详主 `out/qaplet-m2/merge-11/AUDIT.md`、`post.json`。保持claimed/awaiting_cross，后续与13查询及Mac诊断增量一起取得当前五原生/实际64K原件；未放行12/15或完成父M2。

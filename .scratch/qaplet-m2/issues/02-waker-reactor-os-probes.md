@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross；旧 `196cd75` 六目标各19项验收保留；`867356c` Windows socket.connect-error 回归已完成真实最小红灯与本地修复验收，待 integration 新五原生 Full。
+**Execution state:** completed；旧 `196cd75` 范围保留；当前 Windows 回归已由 `453fe76` 五原生95+实际64K19严格闭合。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -72,3 +72,5 @@
 2026-11-04（Windows 分路修复）：正常 Windows 的单 socket 真实完成闸门连续三次复现 CI 同形红灯；公开 CLI 新回归也在修复前实际失败。根因是旧分路在首次 SO_ERROR 已非零时跳过 select，但用例仍要求真实 readiness。现先完成 poll/必要的显式 Cosmopolitan select，再单次读取 SO_ERROR，保留原时限、关闭预留端口、全部原始 errno/option 观察及清理。原生 Winsock select 的异常集合与 APE 包装 select 的可写集合分开记录，不根据错误数字猜 errno 域。正式同字节 APE 在 Windows、Ubuntu x64、完整系统 ARM64/64K 各 19 项通过；Windows 7 项公开 CLI 合同含新回归及负向均通过。具体身份、先红后绿、源码/API边界与 required checks 见 [Windows 回归验收](../02-windows-connect-error-validation.md)。本票仍 claimed / awaiting_cross，独立 merger 和新五原生 Full 决定再次验收；未更改旧原件，也不回退 Runtime 06 / Timer 07 的原范围。
 
 2026-11-04（独立合并）：当前Windows分路修复 `d547150` 已无冲突合入 `620b996`，原件身份、当前9项producer输入、合并Git blob/LF及窄UbuntuCI通过；详主 `out/qaplet-m2/merge-02-win-error/HANDOFF.md`。保留旧867失败与旧196验收范围，继续awaiting_cross；将与13当前集成同一Full取得五原生及实际64K新原件。
+
+2026-11-04（当前回归验收）：`453fe76` / Full `41817613432` 的02范围五原生95+实际64K19=114严格通过，其中108普通OS探针、6独立受控descriptor故障。六目标socket.connect-error均completion_gate=false；Windows真实poll0/2000ms/revents0后Cosmopolitan select1/writable=true/exceptional=false，再单读SO_ERROR10061，connection_failed=true。9输入raw/精确CI/同供应APE/实际loader/guest journal与清理均核；29原ZIP/12nested/11原日志及离线verify、14份root收据摘要复核通过，见主 `out/qaplet-m2/full-453fe76/HANDOFF.md`、`verify/scope-summary.json`、`root-scope-acceptance.json`。按本票范围重新resolved，旧867失败和196旧范围原样保留；当前Full整体failure属于13两个Mac16失败，不外推父M2或网络产品能力。

@@ -112,6 +112,24 @@ int main(void) {
   CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==QAPLET_CONTROL_FAILURE && snapshot.control_error==EIO);
   CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_CONTROL_FAILURE);
   CHECK(!finish(runtime) && !pthread_cond_destroy(&g.condition) && !pthread_mutex_destroy(&g.mutex));
+  /* Cancellation has already been published when its real waker send fails.
+   * Preserve acceptance and the logical result, with control failure separate. */
+  CHECK(!make(&runtime));
+  gate cancel_gate={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  handler.userdata=&cancel_gate;
+  CHECK(qaplet_register_work_handler(runtime,&handler,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);
+  pthread_mutex_lock(&cancel_gate.mutex);while (!cancel_gate.entered) pthread_cond_wait(&cancel_gate.condition,&cancel_gate.mutex);pthread_mutex_unlock(&cancel_gate.mutex);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  fail_send=1;
+  CHECK(qaplet_work_cancel(runtime,&task,NULL)==QAPLET_OK && qaplet_work_cancel(runtime,&task,NULL)==QAPLET_OK);
+  qaplet_work_status status=QAPLET_WORK_STATUS_INIT;
+  CHECK(qaplet_get_work_status(runtime,&task,&status,NULL)==QAPLET_OK && status.state==QAPLET_WORK_CANCELLED && status.code==QAPLET_CANCELLED && status.physical_pending && status.pending_handoff && !status.error_domain && !status.error);
+  CHECK(qaplet_work_copy_result(runtime,&task,&result,NULL)==QAPLET_OK && result.state==QAPLET_WORK_CANCELLED && result.code==QAPLET_CANCELLED && !result.length);
+  CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==QAPLET_CONTROL_FAILURE && snapshot.control_error==EIO);
+  CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK && qaplet_work_release(runtime,&task,NULL)==QAPLET_OK && qaplet_close(runtime,NULL)==QAPLET_OK);
+  pthread_mutex_lock(&cancel_gate.mutex);cancel_gate.released=1;pthread_cond_broadcast(&cancel_gate.condition);pthread_mutex_unlock(&cancel_gate.mutex);
+  CHECK(!finish(runtime) && !pthread_cond_destroy(&cancel_gate.condition) && !pthread_mutex_destroy(&cancel_gate.mutex));
   /* Deliberately uncertain join: no fake reclamation or second join attempt.
    * The Runtime/worker storage remains owned through process termination. */
   CHECK(!make(&runtime));
@@ -125,7 +143,8 @@ int main(void) {
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.worker_threads==1 && stats.operations==1 && stats.data_bytes==2 && stats.handlers==1);
   CHECK(qaplet_get_m2_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_CLOSED && !snapshot.engine_current_bytes && !snapshot.termination_reason);
   CHECK(qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+  fail_join=0; /* A now-successful backend must not revisit uncertain identity. */
   CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_CONTROL_FAILURE && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
-  puts("controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass");
+  puts("controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion/cancel survives wake failure; join error independently retained CLOSED/BUSY without identity retry or false cleanup: pass");
   return 0;
 }

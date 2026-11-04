@@ -20,17 +20,17 @@
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
-| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix`；新 `.cache/worktrees/m2-02-win-error-fix` | awaiting_cross（`620b996` 已合真实readiness分路修复） |
+| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix` / `02-win-error-fix`；新修复源树暂保留 | completed（`453fe76` 五原生95+实际64K19，Windows回归闭合） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | 旧分支及 `codex/m2-05-resize-fix` | 原件见 `tickets/05` / `05-cross-fix` / `05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
 | 06 | `codex/m2-06-wait` 及两条定向修复分支 | 原件见 `tickets/06`、`06-creation-fix`、`06-guest-fix` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
 | 07 | `codex/m2-07-timers` | 原件见 `tickets/07` | completed（`46e5cf4` 五原生645+实际64K129本票验收通过） |
-| 08 | `codex/m2-08-scheduling` | `.cache/worktrees/m2-08` | completed（`e742c76` 五原生765+实际64K153/package39/fault2严格通过） |
+| 08 | `codex/m2-08-scheduling` | 原件见 `tickets/08` | completed（`e742c76` 五原生765+实际64K153/package39/fault2严格通过） |
 | 09 | `codex/m2-09-host-notify` | 原件见 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
-| 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原 `.cache/worktrees/m2-10`；新 `.cache/worktrees/m2-10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
-| 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | in_progress，取消竞争/终态结果和物理占额 |
-| 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | awaiting_cross（`a5c8b10` 已合C spawn与实际退出回收） |
+| 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原件见 `tickets/10` / `10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
+| 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | awaiting_cross（`d8a9ba9` 已合取消/结果release与物理保留） |
+| 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；新 `.cache/worktrees/m2-13-cross-fix` | in_progress（Full两Mac16必需失败；B02纯POD跨线程查询真实缺口） |
 | 12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
 
 ## 环境事实
@@ -155,3 +155,11 @@ WorkPool `867356c` / Full `41799595408` 最终 completed/failure：Windows nativ
 06 原始实施及两条修复 worktree 已在源对归档核验、干净/已合入/绝对路径与非 reparse 审计后清理，分支与全部原件保留。`completed-06-worktree-audit.json`、`completed-06-worktree-cleanup.json` 和三份 `store-06*-pre-cleanup/verified.json` 保存收据。guest 修复的 604 个原件实际来自主树 `out/m2-06-guest-fix`，该原始输出也继续保留；不以空 worktree/out 冒充原件来源。清理不改变旧报告或产品验收范围。
 
 01 首次 Git shim 为 `git init` 夹具误注入 worktree 环境，向共享 `.git/config` 写入 `core.worktree=/mnt/d/Workspace/dairn/qaplet/.cache/worktrees/m2-01`，使 Windows Git 报 `/mnt` 无效。根代理与独立 merger 先用显式 git-dir/work-tree 确认集成分支 `791af3d` 且干净，保存 `out/qaplet-m2/git-config-before-worktree-repair.txt` 后，仅按精确值移除该项，普通 Windows Git 恢复。01/03 的临时 shim 已改为仅当前仓库的只读查询，其他 fixture 和写操作使用真实 Git；修正后的本地检查分别通过。没有改写产品或历史验收以掩盖此次失败。
+
+## 当前回归与集成进度（2026-11-04）
+
+`453fe76` / Full `41817613432` completed/failure：8 jobs成功，两个Mac native与startup-matrix失败。严格机读记录两Mac各154pass/8fail，其中Intel limits exit0但stderr非空，其余15个失败exit1且全部无timeout；三其他native各162、实际64K162、package39/fault2、双archive各15、当前M0 Full235及三个独立guest ID均通过。SDK journal162命令/27payload（同ID direct+nested双transport）、M2四命令/8payload、M0 21命令/6payload的seal/raw/deadline/前后hash/清理均核。29原ZIP/12nested/11原日志、offlineverify、3635唯一消费文件最终rehash及34实际imports收据/44实际module/77 repo Python/27helper前后一致，signedURL文件扫描0；30次下载中的受限curl失败与独立002成功、helper历史失败均保留。见 `out/qaplet-m2/full-453fe76/HANDOFF.md`、`final-handoff.json`、`acceptance-check.json`，完整性pass不等于Full/13通过。02范围五原生95+实际64K19严格充分，root复核14份收据后按本票重新完成；108普通+6受控故障分开记，旧867失败不改。13继续定向修复两Mac16失败及真实B02单Process POD跨线程查询缺口。
+
+11由独立merger合入 `d8a9ba9`（源d8b5e826 / 供应产品96e8eb4）：77 raw/Gitblob/LF、ZIP79成员/SDK/三APE/archive各15、normal169/package46/fault2与公开红绿均核验。3579份原件/632,688,371逻辑字节内容和mtime前后不变；合并树同源/双树clean/diffcheck、Ubuntu input-lock、两窄CI和真实bootstrap通过，未重复矩阵或建新SDK。父Python profile未覆盖make/test子进程实际imports的限定明确保留，静态全repo前后身份与实际profile分开记录。见 `out/qaplet-m2/merge-11/AUDIT.md`、`post.json`。11保持awaiting_cross，准备与13最小查询/诊断阶段一同验证新Full；12/15尚未放行。
+
+已完成08/10及文件修复worktree已在完整归档/源对档核验及独立Git/绝对路径/reparse/遗漏输出审计后清理：各4352/2591/1203文件、717,661,830/620,370,368/213,567,341逻辑字节，out外各79个可再生pyc；分支实际SHA与归档保留，共享Git config不变。收据 `store-08/10/10-file-fix-{created,verified}.json`、`completed-08-10-{audit,cleanup}.json`。历史full08/f2等helper原源码绝对路径已不存在，重放须以保留分支重建原worktree并restore/materialize，或另存新映射，不改历史脚本/报告。02新修复冻结out也已保存并源对档核验360文件/52,371,986字节，源树暂保留；13/11/13-cross-fix不清理。
