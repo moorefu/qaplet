@@ -33,14 +33,14 @@ typedef struct {
   qaplet_runtime *runtime;
   uint64_t generation;
   pthread_t thread;
-  int active, accepted, ready, helper, finished, join_retired, released, terminating;
+  int active, accepted, ready, helper, finished, join_retired, released, terminating, identity_uncertain;
   pid_t pid;
   int64_t handle;
   qaplet_process_status status;
 } process_slot;
 struct qaplet_process_pool {
   process_slot *slots;
-  size_t slot_bytes, environment_size;
+  size_t slot_bytes, environment_size, environment_data_bytes;
   char **environment;
   size_t environment_count;
   int closing;
@@ -53,9 +53,10 @@ static void free_locked(qaplet_runtime *r,void *p,size_t n) {
 static int fits_locked(qaplet_runtime *r,size_t bytes) {
   return bytes<=r->snapshot.limits.native_storage_bytes-r->snapshot.native_current_bytes;
 }
-static void cleanup_locked(qaplet_runtime *r,int error) {
-  if (!r->cleanup_reason) { r->cleanup_reason=QAPLET_PROCESS_ERROR; r->cleanup_error=error ? error : EIO; r->process_cleanup_error_domain=QAPLET_ERROR_DOMAIN_ERRNO; }
+static void cleanup_domain_locked(qaplet_runtime *r,int error,uint32_t domain) {
+  if (!r->cleanup_reason) { r->cleanup_reason=QAPLET_PROCESS_ERROR; r->cleanup_error=error ? error : EIO; r->process_cleanup_error_domain=domain; }
 }
+static void cleanup_locked(qaplet_runtime *r,int error) { cleanup_domain_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO); }
 static void acquired(qaplet_runtime *r) {
   pthread_mutex_lock(&r->mutex); ++r->native_handles; peak(r->native_handles,&r->native_handles_peak); pthread_mutex_unlock(&r->mutex);
 }
@@ -80,7 +81,7 @@ static int private_fd(qaplet_runtime *r,int *fd) {
 static void closed_handle_locked(qaplet_runtime *r,int64_t *handle) {
   if (!*handle) return;
   int64_t old=*handle; *handle=0; --r->native_handles;
-  if (!CloseHandle(old)) { ++r->native_uncertain_handles; cleanup_locked(r,GetLastError()); r->process_cleanup_error_domain=QAPLET_ERROR_DOMAIN_WIN32; }
+  if (!CloseHandle(old)) { ++r->native_uncertain_handles; cleanup_domain_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32); }
 }
 static qaplet_code text(qaplet_string s,int nonempty) {
   if ((!s.data && s.length) || (nonempty && !s.length) || s.length==SIZE_MAX) return QAPLET_INVALID_ARGUMENT;
@@ -115,6 +116,7 @@ qaplet_code qaplet_process_init(qaplet_runtime *r) {
     if (!add_size(&bytes,n+1,r->m2_limits.process_data_bytes)) return QAPLET_RESOURCE_LIMIT;
     ++count;
   }
+  size_t environment_data_bytes=bytes;
   if (count>SIZE_MAX/sizeof(char *)-1 || !add_size(&bytes,(count+1)*sizeof(char *),SIZE_MAX-sizeof(qaplet_process_pool))) return QAPLET_RESOURCE_LIMIT;
   pthread_mutex_lock(&r->mutex); int fits=fits_locked(r,sizeof(qaplet_process_pool)+bytes); pthread_mutex_unlock(&r->mutex);
   if (!fits) return QAPLET_RESOURCE_LIMIT;
@@ -122,6 +124,7 @@ qaplet_code qaplet_process_init(qaplet_runtime *r) {
   if (!pool) return QAPLET_MEMORY_LIMIT;
   memset(pool,0,sizeof(*pool)); r->process_pool=pool;
   pool->environment_size=bytes; pool->environment_count=count;
+  pool->environment_data_bytes=environment_data_bytes;
   pool->environment=qaplet_native_alloc(r,bytes);
   if (!pool->environment) return QAPLET_MEMORY_LIMIT;
   char *cursor=(char *)(pool->environment+count+1);
@@ -148,7 +151,7 @@ static void *wait_child(void *opaque) {
     siginfo_t info;
     int result;
     do { result=sys_waitid(1,pid,&info,WEXITED|WNOWAIT,NULL); } while (result<0 && errno==EINTR);
-    error=result<0 ? errno : 0;
+    error=result<0 ? (errno ? errno : EIO) : 0;
     pthread_mutex_lock(&r->mutex);
     if (!error) {
       pid_t got; do { got=waitpid(pid,&status,0); } while (got<0 && errno==EINTR);
@@ -162,6 +165,12 @@ static void *wait_child(void *opaque) {
   if (pid>0 || handle) {
     slot->status.exited=slot->status.reaped=waited;
     if (error) { slot->status.code=QAPLET_PROCESS_ERROR; slot->status.error_domain=handle ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO; slot->status.error=error; }
+    if (error && !handle) {
+      /* Another Host wait/SIGCHLD policy may have removed this child. The
+       * numeric PID can already name an unrelated process. Never signal it
+       * again or turn absence of ownership into successful native cleanup. */
+      slot->identity_uncertain=1; slot->pid=-1; cleanup_locked(r,error);
+    }
   }
   slot->finished=1;
   qaplet_wake_locked(r);
@@ -201,7 +210,7 @@ void qaplet_process_collect(qaplet_runtime *r) {
         --r->helper_threads; r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;
       }
     }
-    if (!s->helper && (!s->accepted || s->released || pool->closing) && (s->pid<=0 && !s->handle || s->status.reaped)) retire_locked(r,s);
+    if (!s->identity_uncertain && !s->helper && (!s->accepted || s->released || pool->closing) && (s->pid<=0 && !s->handle || s->status.reaped)) retire_locked(r,s);
   }
   if (pool->closing && !r->process_snapshot.processes && !r->process_snapshot.helper_threads) {
     free_locked(r,pool->environment,pool->environment_size);
@@ -238,6 +247,13 @@ int qaplet_process_pending_locked(qaplet_runtime *r) {
   return 0;
 }
 int qaplet_process_referenced_locked(qaplet_runtime *r) { return r->process_snapshot.referenced!=0; }
+static void terminate_locked(qaplet_runtime *r,process_slot *s) {
+  if (!s->ready || s->status.reaped || s->terminating || s->identity_uncertain || (s->pid<=0 && !s->handle)) return;
+  s->terminating=1;
+  if (s->handle) {
+    if (!TerminateProcess(s->handle,0xD00D)) cleanup_domain_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32);
+  } else if (kill(s->pid,SIGKILL) && errno!=ESRCH) cleanup_locked(r,errno);
+}
 void qaplet_process_close(qaplet_runtime *r) {
   if (r->process_pool) {
     pthread_mutex_lock(&r->mutex); r->process_pool->closing=1;
@@ -258,10 +274,7 @@ void qaplet_process_shutdown(qaplet_runtime *r) {
     process_slot *s=&pool->slots[i];
     if (!s->active) continue;
     if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
-    if (!s->ready || s->status.reaped || s->terminating) continue;
-    s->terminating=1;
-    if (s->handle) { if (!TerminateProcess(s->handle,0xD00D)) { cleanup_locked(r,GetLastError()); r->process_cleanup_error_domain=QAPLET_ERROR_DOMAIN_WIN32; } }
-    else if (s->pid>0 && kill(s->pid,SIGKILL) && errno!=ESRCH) cleanup_locked(r,errno);
+    terminate_locked(r,s);
   }
   pthread_cond_broadcast(&r->native_condition);
   pthread_mutex_unlock(&r->mutex);
@@ -385,6 +398,12 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
       if (o->env[j].length>key && o->env[j].data[key]=='=' && !(IsWindows() ? strncasecmp(e.data,o->env[j].data,key) : memcmp(e.data,o->env[j].data,key))) { code=QAPLET_INVALID_ARGUMENT; break; }
     }
   }
+  if (!code && !(o->flags&QAPLET_PROCESS_REPLACE_ENV)) {
+    /* Reusing the immutable factory copy avoids duplicate storage; its encoded
+     * bytes still belong to this spawn's combined argv/env/path input limit. */
+    size_t encoded=bytes;
+    if (!add_size(&encoded,r->process_pool->environment_data_bytes,r->m2_limits.process_data_bytes)) code=QAPLET_RESOURCE_LIMIT;
+  }
   for (int i=0;i<3 && !code;++i) if (o->stdio[i]==QAPLET_PROCESS_PIPE) code=QAPLET_UNSUPPORTED;
   for (int i=0;i<3 && !code;++i) if (o->stdio[i]==QAPLET_PROCESS_INHERIT && fcntl(i,F_GETFD)<0) {
     code=QAPLET_PROCESS_ERROR; value.error_domain=QAPLET_ERROR_DOMAIN_ERRNO; value.error=errno;
@@ -456,6 +475,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
       if (!value.code && !value.error_domain) { value.error_domain=IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO; value.error=error; }
       value.helper_active=1;
       slot->released=1;
+      terminate_locked(r,slot);
     } else if (r->snapshot.lifecycle!=QAPLET_OPEN) {
       /* Stop won before spawn acceptance. The newly created direct child is
        * rollback responsibility, never an accepted user process or valid token. */

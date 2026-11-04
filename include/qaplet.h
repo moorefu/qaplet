@@ -402,12 +402,20 @@ qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
  * otherwise the M2 factory's environment snapshot is used. Strings reject NUL.
  * Relative path/cwd resolve against the immutable Runtime cwd.
  * PIPE (the default) is explicitly UNSUPPORTED until the pipe capability exists.
- * INHERIT borrows only the selected stdio; IGNORE uses a null endpoint.
+ * INHERIT borrows Host C descriptors 0/1/2; IGNORE uses a null endpoint.
+ * Windows duplicates those descriptor handles independently of GetStdHandle.
  * Spawn copies input before acceptance. Ordinary OS errors preserve the entry
  * result and leave the Runtime OPEN. Native errors are returned in status.
  * Exit/reap, owner delivery and physical helper-thread exit are separate facts.
+ * get_status observes native facts and performs nonblocking native retirement;
+ * only owner drive hands completion over and disarms its default ref. Pure C
+ * handoff creates no JS execution; an active entry keeps its cumulative ledger.
  * release is BUSY until reaped; completed records retain process capacity until
- * release or close. Close initiates force termination/reap of direct children.
+ * release or close, and physical cleanup retains capacity until helper join.
+ * Helpers share the finite instance helper/stack/handle/registration budgets.
+ * Close initiates force termination/reap of direct children. Host must not reap
+ * SDK children or enable automatic child reaping. If native identity is lost,
+ * SDK never signals that retired PID and retains cleanup error/BUSY ownership.
  * No process-tree, graceful-signal or pipe/EOF contract is implied. */
 typedef enum { QAPLET_PROCESS_PIPE, QAPLET_PROCESS_INHERIT, QAPLET_PROCESS_IGNORE } qaplet_process_stdio;
 enum { QAPLET_PROCESS_REPLACE_ENV = 1u << 0 };

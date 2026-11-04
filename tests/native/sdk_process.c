@@ -135,6 +135,12 @@ static int errors(void) {
   env[0]=(qaplet_string){"=bad",4}; o.env_count=1; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_INVALID_ARGUMENT);
   prepare(&o,"--empty"); o.path=(qaplet_string){"sh",2}; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_PROCESS_ERROR && s.error>0 && s.error_domain==(IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO));
   prepare(&o,"--empty"); o.cwd=(qaplet_string){"missing-cwd",11}; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_PROCESS_ERROR && s.error>0);
+  if (IsWindows()) {
+    char *long_argument=malloc(32768); CHECK(long_argument); memset(long_argument,'x',32768);
+    prepare(&o,"--empty"); arguments[2]=(qaplet_string){long_argument,32768};
+    CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_VALUE_TOO_LARGE);
+    free(long_argument);
+  }
   qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
   qaplet_snapshot snap=QAPLET_SNAPSHOT_INIT; CHECK(qaplet_get_snapshot(r,&snap,NULL)==QAPLET_OK && snap.lifecycle==QAPLET_OPEN);
   CHECK(!finish(r));
@@ -211,6 +217,16 @@ static int limits(void) {
   CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_RESOURCE_LIMIT);
   CHECK(qaplet_get_m2_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
   free(large); CHECK(!finish(r));
+  char environment[16385];memset(environment,'v',sizeof(environment)-1);environment[sizeof(environment)-1]=0;
+  CHECK(!setenv("QAPLET_PROCESS_BUDGET_ONLY",environment,1));
+  extern char **environ;size_t environment_bytes=0;
+  for(size_t i=0;environ[i];++i) environment_bytes+=strlen(environ[i])+1;
+  b=(qaplet_config)QAPLET_CONFIG_INIT;m=(qaplet_m2_config)QAPLET_M2_CONFIG_INIT;m.limits.process_data_bytes=environment_bytes+1024;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);unsetenv("QAPLET_PROCESS_BUDGET_ONLY");
+  char argument_bytes[1024];memset(argument_bytes,'a',sizeof(argument_bytes));argument=(qaplet_string){argument_bytes,sizeof(argument_bytes)};
+  prepare(&o,"--empty");o.argv=&argument;o.argc=1;
+  qaplet_code combined=qaplet_process_spawn(r,&o,&p,&status,NULL);
+  CHECK(!finish(r));CHECK(combined==QAPLET_RESOURCE_LIMIT);
   puts("M2 process limits: independent process/helper/native handle/registration quotas; encoded bytes and simultaneous native total; ordinary refusal: pass"); return 0;
 }
 static int observed_exit(qaplet_runtime *r,qaplet_process *p,qaplet_process_status *s) {
@@ -246,10 +262,70 @@ static int ledger(void) {
       CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_DISPATCH_LIMIT && snapshot.execution_dispatches==1);
     } else {
       qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
+      CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK);
+      CHECK(qaplet_process_set_ref(r,&p,0,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+      CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && !drive.progressed);
+      CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
+      CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
     }
     CHECK(!finish(r));
   }
   puts("M2 process ledger: native observation precedes owner handoff; pending entry cumulative dispatch; pure C preserves completed JS result: pass"); return 0;
+}
+static qaplet_code quick_work(qaplet_work_context *context,const void *input,size_t length,qaplet_work_output *output,void *userdata) {
+  (void)context;(void)input;(void)length;(void)output;(void)userdata;return QAPLET_OK;
+}
+static void counted_timer(qaplet_runtime *r,const qaplet_timer *timer,void *userdata) { (void)r;(void)timer;++*(unsigned *)userdata; }
+static int scheduling(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+  b.limits.event_queue_slots=1; m.limits.processes=40;
+  qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_work_handler handler=QAPLET_WORK_HANDLER_INIT;
+  handler.name="ready";handler.name_length=5;handler.function=quick_work;handler.input_bytes=handler.output_bytes=1;
+  CHECK(qaplet_register_work_handler(r,&handler,NULL)==QAPLET_OK);
+  const char source[]="import('qaplet:events').then(m=>m.onEvent(()=>{globalThis.processEvent=1}))";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT; CHECK(qaplet_eval(r,source,sizeof(source)-1,&progress,NULL)==QAPLET_OK);
+  while(progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+  qaplet_process processes[40]; qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  qaplet_process_options o; prepare(&o,"--empty");o.flags=QAPLET_PROCESS_REPLACE_ENV;
+  for(unsigned i=0;i<40;++i) {
+    processes[i]=(qaplet_process)QAPLET_PROCESS_INIT;
+    CHECK(qaplet_process_spawn(r,&o,&processes[i],&status,NULL)==QAPLET_OK);
+    CHECK(!observed_exit(r,&processes[i],&status) && !status.delivered);
+  }
+  qaplet_work_task tasks[16];
+  for(unsigned i=0;i<16;++i) { tasks[i]=(qaplet_work_task)QAPLET_WORK_TASK_INIT;CHECK(qaplet_work_submit(r,"ready",5,NULL,0,&tasks[i],NULL)==QAPLET_OK); }
+  qaplet_work_snapshot work=QAPLET_WORK_SNAPSHOT_INIT;double until=milliseconds()+5000;
+  do { CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK);if(work.completed==16)break;sched_yield(); } while(milliseconds()<until);
+  CHECK(work.completed==16 && work.pending_handoffs==16);
+  unsigned timers=0; qaplet_timer timer=QAPLET_TIMER_INIT;CHECK(qaplet_timer_create(r,0,counted_timer,&timers,&timer,NULL)==QAPLET_OK);
+  CHECK(qaplet_post_event(r,1,0,NULL,0,NULL)==QAPLET_OK && qaplet_post_event(r,2,0,NULL,0,NULL)==QAPLET_QUEUE_FULL);
+  CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
+  qaplet_process_snapshot native=QAPLET_PROCESS_SNAPSHOT_INIT;qaplet_snapshot events=QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_process_snapshot(r,&native,NULL)==QAPLET_OK && native.completed==15 && native.referenced==25);
+  CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && work.pending_handoffs==1);
+  CHECK(qaplet_get_snapshot(r,&events,NULL)==QAPLET_OK && events.events_consumed==1 && !events.queue_depth && timers==1);
+  CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
+  CHECK(qaplet_get_process_snapshot(r,&native,NULL)==QAPLET_OK && native.completed==40 && !native.referenced);
+  CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && !work.pending_handoffs);
+  for(unsigned i=0;i<40;++i) CHECK(qaplet_process_release(r,&processes[i],NULL)==QAPLET_OK);
+  for(unsigned i=0;i<16;++i) CHECK(qaplet_work_release(r,&tasks[i],NULL)==QAPLET_OK);
+  CHECK(qaplet_eval(r,"globalThis.processEvent===1",27,&progress,NULL)==QAPLET_OK);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.boolean);
+  CHECK(!finish(r));
+  puts("M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/event; fair provider cursor; reliable saturated queue: pass");return 0;
+}
+static int identity(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.processes=1;
+  qaplet_runtime *r=NULL,*other=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
+  qaplet_process_options o;prepare(&o,"--empty");o.flags=QAPLET_PROCESS_REPLACE_ENV;
+  qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+  qaplet_process old=p;CHECK(!completed(r,&p,37));
+  CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK);
+  CHECK(qaplet_process_get_status(r,&old,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_process_get_status(other,&p,&status,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(!completed(r,&p,37) && !finish(r) && !finish(other));
+  puts("M2 process identity: one-slot reuse; stale generation and cross-Runtime tokens refused; current child unaffected: pass");return 0;
 }
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
@@ -289,7 +365,7 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
-  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

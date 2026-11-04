@@ -85,6 +85,8 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/event; fair provider cursor; reliable saturated queue: pass\n"),
+    ("m2-process-identity", ["--m2-process-identity", "{self}", "{launcher}"], "M2 process identity: one-slot reuse; stale generation and cross-Runtime tokens refused; current child unaffected: pass\n"),
     ("m2-process-ledger", ["--m2-process-ledger", "{self}", "{launcher}"], "M2 process ledger: native observation precedes owner handoff; pending entry cumulative dispatch; pure C preserves completed JS result: pass\n"),
     ("m2-process-limits", ["--m2-process-limits", "{self}", "{launcher}"], "M2 process limits: independent process/helper/native handle/registration quotas; encoded bytes and simultaneous native total; ordinary refusal: pass\n"),
     ("m2-process-inherit", ["--m2-process-inherit", "{self}", "{launcher}"], "M2 process inherit: binary authorized stdio; extra native descriptor excluded; actual exit/reap: pass\n"),

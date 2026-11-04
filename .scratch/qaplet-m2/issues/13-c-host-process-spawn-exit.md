@@ -57,3 +57,9 @@
 
 2026-11-04：04、06 已按各自范围完成，领取 `codex/m2-13-process` / `.cache/worktrees/m2-13`，从当前集成点实施公开 C spawn、退出/reap 与资源首次接入的预算和关闭安全。能力位协调为 bit 22；尚未实现的 pipe 模式必须明确拒绝，不能回退为 ignore。最终状态仍以新供应制品和适用平台证据为准。
 
+2026-11-04：显式 C spawn/ignore/inherit、实际 exit/reap、资源额度及两阶段清理候选已实现；
+已融合 timer 和真实 Work 集成 `01e72a6`，并验证 PID 身份失效保留、共享 completion ledger/
+32 项配额、默认环境合计预算。详见 [13 验证记录](../13-process-validation.md)。
+按 root 调度先候选交接，等待 filefix/08 实际集成后 followup 最终重供；当前保持
+`claimed / in_progress`，尚未标 awaiting_cross 或 resolved。
+

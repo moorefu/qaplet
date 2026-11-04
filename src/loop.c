@@ -589,9 +589,10 @@ qaplet_code qaplet_quiesce(qaplet_runtime *runtime, uint64_t wait,
   pthread_mutex_lock(&runtime->mutex);
   if (!code && wait) {
     uint64_t now;
-    if (!qaplet_clock_locked(runtime, &now)) runtime->cleanup_reason = QAPLET_CONTROL_FAILURE;
-    else if (wait * 1000000 > UINT64_MAX - now) code = QAPLET_INVALID_ARGUMENT;
-    else { now += wait * 1000000; deadline.tv_sec = now / 1000000000; deadline.tv_nsec = now % 1000000000; }
+    if (qaplet_clock_locked(runtime, &now)) {
+      if (wait * 1000000 > UINT64_MAX - now) code = QAPLET_INVALID_ARGUMENT;
+      else { now += wait * 1000000; deadline.tv_sec = now / 1000000000; deadline.tv_nsec = now % 1000000000; }
+    }
   }
   if (code) { pthread_mutex_unlock(&runtime->mutex); qaplet_driver_set(runtime, 0); return qaplet_report(diagnostic, code); }
   pthread_mutex_unlock(&runtime->mutex);
@@ -612,7 +613,7 @@ qaplet_code qaplet_quiesce(qaplet_runtime *runtime, uint64_t wait,
       break;
     }
     uint64_t observed;
-    if (!qaplet_clock_locked(runtime, &observed)) runtime->cleanup_reason = QAPLET_CONTROL_FAILURE;
+    qaplet_clock_locked(runtime, &observed);
   }
   output->phase = runtime->snapshot.phase;
   output->progressed = 0;
