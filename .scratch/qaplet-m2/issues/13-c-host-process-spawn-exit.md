@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** awaiting_cross
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -71,3 +71,5 @@ Raw/Git blob/LF/ZIP/SDK/loader和实际驱动 imports已核验。详见[13验证
 与新的 Full/实际64K 由 root 安排，不以当前局部成功关闭父验收组或后续14–16能力。
 
 2026-11-04（独立合并）：`a5c8b10` 已集成源tip `1b0886a` / 产品 `6583ed3`；77项RECIPE、双archive15、供应ZIP、595条原始命令/1422闭包文件、raw/Git blob/LF/合并树与两窄UbuntuCI通过，详主 `out/qaplet-m2/merge-13/final-handoff-001.json`。原std-route执行前hash不足限定与checker失败历史均保留。当前仍claimed/awaiting_cross，新的Full及实际64K验收后才放行14。
+
+2026-11-04（当前Full失败与定向修复）：`453fe76` / Full `41817613432` completed/failure，11 jobs为8success/3failure；两Mac各154pass/8fail，三其他native各162pass、实际64K162pass。16个必需Process失败无timeout：其中Intel limits原exit0但stderr非空，其他15项exit1，不能以exit0或旧errno115推断成功/唯一根因。严格原件见主 `out/qaplet-m2/full-453fe76/verify/native-raw-observations.json`、`HANDOFF.md`；本轮未执行Process包外9/系统8/4，保留此前局部范围。另以旧密封SDK包外真实Host在Linux/Win证实B02缺口：单Process POD查询返回WRONG_THREAD3，而owner/aggregate/lifecycle均OK0；child37/reap/release/quiesce/destroy全成。见主 `out/13-b02-query-audit-001/conclusion.json`，Windows原runner将exit256归unexpected的限定保留，判断依据是公开返回。转in_progress，由fresh `codex/m2-13-cross-fix` / 新worktree修复纯POD查询、提供Mac真实code/domain/error及limit诊断，旧冻结m2-13源码/out不改。先证具体拒绝边界再改Mac行为，14仍未放行。
