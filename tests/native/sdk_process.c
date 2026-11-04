@@ -441,6 +441,7 @@ static int query(void) {
   CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
   qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
   CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(!observed_exit(r,&p,&status));
   CHECK(!pthread_create(&thread,NULL,query_released,&observer));
   while (!observer.ready) sched_yield();
   CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && !pthread_join(thread,NULL) && !observer.error);
