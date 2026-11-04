@@ -54,6 +54,8 @@
 
 ## Comments
 
+2026-11-04（独立合并）：当前Windows分路修复 `d547150` 已无冲突合入 `620b996`，原件身份、当前9项producer输入、合并Git blob/LF及窄UbuntuCI通过；详主 `out/qaplet-m2/merge-02-win-error/HANDOFF.md`。保留旧867失败与旧196验收范围，继续awaiting_cross；将与13当前集成同一Full取得五原生及实际64K新原件。
+
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 

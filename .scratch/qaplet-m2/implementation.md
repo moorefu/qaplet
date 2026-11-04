@@ -20,17 +20,17 @@
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
-| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix`；新 `.cache/worktrees/m2-02-win-error-fix` | in_progress（旧验收保留，当前Windows connect-error回归） |
+| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix`；新 `.cache/worktrees/m2-02-win-error-fix` | awaiting_cross（`620b996` 已合真实readiness分路修复） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | 旧分支及 `codex/m2-05-resize-fix` | 原件见 `tickets/05` / `05-cross-fix` / `05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
 | 06 | `codex/m2-06-wait` 及两条定向修复分支 | 原件见 `tickets/06`、`06-creation-fix`、`06-guest-fix` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
 | 07 | `codex/m2-07-timers` | 原件见 `tickets/07` | completed（`46e5cf4` 五原生645+实际64K129本票验收通过） |
-| 08 | `codex/m2-08-scheduling` | `.cache/worktrees/m2-08` | awaiting_cross（四类调度已合 `6c8c0ea`，normal153/package39/fault2本地通过） |
+| 08 | `codex/m2-08-scheduling` | `.cache/worktrees/m2-08` | completed（`e742c76` 五原生765+实际64K153/package39/fault2严格通过） |
 | 09 | `codex/m2-09-host-notify` | 原件见 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
 | 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原 `.cache/worktrees/m2-10`；新 `.cache/worktrees/m2-10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
 | 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | in_progress，取消竞争/终态结果和物理占额 |
-| 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | in_progress，C spawn 与实际退出回收 |
+| 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | awaiting_cross（`a5c8b10` 已合C spawn与实际退出回收） |
 | 12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
 
 ## 环境事实
@@ -120,6 +120,10 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 06 按自身范围 resolved，07、09、10 已领取；13 的直接 blocker 也满足，待槽位。并行实现能力位分别为 timer bit 19、HostNotify bit 20、C work bit 21，接口具体形状依父规格由公开头文件落实，新的全局错误码若需要由 root 协调避免碰撞。每票首个资源即保持预算及 close/quiesce 安全，不延后 19/20；全部票完成后才做一次整体独立审查。当前旧 M1 1,000 循环及 06 本地重复范围不冒充最终 T03 全资源混合，父 M2 仍 in_progress。
 
 ## 一次性测试入口修复
+
+`e742c76` / Full `41812117094` completed/success，11 jobs成功。08 当前自身scope五原生各153/总765、实际64K153、包外39、core+work fault2、archive各14及当前M0 Full235严格通过，必需缺口0。70 SDK+9 eval raw对精确CI提交、29原ZIP/12nested/11job日志、两guest完整journal/seal/清理、77 repo Python+15 helper前后不变和3089消费文件最终rehash均核验。root另核9份摘要及精确计数，见 `out/qaplet-m2/full-e742c76/HANDOFF.md`、`08-acceptance-check.json`、`root-scope-acceptance.json`。GC实际65,536,000字节/62.5MiB；先前64MiB是注释约称，当前如实修正叙述，不改已验供应字节。08按本票范围完成；12仍等待11，不外推最终T03/父M2或发布。
+
+02 Windows连接错误分路修复 `d547150` 已独立合入 `620b996`，19项三实际本地目标和公开CLI回归等原件由merger核验，见 `out/qaplet-m2/merge-02-win-error/HANDOFF.md`。13产品 `6583ed3` / 源tip `1b0886a` 已独立合入 `a5c8b10`：77 RECIPE raw/Gitblob/LF/供应全等、双archive15 ELF64 REL、595条原始实际命令/1422闭包文件、合并树同源/双树clean与两项窄UbuntuCI通过，详 `out/qaplet-m2/merge-13/final-handoff-001.json`。原checker错误及std-route缺执行前hash的范围保留。两票保持awaiting_cross，准备以当前集成同一次新Full验证五原生/实际64K；14未放行，11正在融合实际a5供应169项及直接取消生命周期回归。
 
 
 `f2b0e0c` / Full `41809892923` completed/success，11 jobs成功。10自身严格重放五native各142/总710、公开matrix cross、实际64K142、包外21、core+work fault2全部pass；Win file正原件exit0/无timeout/精确stdout/无stderr，不反补旧867 errno。70SDK+9eval/锁对精确提交raw/LF全等，29原ZIP/12nested/11job原API+UTF8copy/离线verify、双archive14机器62/183（与旧SHA相同仍独立重审）、三APE/实际loader、当前M0六目标235与两guest seal/完整六字段/payload前后/清理均核。77repo Python+17helper前后不变，2901消费文件最终rehash；见 `out/qaplet-m2/full-f2b0e0c/HANDOFF.md`、`verify/scope-summary.json`、`root-scope-acceptance.json`。按本票范围完成10并放行11，未外推最终T03/父M2/发布。02旧867连接错误回归仍须独立修复，不能因本轮同旧probe通过而取消已复现缺陷；08新Full `41812117094` / `e742c76` 正在验收。11预留新code28/29如实际需要表达CANCELLED/ALREADY_COMPLETED，13的27/Win32域2/bit22保持。

@@ -4,9 +4,9 @@
 
 **Blocked by:** [07 · 一次 timer 推进 TLA 与自然退出](07-one-shot-timer-tla.md)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross
+**Execution state:** completed
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -51,6 +51,8 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-04（集成验收）：`e742c76` / Full `41812117094` completed/success，11 jobs 全成功。当前 SDK 五原生各153/合计765、实际 ARM64/64K 153、包外39（application8/work13/scheduler18）、独立 core+work fault2、双 archive 各14 ELF64 REL 及当前 M0 Full235 严格重放通过，必需缺口0。70 SDK+9 eval 原字节、29 provider 原ZIP/12 nested/11 job日志、两 guest journal/seal 和消费闭包前后身份均已核验；root 再核9份收据文件摘要及计数，见主 `out/qaplet-m2/full-e742c76/HANDOFF.md`、`verify/scope-summary.json`、`08-acceptance-check.json`、`root-scope-acceptance.json`。GC 实际 payload 是65,536,000字节/62.5MiB，4MiB heap 下六目标公开合同均通过，不沿用源码注释的约称64MiB。按本票范围 resolved；12 仍等待11，最终混合矩阵/长测、父M2及发布未完成。
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
