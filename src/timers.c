@@ -2,10 +2,11 @@
 #include "runtime_internal.h"
 #include <string.h>
 #include <math.h>
+#include <errno.h>
 
 struct qaplet_timer_slot {
-  uint64_t generation, deadline, sequence;
-  int state, referenced;
+  uint64_t generation, deadline, sequence, period;
+  int state, referenced, immediate;
   qaplet_timer_callback callback;
   void *userdata;
   JSValue function;
@@ -36,7 +37,7 @@ static qaplet_code preflight(qaplet_runtime *runtime) {
   if (runtime->driver_active && !runtime->timer_callback_active && !runtime->host_active_call) return QAPLET_BUSY;
   return QAPLET_OK;
 }
-qaplet_code qaplet_timer_create(qaplet_runtime *runtime, uint64_t delay,
+static qaplet_code create(qaplet_runtime *runtime, uint64_t delay, uint64_t period, int immediate,
     qaplet_timer_callback callback, void *userdata, qaplet_timer *output, qaplet_diagnostic *diagnostic) {
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
@@ -58,6 +59,8 @@ qaplet_code qaplet_timer_create(qaplet_runtime *runtime, uint64_t delay,
       if (slot->state || slot->generation == UINT64_MAX) continue;
       ++slot->generation;
       slot->deadline = now + delay * 1000000;
+      slot->period = period * 1000000;
+      slot->immediate = immediate;
       slot->sequence = ++runtime->timer_sequence;
       slot->state = slot->referenced = 1;
       slot->callback = callback; slot->userdata = userdata;
@@ -69,6 +72,18 @@ qaplet_code qaplet_timer_create(qaplet_runtime *runtime, uint64_t delay,
   }
   pthread_mutex_unlock(&runtime->mutex);
   return qaplet_report(diagnostic, code);
+}
+qaplet_code qaplet_timer_create(qaplet_runtime *r, uint64_t delay, qaplet_timer_callback cb, void *p, qaplet_timer *t, qaplet_diagnostic *d) {
+  return create(r, delay, 0, 0, cb, p, t, d);
+}
+qaplet_code qaplet_interval_create(qaplet_runtime *r, uint64_t period, qaplet_timer_callback cb, void *p, qaplet_timer *t, qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);
+  if (code) return code;
+  if (!period) return qaplet_report(d, QAPLET_INVALID_ARGUMENT);
+  return create(r, period, period, 0, cb, p, t, d);
+}
+qaplet_code qaplet_immediate_create(qaplet_runtime *r, qaplet_timer_callback cb, void *p, qaplet_timer *t, qaplet_diagnostic *d) {
+  return create(r, 0, 0, 1, cb, p, t, d);
 }
 static qaplet_timer_slot *lookup(qaplet_runtime *runtime, const qaplet_timer *timer) {
   if (!runtime->timers || timer->runtime_id != runtime->runtime_id || timer->slot >= runtime->m2_limits.timers || !timer->generation)
@@ -143,15 +158,19 @@ int qaplet_timers_deadline_locked(qaplet_runtime *runtime, uint64_t *deadline) {
     }
   return found;
 }
-int qaplet_timers_pending(qaplet_runtime *runtime) {
+int qaplet_timers_pending(qaplet_runtime *runtime, int immediate, uint64_t cutoff) {
   pthread_mutex_lock(&runtime->mutex);
-  uint64_t now, deadline;
-  int pending = runtime->timer_count && runtime->snapshot.lifecycle == QAPLET_OPEN &&
-    qaplet_clock_locked(runtime, &now) && qaplet_timers_deadline_locked(runtime, &deadline) && deadline <= now;
+  uint64_t now;
+  int pending = 0;
+  if (runtime->timer_count && runtime->snapshot.lifecycle == QAPLET_OPEN && qaplet_clock_locked(runtime, &now))
+    for (uint64_t i=0;i<runtime->m2_limits.timers;++i) {
+      qaplet_timer_slot *slot=&runtime->timers[i];
+      if (slot->state==1 && slot->immediate==immediate && slot->deadline<=now && (!immediate || slot->sequence<=cutoff)) {pending=1;break;}
+    }
   pthread_mutex_unlock(&runtime->mutex);
   return pending;
 }
-qaplet_code qaplet_timers_deliver(qaplet_runtime *runtime, unsigned *claimed) {
+qaplet_code qaplet_timers_deliver(qaplet_runtime *runtime, unsigned *claimed, int immediate, uint64_t cutoff) {
   *claimed = 0;
   pthread_mutex_lock(&runtime->mutex);
   qaplet_timer_slot *selected = NULL;
@@ -160,7 +179,7 @@ qaplet_code qaplet_timers_deliver(qaplet_runtime *runtime, unsigned *claimed) {
   if (qaplet_clock_locked(runtime, &now)) {
     for (uint64_t i = 0; runtime->timers && i < runtime->m2_limits.timers; ++i) {
       qaplet_timer_slot *slot = &runtime->timers[i];
-      if (slot->state == 1 && slot->deadline <= now && (!selected || slot->deadline < selected->deadline ||
+      if (slot->state == 1 && slot->immediate==immediate && (!immediate || slot->sequence<=cutoff) && slot->deadline <= now && (!selected || slot->deadline < selected->deadline ||
           (slot->deadline == selected->deadline && slot->sequence < selected->sequence))) { selected = slot; index = i; }
     }
     if (selected) code = qaplet_execution_dispatch_locked(runtime);
@@ -187,12 +206,27 @@ qaplet_code qaplet_timers_deliver(qaplet_runtime *runtime, unsigned *claimed) {
     JS_FreeValue(runtime->context, returned);
   } else callback(runtime, &timer, userdata);
   runtime->timer_callback_active = 0;
-  JS_FreeValue(runtime->context, selected->function);
-  selected->function = JS_UNDEFINED;
   pthread_mutex_lock(&runtime->mutex);
-  selected->state = selected->referenced = 0;
-  --runtime->timer_count;
+  JSValue released = JS_UNDEFINED;
+  if (selected->period && selected->state == 2 && qaplet_clock_locked(runtime, &now)) {
+    /* Keep the accepted origin, skipping missed periods without a catch-up
+     * burst. Callback return values never participate in rearming. */
+    uint64_t steps = (now - selected->deadline) / selected->period + 1;
+    if (steps > (UINT64_MAX - selected->deadline) / selected->period) {
+      qaplet_control_failure_locked(runtime, EOVERFLOW);
+      code = QAPLET_CONTROL_FAILURE;
+    } else {
+      selected->deadline += steps * selected->period;
+      selected->state = 1;
+    }
+  }
+  if (selected->state != 1) {
+    selected->state = selected->referenced = 0;
+    --runtime->timer_count;
+    released = selected->function; selected->function = JS_UNDEFINED;
+  }
   pthread_mutex_unlock(&runtime->mutex);
+  JS_FreeValue(runtime->context, released);
   return code;
 }
 
@@ -230,12 +264,12 @@ static JSValue timer_method(JSContext *context, JSValueConst self, int argc, JSV
   return code ? timer_error(context, code) : JS_UNDEFINED;
 }
 static void unused_callback(qaplet_runtime *r, const qaplet_timer *t, void *p) { (void)r; (void)t; (void)p; }
-static JSValue set_timeout(JSContext *context, JSValueConst self, int argc, JSValueConst *argv) {
+static JSValue set_timer(JSContext *context, JSValueConst self, int argc, JSValueConst *argv, int kind) {
   (void)self;
   qaplet_runtime *runtime = JS_GetContextOpaque(context);
-  double delay;
-  if (argc != 2 || !JS_IsFunction(context, argv[0]) || !JS_IsNumber(argv[1]) ||
-      JS_ToFloat64(context, &delay, argv[1]) || !isfinite(delay) || delay < 0 || floor(delay) != delay || delay > 9007199254740991.0)
+  double delay=0;
+  if (argc != (kind==2 ? 1 : 2) || !JS_IsFunction(context, argv[0]) || (kind!=2 && (!JS_IsNumber(argv[1]) ||
+      JS_ToFloat64(context, &delay, argv[1]) || !isfinite(delay) || delay < (kind==1 ? 1 : 0) || floor(delay) != delay || delay > 9007199254740991.0)))
     return timer_error(context, QAPLET_INVALID_ARGUMENT);
   JSValue handle = JS_NewObjectClass(context, timer_class);
   if (JS_IsException(handle)) return handle;
@@ -243,12 +277,17 @@ static JSValue set_timeout(JSContext *context, JSValueConst self, int argc, JSVa
   if (!token) { JS_FreeValue(context, handle); return JS_EXCEPTION; }
   JS_SetOpaque(handle, token);
   int prior = runtime->timer_callback_active; runtime->timer_callback_active = 1;
-  qaplet_code code = qaplet_timer_create(runtime, (uint64_t)delay, unused_callback, NULL, token, NULL);
+  qaplet_code code = kind==2 ? qaplet_immediate_create(runtime, unused_callback, NULL, token, NULL) :
+    kind==1 ? qaplet_interval_create(runtime, (uint64_t)delay, unused_callback, NULL, token, NULL) :
+    qaplet_timer_create(runtime, (uint64_t)delay, unused_callback, NULL, token, NULL);
   runtime->timer_callback_active = prior;
   if (code) { JS_FreeValue(context, handle); return timer_error(context, code); }
   runtime->timers[token->slot].function = JS_DupValue(context, argv[0]);
   return handle;
 }
+static JSValue set_timeout(JSContext *c, JSValueConst s, int n, JSValueConst *v) { return set_timer(c,s,n,v,0); }
+static JSValue set_interval(JSContext *c, JSValueConst s, int n, JSValueConst *v) { return set_timer(c,s,n,v,1); }
+static JSValue set_immediate(JSContext *c, JSValueConst s, int n, JSValueConst *v) { return set_timer(c,s,n,v,2); }
 static JSValue clear_timeout(JSContext *context, JSValueConst self, int argc, JSValueConst *argv) {
   (void)self;
   return argc == 1 ? timer_method(context, argv[0], 0, NULL, 0) : timer_error(context, QAPLET_INVALID_ARGUMENT);
@@ -260,11 +299,13 @@ static const JSCFunctionListEntry timer_methods[] = {
   JS_CFUNC_MAGIC_DEF("hasRef", 0, timer_method, 3),
 };
 static int initialize_timers(JSContext *context, JSModuleDef *module) {
-  JSValue functions[] = {JS_NewCFunction(context, set_timeout, "setTimeout", 2), JS_NewCFunction(context, clear_timeout, "clearTimeout", 1)};
-  if (JS_IsException(functions[0]) || JS_IsException(functions[1])) { JS_FreeValue(context, functions[0]); JS_FreeValue(context, functions[1]); return -1; }
-  int code = JS_SetModuleExport(context, module, "setTimeout", functions[0]);
-  if (code < 0) { JS_FreeValue(context, functions[1]); return -1; }
-  return JS_SetModuleExport(context, module, "clearTimeout", functions[1]);
+  const char *names[] = {"setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate"};
+  JSCFunction *callbacks[] = {set_timeout, clear_timeout, set_interval, clear_timeout, set_immediate, clear_timeout};
+  for (unsigned i=0;i<6;++i) {
+    JSValue function = JS_NewCFunction(context, callbacks[i], names[i], i%2 || i==4 ? 1 : 2);
+    if (JS_IsException(function) || JS_SetModuleExport(context, module, names[i], function)<0) return -1;
+  }
+  return 0;
 }
 JSModuleDef *qaplet_timers_load(qaplet_runtime *runtime) {
   pthread_once(&timer_class_once, allocate_class);
@@ -277,6 +318,7 @@ JSModuleDef *qaplet_timers_load(qaplet_runtime *runtime) {
   }
   JS_SetClassProto(runtime->context, timer_class, prototype);
   JSModuleDef *module = JS_NewCModule(runtime->context, "qaplet:timers", initialize_timers);
-  if (module && (JS_AddModuleExport(runtime->context, module, "setTimeout") < 0 || JS_AddModuleExport(runtime->context, module, "clearTimeout") < 0)) return NULL;
+  const char *names[] = {"setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate"};
+  if (module) for (unsigned i=0;i<6;++i) if (JS_AddModuleExport(runtime->context,module,names[i])<0) return NULL;
   return module;
 }

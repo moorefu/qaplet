@@ -23,12 +23,12 @@
 | 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix`；新 `.cache/worktrees/m2-02-win-error-fix` | in_progress（旧验收保留，当前Windows connect-error回归） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
-| 05 | 旧分支及 `codex/m2-05-resize-fix` | 旧原件见 `tickets/05` / `05-cross-fix`；新 `.cache/worktrees/m2-05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
+| 05 | 旧分支及 `codex/m2-05-resize-fix` | 原件见 `tickets/05` / `05-cross-fix` / `05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
 | 06 | `codex/m2-06-wait` 及两条定向修复分支 | 原件见 `tickets/06`、`06-creation-fix`、`06-guest-fix` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
-| 07 | `codex/m2-07-timers` | `.cache/worktrees/m2-07` | completed（`46e5cf4` 五原生645+实际64K129本票验收通过） |
+| 07 | `codex/m2-07-timers` | 原件见 `tickets/07` | completed（`46e5cf4` 五原生645+实际64K129本票验收通过） |
 | 08 | `codex/m2-08-scheduling` | `.cache/worktrees/m2-08` | in_progress，interval/immediate与四类检查点轮转 |
-| 09 | `codex/m2-09-host-notify` | `.cache/worktrees/m2-09`；归档 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
-| 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原 `.cache/worktrees/m2-10`；新 `.cache/worktrees/m2-10-file-fix` | in_progress（已合WorkPool；867 Windows文件夹具失败待修复） |
+| 09 | `codex/m2-09-host-notify` | 原件见 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
+| 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原 `.cache/worktrees/m2-10`；新 `.cache/worktrees/m2-10-file-fix` | awaiting_cross（文件fixture修复已合 `166ab50`，待新Full） |
 | 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | in_progress，C spawn 与实际退出回收 |
 | 11–12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
 
@@ -119,6 +119,10 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 06 按自身范围 resolved，07、09、10 已领取；13 的直接 blocker 也满足，待槽位。并行实现能力位分别为 timer bit 19、HostNotify bit 20、C work bit 21，接口具体形状依父规格由公开头文件落实，新的全局错误码若需要由 root 协调避免碰撞。每票首个资源即保持预算及 close/quiesce 安全，不延后 19/20；全部票完成后才做一次整体独立审查。当前旧 M1 1,000 循环及 06 本地重复范围不冒充最终 T03 全资源混合，父 M2 仍 in_progress。
 
 ## 一次性测试入口修复
+
+10 文件夹具修复由独立 merger 合入 `166ab50b1f0d4ef6bfb17aa856791047cbdb421c`，源tip `01f7147` / 产品 `63d7327`。仅3个RECIPE文件修改：自建相对临时目录、分阶段文件错误和清理、controlled work fault追加同供应完整文件合同的永久回归；不改SDK实现/API/等待时限。真实OS缺失父目录旧源码两宿主红，仅创建该目录转绿；旧CI复合断言的具体失败阶段/errno仍unknown。Linux142、Windows141+optional1，密封ZIP包外21/fault2均双宿主通过，完整369/177实际192条件skip/bootstrap通过。独立70 raw/Gitblob/LF、ZIP/三APE/双archive14（与旧SDK相同）、六scope原日志/执行driver导入闭包及历史红绿、post源树等同性/双树clean/窄CI均通过，见 `out/qaplet-m2/merge-10-file/handoff-001.json`。追加而非必需的Windows重放已取消，其父子进程确已创建但未完成，是否进入main/阻塞阶段unknown；外部终止仅记incomplete，不计SDK成功清理或原六scope成绩。准备立即推送该修复Full，10仍等待当前原件，11不提前放行。
+
+已完成07/09/05 resize的worktree在完整归档及独立源对档验证后清理：07为13,744文件/1,013,460,833逻辑字节，09为2,308/348,998,746，05 resize为882/96,731,033。`store-07/09/05-resize-verified.json`、`completed-07-09-05-audit.json`、`completed-07-09-05-cleanup.json`及独立branch-retention收据确认干净/全部已合入/绝对路径/无reparse；out外仅71/80/82个可再生Python字节码，分支与所有归档及CI原ZIP均保留，缓存/输入不删除。旧full563/full46 adapter固定的源码Root路径已不存在；再次重放须先以保留分支重建原绝对worktree并restore/materialize归档out，或另存新的位置映射adapter，不改已引用脚本或历史报告。08、02新修复、10及13活动树均保留。
 
 WorkPool `867356c` / Full `41799595408` 最终 completed/failure：Windows native与startup-matrix失败。Windows SDK142项中唯一nonpass为`qaplet-host.m2-work-file`，exit256、无timeout，stderr `work contract line 49: fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd)`；代码显示该断言位于首次submit前，原`/tmp/qaplet-work-XXXXXX`创建/写/关哪个阶段及原errno仍未区分，不能猜测故障归因。fresh `codex/m2-10-file-fix` 定向诊断，票10不关闭/不放行11。另有02 Windows `socket.connect-error`：connect -1/errno115，poll0/timeout2000ms/revents0、select -2、socket_error10061、connection_failed=false，reserve已在connect前关闭。02重新claimed定向调查，旧196cd75范围保留，不因当前探针失败改标此前通过的各产品scope。四健康native各142、实际64K142、包外21/fault2、双archive14与M0Full235本轮已独立重放通过；Windows失败不得据此伪造710完整通过。原件/typed失败及29原ZIP、12nested、11job日志保留于 `out/qaplet-m2/full-867356c/`，待独立handoff收尾。
 

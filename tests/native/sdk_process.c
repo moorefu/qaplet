@@ -283,7 +283,7 @@ static int scheduling(void) {
   qaplet_work_handler handler=QAPLET_WORK_HANDLER_INIT;
   handler.name="ready";handler.name_length=5;handler.function=quick_work;handler.input_bytes=handler.output_bytes=1;
   CHECK(qaplet_register_work_handler(r,&handler,NULL)==QAPLET_OK);
-  const char source[]="import('qaplet:events').then(m=>m.onEvent(()=>{globalThis.processEvent=1}))";
+  const char source[]="Promise.all([import('qaplet:events'),import('qaplet:timers')]).then(([e,t])=>{e.onEvent(()=>{globalThis.processEvent=1});globalThis.installImmediate=()=>{t.setImmediate(()=>{globalThis.processImmediate=1})}})";
   qaplet_progress progress=QAPLET_PROGRESS_INIT; CHECK(qaplet_eval(r,source,sizeof(source)-1,&progress,NULL)==QAPLET_OK);
   while(progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
   qaplet_process processes[40]; qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
@@ -299,10 +299,11 @@ static int scheduling(void) {
   do { CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK);if(work.completed==16)break;sched_yield(); } while(milliseconds()<until);
   CHECK(work.completed==16 && work.pending_handoffs==16);
   unsigned timers=0; qaplet_timer timer=QAPLET_TIMER_INIT;CHECK(qaplet_timer_create(r,0,counted_timer,&timers,&timer,NULL)==QAPLET_OK);
+  CHECK(qaplet_eval(r,"installImmediate()",18,&progress,NULL)==QAPLET_OK);
   CHECK(qaplet_post_event(r,1,0,NULL,0,NULL)==QAPLET_OK && qaplet_post_event(r,2,0,NULL,0,NULL)==QAPLET_QUEUE_FULL);
   CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
   qaplet_process_snapshot native=QAPLET_PROCESS_SNAPSHOT_INIT;qaplet_snapshot events=QAPLET_SNAPSHOT_INIT;
-  CHECK(qaplet_get_process_snapshot(r,&native,NULL)==QAPLET_OK && native.completed==15 && native.referenced==25);
+  CHECK(qaplet_get_process_snapshot(r,&native,NULL)==QAPLET_OK && native.completed==14 && native.referenced==26);
   CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && work.pending_handoffs==1);
   CHECK(qaplet_get_snapshot(r,&events,NULL)==QAPLET_OK && events.events_consumed==1 && !events.queue_depth && timers==1);
   CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
@@ -310,10 +311,33 @@ static int scheduling(void) {
   CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && !work.pending_handoffs);
   for(unsigned i=0;i<40;++i) CHECK(qaplet_process_release(r,&processes[i],NULL)==QAPLET_OK);
   for(unsigned i=0;i<16;++i) CHECK(qaplet_work_release(r,&tasks[i],NULL)==QAPLET_OK);
-  CHECK(qaplet_eval(r,"globalThis.processEvent===1",27,&progress,NULL)==QAPLET_OK);
+  const char result_source[]="globalThis.processEvent===1&&globalThis.processImmediate===1";
+  CHECK(qaplet_eval(r,result_source,sizeof(result_source)-1,&progress,NULL)==QAPLET_OK);
   qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.boolean);
   CHECK(!finish(r));
-  puts("M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/event; fair provider cursor; reliable saturated queue: pass");return 0;
+  puts("M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass");return 0;
+}
+static int liveness(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  const char setup[]="import('qaplet:timers').then(t=>{globalThis.hits='';globalThis.install=()=>{t.setTimeout(()=>{hits+='T'},0).unref();t.setImmediate(()=>{hits+='I'}).unref()}})";
+  CHECK(qaplet_eval(r,setup,sizeof(setup)-1,&progress,NULL)==QAPLET_OK);
+  while(progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+  qaplet_process p=QAPLET_PROCESS_INIT;int gate=hanging(r,&p);CHECK(gate>=0);
+  CHECK(qaplet_eval(r,"install()",9,&progress,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_eval(r,"hits==='TI'",11,&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.boolean);
+  CHECK(qaplet_process_set_ref(r,&p,0,NULL)==QAPLET_OK);
+  CHECK(qaplet_eval(r,"hits='';install()",17,&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && !drive.progressed);
+  CHECK(qaplet_eval(r,"hits==='';",10,&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.boolean);
+  CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
+  CHECK(qaplet_eval(r,"hits==='TI'",11,&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.boolean);
+  CHECK(!finish(r));close(gate);
+  puts("M2 process liveness: referenced child permits ready unref timer/immediate; unref child returns naturally; explicit pump delivers; physical cleanup: pass");return 0;
 }
 static int identity(void) {
   qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.processes=1;
@@ -365,7 +389,7 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
-  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

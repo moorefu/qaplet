@@ -277,6 +277,9 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
   runtime->host_registration_locked = 1;
   uint64_t jobs = 0, events = 0, deliveries = 0;
   unsigned progressed = 0;
+  /* One driver slice is an immediate round. Registrations during this slice
+   * remain live but cannot be claimed until a later slice. */
+  uint64_t immediate_cutoff = runtime->timer_sequence;
   for (;;) {
     if (runtime->execution_active) {
       pthread_mutex_lock(&runtime->mutex);
@@ -308,9 +311,10 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     int work_ready = qaplet_work_ready_locked(runtime);
     int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
     pthread_mutex_unlock(&runtime->mutex);
-    int timer_ready = timer_eligible && qaplet_timers_pending(runtime);
+    int timer_ready = timer_eligible && qaplet_timers_pending(runtime,0,0);
+    int immediate_ready = timer_eligible && qaplet_timers_pending(runtime,1,immediate_cutoff);
     int event_ready = events < runtime->snapshot.limits.pump_events && qaplet_events_pending(runtime);
-    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !event_ready && !work_ready && !process_ready)) {
+    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !immediate_ready && !event_ready && !work_ready && !process_ready)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
       progress->code = QAPLET_OK;
@@ -318,9 +322,9 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     }
     /* Resume after the last claimed category, including across a pump which
      * returned halfway through its jobs checkpoint. Empty categories skip. */
-    int ready[3]={work_ready || process_ready,timer_ready,event_ready};
+    int ready[4]={work_ready || process_ready,timer_ready,immediate_ready,event_ready};
     unsigned selected=runtime->ready_cursor;
-    while (!ready[selected]) selected=(selected+1)%3;
+    while (!ready[selected]) selected=(selected+1)%4;
     if (selected==0) {
       unsigned provider=runtime->completion_cursor;
       if ((provider==0 && !work_ready) || (provider==1 && !process_ready)) provider=1-provider;
@@ -344,11 +348,11 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       pthread_mutex_unlock(&runtime->mutex);
     }
     unsigned claimed = 0;
-    code = selected==1 ? qaplet_timers_deliver(runtime, &claimed) : qaplet_events_deliver(runtime, &claimed);
+    code = selected==3 ? qaplet_events_deliver(runtime, &claimed) : qaplet_timers_deliver(runtime, &claimed, selected==2, immediate_cutoff);
     if (code && !runtime->execution_code) runtime->execution_code = code;
-    if (selected==2) events += claimed;
+    if (selected==3) events += claimed;
     deliveries += claimed;
-    if (claimed) { progressed = 1;runtime->ready_cursor=(selected+1)%3; }
+    if (claimed) { progressed = 1;runtime->ready_cursor=(selected+1)%4; }
   }
   /* Stop may win after the empty-queue check or before an idle event's begin.
    * Confirm it at this owner boundary without scheduling another job/event. */
