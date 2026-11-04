@@ -28,6 +28,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_work.c", "host-work.c", "work-host.o", "host-work-compile"),
+    ("tests/native/sdk_work_faults.c", "work-faults.c", None, None),
     ("tests/native/sdk_timers.c", "host-timers.c", "timers-host.o", "host-timers-compile"),
     ("tests/native/sdk_notify.c", "host-notify.c", "notify.o", "host-notify-compile"),
     ("tests/native/sdk_wait.c", "host-wait.c", "wait.o", "host-wait-compile"),
@@ -49,7 +51,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -71,7 +73,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 2064383, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 4161535, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -79,6 +81,19 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 2064383, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-work-notify", ["--m2-work-notify"], "M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass\n"),
+    ("m2-work-registration", ["--m2-work-registration"], "M2 work registration: explicit capability; lazy threads; copied finite declarations; invalid ABI/flags/concurrency; duplicate/frozen rejection: pass\n"),
+    ("m2-work-fairness", ["--m2-work-fairness"], "M2 work fairness: two bounded workers; default handler serial; runnable handler bypasses blocked head; copied input; owner handoff; retained capacity: pass\n"),
+    ("m2-work-capacity", ["--m2-work-capacity"], "M2 work capacity: count/data reservations; atomic refusal; instance/generation isolation; retained results charged; output bound; JS result preserved; ordinary reuse: pass\n"),
+    ("m2-work-close", ["--m2-work-close"], "M2 work close: running native data/code retained; queued suppressed; stop starts cancellation; CLOSED engine gone; finite quiesce retry; destroy BUSY; physical join: pass\n"),
+    ("m2-work-ledger", ["--m2-work-ledger"], "M2 work ledger: active entry cumulative dispatch; absolute pending deadline; terminal native cancellation; no ledger reset: pass\n"),
+    ("m2-work-physical", ["--m2-work-physical"], "M2 work physical exit: callback return precedes blocked native TLS destructor; zero/finite quiesce never joins live thread; retained BUSY; actual exit joined: pass\n"),
+    ("m2-work-limits", ["--m2-work-limits"], "M2 work limits: real default 8MiB subquota within 16MiB total; simultaneous native metadata/data preflight; retained data charged; count independent; no permanent capacity failure: pass\n"),
+    ("m2-work-completion", ["--m2-work-completion"], "M2 work completion: explicit concurrency; saturated events retain native records; owner handoff retains ref; work permits ready unref timer; last handoff leaves unref timer idle; exact results: pass\n"),
+    ("m2-work-retention", ["--m2-work-retention"], "M2 work retention: STOPPED preserves terminal C results; logical release invalidates token while physical buffers stay charged; close retires only after native exit: pass\n"),
+    ("m2-work-scheduling", ["--m2-work-scheduling"], "M2 work scheduling: completion/timer/event bounded rotation; complete jobs before each handoff; persisted cursor across jobs-only pumps; all categories drain: pass\n"),
+    ("m2-work-stop-request", ["--m2-work-stop-request"], "M2 work stop request: cooperative marker observes accepted stop before owner drive; queued worker claim shares stop order; no late callback: pass\n"),
+    ("m2-work-file", ["--m2-work-file"], "M2 work file: copied declaration/input; real bounded bytes; independent completion; retry result; ordinary errno; release; joined cleanup: pass\n"),
     ("m2-timers", ["--m2-timers"], "M2 timers: zero-delay asynchronous owner callback; exactly once; cleanup: pass\n"),
     ("m2-timers-js", ["--m2-timers-js"], "M2 timer JS: registered callback advances entry Promise; cleanup: pass\n"),
     ("m2-timers-tla", ["--m2-timers-tla", "{modules}"], "M2 timer TLA: real ESM entry waits and resumes; cleanup: pass\n"),
@@ -249,8 +264,10 @@ def package_consume(args, report, directory):
                   package=producer["package"])
     if args.operation == "fault-consume":
         compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -266,8 +283,30 @@ def package_consume(args, report, directory):
         report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,
             "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
+        artifact = output / "qaplet-work-faults.com"
+        if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+        executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
+            [*loader, artifact], args.timeout, expected=None)
+        expected = "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass\n"
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",
+            "required": True, "controlled_system_fixture": True, "command": executed,
+            "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
     else:
         example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+        artifact = output / "qaplet-work-host.com"
+        for suffix, arguments, expected in HOST_CASES:
+            if not suffix.startswith("m2-work-"):
+                continue
+            executed, stdout, stderr = run(report, directory, "qaplet-work-host." + suffix,
+                [*loader, artifact, *arguments], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": "qaplet-work-host." + suffix, "required": True,
+                "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "timeout_seconds": args.timeout, "reason": "Public WorkPool C Host compiled outside both source checkouts from sealed supplied SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -284,7 +323,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "m2-work"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -379,6 +418,48 @@ def compile_m2_faults(args, report, directory, tree, helpers, sdk, work, output)
     report["artifacts"].append(artifact)
 
 
+def compile_work_host(args, report, directory, tree, helpers, sdk, work, output):
+    """Run the public WorkPool seam in a real package-only C application."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "host-work.c"
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-work-host.build-commands.log"))
+    report["external_work_consumer"] = {"source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False}
+    run(report, directory, "work-host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "host.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-host", [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-work-host.com", work, environment)
+    publish_ape(work, output, "qaplet-work-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-work-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-work-host.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_work_faults(args, report, directory, tree, helpers, sdk, work, output):
+    """Separate required WorkPool system seam inside existing fault consumption."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "work-faults.c"
+    symbols = ("calloc", "pthread_create", "pthread_tryjoin_np", "send")
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-work-faults.build-commands.log"))
+    report["work_controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
+        "scope": "actual SDK allocation refusal, ordinary worker creation errno, accepted submit/completion wake failure and uncertain join; not native OS coverage"}
+    run(report, directory, "work-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-faults", [work / "faults.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-work-faults.com", work, environment,
+        libraries=(*("-Wl,--wrap=" + name for name in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, "qaplet-work-faults", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-work-faults", output)
+    artifact["build_commands"] = identity(output / "qaplet-work-faults.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
 def compile_example(args, report, directory, tree, helpers, sdk, work, output):
     (work / "tmp").mkdir(parents=True)
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
@@ -464,7 +545,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
