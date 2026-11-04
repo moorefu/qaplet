@@ -117,11 +117,11 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagno
 qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
 qaplet_code qaplet_timers_init(qaplet_runtime *);
 void qaplet_timers_dispose(qaplet_runtime *);
-int qaplet_timers_pending(qaplet_runtime *);
+int qaplet_timers_pending(qaplet_runtime *, int immediate, uint64_t cutoff);
 /* Requires acceptance mutex. No JS; deadline includes unref if loop is alive. */
 int qaplet_timers_ref_locked(qaplet_runtime *);
 int qaplet_timers_deadline_locked(qaplet_runtime *, uint64_t *);
-qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *);
+qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *, int immediate, uint64_t cutoff);
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);

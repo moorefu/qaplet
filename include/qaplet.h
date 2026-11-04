@@ -286,6 +286,14 @@ typedef void (*qaplet_timer_callback)(qaplet_runtime *, const qaplet_timer *, vo
  * record stays charged until it returns, including after self-cancellation. */
 qaplet_code qaplet_timer_create(qaplet_runtime *, uint64_t delay_ms,
     qaplet_timer_callback, void *userdata, qaplet_timer *output, qaplet_diagnostic *);
+/* Repeats from its original monotonic schedule, skipping missed periods.
+ * period_ms must be at least 1. Self-cancel prevents rearming. */
+qaplet_code qaplet_interval_create(qaplet_runtime *, uint64_t period_ms,
+    qaplet_timer_callback, void *userdata, qaplet_timer *output, qaplet_diagnostic *);
+/* FIFO deferred callback. Registrations made during a driver slice become
+ * eligible in the next slice. Shares the fixed timer count/storage budget. */
+qaplet_code qaplet_immediate_create(qaplet_runtime *, qaplet_timer_callback,
+    void *userdata, qaplet_timer *output, qaplet_diagnostic *);
 qaplet_code qaplet_timer_cancel(qaplet_runtime *, const qaplet_timer *, qaplet_diagnostic *);
 qaplet_code qaplet_timer_ref(qaplet_runtime *, const qaplet_timer *, int referenced, qaplet_diagnostic *);
 typedef struct {
