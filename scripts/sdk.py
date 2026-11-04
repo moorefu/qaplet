@@ -81,6 +81,13 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 4161535, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-timers-interval", ["--m2-timers-interval"], "M2 interval: strict minimum 1ms; repeated original schedule; ignored Promise; self cancel; cleanup: pass\n"),
+    ("m2-timers-immediate", ["--m2-timers-immediate"], "M2 immediate: asynchronous registration; FIFO; nested callback waits next pump; discarded handles retained; cancel; cleanup: pass\n"),
+    ("m2-timers-fairness", ["--m2-timers-fairness"], "M2 scheduling fairness: completion/timer/immediate/event share 32 deliveries; public bounded order within one pump: pass\n"),
+    ("m2-timers-checkpoints", ["--m2-timers-checkpoints"], "M2 scheduling checkpoints: jobs-only pumps preserve four-category cursor; public callback order and handoffs: pass\n"),
+    ("m2-timers-shared-limits", ["--m2-timers-shared-limits"], "M2 scheduling resource budget: timer/interval/immediate share finite slots; callback cancel retains slot; unref-only natural return and explicit pump; terminal cleanup: pass\n"),
+    ("m2-timers-errors", ["--m2-timers-errors"], "M2 scheduling errors: late handled rejection waits full cross-pump checkpoint; ordinary throw settles jobs then returns; next independent callback ledger recovers: pass\n"),
+    ("m2-timers-ledgers", ["--m2-timers-ledgers"], "M2 scheduling ledgers: active entry and independent idle callback accumulate jobs across pumps; infinite jobs terminate at exact dispatch limit: pass\n"),
     ("m2-work-notify", ["--m2-work-notify"], "M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass\n"),
     ("m2-work-registration", ["--m2-work-registration"], "M2 work registration: explicit capability; lazy threads; copied finite declarations; invalid ABI/flags/concurrency; duplicate/frozen rejection: pass\n"),
     ("m2-work-fairness", ["--m2-work-fairness"], "M2 work fairness: two bounded workers; default handler serial; runnable handler bypasses blocked head; copied input; owner handoff; retained capacity: pass\n"),
@@ -173,6 +180,9 @@ HOST_CASES = (
 
 
 CLI_CASES = (
+    ("eval-interval-entry", ["eval", "--source", "import('qaplet:timers').then(({setInterval})=>new Promise(resolve=>{let n=0;let t=setInterval(()=>{if(++n===3){t.cancel();resolve(42)}return new Promise(()=>{})},1)}))"], 0, "42\n", ""),
+    ("eval-immediate-result", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>{setImmediate(()=>{setImmediate(()=>{})});return 42})"], 0, "42\n", ""),
+    ("eval-immediate-unref", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>new Promise(resolve=>setImmediate(()=>resolve(42)).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
     ("eval-timer-entry", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),20)))"], 0, "42\n", ""),
     ("eval-timer-result", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>{setTimeout(()=>{},0);return 42})"], 0, "42\n", ""),
     ("eval-timer-unref", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),0).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
@@ -268,6 +278,7 @@ def package_consume(args, report, directory):
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
+        compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -278,7 +289,8 @@ def package_consume(args, report, directory):
         expected = ("controlled HostNotify: accepted event/close and CLOSED wake overlap; JS released; inflight retained; finite quiesce retry; destroy BUSY; producer joined; drained cleanup: pass\n"
                     "controlled HostNotify reentry: deliberately invalid hook receives BUSY for SDK queries/control/drives/close; no JS or stop mutation: pass\n"
                     "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n"
-                    "controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n")
+                    "controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n"
+                    "controlled M2 scheduling: same deadline acceptance FIFO; interval skips late periods on original schedule without burst; self cancel: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,
@@ -307,6 +319,20 @@ def package_consume(args, report, directory):
                 "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
                 "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "timeout_seconds": args.timeout, "reason": "Public WorkPool C Host compiled outside both source checkouts from sealed supplied SDK"})
+        artifact = output / "qaplet-timer-host.com"
+        for suffix, arguments, expected in HOST_CASES:
+            if not suffix.startswith("m2-timers"):
+                continue
+            arguments = [value.replace("{modules}", str(external / "sdk/modules")) for value in arguments]
+            executed, stdout, stderr = run(report, directory, "qaplet-timer-host." + suffix,
+                [*loader, artifact, *arguments], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": "qaplet-timer-host." + suffix, "required": True,
+                "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "timeout_seconds": args.timeout, "reason": "Public timer/scheduling C Host compiled outside both source checkouts from sealed supplied SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -435,6 +461,26 @@ def compile_work_host(args, report, directory, tree, helpers, sdk, work, output)
                 consumption_purpose("build", args.controlled_probe)))
     artifact = audit(args, report, directory, tree, "qaplet-work-host", output)
     artifact["build_commands"] = identity(output / "qaplet-work-host.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_timer_host(args, report, directory, tree, helpers, sdk, work, output):
+    """Public timer and checkpoint boundary from the sealed SDK only."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "host-timers.c"
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-timer-host.build-commands.log"))
+    report["external_timer_consumer"] = {"source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False}
+    run(report, directory, "timer-host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-timer-host", [work / "host.o", sdk / "lib/libqaplet.a"],
+                  work / "qaplet-timer-host.com", work, environment)
+    publish_ape(work, output, "qaplet-timer-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-timer-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-timer-host.build-commands.log")
     report["artifacts"].append(artifact)
 
 

@@ -329,6 +329,35 @@ static int wait_faults(void) {
 static void timer_observed(qaplet_runtime *runtime, const qaplet_timer *timer, void *opaque) {
   (void)runtime; (void)timer; ++*(unsigned *)opaque;
 }
+static char schedule_order[4];static unsigned schedule_calls;static int schedule_invalid;
+static void scheduled(qaplet_runtime *r,const qaplet_timer *t,void *p) {
+  char value=*(const char *)p;
+  if (schedule_calls<sizeof(schedule_order)) schedule_order[schedule_calls++]=value;
+  if (value=='I' && schedule_calls==1) timer_clock+=27000000;
+  else if (value=='I' && qaplet_timer_cancel(r,t,NULL)!=QAPLET_OK) schedule_invalid=1;
+}
+static int schedule_clock_contract(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config c=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *r=NULL;qaplet_timer t=QAPLET_TIMER_INIT;qaplet_progress p=QAPLET_PROGRESS_INIT;
+  qaplet_timer_snapshot timers=QAPLET_TIMER_SNAPSHOT_INIT;
+  CHECK(qaplet_create_m2(&b,&c,&r,NULL)==QAPLET_OK);
+  timer_clock=1000000000;
+  CHECK(qaplet_interval_create(r,10,scheduled,"I",&t,NULL)==QAPLET_OK);
+  CHECK(qaplet_timer_create(r,10,scheduled,"A",&t,NULL)==QAPLET_OK);
+  CHECK(qaplet_timer_create(r,10,scheduled,"B",&t,NULL)==QAPLET_OK);
+  timer_clock+=47000000;
+  CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK && schedule_calls==3 && !memcmp(schedule_order,"IAB",3));
+  CHECK(qaplet_get_timer_snapshot(r,&timers,NULL)==QAPLET_OK && timers.current==1 && !timers.ready && timers.next_timeout_ms==6);
+  CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK && !p.progressed && schedule_calls==3);
+  timer_clock=1079000000;
+  CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK && !p.progressed && schedule_calls==3);
+  timer_clock=1080000000;
+  CHECK(qaplet_pump(r,&p,NULL)==QAPLET_OK && p.progressed && schedule_calls==4 && !memcmp(schedule_order,"IABI",4) && !schedule_invalid);
+  CHECK(qaplet_get_timer_snapshot(r,&timers,NULL)==QAPLET_OK && !timers.current);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK);timer_clock=0;
+  CHECK(qaplet_destroy(r,NULL)==QAPLET_OK);
+  return 0;
+}
 static int timer_faults(void) {
   qaplet_config base = QAPLET_CONFIG_INIT;
   qaplet_m2_config config = QAPLET_M2_CONFIG_INIT;
@@ -525,10 +554,12 @@ int main(void) {
   CHECK(!notification_overlap());
   CHECK(!notification_reentry());
   CHECK(!timer_faults());
+  CHECK(!schedule_clock_contract());
   CHECK(!wait_faults());
   puts("controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass");
   puts("controlled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass");
   puts("controlled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass");
   puts("controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass");
+  puts("controlled M2 scheduling: same deadline acceptance FIFO; interval skips late periods on original schedule without burst; self cancel: pass");
   return 0;
 }
