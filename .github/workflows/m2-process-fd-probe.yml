@@ -1,0 +1,34 @@
+{
+  "name": "Temporary Darwin FD ABI experiment",
+  "on": {"push": {"branches": ["codex/m2-13-fd-probe"]}},
+  "permissions": {"contents": "read", "actions": "read"},
+  "jobs": {
+    "producer": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"name": "Read exact pinned-input cache", "uses": "actions/cache/restore@v4", "with": {"path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2", "key": "locked-inputs-v1-${{ hashFiles('toolchains/qaplet.lock.json') }}"}},
+        {"name": "Explicit locked archive acquisition", "env": {"GH_TOKEN": "${{ github.token }}"}, "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/fd-probe/acquisition.json"},
+        {"name": "Populate and verify exact toolchain", "run": "make toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/fd-probe/inputs"},
+        {"name": "Acquire locked packer sources", "run": "python scripts/ape_helpers.py fetch --report out/fd-probe/inputs/helpers.json"},
+        {"name": "Ubuntu-build and audit one fat OS probe", "run": "python scripts/m2_process_fd_probe.py build --output-dir out/fd-probe/artifacts --report out/fd-probe/build.json"},
+        {"name": "Preserve producer and failures", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "fd-probe-producer-${{ github.sha }}", "path": "out/fd-probe/", "if-no-files-found": "error", "retention-days": 7}}
+      ]
+    },
+    "darwin": {
+      "needs": ["producer"],
+      "runs-on": "${{ matrix.runner }}",
+      "timeout-minutes": 10,
+      "strategy": {"fail-fast": false, "matrix": {"include": [{"runner": "macos-15-intel", "arch": "x86_64"}, {"runner": "macos-15", "arch": "aarch64"}]}},
+      "steps": [
+        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
+        {"uses": "actions/download-artifact@v8", "with": {"name": "fd-probe-producer-${{ github.sha }}", "path": "out/fd-probe-supplied"}},
+        {"name": "Consume same supplied APE and official loader", "run": "python scripts/m2_process_fd_probe.py run --build-report out/fd-probe-supplied/build.json --artifact out/fd-probe-supplied/artifacts/fd-probe.com --loader-dir out/fd-probe-supplied/artifacts --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/fd-probe-native/${{ matrix.runner }}/run.json"},
+        {"name": "Preserve native facts and failures", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "fd-probe-native-${{ matrix.runner }}-${{ github.sha }}", "path": "out/fd-probe-native/", "if-no-files-found": "error", "retention-days": 7}}
+      ]
+    }
+  }
+}
