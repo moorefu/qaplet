@@ -7,10 +7,12 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
 #include "libc/dce.h"
@@ -25,6 +27,17 @@ static char executable[PATH_MAX],root[PATH_MAX],cwd[PATH_MAX],native_cwd[PATH_MA
 static const char *special[]={"","参数 空格","two words","quote\"double","slash\\tail\\","literal&|;$()<>*","apostrophe'"};
 static qaplet_string arguments[16];
 static double milliseconds(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC,&ts); return ts.tv_sec*1000.0+ts.tv_nsec/1000000.0; }
+static qaplet_code spawn_ok(qaplet_runtime *r,const qaplet_process_options *options,qaplet_process *p,qaplet_process_status *status,qaplet_diagnostic *diagnostic) {
+  qaplet_code code=qaplet_process_spawn(r,options,p,status,diagnostic);
+  if (code!=QAPLET_OK) {
+    int saved_errno=errno;struct rlimit limits={0};int result=getrlimit(RLIMIT_NOFILE,&limits),limit_error=result ? errno : 0;
+    fprintf(stderr,"process spawn failure: return_code=%d status_code=%d error_domain=%u native_error=%d helper_active=%u nofile_result=%d nofile_error=%d nofile_soft=%llu nofile_hard=%llu int_max=%d\n",
+      code,status->code,status->error_domain,status->error,status->helper_active,result,limit_error,
+      (unsigned long long)limits.rlim_cur,(unsigned long long)limits.rlim_max,INT_MAX);
+    errno=saved_errno;
+  }
+  return code;
+}
 static int copy_file(const char *from,const char *to) {
   int in=open(from,O_RDONLY|O_CLOEXEC),out=open(to,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,0700);
   CHECK(in>=0 && out>=0); char data[16384]; ssize_t n;
@@ -68,16 +81,16 @@ static int inputs(void) {
   qaplet_process_options o; prepare(&o,"--snapshot");
   o.path.data=strrchr(executable,'/')+1; o.path.length=strlen(o.path.data);
   qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
-  CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_OK); CHECK(!completed(r,&p,37));
+  CHECK(spawn_ok(r,&o,&p,&s,NULL)==QAPLET_OK); CHECK(!completed(r,&p,37));
   prepare(&o,"--check");
   char envcwd[PATH_MAX+32]; snprintf(envcwd,sizeof(envcwd),"QAPLET_CWD=%s",native_cwd);
   qaplet_string env[]={ {"QAPLET_ONLY=完整 值",strlen("QAPLET_ONLY=完整 值")},{envcwd,strlen(envcwd)} };
   o.flags=QAPLET_PROCESS_REPLACE_ENV; o.env=env; o.env_count=2;
-  CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_OK);
+  CHECK(spawn_ok(r,&o,&p,&s,NULL)==QAPLET_OK);
   memset(envcwd,'?',strlen(envcwd)); arguments[0]=(qaplet_string){"modified",8};
   CHECK(!completed(r,&p,37));
   prepare(&o,"--empty"); o.flags=QAPLET_PROCESS_REPLACE_ENV;
-  CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_OK); CHECK(!completed(r,&p,37));
+  CHECK(spawn_ok(r,&o,&p,&s,NULL)==QAPLET_OK); CHECK(!completed(r,&p,37));
   CHECK(!finish(r)); unsetenv("QAPLET_AFTER_CREATE"); unsetenv("QAPLET_SNAPSHOT");
   puts("M2 process inputs: explicit Unicode path; copied argv/env/cwd; factory snapshot and complete replacement; actual exit/reap: pass"); return 0;
 }
@@ -100,7 +113,7 @@ static int inherit(void) {
   qaplet_process_options o; prepare(&o,"--inherit"); for (int i=0;i<3;++i) o.stdio[i]=QAPLET_PROCESS_INHERIT;
   arguments[IsWindows() ? 2 : 4]=(qaplet_string){identity,strlen(identity)};
   qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
-  qaplet_code code=qaplet_process_spawn(r,&o,&p,&s,NULL);
+  qaplet_code code=spawn_ok(r,&o,&p,&s,NULL);
   for(int i=0;i<3;++i) { CHECK(dup2(saved[i],i)==i); close(saved[i]); close(io[i][i ? 1 : 0]); }
   CHECK(code==QAPLET_OK);
   const unsigned char input[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'};
@@ -158,7 +171,7 @@ static int hanging(qaplet_runtime *r,qaplet_process *p) {
   int in[2],out[2],savein=dup(0),saveout=dup(1); CHECK(savein>=0 && saveout>=0 && !pipe2(in,O_CLOEXEC) && !pipe2(out,O_CLOEXEC));
   CHECK(dup2(in[0],0)==0 && dup2(out[1],1)==1);
   qaplet_process_options o; prepare(&o,"--hang"); o.stdio[0]=o.stdio[1]=QAPLET_PROCESS_INHERIT;
-  qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT; qaplet_code code=qaplet_process_spawn(r,&o,p,&s,NULL);
+  qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT; qaplet_code code=spawn_ok(r,&o,p,&s,NULL);
   CHECK(dup2(savein,0)==0 && dup2(saveout,1)==1); close(savein);close(saveout);close(in[0]);close(out[1]);
   CHECK(code==QAPLET_OK); char byte=0; CHECK(read(out[0],&byte,1)==1 && byte=='R'); close(out[0]);
   /* Parent keeps input open until the process is reaped. This explicit gate
@@ -248,7 +261,7 @@ static int ledger(void) {
     CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK);
     qaplet_process_options o; prepare(&o,"--empty"); o.flags=QAPLET_PROCESS_REPLACE_ENV;
     qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
-    CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+    CHECK(spawn_ok(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
     CHECK(status.reaped && !status.delivered && status.referenced);
     qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
     CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && drive.progressed);
@@ -257,12 +270,12 @@ static int ledger(void) {
     CHECK(qaplet_process_get_status(r,&p,&status,NULL)==QAPLET_OK && status.delivered && !status.referenced);
     CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
     if (pending) {
-      CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+      CHECK(spawn_ok(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
       CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_DISPATCH_LIMIT);
       CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_DISPATCH_LIMIT && snapshot.execution_dispatches==1);
     } else {
       qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
-      CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK);
+      CHECK(spawn_ok(r,&o,&p,&status,NULL)==QAPLET_OK);
       CHECK(qaplet_process_set_ref(r,&p,0,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
       CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && !drive.progressed);
       CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.progressed);
@@ -290,7 +303,7 @@ static int scheduling(void) {
   qaplet_process_options o; prepare(&o,"--empty");o.flags=QAPLET_PROCESS_REPLACE_ENV;
   for(unsigned i=0;i<40;++i) {
     processes[i]=(qaplet_process)QAPLET_PROCESS_INIT;
-    CHECK(qaplet_process_spawn(r,&o,&processes[i],&status,NULL)==QAPLET_OK);
+    CHECK(spawn_ok(r,&o,&processes[i],&status,NULL)==QAPLET_OK);
     CHECK(!observed_exit(r,&processes[i],&status) && !status.delivered);
   }
   qaplet_work_task tasks[16];
@@ -344,12 +357,105 @@ static int identity(void) {
   qaplet_runtime *r=NULL,*other=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
   qaplet_process_options o;prepare(&o,"--empty");o.flags=QAPLET_PROCESS_REPLACE_ENV;
   qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
-  CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
+  CHECK(spawn_ok(r,&o,&p,&status,NULL)==QAPLET_OK && !observed_exit(r,&p,&status));
   qaplet_process old=p;CHECK(!completed(r,&p,37));
-  CHECK(qaplet_process_spawn(r,&o,&p,&status,NULL)==QAPLET_OK);
+  CHECK(spawn_ok(r,&o,&p,&status,NULL)==QAPLET_OK);
   CHECK(qaplet_process_get_status(r,&old,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_process_get_status(other,&p,&status,NULL)==QAPLET_INVALID_HANDLE);
   CHECK(!completed(r,&p,37) && !finish(r) && !finish(other));
   puts("M2 process identity: one-slot reuse; stale generation and cross-Runtime tokens refused; current child unaffected: pass");return 0;
+}
+typedef struct {
+  qaplet_runtime *runtime,*other;
+  qaplet_process process,stale;
+  _Atomic int ready,error,notifications,notify_error;
+} process_observer;
+static void query_notify(void *opaque) {
+  process_observer *o=opaque;
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  /* Deliberately violate the HostNotify rule to verify its TLS guard also
+   * rejects the otherwise thread-safe POD entry before acquiring a lock. */
+  if (qaplet_get_process_status(o->runtime,&o->process,&status,NULL)!=QAPLET_BUSY)
+    o->notify_error=1;
+  ++o->notifications;
+}
+static void *query_running(void *opaque) {
+  process_observer *o=opaque;
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  if (qaplet_get_process_status(o->runtime,&o->process,&status,NULL)!=QAPLET_OK ||
+      status.exited || status.reaped || status.delivered || !status.referenced || !status.helper_active)
+    o->error=1;
+  qaplet_process_status unchanged=status;
+  if (qaplet_process_get_status(o->runtime,&o->process,&status,NULL)!=QAPLET_WRONG_THREAD ||
+      qaplet_get_process_status(o->other,&o->process,&status,NULL)!=QAPLET_INVALID_HANDLE ||
+      qaplet_get_process_status(o->runtime,&o->stale,&status,NULL)!=QAPLET_INVALID_HANDLE ||
+      memcmp(&status,&unchanged,sizeof(status))) o->error=1;
+  return NULL;
+}
+static void *query_released(void *opaque) {
+  process_observer *o=opaque;
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  if (qaplet_get_process_status(o->runtime,&o->process,&status,NULL)!=QAPLET_OK ||
+      !status.reaped || !status.delivered || status.referenced) { o->error=1; o->ready=1; return NULL; }
+  o->ready=1;
+  double until=milliseconds()+5000;
+  qaplet_code code;
+  do {
+    qaplet_process_status previous=status;
+    code=qaplet_get_process_status(o->runtime,&o->process,&status,NULL);
+    if (code==QAPLET_INVALID_HANDLE) {
+      if (memcmp(&previous,&status,sizeof(status))) o->error=1;
+      return NULL;
+    }
+    if (code!=QAPLET_OK || !status.reaped || !status.delivered || status.referenced) { o->error=1; return NULL; }
+    sched_yield();
+  } while (milliseconds()<until);
+  o->error=1; return NULL;
+}
+static int query(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+  m.limits.processes=1;
+  qaplet_runtime *r=NULL,*other=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
+  process_observer observer={0};observer.runtime=r;observer.other=other;
+  qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=query_notify;hook.userdata=&observer;
+  CHECK(qaplet_set_host_notify(r,&hook,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(r,"42",2,&progress,NULL)==QAPLET_OK);
+  qaplet_process p=QAPLET_PROCESS_INIT;int gate=hanging(r,&p);CHECK(gate>=0);
+  observer.process=p;observer.stale=p;++observer.stale.generation;
+  pthread_t thread;CHECK(!pthread_create(&thread,NULL,query_running,&observer) && !pthread_join(thread,NULL) && !observer.error);
+  CHECK(!close(gate));
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  double until=milliseconds()+5000;
+  do {
+    CHECK(qaplet_get_process_status(r,&p,&status,NULL)==QAPLET_OK);
+    if (status.reaped) break;
+    sched_yield();
+  } while(milliseconds()<until);
+  CHECK(status.exited && status.reaped && status.native_exit_code==37 && !status.code &&
+        !status.delivered && status.referenced && status.helper_active);
+  qaplet_process_snapshot snapshot=QAPLET_PROCESS_SNAPSHOT_INIT;
+  CHECK(qaplet_get_process_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.referenced==1 &&
+        !snapshot.completed && snapshot.helper_threads==1);
+  qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(!observed_exit(r,&p,&status));
+  CHECK(!pthread_create(&thread,NULL,query_released,&observer));
+  while (!observer.ready) sched_yield();
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && !pthread_join(thread,NULL) && !observer.error);
+  qaplet_process_options options;prepare(&options,"--empty");options.flags=QAPLET_PROCESS_REPLACE_ENV;
+  qaplet_process next=QAPLET_PROCESS_INIT;
+  CHECK(spawn_ok(r,&options,&next,&status,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_process_status(r,&p,&status,NULL)==QAPLET_INVALID_HANDLE &&
+        qaplet_get_process_status(r,&next,&status,NULL)==QAPLET_OK);
+  CHECK(!completed(r,&next,37));
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_process_status(r,&next,&status,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(!finish(r) && !finish(other));
+  CHECK(observer.notifications && !observer.notify_error);
+  puts("M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass");return 0;
 }
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
@@ -389,7 +495,7 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
-  int result=!strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

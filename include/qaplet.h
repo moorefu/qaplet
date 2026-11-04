@@ -405,7 +405,8 @@ qaplet_code qaplet_wake(qaplet_runtime *, qaplet_diagnostic *);
 qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
                           qaplet_drive_result *, qaplet_diagnostic *);
 
-/* Direct-child process subset. All operations below belong to the owner.
+/* Direct-child process subset. Mutations and get_status belong to the owner;
+ * qaplet_get_process_status and qaplet_get_process_snapshot are POD queries.
  * argv includes argv[0]; path never searches PATH/PATHEXT or invokes a shell.
  * REPLACE_ENV makes env a complete KEY=VALUE mapping, including an empty one;
  * otherwise the M2 factory's environment snapshot is used. Strings reject NUL.
@@ -462,6 +463,11 @@ typedef struct {
 qaplet_code qaplet_process_spawn(qaplet_runtime *, const qaplet_process_options *,
     qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
 qaplet_code qaplet_process_get_status(qaplet_runtime *, const qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
+/* Any thread: synchronized token-level POD copy only. No collection, join,
+ * owner delivery, JS or Host callback. Runtime/generation/released tokens are
+ * checked under the copy lock. Close invalidates results, so CLOSED queries
+ * return INVALID_HANDLE; the Host must join all callers before destroy. */
+qaplet_code qaplet_get_process_status(qaplet_runtime *, const qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
 qaplet_code qaplet_process_set_ref(qaplet_runtime *, const qaplet_process *, uint32_t, qaplet_diagnostic *);
 qaplet_code qaplet_process_release(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
 /* Thread-safe POD query, including CLOSED. */
