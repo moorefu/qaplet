@@ -75,6 +75,21 @@ consumer 未给显式 loader-dir 而 blocked，保存为 `linux.json`；补齐�
 Windows 只消费同字节。一次性 driver 对自身及仓库导入前后源码作 SHA-256
 核对并嵌入报告；工作树 dirty 状态原样记录。
 
+`5e7a44e` 的 `out/m2-08/final/` 完整候选已经验收：Linux153/153、Windows
+152 pass和1既有optional symlink blocked、两宿主包外39/39、两宿主受控
+故障2/2、dev check369（177实际执行、192条件skip）及bootstrap通过。
+`handoff.json` 核对70项当前RECIPE raw==该提交Git blob、全部LF；两archive
+各14个ELF64 REL成员，machine62/183；密封包全部当前成员逐一核对；能力mask
+4161535及21个名称一致。SDK recipe为
+`ccc2f6dfe0e76a626cc179722a741d937458b0a3fc95fbae387037f88e932ea2`，
+SDK identity为 `8c2ec660feba4c3e64f3f60fdf0e3a7ffba60dc0168b478348721ace497f07b5`，
+原ZIP为 `54f7a41eb5e0a3db6acd0d39e4a69585d016f96b456939135b0335984c88b171`。
+producer的dirty=true保持原样。
+
+该候选在root准备合入独立票10文件夹具修复时封存，不覆盖或改写为修复后
+成绩。票08不将13作为新blocker；仅合入实际最新integration，随后用新目录
+重新供应当前统一配方。后续Process会复用同一完成类别与32单元预算。
+
 本票尚未完成当前五原生、实际64K和新 Full 严格集成验收。票10已知 Windows
 文件夹具及票02探针缺口由独立修复处理，不能把旧 Full 的失败归因或改写成
 本票调度成绩。当前仍为 claimed / in_progress，不关闭本票、父 M2 或发布门禁。
