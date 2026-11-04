@@ -189,3 +189,24 @@ hard无限绿、370项177实际193skip及bootstrap通过。77 raw/Gitblob/LF、Z
 临时workflow只留实验branch；ARM实验loader不同于早报的限定保留。继续等当前产品
 Mac SDK原生完整链和实际64K新Full，旧失败/独立guest输入503不改标；13仍in_progress，
 14未放行，不派发整体Review或签发父M2/T03/发布。
+
+2026-11-05（继续核验）：Mac 修复已由独立 merger 合入 `91b9a51`，对应 Full
+`41848288564` 的五原生公开 SDK 严格原件共850/850通过，包含 Process50、任意线程
+query5、Work100及新增取消35；package46/fault2、双archive各15、ZIP79、三APE与能力
+名称均通过。该轮实际64K仍因固定输入三次HTTP503而为0，M0 Full235及三个guest
+journal/seal没有成功原件，故11/13均未关闭。详主 `out/qaplet-m2/full-91b9a51/HANDOFF.md`。
+
+固定 guest 输入供给已独立合入 `94cda36`，data-only commit `c67014e` 单独保留、
+不合入产品；七份原始输入共24,773,729字节，经原签名链与锁验证后供给原fetch。
+这不是新HTTP200，也不是guest执行。用户已明确批准本次M2的codex/*推送与CI，
+当前 Full `41859852472` 对应94c；三非Mac原生严格510/510，两Mac仍排队，page
+job尚未创建。新的独立消费者 `.cache/worktrees/m2-consumer-94cda36` 以raw LF
+冻结当前79项Python，当前审计在 `out/qaplet-m2/full-94cda36/`，未借旧原件补缺。
+
+等待期间，公开同字节SDK的最小真实NOFILE诊断复现fixture准备缺口：inherit在
+soft1024/hard1048576与soft1024/hard4096均于SDK调用前的F_DUPFD断言失败，
+soft16384的inherit与soft1024的inputs通过，四项均无timeout。实际guest限额未知，
+不能称产品或64K失败。原件 `out/qaplet-m2/nofile-fixture-probe/README.md`；fresh
+`codex/m2-13-nofile-fixture` 独立修复准备阶段，保留高FD、降soft256和完整继承断言。
+旧11/13初始/13查询out已归档核验后移除，源码、分支和当前Mac供应保留；恢复映射见
+`out/qaplet-m2/inactive-output-storage/RESTORE.md`。父M2与最终T03、整体Review未完成。
