@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 #define _COSMO_SOURCE 1
 #include "qaplet.h"
+/* Product-private drive boundary; this is not an Embed SDK API. It uses run's
+ * automatic liveness rules and returns before the first independent delivery
+ * can replace the completed entry result that the CLI must copy. */
+qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
@@ -113,7 +117,7 @@ int main(int argc, char **argv) {
                           qaplet_eval(runtime,input,strlen(input),&progress,&diagnostic);
   int unsettled=0;
   while (!code && progress.phase==QAPLET_PHASE_PENDING) {
-    code=qaplet_run_once(runtime,0,&drive,&diagnostic);
+    code=qaplet_drive_entry(runtime,&drive,&diagnostic);
     progress.phase=drive.phase;
     if (!code && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY) { unsettled=1; break; }
   }
