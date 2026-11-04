@@ -8,8 +8,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr,"work system seam line %d: %s\n",__LINE__,#c); return 1; } } while (0)
 static int fail_allocation, fail_thread, fail_join, fail_send, executions;
+/* Exercise the shipped file consumer when no global /tmp has been supplied.
+ * The redirected parent is deliberately absent below a directory we own;
+ * mkstemp itself remains the real OS operation. Relative fixtures are untouched. */
+static char unavailable_tmp[128];
+int sdk_work(const char *);
+int __real_mkstemp(char *);
+int __wrap_mkstemp(char *path) {
+  return __real_mkstemp(!strncmp(path,"/tmp/",5) ? unavailable_tmp : path);
+}
 void *__real_calloc(size_t,size_t);
 void *__wrap_calloc(size_t n,size_t size) {
   if (fail_allocation) { fail_allocation=0;errno=ENOMEM;return NULL; }
@@ -58,6 +68,11 @@ static int finish(qaplet_runtime *runtime) {
   CHECK(qaplet_destroy(runtime,NULL)==QAPLET_OK);return 0;
 }
 int main(void) {
+  char directory[]="./qaplet-work-no-tmp-XXXXXX";
+  CHECK(mkdtemp(directory));
+  CHECK(snprintf(unavailable_tmp,sizeof(unavailable_tmp),"%s/absent/work-XXXXXX",directory)>0);
+  CHECK(!sdk_work("--m2-work-file"));
+  CHECK(!rmdir(directory));
   qaplet_runtime *runtime=NULL;qaplet_work_task task=QAPLET_WORK_TASK_INIT;unsigned char input=17;
   CHECK(!make(&runtime));fail_thread=1;
   CHECK(qaplet_work_submit(runtime,"copy",4,&input,1,&task,NULL)==QAPLET_HOST_ERROR && !task.runtime_id);
