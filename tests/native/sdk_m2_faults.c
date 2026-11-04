@@ -363,6 +363,9 @@ static int timer_faults(void) {
   CHECK(qaplet_destroy(runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
   timer_clock = 1000000000; advance_timer_clock = 1;
+  CHECK(qaplet_timer_create(runtime, 1000, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
+  CHECK(qaplet_run_once(runtime, 1, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT && !calls);
+  CHECK(qaplet_timer_cancel(runtime, &timer, NULL) == QAPLET_OK);
   CHECK(qaplet_timer_create(runtime, 5, timer_observed, &calls, &timer, NULL) == QAPLET_OK);
   CHECK(qaplet_run_once(runtime, 2, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT && !calls);
   CHECK(qaplet_run_once(runtime, 100, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_PROGRESS && calls == 1);

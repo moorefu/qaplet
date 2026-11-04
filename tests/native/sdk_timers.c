@@ -4,12 +4,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "timer contract line %d: %s\n", __LINE__, #c); return 1; } } while (0)
-typedef struct { pthread_t owner; unsigned calls; int valid, self_cancel, reserved; } observed;
+static uint64_t monotonic_ns(void) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now)) return 0;
+  return (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec;
+}
+typedef struct { pthread_t owner; unsigned calls; int valid, self_cancel, reserved; uint64_t delivered_ns; } observed;
 static void delivered(qaplet_runtime *runtime, const qaplet_timer *timer, void *opaque) {
   (void)runtime; (void)timer;
   observed *state = opaque;
-  ++state->calls; state->valid = pthread_equal(state->owner, pthread_self());
+  ++state->calls; state->delivered_ns = monotonic_ns();
+  state->valid = state->delivered_ns && pthread_equal(state->owner, pthread_self());
   qaplet_progress progress = QAPLET_PROGRESS_INIT;
   state->valid &= qaplet_eval(runtime, "1", 1, &progress, NULL) == QAPLET_BUSY &&
     qaplet_pump(runtime, &progress, NULL) == QAPLET_BUSY && qaplet_close(runtime, NULL) == QAPLET_BUSY &&
@@ -52,7 +59,7 @@ int sdk_timers(const char *mode, const char *modules) {
   qaplet_runtime *runtime = NULL;
   qaplet_timer timer = QAPLET_TIMER_INIT;
   qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
-  observed state = {pthread_self(), 0, 0};
+  observed state = {.owner = pthread_self()};
   if (!strcmp(mode, "--m2-timers-limits")) config.limits.timers = 1;
   if (!strcmp(mode, "--m2-timers-jobs")) base.limits.pump_jobs = 1;
   if (!strcmp(mode, "--m2-timers-deadline")) base.limits.execution_timeout_ms = 10;
@@ -74,9 +81,21 @@ int sdk_timers(const char *mode, const char *modules) {
     CHECK(qaplet_timer_create(runtime, 0, delivered, &state, &timer, NULL) == QAPLET_OK);
     CHECK(qaplet_timer_ref(runtime, &timer, 0, NULL) == QAPLET_OK);
     CHECK(qaplet_run_once(runtime, 0, &drive, NULL) == QAPLET_OK && drive.progressed && state.calls == 2);
+    uint64_t registered_ns = monotonic_ns();
+    CHECK(registered_ns);
     CHECK(qaplet_timer_create(runtime, 15, delivered, &state, &timer, NULL) == QAPLET_OK);
-    CHECK(qaplet_run_once(runtime, 1, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT && state.calls == 2);
-    CHECK(qaplet_run_once(runtime, 1000, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_PROGRESS && state.calls == 3);
+    CHECK(qaplet_run_once(runtime, 1, &drive, NULL) == QAPLET_OK);
+    if (state.calls == 2) {
+      qaplet_timer_snapshot waiting = QAPLET_TIMER_SNAPSHOT_INIT;
+      CHECK(drive.reason == QAPLET_DRIVE_WAIT_TIMEOUT);
+      CHECK(qaplet_get_timer_snapshot(runtime, &waiting, NULL) == QAPLET_OK && waiting.current == 1 && waiting.referenced == 1);
+      CHECK(qaplet_run_once(runtime, 1000, &drive, NULL) == QAPLET_OK && drive.reason == QAPLET_DRIVE_PROGRESS && state.calls == 3);
+    } else {
+      /* The wait budget is not a hard wall-clock limit: scheduler suspension
+       * or an OS wait overrun may cross the accepted timer deadline. */
+      CHECK(drive.reason == QAPLET_DRIVE_PROGRESS && state.calls == 3);
+    }
+    CHECK(state.valid && state.delivered_ns >= registered_ns + UINT64_C(15000000));
     CHECK(qaplet_timer_create(runtime, 5000, delivered, &state, &timer, NULL) == QAPLET_OK);
     CHECK(qaplet_request_stop(runtime, NULL) == QAPLET_OK);
     CHECK(qaplet_run(runtime, &drive, NULL) == QAPLET_EXECUTION_STOPPED && state.calls == 3);
