@@ -52,11 +52,10 @@
 
 ## Comments
 
-2026-11-04（集成验收）：`e742c76` / Full `41812117094` completed/success，11 jobs 全成功。当前 SDK 五原生各153/合计765、实际 ARM64/64K 153、包外39（application8/work13/scheduler18）、独立 core+work fault2、双 archive 各14 ELF64 REL 及当前 M0 Full235 严格重放通过，必需缺口0。70 SDK+9 eval 原字节、29 provider 原ZIP/12 nested/11 job日志、两 guest journal/seal 和消费闭包前后身份均已核验；root 再核9份收据文件摘要及计数，见主 `out/qaplet-m2/full-e742c76/HANDOFF.md`、`verify/scope-summary.json`、`08-acceptance-check.json`、`root-scope-acceptance.json`。GC 实际 payload 是65,536,000字节/62.5MiB，4MiB heap 下六目标公开合同均通过，不沿用源码注释的约称64MiB。按本票范围 resolved；12 仍等待11，最终混合矩阵/长测、父M2及发布未完成。
-
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-04：07 已取得当前五原生/实际64K严格闭包并 resolved，领取 `codex/m2-08-scheduling` / `.cache/worktrees/m2-08`。当前集成已含10的真实C WorkPool候选，需在已有 work/timer/event 持久轮转上加入immediate，保留完整jobs检查点、累计账本和统一timer/immediate额度；10本身仍等待独立新Full，不能将其合入当作完成。
 
 2026-11-04：本地实现完成，合入实际integration `166ab50` 的票10文件夹具修复后，以产品 `bc5fc49` 重新正式供应。Linux153、Windows152+旧optional1、双宿主包外39/故障2、Ubuntu完整check369及bootstrap全部通过。八项新增公开合同和受控clock证明interval原计划跳过、FIFO/下一pump、真实cycle GC不取消、单pump/跨pump四类32单元轮转、完整rejection检查点和累计账本。70项当前recipe raw/Git blob/LF、双archive14成员及包成员身份统一，producer dirty=true原样保留。详[本票验证](../08-scheduling-validation.md)与本树`out/m2-08/final-filefix/handoff.json`。以上勾选表示已实现并完成局部正负验收；保持claimed/awaiting_cross，当前五原生/实际64K/新Full由root签发后再resolved，不外推最终T03或父M2。
 
+2026-11-04（集成验收）：`e742c76` / Full `41812117094` completed/success，11 jobs 全成功。当前 SDK 五原生各153/合计765、实际 ARM64/64K 153、包外39（application8/work13/scheduler18）、独立 core+work fault2、双 archive 各14 ELF64 REL 及当前 M0 Full235 严格重放通过，必需缺口0。70 SDK+9 eval 原字节、29 provider 原ZIP/12 nested/11 job日志、两 guest journal/seal 和消费闭包前后身份均已核验；root 再核9份收据文件摘要及计数，见主 `out/qaplet-m2/full-e742c76/HANDOFF.md`、`verify/scope-summary.json`、`08-acceptance-check.json`、`root-scope-acceptance.json`。GC 实际 payload 是65,536,000字节/62.5MiB，4MiB heap 下六目标公开合同均通过，不沿用源码注释的约称64MiB。按本票范围 resolved；12 仍等待11，最终混合矩阵/长测、父M2及发布未完成。
