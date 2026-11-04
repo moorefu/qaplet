@@ -24,7 +24,7 @@ typedef enum {
   QAPLET_HOST_ERROR = 19, QAPLET_NO_HANDLER = 20, QAPLET_QUEUE_FULL = 21,
   QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23,
   QAPLET_RESOURCE_LIMIT = 24, QAPLET_INVALID_HANDLE = 25,
-  QAPLET_CONTROL_FAILURE = 26,
+  QAPLET_CONTROL_FAILURE = 26, QAPLET_PROCESS_ERROR = 27,
   QAPLET_CANCELLED = 28, QAPLET_ALREADY_COMPLETED = 29
 } qaplet_code;
 typedef enum {
@@ -55,6 +55,7 @@ enum {
   QAPLET_CAP_M2_WORK = 1u << 21,
   QAPLET_CAP_M2_TIMERS = 1u << 19,
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
+  QAPLET_CAP_PROCESS = 1u << 22,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -206,7 +207,7 @@ typedef enum {
 } qaplet_native_state;
 
 typedef enum {
-  QAPLET_ERROR_DOMAIN_NONE, QAPLET_ERROR_DOMAIN_ERRNO
+  QAPLET_ERROR_DOMAIN_NONE, QAPLET_ERROR_DOMAIN_ERRNO, QAPLET_ERROR_DOMAIN_WIN32
 } qaplet_error_domain;
 typedef enum {
   QAPLET_ROLLBACK_NONE, QAPLET_ROLLBACK_COMPLETE, QAPLET_ROLLBACK_INCOMPLETE
@@ -403,6 +404,68 @@ qaplet_code qaplet_wake(qaplet_runtime *, qaplet_diagnostic *);
  * producers must still be withdrawn and joined before final destroy. */
 qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
                           qaplet_drive_result *, qaplet_diagnostic *);
+
+/* Direct-child process subset. All operations below belong to the owner.
+ * argv includes argv[0]; path never searches PATH/PATHEXT or invokes a shell.
+ * REPLACE_ENV makes env a complete KEY=VALUE mapping, including an empty one;
+ * otherwise the M2 factory's environment snapshot is used. Strings reject NUL.
+ * Relative path/cwd resolve against the immutable Runtime cwd.
+ * PIPE (the default) is explicitly UNSUPPORTED until the pipe capability exists.
+ * INHERIT borrows Host C descriptors 0/1/2; IGNORE uses a null endpoint.
+ * Windows duplicates those descriptor handles independently of GetStdHandle.
+ * Spawn copies input before acceptance. Ordinary OS errors preserve the entry
+ * result and leave the Runtime OPEN. Native errors are returned in status.
+ * Exit/reap, owner delivery and physical helper-thread exit are separate facts.
+ * get_status observes native facts and performs nonblocking native retirement;
+ * only owner drive hands completion over and disarms its default ref. Pure C
+ * handoff creates no JS execution; an active entry keeps its cumulative ledger.
+ * release is BUSY until reaped; completed records retain process capacity until
+ * release or close, and physical cleanup retains capacity until helper join.
+ * Helpers share the finite instance helper/stack/handle/registration budgets.
+ * Close initiates force termination/reap of direct children. Host must not reap
+ * SDK children or enable automatic child reaping. If native identity is lost,
+ * SDK never signals that retired PID and retains cleanup error/BUSY ownership.
+ * No process-tree, graceful-signal or pipe/EOF contract is implied. */
+typedef enum { QAPLET_PROCESS_PIPE, QAPLET_PROCESS_INHERIT, QAPLET_PROCESS_IGNORE } qaplet_process_stdio;
+enum { QAPLET_PROCESS_REPLACE_ENV = 1u << 0 };
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t runtime_id, slot, generation;
+} qaplet_process;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t flags;
+  qaplet_string path, cwd;
+  const qaplet_string *argv, *env;
+  size_t argc, env_count;
+  uint32_t stdio[3], reserved;
+} qaplet_process_options;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_code code;
+  uint32_t error_domain;
+  int32_t error;
+  uint32_t exited, reaped, delivered, referenced, helper_active;
+  uint32_t native_exit_code, native_signal;
+  int32_t raw_wait_status;
+} qaplet_process_status;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t processes, processes_peak, referenced, retained_results;
+  uint64_t helper_threads, helper_threads_peak, helper_stack_bytes, helper_stack_bytes_peak;
+  uint64_t environment_bytes, accepted, completed;
+} qaplet_process_snapshot;
+#define QAPLET_PROCESS_INIT {sizeof(qaplet_process), QAPLET_ABI_VERSION, 0, 0, 0}
+#define QAPLET_PROCESS_OPTIONS_INIT {sizeof(qaplet_process_options), QAPLET_ABI_VERSION, 0, {NULL,0}, {NULL,0}, NULL, NULL, 0, 0, {0}, 0}
+#define QAPLET_PROCESS_STATUS_INIT {sizeof(qaplet_process_status), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define QAPLET_PROCESS_SNAPSHOT_INIT {sizeof(qaplet_process_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+qaplet_code qaplet_process_spawn(qaplet_runtime *, const qaplet_process_options *,
+    qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
+qaplet_code qaplet_process_get_status(qaplet_runtime *, const qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
+qaplet_code qaplet_process_set_ref(qaplet_runtime *, const qaplet_process *, uint32_t, qaplet_diagnostic *);
+qaplet_code qaplet_process_release(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
+/* Thread-safe POD query, including CLOSED. */
+qaplet_code qaplet_get_process_snapshot(qaplet_runtime *, qaplet_process_snapshot *, qaplet_diagnostic *);
 
 /* Named native work, M2 only. Declarations and names are copied atomically.
  * Zero byte/concurrency fields inherit the finite instance defaults. No

@@ -116,8 +116,8 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                 "Native argv/cwd required")
         artifact_path = original_path(artifacts[name]["path"], command["cwd"])
         modules = posixpath.dirname(artifact_path) + "/sdk/modules"
-        module_arguments = {i for i, value in enumerate(arguments) if "{modules}" in value}
-        arguments = [value.replace("{modules}", modules) for value in arguments]
+        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{launcher}"))}
+        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
         wanted = ([] if host["os"] == "Windows" else [normalized(loader["path"])]) + [artifact_path, *arguments]
         actual_argv = list(command["argv"])
         prefix = 1 if host["os"] == "Windows" else 2

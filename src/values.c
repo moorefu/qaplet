@@ -254,6 +254,7 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
         code == QAPLET_EXECUTION_STOPPED ? "EXECUTION_STOPPED" :
         code == QAPLET_RESOURCE_LIMIT ? "RESOURCE_LIMIT" : code == QAPLET_INVALID_HANDLE ? "INVALID_HANDLE" :
         code == QAPLET_CONTROL_FAILURE ? "CONTROL_FAILURE" :
+        code == QAPLET_PROCESS_ERROR ? "PROCESS_ERROR" :
         code == QAPLET_CANCELLED ? "CANCELLED" :
         code == QAPLET_ALREADY_COMPLETED ? "ALREADY_COMPLETED" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
