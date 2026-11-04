@@ -432,9 +432,11 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
   pthread_mutex_unlock(&r->mutex);
   if (code) goto rejected;
   if (!pool->slots) {
-    pool->slots=qaplet_native_alloc(r,metadata); if (!pool->slots) { code=QAPLET_MEMORY_LIMIT; goto rejected; }
-    memset(pool->slots,0,metadata); pool->slot_bytes=metadata;
-    pthread_mutex_lock(&r->mutex); ++r->native_retained; pthread_mutex_unlock(&r->mutex);
+    process_slot *slots=qaplet_native_alloc(r,metadata); if (!slots) { code=QAPLET_MEMORY_LIMIT; goto rejected; }
+    memset(slots,0,metadata);
+    pthread_mutex_lock(&r->mutex);
+    pool->slots=slots; pool->slot_bytes=metadata; ++r->native_retained;
+    pthread_mutex_unlock(&r->mutex);
   }
   char *data=qaplet_native_alloc(r,bytes);
   if (!data) { code=QAPLET_MEMORY_LIMIT; goto rejected; }
@@ -505,6 +507,21 @@ qaplet_code qaplet_process_get_status(qaplet_runtime *r,const qaplet_process *to
   qaplet_process_collect(r); pthread_mutex_lock(&r->mutex);
   process_slot *s=lookup_locked(r,token);
   if (!s) code=QAPLET_INVALID_HANDLE; else memcpy((char *)out+8,(char *)&s->status+8,sizeof(*out)-8);
+  pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
+}
+qaplet_code qaplet_get_process_status(qaplet_runtime *r,const qaplet_process *token,qaplet_process_status *out,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);
+  if (!code) code=qaplet_check_structure(token,sizeof(*token));
+  if (!code) code=qaplet_check_structure(out,sizeof(*out));
+  if (!code && !r) code=QAPLET_INVALID_ARGUMENT;
+  if (code) return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);
+  if (!r->m2_enabled) code=QAPLET_UNSUPPORTED;
+  else {
+    process_slot *s=lookup_locked(r,token);
+    if (!s) code=QAPLET_INVALID_HANDLE;
+    else memcpy((char *)out+8,(char *)&s->status+8,sizeof(*out)-8);
+  }
   pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
 }
 qaplet_code qaplet_process_set_ref(qaplet_runtime *r,const qaplet_process *token,uint32_t ref,qaplet_diagnostic *d) {
