@@ -224,7 +224,7 @@ static int abi_contract(void) {
       prefix.canary==UINT64_C(0x123456789abcdef0));
   struct { qaplet_abi value; uint64_t tail; } abi={QAPLET_ABI_INIT,0};
   abi.value.struct_size=sizeof(abi);
-  REQUIRE(qaplet_query_abi(&abi.value)==QAPLET_OK && abi.value.capabilities==5734399 && !abi.tail);
+  REQUIRE(qaplet_query_abi(&abi.value)==QAPLET_OK && abi.value.capabilities==6258687 && !abi.tail);
   abi.tail=1; REQUIRE(qaplet_query_abi(&abi.value)==QAPLET_ABI_MISMATCH);
   abi.tail=0; abi.value.abi_version=2; REQUIRE(qaplet_query_abi(&abi.value)==QAPLET_ABI_MISMATCH);
   qaplet_config config=QAPLET_CONFIG_INIT;

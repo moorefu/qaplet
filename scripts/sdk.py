@@ -32,6 +32,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 HOST_UNITS = (
     ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
     ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
+    ("tests/native/sdk_timers.c", "host-timers.c", "timers-host.o", "host-timers-compile"),
     ("tests/native/sdk_notify.c", "host-notify.c", "notify.o", "host-notify-compile"),
     ("tests/native/sdk_wait.c", "host-wait.c", "wait.o", "host-wait-compile"),
     ("tests/native/sdk_host.c", "host-contract.c", "embed.o", "host-compile"),
@@ -52,7 +53,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -74,7 +75,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 5734399, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 6258687, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -87,6 +88,16 @@ HOST_CASES = (
     ("m2-process-inputs", ["--m2-process-inputs", "{self}", "{launcher}"], "M2 process inputs: explicit Unicode path; copied argv/env/cwd; factory snapshot and complete replacement; actual exit/reap: pass\n"),
     ("m2-process-errors", ["--m2-process-errors", "{self}", "{launcher}"], "M2 process errors: strict UTF-8/NUL/limits; no PATH search; missing cwd/program native errors; result retained; safe rollback: pass\n"),
     ("m2-process-cleanup", ["--m2-process-cleanup", "{self}", "{launcher}"], "M2 process cleanup: default ref; independent process/helper/handle limits; unref stays alive; stop force/reap; close/quiesce/destroy: pass\n"),
+    ("m2-timers", ["--m2-timers"], "M2 timers: zero-delay asynchronous owner callback; exactly once; cleanup: pass\n"),
+    ("m2-timers-js", ["--m2-timers-js"], "M2 timer JS: registered callback advances entry Promise; cleanup: pass\n"),
+    ("m2-timers-tla", ["--m2-timers-tla", "{modules}"], "M2 timer TLA: real ESM entry waits and resumes; cleanup: pass\n"),
+    ("m2-timers-identity", ["--m2-timers-identity"], "M2 timer identity: Runtime/generation isolation; stale completion; ready/ref/deadline POD; cleanup: pass\n"),
+    ("m2-timers-liveness", ["--m2-timers-liveness"], "M2 timer liveness: DONE ref wait; unref run/pump/run_once; closest wait; stop retirement: pass\n"),
+    ("m2-timers-limits", ["--m2-timers-limits"], "M2 timer limits: count reuse; strict C delay; metadata total-storage precheck; rollback: pass\n"),
+    ("m2-timers-strict", ["--m2-timers-strict"], "M2 timer strict JS: finite safe integer only; no coercion hooks; deadline overflow; handle controls: pass\n"),
+    ("m2-timers-jobs", ["--m2-timers-jobs"], "M2 timer jobs: complete cross-pump checkpoints; ordinary error settles jobs; subsequent drive: pass\n"),
+    ("m2-timers-deadline", ["--m2-timers-deadline"], "M2 timer deadline: active entry absolute deadline bounds later timer; terminal retirement: pass\n"),
+    ("m2-timers-budget", ["--m2-timers-budget"], "M2 timer budget: active entry dispatch ledger accumulates across zero-wait drives; terminal cleanup: pass\n"),
     ("m2-notify", ["--m2-notify"], "M2 HostNotify: real Host socket wait; producer hints; copied FIFO; coalesced and redundant hints preserve 128 events; owner pump; joined cleanup: pass\n"),
     ("m2-notify-controls", ["--m2-notify-controls"], "M2 HostNotify controls: cross-thread stop wakes Host; silent hook cannot prevent internal wait/token release; independent instances; cleanup: pass\n"),
     ("m2-notify-registration", ["--m2-notify-registration"], "M2 HostNotify registration: M1 disabled; copied one-time declaration; ABI/tails/flags; owner thread; execution freeze; independent POD: pass\n"),
@@ -101,7 +112,7 @@ HOST_CASES = (
     ("m2-drive", ["--m2-drive"], "M2 drive: ready jobs; independent progress/reason; idle result retained; unsettled entry; no implicit close: pass\n"),
     ("m2-configuration", ["--m2-configuration"], "M2 configuration: explicit capabilities; finite copied defaults; sizes/version/tails; invalid combinations: pass\n"),
     ("m2-owner", ["--m2-owner"], "M2 owner: foreign calls refused; pump/run_once/run guard; safe POD/control/setter; CLOSED query: pass\n"),
-    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; unpublished null failures; fresh recovery and cleanup: pass\n"),
+    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; allocation versus metadata precheck; null failures and complete rollback; fresh cleanup: pass\n"),
     ("m2-diagnostics", ["--m2-diagnostics"], "M2 diagnostics: independent versioned POD; factory rollback; sizes/tails; bounded caller buffers; CLOSED cross-thread query: pass\n"),
     ("m2-runtime", ["--m2-runtime"], "M2 runtime: explicit empty instance; idle drive; CLOSED/native quiescent; destroy: pass\n"),
     ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
@@ -156,6 +167,10 @@ HOST_CASES = (
 
 
 CLI_CASES = (
+    ("eval-timer-entry", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),20)))"], 0, "42\n", ""),
+    ("eval-timer-result", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>{setTimeout(()=>{},0);return 42})"], 0, "42\n", ""),
+    ("eval-timer-unref", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),0).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("run-timer-tla", ["run", "{modules}/timer-tla.mjs"], 0, "", ""),
     ("help", ["--help"], 0, "Usage: qaplet [--timeout-ms N] [--max-dispatches N] run <file> [-- args...]\n       qaplet [--timeout-ms N] [--max-dispatches N] eval --source <text>\n       qaplet --help | --version\nrun uses ESM; argv contains only args after --. eval uses Script.\neval prints scalar values, raw UTF-8 strings, or 0x-prefixed hex bytes, then a newline.\nZero budgets use finite SDK defaults. Exit: 0 success, 1 execution, 2 arguments.\n", ""),
     ("version", ["--version"], 0, "qaplet 0.1.0 (Embed SDK ABI 1)\n", ""),
     ("eval-number", ["eval", "--source", "6 * 7"], 0, "42\n", ""),
@@ -254,7 +269,8 @@ def package_consume(args, report, directory):
             [*loader, artifact], args.timeout, expected=None)
         expected = ("controlled HostNotify: accepted event/close and CLOSED wake overlap; JS released; inflight retained; finite quiesce retry; destroy BUSY; producer joined; drained cleanup: pass\n"
                     "controlled HostNotify reentry: deliberately invalid hook receives BUSY for SDK queries/control/drives/close; no JS or stop mutation: pass\n"
-                    "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n")
+                    "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n"
+                    "controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,
@@ -277,7 +293,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "host-notify", "process"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -458,7 +474,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
