@@ -138,8 +138,49 @@ Git blob 且全部 LF。最终尚待07集成后的三类调度融合、重新冻
 把目录当文件读取导致 IsADirectoryError，未运行产品；修正 runner 后保存了
 上述真实红绿。未改产品以绕过环境失败，未改全局 Git 或共享 core.worktree。
 
-本票保持 claimed，未 resolved、未 push、未做整体 Standards/Spec review。
-最终需合入最新 integration，保留07/09能力、目录和生命周期合同，接真实
-HostNotify lease 后重新冻结全部 RECIPE 并供应；重新跑完整双宿主、包外
-普通 work/故障消费及本地 check。其余五原生/实际64K与最终全资源 T03/Full
-由 root 的新供应签发；上述单宿主与局部重复不外推这些范围，不签发 release-ready。
+## 最终本地供应与交接
+
+最终产品 `9c69877e9c6f6d4e02401e18ecf8a26c132aaeac`，
+`out/m2-10/final/` 保存原件。SDK recipe
+`1b4993c4bfa330f48712910c4a27de22af349d50da8ad87eba8eebe283e868f2`；
+SDK identity `372afc6c243f92fd2b7072aa2894075825b6c6362eae3be389fee84b7e62e678`；
+供应原 ZIP `f655c4d2f620136749c4ffeb6dc9697de4117f1f3a767ab0a8d7bbf51500beb5`
+（15,556,957 bytes）。Ubuntu producer 的 `working_tree_dirty=true` 原样保存；
+Windows Git clean 和逐文件 raw/Git blob/LF 核验独立报告，不把 producer 改写为 clean。
+
+| 最终原件 | 实际结果 |
+|---|---|
+| `build.json` | Ubuntu SDK ZIP、x86-64/AArch64 archives、CLI/Host/application APE 构建与审计 pass |
+| `linux.json` | Linux native x86-64 / WSL2 6.6.87.2 / 4096；142/142 pass |
+| `windows.json` | Windows native x86-64 / 10.0.22000 / 4096；同字节141 pass、1旧 optional symlink blocked；必需缺口0 |
+| `package.json` | 真正供应 ZIP 在 `/tmp/qaplet-sdk-consumer-501482qz`，只用公开 include/archive 包外编译；应用8 + work13 = 21/21 pass |
+| `package-windows.json` | Windows 再抽取核验同一 ZIP，在树外临时目录提供模块；执行相同包外 APE 字节，21/21 pass |
+| `fault.json` | 同一 ZIP 在 `/tmp/qaplet-sdk-consumer-0_okdyer` 包外编译，既有 M2 与 work 系统边界2/2 pass |
+| `fault-windows.json` | 相同包外故障 APE 的 Windows native回放，2/2 pass |
+| `dev-check.json` | 冻结产品的完整本地check pass；368 tests，177实际执行、191条件skip；真实系统 C bootstrap pass |
+| `handoff.json` | 70个当前RECIPE逐一 raw==冻结产品Git blob、全LF；双archive各14个ELF64 REL成员，machine62/183；全部包成员身份与供应一致；能力mask4161535及21个名称一致 |
+
+normal、package、fault 六份报告分别保存实际命令、原始 stdout/stderr、OS/kernel/
+页大小与制品身份。所有普通 work 的物理退出、通知 lease、累计预算和数据复制
+均在最终主 Host 与包外 Host 重新执行。通知在途关闭部分刻意阻塞 hook，是
+保留期负向夹具；不据此承诺合规 HostNotify 可以阻塞。故障 join 不可证明回收
+的实例仍刻意保留到进程终止，绝不以进程退出冒充 SDK 已清理成功。
+
+双 archive 分别为 x86-64
+`fc72f8696ea7b2aad164305d71f52078faeb17ee865b93939a9aa9c1658d0292`
+（1,045,236 bytes），AArch64
+`743f7b6e5bffcdb49440b5328122b720dab9857e09d8019bff46ae36699e9c23`
+（1,056,084 bytes）。只在 Ubuntu 构建；Windows 在已确认的普通用户上下文原生
+消费相同字节，不对受限上下文的假挂或无WSL发行版观测修改产品。
+
+最终审计首次在 integration 刚更新为 `46e5cf4` 时因祖先检查失败而停止；
+随后 `83e3b105` 合入该最新 integration。该增量仅05探针/合同/文档，70个SDK
+RECIPE均未改变；审计重新实际通过，无需重新供应SDK。同步后的本地check另存
+`dev-check-post-sync.json`，保留冻结前原check，不覆盖原件。
+该次同步后check实际通过369项（177实际执行、192条件skip），真实系统 C
+bootstrap亦通过；新增条件skip不计作实际平台或05探针成绩。
+
+本票保持 claimed / awaiting_cross，未 resolved、未 push、未做整体 Standards/Spec
+review。其余五原生/实际64K与最终全资源 T03/Full由 root 的新供应签发；上述
+双宿主与局部回放不外推这些范围，不签发 release-ready，也不声明11任务取消
+公开API或12 JS work Promise。后续process尚未合入，不含能力bit22或新错误码。

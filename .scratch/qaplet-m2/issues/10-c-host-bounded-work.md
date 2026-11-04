@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 执行前注册冻结且复制声明；重复/替换/运行中注册拒绝，函数与 userdata 的 native quiescent 保留期明确。
-- [ ] 输入成功接受前复制、输出事先预留，内部完成不依赖业务 onEvent 或队列空位；超额无部分接受。
-- [ ] 每 Runtime 独立按需 worker，默认池 2、处理器并发 1；不同可运行处理器不被额度阻塞的队首任务饿死。
-- [ ] 纯 C 消费者实际完成有界文件读取、原生错误和结果复制，不访问 JSValue/Context。
-- [ ] 随首个 worker 实现安全 stop/close、native pending、quiesce 和 destroy BUSY，关闭时不得提前释放代码、数据或输出。
+- [x] 执行前注册冻结且复制声明；重复/替换/运行中注册拒绝，函数与 userdata 的 native quiescent 保留期明确。
+- [x] 输入成功接受前复制、输出事先预留，内部完成不依赖业务 onEvent 或队列空位；超额无部分接受。
+- [x] 每 Runtime 独立按需 worker，默认池 2、处理器并发 1；不同可运行处理器不被额度阻塞的队首任务饿死。
+- [x] 纯 C 消费者实际完成有界文件读取、原生错误和结果复制，不访问 JSValue/Context。
+- [x] 随首个 worker 实现安全 stop/close、native pending、quiesce 和 destroy BUSY，关闭时不得提前释放代码、数据或输出。
 
 ## Blocking details
 
@@ -55,4 +55,6 @@
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
 2026-11-03：06 自身当前五原生及实际 64K 严格验收已完成，领取 `codex/m2-10-work` / `.cache/worktrees/m2-10`，fresh implementer 执行公开 C SDK/真实有界文件读取的 TDD。并行能力位协调：C work 使用 bit 21，既有 ABI 数值不变；首个 worker 即实现容量、原生完成保留及安全关闭，不延后到 19/20。
+
+2026-11-04：07/09 融合后冻结产品 `9c69877`，提交原字节、70项 RECIPE、双 CPU archive、SDK metadata 已核对。完整 Linux 142/142 pass；Windows 原生同字节141 pass / 1既有 optional symlink blocked，必需缺口0；密封ZIP包外普通8+work13=21及受控系统故障2项均在Linux与Windows通过。本地check通过；新增三类持久轮转、work允许unref timer存活、真实HostNotify lease和物理pthread退出的失败原件及最终身份见[10验证记录](../10-work-validation.md)。保持 claimed / awaiting_cross，待root当前配方五原生/实际64K及组合Full签发，不自行resolved，不声明11任务取消公开API或12 JS work Promise。
 
