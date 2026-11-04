@@ -97,3 +97,11 @@ FD、fork child实际FD表枚举关闭非stdio并保留exec-error ack；不截�
 各15及原日志/输入闭包已核，详[13验证记录](../13-process-validation.md)和新树
 `out/m2-13-macos-fix/final/handoff.json`。Mac SDK完整原生链/实际64K仍等新Full；保持
 claimed/in_progress，旧失败不改标，14与整体Review未放行。
+
+2026-11-05：独立合并后的 `91b9a51` / Full `41848288564` 已严格确认五原生850/850，
+其中Process50/query5，Mac产品spawn/退出/reap完整链已通过；但实际64K因固定输入
+HTTP503仍为0，保持claimed/in_progress。固定输入供给独立合入94c，新Full
+`41859852472` 的两Mac尚排队、page未开始。另以冻结公开SDK最小实测发现inherit
+fixture在合法soft1024时于SDK调用前创建高FD失败；高soft和低soft inputs正对照通过，
+未推断guest限额或产品失败。fresh `codex/m2-13-nofile-fixture` 只修复fixture准备，
+原始red与全部身份见主 `out/qaplet-m2/nofile-fixture-probe/README.md`。14仍未放行。
