@@ -90,7 +90,10 @@ def import_inputs(args, report, directory):
     _, head, _ = run(report, directory, "supply-commit", ["git", "-C", source, "rev-parse", "HEAD"], 30)
     if head.strip() != args.source_commit:
         raise BuildError("Supplied checkout commit differs from the pinned source commit")
+    retained_manifest = directory / "supplied-manifest.json"
+    shutil.copyfile(source / "manifest.json", retained_manifest)
     report["supply"] = {"commit": head.strip(), "manifest": identity(source / "manifest.json"),
+                        "manifest_copy": identity(retained_manifest),
                         "provenance": manifest["provenance"], "inputs": []}
     args.cache.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="guest-input-import-", dir=args.cache.parent) as temporary:
@@ -170,6 +173,7 @@ def main():
     report = {"schema_version": 1, "report_kind": "arm64-guest-input-supply", "report_id": directory.name,
               "started_at": now(), "finished_at": None, "status": "not_run", "reason": "", "host": host_facts(),
               "ci": ci_facts(), "guest": None, "qemu": None, "cases": [], "commands": [], "inputs": [],
+              "invocation": {"argv": [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]], "cwd": str(Path.cwd())},
               "source": {"runner": identity(Path(__file__)), "verifier": identity(Path(arm64_guest.__file__)),
                          "lock": identity(arm64_guest.LOCK)}}
     try:
