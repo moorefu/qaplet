@@ -233,3 +233,19 @@ Windows169+既有optional1、包外各46/Process各10/fault各2、低NOFILE三�
 失败均保留并有独立成功后继。详主 `out/qaplet-m2/merge-13-nofile-fixture/HANDOFF.md`
 及源 `out/qaplet-m2/13-nofile-fixture-fix/README.md`。13转awaiting_cross，11/13均未
 resolved，准备推送新的Full；当前Mac及实际64K仍须新配方证据，不放行后续blocker。
+
+2026-11-05（d1当前CI的runner缺口）：`d1d0936` / Full `41870752184` 的A1严格四原生
+680项通过，含Work80/取消28/Process40/query4，包外46/fault2及双archive各15也通过。
+ARM Mac job取消时API记录runner_id=0、steps=[]；page-plan/startup-matrix/full-core
+亦无runner或执行步骤，guest skipped，不能归因产品。A1完整20原ZIP/6原日志及
+3992消费文件封存，两个终态完整catalog均无ARM四类或page-gap provider。详主
+`out/qaplet-m2/full-d1d0936/HANDOFF-attempt1.md`。
+
+在上述无重复Core输入条件核验后，仅恢复被取消的ARM job及依赖，原四平台和构建
+继续保留A1实际执行身份。A2截至17:47:32 UTC仍run/ARM及部分依赖queued、guest
+skipped，20继承provider/0新上传，未冒称A2取消或新执行。18原报告CI attempt1与
+11最新API envelope attempt2分别核对；源、A1原件与supplier内容/mtime不变。
+详主 `out/qaplet-m2/full-d1d0936-attempt2/HANDOFF-attempt2.md`。11/13依旧不足；
+后到证据另建增量。GitHub官方同期报告过事件触发/状态回传延迟并已转monitoring，
+没有据此推断本job原因。现以本记录提交启动一次新的Full实例，区分旧run控制上下文
+与当前runner可用性；产品、配方、平台要求和每命令时限保持原值。
