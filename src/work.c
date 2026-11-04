@@ -450,6 +450,7 @@ void qaplet_work_shutdown(qaplet_runtime *runtime) {
         ++runtime->work_snapshot.retained_results; increment(&runtime->work_snapshot.cancelled);
       }
       if (task->handoff) { task->handoff=0; --runtime->work_snapshot.pending_handoffs; }
+      if (task->released && !task->physical) retire_task(runtime,task);
     }
     pthread_cond_broadcast(&runtime->native_condition);
   }

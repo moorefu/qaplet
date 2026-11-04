@@ -672,6 +672,18 @@ static int cancel_result_contract(void) {
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.completed==1 && !stats.cancelled && !stats.pending_handoffs && !stats.operations && !stats.data_bytes);
   qaplet_result js=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(runtime,&js,NULL)==QAPLET_OK && js.number==42);
   CHECK(!finish(runtime) && !destroy_gate(&g));
+  /* STOPPED abandons further JS delivery, so an already released, physically
+   * completed record has no remaining handoff or storage responsibility. */
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate stopped={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER,.released=1};h.userdata=&stopped;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_submit(runtime,"held",4,&input,1,&task,NULL)==QAPLET_OK);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (!stats.completed);
+  CHECK(qaplet_work_release(runtime,&task,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.pending_handoffs==1);
+  CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK && qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_EXECUTION_STOPPED);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.data_bytes && !stats.pending_handoffs && !stats.retained_results);
+  CHECK(!finish(runtime) && !destroy_gate(&stopped));
   puts("M2 work cancel result: native completion wins before owner; already-completed stable; short result retry never reruns; release invalidates immediately; complete jobs precede ref/capacity handoff: pass");
   return 0;
 }
