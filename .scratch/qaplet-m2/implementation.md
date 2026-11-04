@@ -199,8 +199,8 @@ journal/seal没有成功原件，故11/13均未关闭。详主 `out/qaplet-m2/fu
 固定 guest 输入供给已独立合入 `94cda36`，data-only commit `c67014e` 单独保留、
 不合入产品；七份原始输入共24,773,729字节，经原签名链与锁验证后供给原fetch。
 这不是新HTTP200，也不是guest执行。用户已明确批准本次M2的codex/*推送与CI，
-当前 Full `41859852472` 对应94c；三非Mac原生严格510/510，两Mac仍排队，page
-job尚未创建。新的独立消费者 `.cache/worktrees/m2-consumer-94cda36` 以raw LF
+当前 Full `41859852472` 对应94c；早期API列表显示三非Mac原生严格510/510，
+两Mac排队且未列出page job。新的独立消费者 `.cache/worktrees/m2-consumer-94cda36` 以raw LF
 冻结当前79项Python，当前审计在 `out/qaplet-m2/full-94cda36/`，未借旧原件补缺。
 
 等待期间，公开同字节SDK的最小真实NOFILE诊断复现fixture准备缺口：inherit在
@@ -210,3 +210,15 @@ soft16384的inherit与soft1024的inputs通过，四项均无timeout。实际gues
 `codex/m2-13-nofile-fixture` 独立修复准备阶段，保留高FD、降soft256和完整继承断言。
 旧11/13初始/13查询out已归档核验后移除，源码、分支和当前Mac供应保留；恢复映射见
 `out/qaplet-m2/inactive-output-storage/RESTORE.md`。父M2与最终T03、整体Review未完成。
+
+2026-11-05（94c实际guest及初次边界封存）：当前CI固定输入checkout/import、七件
+真实签名链和原fetch缓存命中通过，实际64K SDK完整执行170项，169pass/唯一inherit
+准备断言fail；全部六字段、27payload前后、journal/seal及QEMU清理通过。Work当前
+三native60+guest20、新取消21+7通过；两Mac原matrix明确reports=[]/blocked，仍缺
+当前340常规项（其中Work40/取消14）。原Core及独立consumer均因缺Mac失败，只可得
+161pass，未签发235。M0 21命令/6payload与M2四suite/8payload各自完整seal通过。
+21provider原ZIP/8nested/9原日志、3033消费文件最终rehash及精确94c的90去重源码
+输入/79Python/77SDK原字节已核，完整期望29/12/11缺口保留。见主
+`out/qaplet-m2/full-94cda36/HANDOFF.md`、`final-handoff-001.json`。API仍将部分已有
+制品的job显示queued，保留观测矛盾；GitHub官方Actions同期partial_outage仅作背景，
+不归因具体job。11/13继续不足，后到原件另建增量，不改已封存初次边界。
