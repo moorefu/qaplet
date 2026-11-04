@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** resolved
+**Status:** claimed
 
-**Execution state:** completed；当前配方五原生及实际 ARM64 64K 已经独立严格重放，仅完成真实 OS 探针及已测子集。
+**Execution state:** in_progress；旧 `0e4ba21` 五原生及实际 64K 验收保留；当前 `563ff33` Full 的 Windows resize 回归重新调查。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -19,7 +19,7 @@
 ## Acceptance criteria
 
 - [x] 区分真实标准输入和私有 CONIN$/PTY，不能从私有 Console 成功推断 fd0 是 Console。
-- [x] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。
+- [ ] 模式修改必须读回并完整恢复；尺寸及变化通知有真实观测，关闭 fixture 资源可核对。（旧验收保留；当前 Windows resize 回归待重新闭合。）
 - [x] 验证 UTF-8、Unicode、分块输入/输出和非法数据，不能用替换解码或剥离控制字符当作逐字节证明。
 - [x] 观察取消/关闭与共享模式、借用端点的影响，明确安全可用及 UNSUPPORTED 的范围。
 - [x] 受控设施、失败历史、供应字节及各适用目标原始证据完整；不增加面向用户的完整 PTY 创建 API。
@@ -67,4 +67,6 @@
 必需 `make check` 首轮被源码盘 D 的既有 4GiB 安全门槛阻断，未降低阈值或清理原件；本票合同均通过。新 Mac native 和当前新集成 Full 尚未执行，Windows 原 CI 具体 errno 仍未获证实；票继续 claimed，不能 resolved。
 
 2026-11-03 补检：coordinator 验证静态 SDK 编译缓存的标准 NTFS 压缩保留全部 4783 文件字节，恢复 D 盘既有空间门槛后，本票通过原 `dev.py check` 完整入口：362 项中 182 项执行通过、180 项既有条件 skipped，本票 8 项均执行，统一锁/CI 静态合同/真实 C bootstrap 全部 pass。首轮失败原件保留；新报告为 fresh 修复树的 `out/m2-05-fix/candidate/dev-check-entry.json` 与 `dev-check-after-space.json`，环境收据在主工作区 `out/qaplet-m2/cache-compression-verified.json`。补检后已合并最新 integration `1e1908f`，没有产品配方变化；仍待新 Mac native 与集成 Full，不改变 claimed 状态。
+
+2026-11-04：当前 [Full 41788055889](https://github.com/moorefu/qaplet/actions/runs/41788055889) / `563ff33` 在 Windows `tty.resize` 失败：两次 ResizePseudoConsole 均 HRESULT=0，记录 latest100×33、实际 queried90×31、notifications2；ConPTY child exit256、无 timeout、error=null，四项资源清理均 true。原 provider ZIP `13302417443`、原 `tty.json`、`console-results.ndjson` 及实际 controller/stdout 均保留于主 `out/qaplet-m2/full-563ff33/`，不猜测归因。重新领取 `codex/m2-05-resize-fix` / `.cache/worktrees/m2-05-resize-fix`，保持旧 `0e4ba21` 成绩原范围。root 在本机 Windows 对当前同一 APE 的普通 20 次及四组并行各 100 次实际 ConPTY 循环共 420 次未复现，原件在 `out/qaplet-m2/05-resize-diagnosis/`；这不修复、重标或否定 CI 的实际失败。直接公开 consumer 另正确拒绝 CI producer/本地 ci=null 身份混用；后续循环明确是本地真实 OS 诊断，不冒充 CI 消费。须先建立可捕获本次竞态的反馈循环，再修复和取得新 Cross。
 
