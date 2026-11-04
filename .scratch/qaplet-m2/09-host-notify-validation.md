@@ -99,3 +99,7 @@ SDK BUSY 拒绝负例，不把它描述为允许的 Host 用法。
 
 本票本地完成，保持 `claimed / awaiting_cross`。新的五原生、实际 64K 和最终 T03 全资源混合/长测仍未执行；普通 check 的条件 skip
 没有被当成这些范围的通过。`release_ready` 不签发。没有 push、整体审查或关闭父规格。
+
+2026-11-04：独立 merger 已将源 tip `4615525` 以 `2c44fc3` 合入集成分支。`out/qaplet-m2/merge-09/post-verification.json` 核验全部 64 项 RECIPE 原字节/源与合并 Git blob/LF、71 项供应文件、密封 ZIP 及双 archive 各 12 个 ELF64 REL 成员一致，保留 producer dirty=true。补充原始日志重放为 `evidence-verification-006.json`：Linux 115、Windows 114 pass + 1 optional blocked，包外应用 8、独立通知 Host 两宿主各 4、受控故障两宿主各 1，必需缺口 0；完整本地 check 368 项中实际 177、条件 skip 191 及 bootstrap 通过。此处重放不计新执行。
+
+此前一次性检查器分别错误处理 null 时限、Windows 无 loader 文件的原生 PE 路径、包外命令中附带的 APE 辅助编译；修正记录与原脚本均保留，第三次替换未匹配 LF 也单独记录。继续核验发现原 `fault-windows.json` 引用的 driver 随后为另一消费者修订，原报告的 driver 字节已不匹配；该身份缺口没有豁免。冻结 `run_extra_windows_002.py` 后对同一故障 APE 实际重跑 1 项通过，生成 `fault-windows-002.json`，新重放显式选择该原件并保留旧报告、旧摘要及缺口。产品源码、供应 APE、timeout 和判据未修改。新五原生及实际 64K 仍待当前集成 Full，票保持 awaiting_cross。
