@@ -49,6 +49,7 @@ qaplet_code qaplet_post_event(qaplet_runtime *runtime, uint32_t type, uint64_t t
   if (!runtime) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
   if (!data && length) code = QAPLET_INVALID_ARGUMENT;
   if (!code && length > runtime->snapshot.limits.event_payload_bytes) code = QAPLET_PAYLOAD_TOO_LARGE;
+  qaplet_notification notification = {0};
   pthread_mutex_lock(&runtime->mutex);
   if (!code && (runtime->snapshot.lifecycle != QAPLET_OPEN || !runtime->event_accepting)) code = QAPLET_BAD_STATE;
   if (!code && !runtime->event_handler_ready) code = QAPLET_NO_HANDLER;
@@ -66,8 +67,10 @@ qaplet_code qaplet_post_event(qaplet_runtime *runtime, uint32_t type, uint64_t t
     if (++runtime->snapshot.queue_depth > runtime->snapshot.queue_peak)
       runtime->snapshot.queue_peak = runtime->snapshot.queue_depth;
     qaplet_wake_locked(runtime);
+    notification = qaplet_notify_prepare_locked(runtime);
   }
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime, notification);
   return qaplet_report(diagnostic, code);
 }
 

@@ -13,7 +13,72 @@
 #include <unistd.h>
 
 static _Atomic uint64_t identities;
+_Thread_local unsigned qaplet_in_notify;
 static void increment(uint64_t *value) { if (*value != UINT64_MAX) ++*value; }
+
+qaplet_code qaplet_set_host_notify(qaplet_runtime *runtime, const qaplet_host_notify *hook,
+                                  qaplet_diagnostic *diagnostic) {
+  qaplet_code code = qaplet_check_diagnostic(diagnostic);
+  if (!code) code = qaplet_check_structure(hook, sizeof(*hook));
+  if (!code && (!hook->function || hook->flags || hook->reserved[0] || hook->reserved[1])) code = QAPLET_INVALID_ARGUMENT;
+  if (!code) code = qaplet_owner(runtime);
+  if (code) return qaplet_report(diagnostic, code);
+  pthread_mutex_lock(&runtime->mutex);
+  if (!runtime->m2_enabled) code = QAPLET_UNSUPPORTED;
+  else if (runtime->snapshot.lifecycle != QAPLET_OPEN || runtime->loop_closed ||
+           runtime->host_registration_locked || runtime->notify_function) code = QAPLET_BAD_STATE;
+  else { runtime->notify_function = hook->function; runtime->notify_userdata = hook->userdata; }
+  pthread_mutex_unlock(&runtime->mutex);
+  return qaplet_report(diagnostic, code);
+}
+
+qaplet_notification qaplet_notify_prepare_locked(qaplet_runtime *runtime) {
+  qaplet_notification lease = {0};
+  if (runtime->notify_function) {
+    /* No per-notification allocation: one checked finite counter and each
+     * caller's borrowed stack lease. OS threads exhaust before UINT64_MAX. */
+    if (runtime->notify_inflight == UINT64_MAX) qaplet_control_failure_locked(runtime, EOVERFLOW);
+    else {
+      ++runtime->notify_inflight;
+      if (runtime->notify_inflight > runtime->notify_inflight_peak) runtime->notify_inflight_peak = runtime->notify_inflight;
+      if (runtime->loop_closed) runtime->native_state = QAPLET_NATIVE_CLEANING;
+      lease.function = runtime->notify_function; lease.userdata = runtime->notify_userdata;
+    }
+  }
+  return lease;
+}
+void qaplet_notify_dispatch(qaplet_runtime *runtime, qaplet_notification lease) {
+  if (!lease.function) return;
+  ++qaplet_in_notify;
+  lease.function(lease.userdata);
+  --qaplet_in_notify;
+  pthread_mutex_lock(&runtime->mutex);
+  --runtime->notify_inflight;
+  if (runtime->loop_closed && !runtime->notify_inflight && !runtime->native_retained &&
+      !runtime->native_handles && !runtime->native_uncertain_handles)
+    runtime->native_state = QAPLET_NATIVE_QUIESCENT;
+  pthread_cond_broadcast(&runtime->native_condition);
+  pthread_mutex_unlock(&runtime->mutex);
+}
+
+qaplet_code qaplet_get_notify_snapshot(qaplet_runtime *runtime, qaplet_notify_snapshot *output,
+                                      qaplet_diagnostic *diagnostic) {
+  qaplet_code code = qaplet_check_diagnostic(diagnostic);
+  if (!code) code = qaplet_check_structure(output, sizeof(*output));
+  if (!code && !runtime) code = QAPLET_INVALID_ARGUMENT;
+  if (code) return qaplet_report(diagnostic, code);
+  qaplet_notify_snapshot value = QAPLET_NOTIFY_SNAPSHOT_INIT;
+  pthread_mutex_lock(&runtime->mutex);
+  if (!runtime->m2_enabled) code = QAPLET_UNSUPPORTED;
+  else {
+    value.installed = runtime->notify_function != NULL;
+    value.inflight = runtime->notify_inflight;
+    value.inflight_peak = runtime->notify_inflight_peak;
+  }
+  pthread_mutex_unlock(&runtime->mutex);
+  if (!code) memcpy((char *)output + 8, (char *)&value + 8, sizeof(value) - 8);
+  return qaplet_report(diagnostic, code);
+}
 
 void qaplet_control_failure_locked(qaplet_runtime *runtime, int error) {
   if (!runtime->control_error) runtime->control_error = error ? error : EIO;
@@ -143,6 +208,8 @@ void qaplet_loop_shutdown(qaplet_runtime *runtime) {
   if (!runtime->m2_enabled) return;
   qaplet_timers_dispose(runtime);
   pthread_mutex_lock(&runtime->mutex);
+  qaplet_notification notification = {0};
+  if (!runtime->loop_closed) notification = qaplet_notify_prepare_locked(runtime);
   runtime->loop_closed = 1;
   runtime->keepalive_tokens = 0;
   if (runtime->keepalives)
@@ -150,11 +217,12 @@ void qaplet_loop_shutdown(qaplet_runtime *runtime) {
   close_socket(runtime, &runtime->wake_fd[0]);
   close_socket(runtime, &runtime->wake_fd[1]);
   runtime->reactor_registrations = 0;
-  runtime->native_state = runtime->native_retained || runtime->native_handles || runtime->native_uncertain_handles ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
+  runtime->native_state = runtime->native_retained || runtime->notify_inflight || runtime->native_handles || runtime->native_uncertain_handles ? QAPLET_NATIVE_CLEANING : QAPLET_NATIVE_QUIESCENT;
   pthread_mutex_unlock(&runtime->mutex);
   /* Owner-only retirement; releases under mutex have finished before this. */
   qaplet_native_free(runtime, runtime->keepalives, runtime->keepalive_storage_size);
   runtime->keepalives = NULL;
+  qaplet_notify_dispatch(runtime, notification);
 }
 
 qaplet_code qaplet_keepalive_create(qaplet_runtime *runtime, qaplet_keepalive *output,
@@ -187,6 +255,7 @@ qaplet_code qaplet_keepalive_release(qaplet_runtime *runtime, const qaplet_keepa
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
   if (!runtime || !token) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  qaplet_notification notification = {0};
   pthread_mutex_lock(&runtime->mutex);
   if (!runtime->m2_enabled) code = QAPLET_UNSUPPORTED;
   else if (runtime->loop_closed || token->runtime_id != runtime->runtime_id ||
@@ -197,18 +266,22 @@ qaplet_code qaplet_keepalive_release(qaplet_runtime *runtime, const qaplet_keepa
     runtime->keepalives[token->slot].active = 0;
     --runtime->keepalive_tokens;
     qaplet_wake_locked(runtime);
+    notification = qaplet_notify_prepare_locked(runtime);
   }
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime, notification);
   return qaplet_report(diagnostic, code);
 }
 qaplet_code qaplet_wake(qaplet_runtime *runtime, qaplet_diagnostic *diagnostic) {
   qaplet_code code = qaplet_check_diagnostic(diagnostic);
   if (code) return code;
   if (!runtime) return qaplet_report(diagnostic, QAPLET_INVALID_ARGUMENT);
+  qaplet_notification notification = {0};
   pthread_mutex_lock(&runtime->mutex);
   if (!runtime->m2_enabled) code = QAPLET_UNSUPPORTED;
-  else qaplet_wake_locked(runtime);
+  else { qaplet_wake_locked(runtime); notification = qaplet_notify_prepare_locked(runtime); }
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime, notification);
   return qaplet_report(diagnostic, code);
 }
 
@@ -304,7 +377,7 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   qaplet_query_abi(&abi);
   pthread_mutex_lock(&runtime->mutex);
   value.capabilities = runtime->m2_enabled ? abi.capabilities : abi.capabilities &
-    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS);
+    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_HOST_NOTIFY);
   value.lifecycle = runtime->snapshot.lifecycle;
   value.phase = runtime->snapshot.phase;
   value.termination_reason = runtime->snapshot.termination_reason;
@@ -470,10 +543,12 @@ qaplet_code qaplet_native_retain(qaplet_runtime *runtime) {
 void qaplet_native_release(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);
   if (runtime->native_retained) --runtime->native_retained;
-  if (!runtime->native_retained && !runtime->native_handles && !runtime->native_uncertain_handles && runtime->loop_closed)
+  qaplet_notification notification = qaplet_notify_prepare_locked(runtime);
+  if (!runtime->native_retained && !runtime->notify_inflight && !runtime->native_handles && !runtime->native_uncertain_handles && runtime->loop_closed)
     runtime->native_state = QAPLET_NATIVE_QUIESCENT;
   pthread_cond_broadcast(&runtime->native_condition);
   pthread_mutex_unlock(&runtime->mutex);
+  qaplet_notify_dispatch(runtime, notification);
 }
 
 qaplet_code qaplet_quiesce(qaplet_runtime *runtime, uint64_t wait,

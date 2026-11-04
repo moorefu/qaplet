@@ -29,6 +29,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
     ("tests/native/sdk_timers.c", "host-timers.c", "timers-host.o", "host-timers-compile"),
+    ("tests/native/sdk_notify.c", "host-notify.c", "notify.o", "host-notify-compile"),
     ("tests/native/sdk_wait.c", "host-wait.c", "wait.o", "host-wait-compile"),
     ("tests/native/sdk_host.c", "host-contract.c", "embed.o", "host-compile"),
     ("tests/native/sdk_promises.c", "host-promises.c", "promises.o", "host-promises-compile"),
@@ -70,7 +71,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 1015807, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 2064383, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -88,6 +89,9 @@ HOST_CASES = (
     ("m2-timers-jobs", ["--m2-timers-jobs"], "M2 timer jobs: complete cross-pump checkpoints; ordinary error settles jobs; subsequent drive: pass\n"),
     ("m2-timers-deadline", ["--m2-timers-deadline"], "M2 timer deadline: active entry absolute deadline bounds later timer; terminal retirement: pass\n"),
     ("m2-timers-budget", ["--m2-timers-budget"], "M2 timer budget: active entry dispatch ledger accumulates across zero-wait drives; terminal cleanup: pass\n"),
+    ("m2-notify", ["--m2-notify"], "M2 HostNotify: real Host socket wait; producer hints; copied FIFO; coalesced and redundant hints preserve 128 events; owner pump; joined cleanup: pass\n"),
+    ("m2-notify-controls", ["--m2-notify-controls"], "M2 HostNotify controls: cross-thread stop wakes Host; silent hook cannot prevent internal wait/token release; independent instances; cleanup: pass\n"),
+    ("m2-notify-registration", ["--m2-notify-registration"], "M2 HostNotify registration: M1 disabled; copied one-time declaration; ABI/tails/flags; owner thread; execution freeze; independent POD: pass\n"),
     ("m2-wait", ["--m2-wait"], "M2 wait: finite timeout; explicit keepalive; idle cleanup: pass\n"),
     ("m2-wait-concurrent", ["--m2-wait-concurrent"], "M2 concurrent wait: copied events; last token; owner stop; real blocked interval; joined cleanup: pass\n"),
     ("m2-wait-tokens", ["--m2-wait-tokens"], "M2 keepalive: finite capacity; Runtime/generation identity; stale/duplicate release; native handles; close invalidation: pass\n"),
@@ -254,7 +258,10 @@ def package_consume(args, report, directory):
         if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
         executed, stdout, stderr = run(report, directory, "qaplet-m2-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
-        expected = "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\ncontrolled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n"
+        expected = ("controlled HostNotify: accepted event/close and CLOSED wake overlap; JS released; inflight retained; finite quiesce retry; destroy BUSY; producer joined; drained cleanup: pass\n"
+                    "controlled HostNotify reentry: deliberately invalid hook receives BUSY for SDK queries/control/drives/close; no JS or stop mutation: pass\n"
+                    "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n"
+                    "controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,
@@ -277,7 +284,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "host-notify"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -358,7 +365,7 @@ def compile_m2_faults(args, report, directory, tree, helpers, sdk, work, output)
                        BUILDLOG=str(output / "qaplet-m2-faults.build-commands.log"))
     report["external_consumer"]["source"] = str(source)
     report["controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
-        "scope": "system initialization, deterministic wait handoff, accepted wake failure, clock/wait faults and whole-call guard; not native OS coverage"}
+        "scope": "system initialization, deterministic wait handoff, HostNotify close overlap/reentry, accepted wake failure, clock/wait faults and whole-call guard; not native OS coverage"}
     run(report, directory, "m2-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
         "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
         "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)

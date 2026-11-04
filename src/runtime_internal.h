@@ -12,6 +12,8 @@ typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
 typedef struct qaplet_timer_slot qaplet_timer_slot;
 typedef struct { uint64_t generation; int active; } qaplet_keepalive_slot;
+typedef struct { qaplet_notify_function function; void *userdata; } qaplet_notification;
+extern _Thread_local unsigned qaplet_in_notify;
 typedef struct {
   uint64_t deadline_ns, dispatch_limit;
 } qaplet_execution_budget;
@@ -20,6 +22,9 @@ struct qaplet_runtime {
   pthread_mutex_t mutex;
   pthread_cond_t native_condition;
   uint64_t native_retained;
+  qaplet_notify_function notify_function;
+  void *notify_userdata;
+  uint64_t notify_inflight, notify_inflight_peak;
   int driver_active, m2_enabled;
   qaplet_timer_slot *timers;
   size_t timer_storage_size;
@@ -84,6 +89,10 @@ qaplet_code qaplet_loop_init(qaplet_runtime *);
 void qaplet_loop_shutdown(qaplet_runtime *);
 /* Requires mutex. Never invokes JS. A wake fault cannot undo accepted state. */
 void qaplet_wake_locked(qaplet_runtime *);
+/* Reserve under the publication lock, dispatch after unlocking. Every returned
+ * lease must be dispatched, including when close overlaps publication. No heap. */
+qaplet_notification qaplet_notify_prepare_locked(qaplet_runtime *);
+void qaplet_notify_dispatch(qaplet_runtime *, qaplet_notification);
 void qaplet_control_failure_locked(qaplet_runtime *, int);
 /* Requires mutex; monotonic failures/backwards time permanently latch failure. */
 int qaplet_clock_locked(qaplet_runtime *, uint64_t *);
