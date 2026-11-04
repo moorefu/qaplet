@@ -109,6 +109,14 @@ destroy BUSY，解除 hook 后实际 join、销毁 userdata 同步原语。
 `notify-work-regression.json` 的13个 work tracer 全部通过。上述仍是显式增量
 候选 SDK，不冒充最终密封供应。
 
+`notify-candidate-fault.json` 在相同增量公开 SDK 下实际通过 work 系统故障
+夹具；`notify-candidate-windows.json` 在普通用户 Windows native
+10.0.22000 / x86-64 / 4096 上消费 Ubuntu 生成的相同 APE 字节，通知在途关闭
+与 work 系统故障两项 2/2 pass。候选 Windows 不构建产品。
+`recipe-current.json` 确认产品 `f431a44` 的67个 RECIPE 文件 raw 字节全部等于
+Git blob 且全部 LF。最终尚待07集成后的三类调度融合、重新冻结与完整供应；
+本轮交接不改变 claimed / in_progress，不声明 awaiting_cross 或已完成票10。
+
 一次性旧 runner 直接选 raw toolchain，编译子调用误返0但无对象、cosmoar失败，
 保留 `notify-red/candidate.json` 及各原日志；改选仓库已验的
 `official-assimilate-linux-x86_64-v1` 后实际产生对象。一次空对象列表 runner
