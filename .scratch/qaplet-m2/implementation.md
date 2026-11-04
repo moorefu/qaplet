@@ -249,3 +249,11 @@ skipped，20继承provider/0新上传，未冒称A2取消或新执行。18原报
 后到证据另建增量。GitHub官方同期报告过事件触发/状态回传延迟并已转monitoring，
 没有据此推断本job原因。现以本记录提交启动一次新的Full实例，区分旧run控制上下文
 与当前runner可用性；产品、配方、平台要求和每命令时限保持原值。
+
+2026-11-05（用户确认账号账单阻塞）：用户分别读取 D1 attempt2 ARM job 和新Full
+的Annotations，原文明确job未启动是账号近期付款失败或支出限额需调整。具体是哪一项
+仍须由账号账单设置确认。此前runner0/steps空和日志404的原因未知边界保持不变，
+原件不重写；当前不再归因公共Actions事件，也不继续触发CI。详[账单阻塞及后续方式](ci-billing-blocker.md)。
+11/13保持awaiting_cross，后续直接blocker不提前放行；可独立消费现有本地034 SDK
+执行新fixture的实际ARM64/64K，单列ci=null与真实journal/seal/清理，不能冒充CI或
+完整Core。没有代用户修改付款或预算，当前记录仅本地保存以避免重复触发已知受阻CI。

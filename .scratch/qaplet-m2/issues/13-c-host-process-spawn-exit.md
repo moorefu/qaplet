@@ -8,6 +8,8 @@
 
 **Execution state:** awaiting_cross；低 NOFILE fixture 修复已独立合并，等待新五原生与实际 64K 原件。
 
+**External blocker:** GitHub 账号付款或支出限额拦截 job 启动，用户已提供页面原文；见[CI账单阻塞](../ci-billing-blocker.md)。当前平台缺口保持未验收。
+
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
 **Spec stories:** 51、52、53、54、55、56、57、58、65、77、81、83。
