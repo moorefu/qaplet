@@ -153,7 +153,36 @@ def check_workflow(workflow):
             "--input-dir" in step["run"] for step in aggregation.get("steps", [])):
         raise ValueError("Six-target startup aggregation must run even when a consumer fails")
     check_m2_probe_transport(workflow)
+    check_guest_input_supply(workflow)
     check_tier_transport(workflow)
+
+
+def check_guest_input_supply(workflow):
+    steps = workflow["jobs"]["arm64-page-gaps"]["steps"]
+    expected = [
+        {"id": "guest-input-plan", "if": "${{ matrix.page_size == 65536 }}",
+         "run": 'python scripts/guest_inputs.py plan --config guests/ci-inputs.json --github-output "$GITHUB_OUTPUT" --report out/page-gaps/${{ matrix.page_size }}/supply-plan.json'},
+        {"id": "guest-input-checkout", "if": "${{ matrix.page_size == 65536 }}", "uses": "actions/checkout@v7",
+         "with": {"repository": "${{ github.repository }}", "ref": "${{ steps.guest-input-plan.outputs.source_commit }}",
+                  "path": ".cache/guests/supplied", "persist-credentials": False}},
+        {"if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+         "env": {"CI_GUEST_INPUT_COMMIT": "${{ steps.guest-input-plan.outputs.source_commit }}"},
+         "run": 'python scripts/guest_inputs.py import --source-dir .cache/guests/supplied --source-commit "$CI_GUEST_INPUT_COMMIT" --cache .cache/guests --page-size 65536 --report out/page-gaps/${{ matrix.page_size }}/supply-import.json'},
+    ]
+    positions = []
+    for required in expected:
+        matches = [index for index, step in enumerate(steps) if {key: value for key, value in step.items() if key != "name"} == required]
+        require(len(matches) == 1, "Guest input supply requires fixed same-repository read-only checkout and explicit verification")
+        positions.append(matches[0])
+    fetches = [index for index, step in enumerate(steps) if "scripts/arm64_guest.py fetch" in step.get("run", "")]
+    require(len(fetches) == 1 and positions == sorted(positions) and positions[-1] < fetches[0],
+            "Complete guest input verification/import must precede the unchanged explicit fetch")
+    config = read_json(ROOT / "guests/ci-inputs.json")
+    lock = identity(ROOT / "guests/arm64.lock.json")
+    require(config.get("schema_version") == 1 and config.get("page_size") == 65536 and
+            isinstance(config.get("source_commit"), str) and re.fullmatch(r"[0-9a-f]{40}", config["source_commit"]) and
+            config.get("guest_lock") == {key: lock[key] for key in ("sha256", "size_bytes")},
+            "Guest input supply configuration must pin a complete commit and the unchanged current guest lock")
 
 
 def check_m2_probe_transport(workflow):

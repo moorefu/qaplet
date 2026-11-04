@@ -71,6 +71,33 @@ PR API head 与实际 merge commit 分别保留，消费者仍绑定实际测试
 与 transport，避免对仓库/缓存做递归 chown/chmod。可用 `QAPLET_CI_POSIX_UID` / `_GID` 在 Ubuntu
 root controller 显式运行对应 CLI 合同：实际 namespace preflight 与 `setpriv` 非 root receipt writer。
 
+## 显式固定 guest 输入供给
+
+实际 64K page job 可显式消费同仓库固定输入供给。`guests/ci-inputs.json` 绑定原
+`guests/arm64.lock.json` 的完整长度/SHA 与独立 data-only 提交；`guest_inputs.py plan`
+只输出经过格式检查的完整 commit，第二次只读 checkout 固定到
+`.cache/guests/supplied`，不持久化凭据。数据提交只含当前 65536 profile 的七件
+公开上游原输入及 manifest，不合入产品源码，也不属于 Release 或长期公开镜像。
+
+```sh
+python scripts/guest_inputs.py import --source-dir .cache/guests/supplied \
+  --source-commit FULL_SHA --cache .cache/guests --page-size 65536 \
+  --report out/page-gaps/65536/supply-import.json
+```
+
+入口在独立暂存目录复用原 `arm64_guest.py verify`，校验当前锁、完整成员、全部
+SHA/长度、真实 gpgv 签名及 InRelease→Packages→package 关系后才发布 canonical 输入。
+额外/缺失成员、错误 manifest、路径别名及坏既有输入都拒绝，既有正确字节保留。
+供给原件和目标不重叠，报告不得覆盖它们。收据记录固定 data commit、manifest、
+每件来源/目标身份、原 URL、签名原日志与 `imported` / `existing-verified`。
+来源说明为已验签既有缓存传输，不能称为本次 HTTP 获取。
+
+随后仍执行原 fetch、prepare 与当前产品的实际 guest；fetch 缓存命中不表示新 HTTP 200。
+4096 profile 继续原获取入口。fork/token 按同仓库普通只读权限读取；固定 data commit
+不可读时 checkout 保留真实失败，import 保留 `missing_resource`，不依赖第三方 secret
+或可信 Actions cache 写入。导入成功不等于实际 64K、SDK、Core 或 M2 验收通过。
+实现及本地证据见[固定输入供给验证](../../.scratch/qaplet-m2/guest-input-supply-validation.md)。
+
 ## CI skeleton
 
 `.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；同时用 `build_ape.py check-ci` 委派共享 tier 合同检查独立 `m0.yml` 的分层选择、可信 cache、固定输入/构建/分发合同，拒绝测试 job 再编译。没有执行 Actions 服务端校验或 actionlint。

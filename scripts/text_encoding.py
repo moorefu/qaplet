@@ -6,7 +6,7 @@ from pathlib import Path
 # Initial scope: evidence JSON/fixtures, including every new evidence_*.py tool.
 # Producer scripts retain their accepted recipe bytes and are audited separately.
 EVIDENCE = ("dev.py", "ci_evidence.py", "ci_full.py", "check_evidence.py", "m1_gate.py",
-            "core_gate.py", "sdk_guest.py", "sdk_matrix.py", "review_packet.py", "workflow_support.py")
+            "core_gate.py", "sdk_guest.py", "sdk_matrix.py", "review_packet.py", "workflow_support.py", "guest_inputs.py")
 
 
 def violations(source):

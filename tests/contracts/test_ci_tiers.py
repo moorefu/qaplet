@@ -14,6 +14,38 @@ CLI = ROOT / "scripts/ci_tiers.py"
 
 
 class CITiersContract(unittest.TestCase):
+    def test_fixed_guest_supply_must_precede_the_original_fetch_without_write_credentials(self):
+        original = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
+        steps = original["jobs"]["arm64-page-gaps"]["steps"]
+        # Removing the explicit import must fail even when ordinary fetch/run
+        # commands remain. Mutations then bind the read-only transport boundary.
+        candidates = []
+        removed = json.loads(json.dumps(original))
+        removed["jobs"]["arm64-page-gaps"]["steps"] = [step for step in steps if "scripts/guest_inputs.py" not in step.get("run", "")]
+        candidates.append(("missing-import", removed))
+        for mode in ("branch-ref", "external-repository", "credentials", "unverified-copy"):
+            value = json.loads(json.dumps(original))
+            for step in value["jobs"]["arm64-page-gaps"]["steps"]:
+                if step.get("id") == "guest-input-checkout":
+                    key, replacement = {"branch-ref": ("ref", "codex/m2-locked-guest-inputs"),
+                                        "external-repository": ("repository", "other/repository"),
+                                        "credentials": ("persist-credentials", True)}.get(mode, (None, None))
+                    if key:
+                        step["with"][key] = replacement
+                if mode == "unverified-copy" and "scripts/guest_inputs.py import" in step.get("run", ""):
+                    step["run"] = "cp .cache/guests/supplied/inputs/* .cache/guests/inputs/"
+            candidates.append((mode, value))
+        with tempfile.TemporaryDirectory(prefix="qaplet-guest-supply-ci-") as temp:
+            work = Path(temp)
+            for mode, value in candidates:
+                with self.subTest(mode=mode):
+                    workflow = work / (mode + ".json")
+                    workflow.write_text(json.dumps(value), encoding="utf-8")
+                    process = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci",
+                        "--workflow", str(workflow), "--report", str(work / (mode + "-report.json"))],
+                        capture_output=True, text=True, timeout=30)
+                    self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+
     def test_creation_fault_fixture_is_required_separately_from_normal_sdk(self):
         value = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
         steps = value["jobs"]["build"]["steps"]
