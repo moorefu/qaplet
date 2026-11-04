@@ -4,9 +4,9 @@
 
 **Blocked by:** [06 · 等待中的 Runtime 接收事件与停止](06-wait-events-keepalive-stop.md)。
 
-**Status:** claimed
+**Status:** resolved
 
-**Execution state:** awaiting_cross
+**Execution state:** completed；`46e5cf4` 当前 SDK 五原生645与实际64K129项严格验收通过，仅完成本票一次timer/TLA范围。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -60,3 +60,6 @@
 
 
 2026-11-04：已完成 HostNotify 融合及当前 `563ff33` integration 同步；最终 RECIPE 源码 `ddf00aa`。本地同字节 Linux 129 项、Windows 128 pass / 1 optional symlink blocked，必需缺口 0；各 1,000 次 timer 生命周期和 100 次 timer 混合、密封 ZIP 包外 timer 10 项及受控 fault 的双宿主重放、普通包外 C 应用 8 项、完整 dev check 均通过。元数据能力名称与累计等待预算夹具追加红绿、失败原件、最终供应身份见 [07 验证记录](../07-timer-validation.md)。保持 claimed / awaiting_cross，等待 root 新配方集成 Full/实际 64K 后关闭，不以本地成功 resolved。
+
+
+2026-11-04：`46e5cf4` / Full `41796608784` 已 completed/success。当前本票范围由独立 typed consumer 重读原件通过，并经 root 核验：SDK 五原生645/实际64K129、TTY五原生97/实际64K19、包外应用8、controlled fault1、当前M0 Full235；29原ZIP/12nested/11job日志及三guest seal/argv/清理完整。WinServer正常probe最终通知后实际查询100×33、模式恢复和四项清理通过，旧563失败不改标。详主 `out/qaplet-m2/full-46e5cf4/HANDOFF.md`、`verify/scope-summary.json`、`05-07-acceptance-check.json`、`root-scope-acceptance.json`。仅按各票scope验收，不外推最终T03混合/长测、父M2或发布完成。

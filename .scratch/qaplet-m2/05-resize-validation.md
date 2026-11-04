@@ -79,3 +79,6 @@ consumer 额外要求 Windows `mode_restored=true`、`query_after_final_notifica
 票仍 **claimed / awaiting_cross**。所有成功均为本地实际范围，`product_support_verified=false`。新的 Windows Server 原生执行、两种 Mac 和 Linux ARM64 原生以及当前完整 Cross/Full 由集成分支重新供应后验收；不能由本机受控时序、旧成功或本地20次循环签发。原始 `563ff33` Full 继续为 failure，旧 `0e4ba21` 成绩继续仅证明其原范围。
 
 本地没有遗留临时 DEBUG 日志；诊断脚本和历史供应物明确保存在忽略的 `out/m2-05-resize/diagnosis/`，没有删除或改写原失败。没有发布 SDK TTY API、修改网络产品、M0、公共 README、workflow 或实施总记录。
+
+
+2026-11-04：`46e5cf4` / Full `41796608784` 已 completed/success。当前本票范围由独立 typed consumer 重读原件通过，并经 root 核验：SDK 五原生645/实际64K129、TTY五原生97/实际64K19、包外应用8、controlled fault1、当前M0 Full235；29原ZIP/12nested/11job日志及三guest seal/argv/清理完整。WinServer正常probe最终通知后实际查询100×33、模式恢复和四项清理通过，旧563失败不改标。详主 `out/qaplet-m2/full-46e5cf4/HANDOFF.md`、`verify/scope-summary.json`、`05-07-acceptance-check.json`、`root-scope-acceptance.json`。仅按各票scope验收，不外推最终T03混合/长测、父M2或发布完成。
