@@ -94,8 +94,9 @@ Linux 真实系统夹具证明 WNOWAIT 两次后仍可 reap、EINTR/EINVAL/ECHIL
 ## 旧候选供应与仍需完成的交付
 
 `out/m2-13/final/` 是合入 Work 之前的独立正常 producer：74 项 recipe，dirty=true 原样
-保留；Linux 134 pass，Windows 133 pass + 1 既有可选 symlink blocked，密封 ZIP 包外
-Linux 11 / Windows 9 通过，原 M2 四个初始化故障阶段/uncertain fd/Notify 夹具通过。
+保留；Linux 134 pass，Windows 133 pass + 1 既有可选 symlink blocked；密封 ZIP 包外
+两平台各 5 条正常 C 合同，另有 Linux 6 / Windows 4 条受控系统合同通过，各项 scope
+分别记录。原 M2 四个初始化故障阶段/uncertain fd/Notify 夹具通过。
 Ubuntu check 为 368 总、191 条按其显式输入条件 skip，真实 C bootstrap 通过。
 上述供应不能证明后加的 Work 融合/PID/环境预算/新公开目录。
 
