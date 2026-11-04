@@ -15,6 +15,31 @@ CLI = ROOT / "scripts/m2_waker.py"
 
 class M2WakerContract(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_WAKER_PRODUCER"), "Explicit Ubuntu probe producer required")
+    def test_already_completed_failed_connect_still_observes_wait_and_error(self):
+        producer = Path(os.environ["QAPLET_TEST_M2_WAKER_PRODUCER"])
+        options = ["--loader", os.environ["QAPLET_TEST_M2_WAKER_LOADER"]] if os.environ.get("QAPLET_TEST_M2_WAKER_LOADER") else []
+        with tempfile.TemporaryDirectory(prefix="qaplet-m2-waker-completed-") as temporary:
+            work = Path(temporary)
+            result = subprocess.run([sys.executable, CLI, "run", "--build-report", producer,
+                                     "--artifact", producer.parent / "artifacts/m2-waker.com", *options,
+                                     "--probe-mode", "connect-error-ready", "--report", work / "report.json"],
+                                    capture_output=True, text=True, timeout=60)
+            report = json.loads((work / "report.json").read_text(encoding="utf-8"))
+            cases = {case["case_id"]: case for case in report["cases"]}
+            refusal = cases.get("socket.connect-error", {}).get("actual")
+            self.assertEqual(result.returncode, 0, {"reason": report["reason"], "actual": refusal})
+            self.assertTrue(refusal["completion_gate"], refusal)
+            self.assertGreater(refusal["gate_select"], 0, refusal)
+            self.assertTrue(refusal["connection_failed"], refusal)
+            self.assertNotEqual(refusal["socket_error"], 0, refusal)
+            self.assertEqual(refusal["socket_error_result"], 0, refusal)
+            self.assertEqual(refusal["socket_error_domain"], "getsockopt-raw", refusal)
+            self.assertEqual(refusal["select_api"], "cosmopolitan-select", refusal)
+            self.assertTrue(refusal["poll"] == 1 or refusal["select"] > 0, refusal)
+            self.assertEqual(cases["socket.connect-error"]["execution_kind"], "controlled-system-order")
+            self.assertTrue(cases["socket.cleanup"]["actual"]["all_descriptors_closed"])
+
+    @unittest.skipUnless(os.environ.get("QAPLET_TEST_M2_WAKER_PRODUCER"), "Explicit Ubuntu probe producer required")
     def test_changed_supplied_bytes_are_rejected_before_execution(self):
         producer = Path(os.environ["QAPLET_TEST_M2_WAKER_PRODUCER"])
         with tempfile.TemporaryDirectory(prefix="qaplet-m2-waker-changed-") as temporary:

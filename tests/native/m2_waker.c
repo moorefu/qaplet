@@ -261,7 +261,7 @@ static void wakers(void) {
   snprintf(json, sizeof(json), "{\"all_descriptors_closed\":%s,\"threads_joined\":%d,\"live_helpers\":%d}", boolean(cleanup_ok), joined, live_helpers);
   result("waker.cleanup", cleanup_ok && joined == 7 && live_helpers == 0, json);
 }
-static void sockets(void) {
+static void sockets(int completion_gate) {
   int fd[2], connect_value = 0, connect_error = 0, socket_error = 0;
   int setup = pair(fd, &connect_value, &connect_error, &socket_error);
   char json[1024], byte = 0;
@@ -331,26 +331,45 @@ static void sockets(void) {
   errno = 0;
   connect_value = setup ? connect(client, (void *)&address, length) : -2;
   connect_error = errno;
+  errno = 0;
   polled = setup ? wait_fd(client, POLLOUT, &events, 2000) : -2;
-  socket_error = 0; length = sizeof(socket_error);
-  int got = setup ? getsockopt(client, SOL_SOCKET, SO_ERROR, &socket_error, &length) : -2;
-  int selected = -2, writable = 0, exceptional = 0;
-  if (setup && polled == 0 && !got && !socket_error) {
-    /* A measured WSAPoll limitation must not become an invented capability. */
+  int poll_error = errno;
+  int gate_selected = -2, gate_writable = 0, gate_exceptional = 0;
+  if (setup && completion_gate) {
+    /* Controlled real-OS ordering: completion precedes the error read.
+       No SO_ERROR read or fabricated readiness is used by this gate. */
     fd_set writes, errors;
     FD_ZERO(&writes); FD_ZERO(&errors);
     FD_SET(client, &writes); FD_SET(client, &errors);
     struct timeval deadline = {5, 0};
+    gate_selected = select(client + 1, 0, &writes, &errors, &deadline);
+    gate_writable = gate_selected > 0 && FD_ISSET(client, &writes);
+    gate_exceptional = gate_selected > 0 && FD_ISSET(client, &errors);
+  }
+  int selected = -2, select_error = 0, writable = 0, exceptional = 0;
+  if (setup && polled == 0) {
+    /* Observe the measured alternative route before reading SO_ERROR.
+       Completion can already carry an error when poll reports no readiness;
+       that error must not skip this wait. This is Cosmopolitan select(), not
+       an assertion about the distinct native Winsock select() fd sets. */
+    fd_set writes, errors;
+    FD_ZERO(&writes); FD_ZERO(&errors);
+    FD_SET(client, &writes); FD_SET(client, &errors);
+    struct timeval deadline = {5, 0};
+    errno = 0;
     selected = select(client + 1, 0, &writes, &errors, &deadline);
+    select_error = errno;
     writable = selected > 0 && FD_ISSET(client, &writes);
     exceptional = selected > 0 && FD_ISSET(client, &errors);
-    length = sizeof(socket_error);
-    got = getsockopt(client, SOL_SOCKET, SO_ERROR, &socket_error, &length);
   }
-  int failed_connect = setup && connect_value == -1 &&
+  socket_error = 0; length = sizeof(socket_error);
+  errno = 0;
+  int got = setup ? getsockopt(client, SOL_SOCKET, SO_ERROR, &socket_error, &length) : -2;
+  int option_error = errno;
+  int failed_connect = setup && (!completion_gate || gate_selected > 0) && connect_value == -1 &&
       ((connect_error != EINPROGRESS && connect_error != EWOULDBLOCK) || ((polled == 1 || selected > 0) && !got && socket_error != 0));
-  snprintf(json, sizeof(json), "{\"reserve_closed_before_connect\":%s,\"target_port\":%d,\"connect\":%d,\"connect_errno\":%d,\"poll\":%d,\"poll_timeout_ms\":2000,\"raw_revents\":%d,\"error\":%s,\"hup\":%s,\"select\":%d,\"select_writable\":%s,\"select_exceptional\":%s,\"socket_error\":%d,\"connection_failed\":%s}",
-      boolean(reserve_closed), ntohs(address.sin_port), connect_value, connect_error, polled, events, boolean(events & POLLERR), boolean(events & POLLHUP), selected, boolean(writable), boolean(exceptional), socket_error, boolean(failed_connect));
+  snprintf(json, sizeof(json), "{\"reserve_closed_before_connect\":%s,\"target_port\":%d,\"connect\":%d,\"connect_errno\":%d,\"errno_domain\":\"cosmopolitan-errno\",\"poll\":%d,\"poll_errno\":%d,\"poll_timeout_ms\":2000,\"raw_revents\":%d,\"error\":%s,\"hup\":%s,\"completion_gate\":%s,\"gate_select\":%d,\"gate_writable\":%s,\"gate_exceptional\":%s,\"select\":%d,\"select_errno\":%d,\"select_api\":\"cosmopolitan-select\",\"select_writable\":%s,\"select_exceptional\":%s,\"socket_error_result\":%d,\"socket_error_errno\":%d,\"socket_error\":%d,\"socket_error_domain\":\"getsockopt-raw\",\"connection_failed\":%s}",
+      boolean(reserve_closed), ntohs(address.sin_port), connect_value, connect_error, polled, poll_error, events, boolean(events & POLLERR), boolean(events & POLLHUP), boolean(completion_gate), gate_selected, boolean(gate_writable), boolean(gate_exceptional), selected, select_error, boolean(writable), boolean(exceptional), got, option_error, socket_error, boolean(failed_connect));
   result("socket.connect-error", failed_connect, json);
   closed(&client); closed(&reserve);
   snprintf(json, sizeof(json), "{\"all_descriptors_closed\":%s}", boolean(cleanup_ok));
@@ -358,7 +377,7 @@ static void sockets(void) {
 }
 int main(int argc, char **argv) {
   if (argc == 2 && !strcmp(argv[1], "--hang")) for (;;) pause();
-  if (argc != 2 || strcmp(argv[1], "--suite")) return 64;
+  if (argc != 2 || (strcmp(argv[1], "--suite") && strcmp(argv[1], "--connect-error-ready"))) return 64;
   signal(SIGPIPE, SIG_IGN);
   struct utsname u;
   uname(&u);
@@ -373,6 +392,6 @@ int main(int argc, char **argv) {
       "\"symbolic_flags\":{\"POLLIN\":%d,\"POLLOUT\":%d,\"POLLERR\":%d,\"POLLHUP\":%d,\"POLLNVAL\":%d}}",
       u.sysname, arch, sysconf(_SC_PAGESIZE), POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL);
   result("facts", true, json);
-  wakers(); sockets();
+  wakers(); sockets(!strcmp(argv[1], "--connect-error-ready"));
   return failures ? 1 : 0;
 }

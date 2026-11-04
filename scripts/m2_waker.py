@@ -184,8 +184,13 @@ def collect_observations(report, records, executed, artifact, execution, timeout
             raise BuildError("Unknown probe status; limitations cannot replace required execution")
         if not matches_contract(record, execution):
             record = {**record, "status": "fail", "reason": "Observed native result does not satisfy the probe contract"}
+        kind = "normal-os-probe"
+        if record["case_id"] == "waker.control-failure":
+            kind = "controlled-system-fault"
+        elif record["case_id"] == "socket.connect-error" and record["actual"].get("completion_gate"):
+            kind = "controlled-system-order"
         report["cases"].append({**record, "artifact": artifact, "commands": [executed],
-                                "execution_kind": "controlled-system-fault" if record["case_id"] == "waker.control-failure" else "normal-os-probe",
+                                "execution_kind": kind,
                                 "started_at": executed["started_at"], "finished_at": executed["finished_at"],
                                 "timeout_seconds": timeout, "exit_code": executed["exit_code"]})
     missing = REQUIRED - set(ids)
@@ -204,6 +209,8 @@ def collect_observations(report, records, executed, artifact, execution, timeout
         "scope": "OS feasibility evidence only; does not prove Runtime generation filtering or product APIs"}
     failed_connect = next(record["actual"] for record in records if record["case_id"] == "socket.connect-error")
     report["backend_evidence"]["failed_connect_wait"] = "poll" if failed_connect["poll"] == 1 else "select; poll did not report completion within its recorded deadline"
+    report["backend_evidence"]["failed_connect_select_api"] = "Cosmopolitan select wrapper; native Winsock select fd sets are a separate observation"
+    report["backend_evidence"]["socket_error_domain"] = "Raw getsockopt(SO_ERROR) output is retained separately from syscall errno; no numeric-domain inference"
 
 
 def consume(args, report, directory):
@@ -350,7 +357,8 @@ def main():
     parser.add_argument("--loader", type=Path)
     parser.add_argument("--loader-dir", type=Path)
     parser.add_argument("--loader-manifest", type=Path)
-    parser.add_argument("--probe-mode", choices=("suite", "hang"), default="suite", help="hang is the deliberate deadline negative fixture")
+    parser.add_argument("--probe-mode", choices=("suite", "hang", "connect-error-ready"), default="suite",
+                        help="hang is the deadline negative fixture; connect-error-ready gates real connect completion before the error observation")
     parser.add_argument("--expected-os", choices=("Linux", "Windows", "Darwin"))
     parser.add_argument("--expected-arch", choices=("x86_64", "aarch64"))
     parser.add_argument("--runner-label")
