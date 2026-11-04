@@ -20,8 +20,8 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 | 07 | [一次 timer 推进 TLA 与自然退出](issues/07-one-shot-timer-tla.md) | [06](issues/06-wait-events-keepalive-stop.md) | resolved |
 | 08 | [重复 timer、immediate 与检查点轮转](issues/08-interval-immediate-fair-checkpoints.md) | [07](issues/07-one-shot-timer-tla.md) | claimed |
 | 09 | [宿主自有事件循环的原生通知接入](issues/09-host-notify-loop-integration.md) | [06](issues/06-wait-events-keepalive-stop.md) | resolved |
-| 10 | [纯 C Host 的有界原生工作闭环](issues/10-c-host-bounded-work.md) | [06](issues/06-wait-events-keepalive-stop.md) | claimed |
-| 11 | [任务取消竞争、结果 release 与容量保留](issues/11-work-cancel-result-retention.md) | [10](issues/10-c-host-bounded-work.md) | ready-for-agent |
+| 10 | [纯 C Host 的有界原生工作闭环](issues/10-c-host-bounded-work.md) | [06](issues/06-wait-events-keepalive-stop.md) | resolved |
+| 11 | [任务取消竞争、结果 release 与容量保留](issues/11-work-cancel-result-retention.md) | [10](issues/10-c-host-bounded-work.md) | claimed |
 | 12 | [JS 命名工作、Promise 与取消闭环](issues/12-js-named-work-promises.md) | [08](issues/08-interval-immediate-fair-checkpoints.md)、[11](issues/11-work-cancel-result-retention.md) | ready-for-agent |
 | 13 | [纯 C Host 的显式 spawn 与退出观察](issues/13-c-host-process-spawn-exit.md) | [04](issues/04-process-inheritance-os-probes.md)、[06](issues/06-wait-events-keepalive-stop.md) | claimed |
 | 14 | [直接子进程取消、回收与关闭竞争](issues/14-process-cancel-reap.md) | [13](issues/13-c-host-process-spawn-exit.md) | ready-for-agent |
