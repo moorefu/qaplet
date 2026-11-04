@@ -11,6 +11,8 @@ typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
 typedef struct qaplet_process_pool qaplet_process_pool;
+
+typedef struct qaplet_work_pool qaplet_work_pool;
 typedef struct qaplet_timer_slot qaplet_timer_slot;
 typedef struct { uint64_t generation; int active; } qaplet_keepalive_slot;
 typedef struct { qaplet_notify_function function; void *userdata; } qaplet_notification;
@@ -23,6 +25,8 @@ struct qaplet_runtime {
   pthread_mutex_t mutex;
   pthread_cond_t native_condition;
   uint64_t native_retained;
+  qaplet_work_pool *work_pool;
+  qaplet_work_snapshot work_snapshot;
   qaplet_notify_function notify_function;
   void *notify_userdata;
   uint64_t notify_inflight, notify_inflight_peak;
@@ -84,6 +88,7 @@ struct qaplet_runtime {
   unsigned char *event_slots;
   size_t event_stride, event_storage_size, event_head;
   int event_handler_ready, event_accepting;
+  unsigned ready_cursor, completion_cursor;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
@@ -116,6 +121,12 @@ int qaplet_clock_locked(qaplet_runtime *, uint64_t *);
  * logical result is not sufficient. No provider may retain after close. */
 qaplet_code qaplet_native_retain(qaplet_runtime *);
 void qaplet_native_release(qaplet_runtime *);
+void qaplet_work_shutdown(qaplet_runtime *);
+void qaplet_work_close(qaplet_runtime *);
+/* Acceptance mutex held. Reap only exited threads; join proves physical exit. */
+void qaplet_work_reap_locked(qaplet_runtime *);
+unsigned qaplet_work_handoff(qaplet_runtime *, uint64_t);
+int qaplet_work_ready_locked(qaplet_runtime *);
 /* Internal ready-work drive; caller holds the whole-call owner guard. */
 qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *, int automatic);
 /* CLI-only automatic drive, returning at entry completion before a new ledger. */

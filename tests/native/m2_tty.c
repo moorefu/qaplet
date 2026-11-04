@@ -439,20 +439,41 @@ static int gate(const char *name) {
   while (current.tv_sec - start.tv_sec < 10);
   return 0;
 }
+#ifdef QAPLET_TTY_RESIZE_ORDER_FIXTURE
+#include "m2_tty_resize_order.h"
+#endif
 static void console_resize(struct Lease *l) {
   int got = !acquire(l), events = 0, cols = 0, rows = 0;
-  struct NtConsoleScreenBufferInfo before = {0}, after = {0};
+  struct NtConsoleScreenBufferInfo before = {0}, before_notification = {0}, after = {0};
   int first = GetConsoleScreenBufferInfo(l->hout, &before);
   FlushConsoleInputBuffer(l->hin);
-  int resized = got && gate("resize"), queried = GetConsoleScreenBufferInfo(l->hout, &after);
+  int resized = got && gate("resize");
+  /* ResizePseudoConsole completion and the input notification travel through
+     different boundaries. Keep this early observation as evidence, then make
+     the decisive query only after observing the final resize notification. */
+  int early_query = GetConsoleScreenBufferInfo(l->hout, &before_notification);
   uint32_t count = 0, read = 0; struct NtInputRecord input;
-  while (GetNumberOfConsoleInputEvents(l->hin, &count) && count) {
-    if (!ReadConsoleInput(l->hin, &input, 1, &read) || read != 1) break;
-    if (input.EventType == kNtWindowBufferSizeEvent) { ++events; cols = input.Event.WindowBufferSizeEvent.dwSize.X; rows = input.Event.WindowBufferSizeEvent.dwSize.Y; }
+  struct timespec current = {0};
+  int clock_ok = !clock_gettime(CLOCK_MONOTONIC, &current), transport = 1, final_notification = 0, wait_timed_out = 0;
+  int64_t deadline = (int64_t)current.tv_sec * 1000000000 + current.tv_nsec + 2000000000;
+  while (resized && clock_ok && transport && !final_notification) {
+    clock_ok = !clock_gettime(CLOCK_MONOTONIC, &current);
+    int64_t remaining = deadline - ((int64_t)current.tv_sec * 1000000000 + current.tv_nsec);
+    if (!clock_ok || remaining <= 0) { wait_timed_out = clock_ok; break; }
+    uint32_t waited = WaitForSingleObject(l->hin, (remaining + 999999) / 1000000);
+    if (waited != 0) { wait_timed_out = waited == 258; break; }
+    for (;;) {
+      if (!GetNumberOfConsoleInputEvents(l->hin, &count)) { transport = 0; break; }
+      if (!count) break;
+      if (!ReadConsoleInput(l->hin, &input, 1, &read) || read != 1) { transport = 0; break; }
+      if (input.EventType == kNtWindowBufferSizeEvent) { ++events; cols = input.Event.WindowBufferSizeEvent.dwSize.X; rows = input.Event.WindowBufferSizeEvent.dwSize.Y; }
+    }
+    final_notification = events >= 1 && cols == 100 && rows == 33;
   }
+  int queried = final_notification && GetConsoleScreenBufferInfo(l->hout, &after);
   int restored = !release(l);
-  char json[512]; snprintf(json, sizeof(json), "{\"initial_cols\":%d,\"initial_rows\":%d,\"resize_calls\":2,\"notifications\":%d,\"latest_cols\":%d,\"latest_rows\":%d,\"queried_cols\":%d,\"queried_rows\":%d,\"mode_restored\":%s,\"notification\":\"WINDOW_BUFFER_SIZE_EVENT\"}", before.dwSize.X, before.dwSize.Y, events, cols, rows, after.dwSize.X, after.dwSize.Y, boolean(restored));
-  result("tty.resize", got && first && before.dwSize.X == 80 && before.dwSize.Y == 24 && resized && queried && events >= 1 && cols == 100 && rows == 33 && after.dwSize.X == 100 && after.dwSize.Y == 33 && restored, json);
+  char json[768]; snprintf(json, sizeof(json), "{\"initial_cols\":%d,\"initial_rows\":%d,\"resize_calls\":2,\"notifications\":%d,\"latest_cols\":%d,\"latest_rows\":%d,\"queried_cols\":%d,\"queried_rows\":%d,\"before_notification_cols\":%d,\"before_notification_rows\":%d,\"query_after_final_notification\":%s,\"resize_wait_timed_out\":%s,\"mode_restored\":%s,\"notification\":\"WINDOW_BUFFER_SIZE_EVENT\"}", before.dwSize.X, before.dwSize.Y, events, cols, rows, after.dwSize.X, after.dwSize.Y, before_notification.dwSize.X, before_notification.dwSize.Y, boolean(final_notification && queried), boolean(wait_timed_out), boolean(restored));
+  result("tty.resize", got && first && before.dwSize.X == 80 && before.dwSize.Y == 24 && resized && early_query && clock_ok && transport && final_notification && queried && after.dwSize.X == 100 && after.dwSize.Y == 33 && restored, json);
 }
 static void console_text(struct Lease *l) {
   int got = !acquire(l), input_ok = got && FlushConsoleInputBuffer(l->hin) && gate("text");

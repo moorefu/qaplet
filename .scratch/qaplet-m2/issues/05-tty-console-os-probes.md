@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress；旧 `0e4ba21` 五原生及实际 64K 验收保留；当前 `563ff33` Full 的 Windows resize 回归重新调查。
+**Execution state:** awaiting_cross；旧 `0e4ba21` 五原生及实际 64K 验收保留；当前 `563ff33` Windows resize 回归已完成真实受控 red/green、本地三目标及必需检查，待新 Windows Server 原生 Full。
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -69,4 +69,6 @@
 2026-11-03 补检：coordinator 验证静态 SDK 编译缓存的标准 NTFS 压缩保留全部 4783 文件字节，恢复 D 盘既有空间门槛后，本票通过原 `dev.py check` 完整入口：362 项中 182 项执行通过、180 项既有条件 skipped，本票 8 项均执行，统一锁/CI 静态合同/真实 C bootstrap 全部 pass。首轮失败原件保留；新报告为 fresh 修复树的 `out/m2-05-fix/candidate/dev-check-entry.json` 与 `dev-check-after-space.json`，环境收据在主工作区 `out/qaplet-m2/cache-compression-verified.json`。补检后已合并最新 integration `1e1908f`，没有产品配方变化；仍待新 Mac native 与集成 Full，不改变 claimed 状态。
 
 2026-11-04：当前 [Full 41788055889](https://github.com/moorefu/qaplet/actions/runs/41788055889) / `563ff33` 在 Windows `tty.resize` 失败：两次 ResizePseudoConsole 均 HRESULT=0，记录 latest100×33、实际 queried90×31、notifications2；ConPTY child exit256、无 timeout、error=null，四项资源清理均 true。原 provider ZIP `13302417443`、原 `tty.json`、`console-results.ndjson` 及实际 controller/stdout 均保留于主 `out/qaplet-m2/full-563ff33/`，不猜测归因。重新领取 `codex/m2-05-resize-fix` / `.cache/worktrees/m2-05-resize-fix`，保持旧 `0e4ba21` 成绩原范围。root 在本机 Windows 对当前同一 APE 的普通 20 次及四组并行各 100 次实际 ConPTY 循环共 420 次未复现，原件在 `out/qaplet-m2/05-resize-diagnosis/`；这不修复、重标或否定 CI 的实际失败。直接公开 consumer 另正确拒绝 CI producer/本地 ci=null 身份混用；后续循环明确是本地真实 OS 诊断，不冒充 CI 消费。须先建立可捕获本次竞态的反馈循环，再修复和取得新 Cross。
+
+2026-11-04：独立修复 `527bfd8` 先取得0.60秒3/3精确旧症状的真实受控ConPTY red，新回归测试再先red；最终通知后重新查询且有界等待的修复后，受控20/20（早期90×31、最终100×33）、正常20/20均pass并完整清理。Ubuntu正常同字节供应物在Linux19/19、Windows21/21、完整系统ARM64 64K19/19通过；Windows9/9合同无跳过，Linux8项适用合同全过，Windows专属受控用例不适用。合并最新集成`fa4d768`后，既有dev.py check 369项/183执行/186条件跳过成功。配方原字节、LF、Git blob、producer与实际制品均重核；省略最后resize的真实负向在内部等待耗尽后保持fail且恢复/回收。详见[当前resize诊断、身份与交接](../05-resize-validation.md)。票继续claimed / awaiting_cross，尚不宣称Windows Server当前Full通过；原CI具体调度顺序仍未知，原失败与旧成绩均保留。
 

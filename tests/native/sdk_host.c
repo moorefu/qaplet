@@ -263,6 +263,7 @@ int main(int argc, char **argv) {
   }
   if (argc > 1 && !strncmp(argv[1], "--m2-process", 12)) { extern int sdk_process(int,char **); return sdk_process(argc,argv); }
   if (argc != 2) return 2;
+  if (!strncmp(argv[1], "--m2-work", 9)) { extern int sdk_work(const char *); return sdk_work(argv[1]); }
   if (!strncmp(argv[1], "--m2-timer", 10)) { extern int sdk_timers(const char *, const char *); return sdk_timers(argv[1], NULL); }
   if (!strncmp(argv[1], "--m2-notify", 11)) { extern int sdk_notify(const char *); return sdk_notify(argv[1]); }
   if (!strncmp(argv[1], "--m2-wait", 9)) { extern int sdk_wait(const char *); return sdk_wait(argv[1]); }

@@ -57,7 +57,7 @@ static int configuration(void) {
   CHECK(qaplet_query_abi(&abi) == QAPLET_OK && (abi.capabilities & QAPLET_CAP_M2_RUNTIME));
   CHECK(qaplet_create(&base, &runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_get_m2_snapshot(runtime, &snapshot, NULL) == QAPLET_OK);
-  CHECK(snapshot.capabilities == (abi.capabilities & ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS)));
+  CHECK(snapshot.capabilities == (abi.capabilities & ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS)));
   CHECK(snapshot.m2_limits.worker_threads == 0 && snapshot.m2_limits.operations == 0);
   CHECK(qaplet_run_once(runtime, 0, &result, NULL) == QAPLET_UNSUPPORTED);
   CHECK(qaplet_quiesce(runtime, 0, &result, NULL) == QAPLET_UNSUPPORTED);

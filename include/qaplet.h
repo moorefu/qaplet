@@ -51,6 +51,7 @@ enum {
   /* Explicit M2 factory and separate native cleanup state. */
   QAPLET_CAP_M2_RUNTIME = 1u << 17,
   QAPLET_CAP_M2_WAIT = 1u << 18,
+  QAPLET_CAP_M2_WORK = 1u << 21,
   QAPLET_CAP_M2_TIMERS = 1u << 19,
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_PROCESS = 1u << 22,
@@ -448,6 +449,84 @@ qaplet_code qaplet_process_set_ref(qaplet_runtime *, const qaplet_process *, uin
 qaplet_code qaplet_process_release(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
 /* Thread-safe POD query, including CLOSED. */
 qaplet_code qaplet_get_process_snapshot(qaplet_runtime *, qaplet_process_snapshot *, qaplet_diagnostic *);
+
+/* Named native work, M2 only. Declarations and names are copied atomically.
+ * Zero byte/concurrency fields inherit the finite instance defaults. No
+ * replacement/unregister. First accepted execution or valid pump freezes them.
+ * Code/userdata remain Host-owned and valid until native QUIESCENT (also when
+ * close already returned). Host allocations are outside the SDK byte budget.
+ * A worker receives only native data. Its context/output/input are borrowed
+ * until return. Set output.length <= capacity; no completion-time allocation
+ * is needed. Returning an ordinary error fails this task, preserving native
+ * error_domain/error. Cancellation is cooperative; never kill the worker. */
+typedef struct qaplet_work_context qaplet_work_context;
+typedef struct {
+  void *data;
+  size_t capacity, length;
+  uint32_t error_domain;
+  int32_t error;
+} qaplet_work_output;
+typedef qaplet_code (*qaplet_work_function)(qaplet_work_context *, const void *, size_t,
+                                          qaplet_work_output *, void *userdata);
+typedef struct {
+  uint32_t struct_size, abi_version;
+  const char *name;
+  size_t name_length;
+  qaplet_work_function function;
+  void *userdata;
+  uint64_t input_bytes, output_bytes, concurrency;
+  uint64_t flags, reserved[2];
+} qaplet_work_handler;
+typedef struct { uint64_t runtime_id, slot, generation; } qaplet_work_task;
+typedef enum {
+  QAPLET_WORK_QUEUED, QAPLET_WORK_RUNNING, QAPLET_WORK_SUCCEEDED,
+  QAPLET_WORK_FAILED, QAPLET_WORK_CANCELLED
+} qaplet_work_state;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_work_state state;
+  qaplet_code code;
+  uint32_t error_domain;
+  int32_t error;
+  void *buffer;
+  size_t capacity, length;
+} qaplet_work_result;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t handlers, handlers_peak, operations, operations_peak;
+  uint64_t queued, running, retained_results, pending_handoffs;
+  uint64_t data_bytes, data_bytes_peak, worker_threads, worker_threads_peak;
+  uint64_t worker_stack_bytes, worker_stack_bytes_peak;
+  uint64_t accepted, rejected, completed, cancelled;
+  uint32_t start_error_domain;
+  int32_t start_error;
+} qaplet_work_snapshot;
+#define QAPLET_WORK_HANDLER_INIT {sizeof(qaplet_work_handler), QAPLET_ABI_VERSION, NULL, 0, NULL, NULL, 0, 0, 0, 0, {0}}
+#define QAPLET_WORK_TASK_INIT {0, 0, 0}
+#define QAPLET_WORK_RESULT_INIT {sizeof(qaplet_work_result), QAPLET_ABI_VERSION, 0, 0, 0, 0, NULL, 0, 0}
+#define QAPLET_WORK_SNAPSHOT_INIT {sizeof(qaplet_work_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+/* Owner, outside drives/callbacks. Submit copies input and reserves the complete
+ * output/record before publishing acceptance. Saturation is RESOURCE_LIMIT,
+ * with output unchanged. Actual SDK allocation refusal permanently fails the
+ * Runtime. Every task defaults ref until owner completion handoff, including
+ * the complete jobs checkpoint. Neither onEvent nor business queue space is
+ * required. Retained results and physical use continue charging capacity. */
+qaplet_code qaplet_register_work_handler(qaplet_runtime *, const qaplet_work_handler *, qaplet_diagnostic *);
+qaplet_code qaplet_work_submit(qaplet_runtime *, const char *name, size_t name_length,
+                               const void *input, size_t input_length, qaplet_work_task *, qaplet_diagnostic *);
+/* Owner only. Nonterminal results/releases return BAD_STATE. BUFFER_TOO_SMALL
+ * reports length without copying bytes; retry never reruns the task. Release
+ * invalidates this token; cross-Runtime and stale generations are INVALID_HANDLE.
+ * A released logically cancelled task keeps physical buffers/record charged
+ * until its native call returns. Release never proves syscall/thread exit.
+ * close invalidates result access and retires records only after physical use.
+ * Neither logical cancellation nor close proves native exit/join. */
+qaplet_code qaplet_work_copy_result(qaplet_runtime *, const qaplet_work_task *, qaplet_work_result *, qaplet_diagnostic *);
+qaplet_code qaplet_work_release(qaplet_runtime *, const qaplet_work_task *, qaplet_diagnostic *);
+/* Any thread, native POD only. A context is valid only within its worker call;
+ * cancelled reports cooperative stop/close, not rollback or syscall exit. */
+qaplet_code qaplet_get_work_snapshot(qaplet_runtime *, qaplet_work_snapshot *, qaplet_diagnostic *);
+int qaplet_work_cancelled(qaplet_work_context *);
 
 /* Global query, POD snapshots, post_event and request_stop are thread-safe. Other operations
  * belong to the thread that successfully created the Runtime. Output pointers
