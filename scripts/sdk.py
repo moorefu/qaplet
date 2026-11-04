@@ -300,7 +300,8 @@ def package_consume(args, report, directory):
         if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
         executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
-        expected = "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass\n"
+        expected = (next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
+                    "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion survives wake failure; join error independently retained CLOSED/BUSY without false cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",
             "required": True, "controlled_system_fixture": True, "command": executed,
@@ -489,15 +490,19 @@ def compile_work_faults(args, report, directory, tree, helpers, sdk, work, outpu
     """Separate required WorkPool system seam inside existing fault consumption."""
     (work / "tmp").mkdir(parents=True)
     source = sdk / "work-faults.c"
-    symbols = ("calloc", "pthread_create", "pthread_tryjoin_np", "send")
+    symbols = ("calloc", "pthread_create", "pthread_tryjoin_np", "send", "mkstemp")
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-work-faults.build-commands.log"))
     report["work_controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
-        "scope": "actual SDK allocation refusal, ordinary worker creation errno, accepted submit/completion wake failure and uncertain join; not native OS coverage"}
+        "file_consumer": identity(sdk / "host-work.c"),
+        "scope": "real absent global-tmp boundary through supplied file consumer, actual SDK allocation refusal, ordinary worker creation errno, accepted submit/completion wake failure and uncertain join; not native OS coverage"}
     run(report, directory, "work-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
         "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
         "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-work-faults", [work / "faults.o", sdk / "lib/libqaplet.a"],
+    run(report, directory, "work-faults-file-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", sdk / "host-work.c", "-o", work / "host-work.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-faults", [work / "faults.o", work / "host-work.o", sdk / "lib/libqaplet.a"],
         work / "qaplet-work-faults.com", work, environment,
         libraries=(*("-Wl,--wrap=" + name for name in symbols), "-lm", "-lpthread"))
     publish_ape(work, output, "qaplet-work-faults", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
