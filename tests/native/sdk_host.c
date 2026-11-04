@@ -245,6 +245,7 @@ static int abi_contract(void) {
 
 int main(int argc, char **argv) {
   extern int sdk_runtime(const char *), sdk_cli_contract(const char *);
+  if (argc == 3 && !strcmp(argv[1], "--m2-timers-tla")) { extern int sdk_timers(const char *, const char *); return sdk_timers(argv[1], argv[2]); }
   if (argc == 3 && !strcmp(argv[1], "--m1-compat")) return sdk_m1_compat(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--runtime")) return sdk_runtime(argv[2]);
   if (argc == 3 && !strcmp(argv[1], "--cli-contract")) return sdk_cli_contract(argv[2]);
@@ -261,6 +262,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc != 2) return 2;
+  if (!strncmp(argv[1], "--m2-timer", 10)) { extern int sdk_timers(const char *, const char *); return sdk_timers(argv[1], NULL); }
   if (!strncmp(argv[1], "--m2-notify", 11)) { extern int sdk_notify(const char *); return sdk_notify(argv[1]); }
   if (!strncmp(argv[1], "--m2-wait", 9)) { extern int sdk_wait(const char *); return sdk_wait(argv[1]); }
   if (!strncmp(argv[1], "--m2-", 5)) return sdk_m2_runtime(argv[1]);

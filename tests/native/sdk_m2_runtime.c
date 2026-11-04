@@ -57,7 +57,7 @@ static int configuration(void) {
   CHECK(qaplet_query_abi(&abi) == QAPLET_OK && (abi.capabilities & QAPLET_CAP_M2_RUNTIME));
   CHECK(qaplet_create(&base, &runtime, NULL) == QAPLET_OK);
   CHECK(qaplet_get_m2_snapshot(runtime, &snapshot, NULL) == QAPLET_OK);
-  CHECK(snapshot.capabilities == (abi.capabilities & ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_HOST_NOTIFY)));
+  CHECK(snapshot.capabilities == (abi.capabilities & ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_HOST_NOTIFY)));
   CHECK(snapshot.m2_limits.worker_threads == 0 && snapshot.m2_limits.operations == 0);
   CHECK(qaplet_run_once(runtime, 0, &result, NULL) == QAPLET_UNSUPPORTED);
   CHECK(qaplet_quiesce(runtime, 0, &result, NULL) == QAPLET_UNSUPPORTED);
@@ -191,7 +191,7 @@ static int owner_contract(void) {
   return 0;
 }
 static int creation_contract(void) {
-  unsigned heap_refusals = 0, native_refusals = 0, successes = 0;
+  unsigned heap_refusals = 0, native_refusals = 0, metadata_refusals = 0, successes = 0;
   for (unsigned kind = 0; kind < 2; ++kind) {
     for (unsigned i = 0; i < 128; ++i) {
       qaplet_config base = QAPLET_CONFIG_INIT;
@@ -202,10 +202,16 @@ static int creation_contract(void) {
         base.limits.native_storage_bytes = 1 + i * 4096;
         config.limits.operation_data_bytes = 1; config.limits.process_data_bytes = 1; config.limits.io_block_bytes = 1;
       }
-      qaplet_code code = qaplet_create_m2(&base, &config, &runtime, NULL);
+      qaplet_m2_diagnostic detail = QAPLET_M2_DIAGNOSTIC_INIT;
+      qaplet_code code = qaplet_create_m2_with_diagnostic(&base, &config, &runtime, &detail, NULL);
       if (code) {
-        CHECK(code == QAPLET_MEMORY_LIMIT && !runtime);
-        if (kind) ++native_refusals; else ++heap_refusals;
+        CHECK(!runtime && detail.primary_reason == code && detail.creation_rollback == QAPLET_ROLLBACK_COMPLETE &&
+          detail.native_state == QAPLET_NATIVE_QUIESCENT && !detail.native_uncertain_handles && !detail.cleanup_reason);
+        if (kind && code == QAPLET_RESOURCE_LIMIT) ++metadata_refusals;
+        else {
+          CHECK(code == QAPLET_MEMORY_LIMIT);
+          if (kind) ++native_refusals; else ++heap_refusals;
+        }
       } else { ++successes; CHECK(!finish(runtime)); }
       base = (qaplet_config)QAPLET_CONFIG_INIT; config = (qaplet_m2_config)QAPLET_M2_CONFIG_INIT;
       CHECK(qaplet_create_m2(&base, &config, &runtime, NULL) == QAPLET_OK);
@@ -214,8 +220,8 @@ static int creation_contract(void) {
       CHECK(!finish(runtime));
     }
   }
-  CHECK(heap_refusals && native_refusals && successes);
-  puts("M2 creation: 256 public heap/native budgets; unpublished null failures; fresh recovery and cleanup: pass");
+  CHECK(heap_refusals && native_refusals && metadata_refusals && successes);
+  puts("M2 creation: 256 public heap/native budgets; allocation versus metadata precheck; null failures and complete rollback; fresh cleanup: pass");
   return 0;
 }
 
