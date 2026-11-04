@@ -20,7 +20,7 @@
 | 票号 | 分支 | worktree | 实施状态 |
 |---|---|---|---|
 | 01 | `codex/m2-01-runtime` | `.cache/worktrees/m2-01` | completed（本票范围独立原件重放通过） |
-| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix` / `02-win-error-fix`；新修复源树暂保留 | completed（`453fe76` 五原生95+实际64K19，Windows回归闭合） |
+| 02 | 旧分支及 `codex/m2-02-win-error-fix` | 原件见 `tickets/02` / `02-macos-fix` / `02-win-error-fix`；源树已清理，分支保留 | completed（`453fe76` 五原生95+实际64K19，Windows回归闭合） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
 | 05 | 旧分支及 `codex/m2-05-resize-fix` | 原件见 `tickets/05` / `05-cross-fix` / `05-resize-fix` | completed（`46e5cf4` 五原生97+实际64K19，resize回归闭合） |
@@ -162,7 +162,7 @@ WorkPool `867356c` / Full `41799595408` 最终 completed/failure：Windows nativ
 
 11由独立merger合入 `d8a9ba9`（源d8b5e826 / 供应产品96e8eb4）：77 raw/Gitblob/LF、ZIP79成员/SDK/三APE/archive各15、normal169/package46/fault2与公开红绿均核验。3579份原件/632,688,371逻辑字节内容和mtime前后不变；合并树同源/双树clean/diffcheck、Ubuntu input-lock、两窄CI和真实bootstrap通过，未重复矩阵或建新SDK。父Python profile未覆盖make/test子进程实际imports的限定明确保留，静态全repo前后身份与实际profile分开记录。见 `out/qaplet-m2/merge-11/AUDIT.md`、`post.json`。11保持awaiting_cross，准备与13最小查询/诊断阶段一同验证新Full；12/15尚未放行。
 
-已完成08/10及文件修复worktree已在完整归档/源对档核验及独立Git/绝对路径/reparse/遗漏输出审计后清理：各4352/2591/1203文件、717,661,830/620,370,368/213,567,341逻辑字节，out外各79个可再生pyc；分支实际SHA与归档保留，共享Git config不变。收据 `store-08/10/10-file-fix-{created,verified}.json`、`completed-08-10-{audit,cleanup}.json`。历史full08/f2等helper原源码绝对路径已不存在，重放须以保留分支重建原worktree并restore/materialize，或另存新映射，不改历史脚本/报告。02新修复冻结out也已保存并源对档核验360文件/52,371,986字节，源树暂保留；13/11/13-cross-fix不清理。
+已完成08/10及文件修复worktree已在完整归档/源对档核验及独立Git/绝对路径/reparse/遗漏输出审计后清理：各4352/2591/1203文件、717,661,830/620,370,368/213,567,341逻辑字节，out外各79个可再生pyc；分支实际SHA与归档保留，共享Git config不变。收据 `store-08/10/10-file-fix-{created,verified}.json`、`completed-08-10-{audit,cleanup}.json`。历史full08/f2等helper原源码绝对路径已不存在，重放须以保留分支重建原worktree并restore/materialize，或另存新映射，不改历史脚本/报告。02新修复冻结out也已保存并源对档核验360文件/52,371,986字节，现按 `completed-02-win-error-fix-{audit,cleanup}.json` 的干净/已合入/绝对路径/reparse/遗漏输出审计清理该树，分支与归档保留，共享Git配置不变；13/11/13-cross-fix不清理。
 
 13 fresh `codex/m2-13-cross-fix` 已实际融合 `6b0de319`，最终产品 `0b725cc` 本地供应通过：
 B02新增 `qaplet_get_process_status` 纯POD任意线程查询，保留旧owner collect和POD布局，
