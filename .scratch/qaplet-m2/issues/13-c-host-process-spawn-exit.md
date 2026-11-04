@@ -4,9 +4,9 @@
 
 **Blocked by:** [04 · 子进程参数、stdio 与继承隔离探针](04-process-inheritance-os-probes.md)、[06 · 等待中的 Runtime 接收事件与停止](06-wait-events-keepalive-stop.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -54,4 +54,6 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-04：04、06 已按各自范围完成，领取 `codex/m2-13-process` / `.cache/worktrees/m2-13`，从当前集成点实施公开 C spawn、退出/reap 与资源首次接入的预算和关闭安全。能力位协调为 bit 22；尚未实现的 pipe 模式必须明确拒绝，不能回退为 ignore。最终状态仍以新供应制品和适用平台证据为准。
 

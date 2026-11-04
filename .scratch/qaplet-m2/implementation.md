@@ -23,12 +23,13 @@
 | 02 | `codex/m2-02-waker` / `codex/m2-02-macos-fix` | 原件见 `tickets/02` / `02-macos-fix` | completed（`196cd75` 五原生及实际 64K 严格重放通过） |
 | 03 | `codex/m2-03-pipe` | `.cache/worktrees/m2-03` | completed（五原生及实际 64K 原件重放通过） |
 | 04 | `codex/m2-04-process` / `codex/m2-04-windows-fix` | 原件见 `tickets/04` / `04-windows-fix` | completed（`0e4ba21` 五原生及实际 64K 共 83 项严格重放通过） |
-| 05 | `codex/m2-05-tty` / `codex/m2-05-cross-fix` | 原件见 `tickets/05` / `05-cross-fix` | completed（`0e4ba21` 五原生及实际 64K 共 116 项严格重放通过） |
-| 06 | `codex/m2-06-wait` 及两条定向修复分支 | `.cache/worktrees/m2-06*` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
+| 05 | 旧分支及 `codex/m2-05-resize-fix` | 旧原件见 `tickets/05` / `05-cross-fix`；新 `.cache/worktrees/m2-05-resize-fix` | in_progress（旧 116 项验收保留，当前 Windows resize 回归调查） |
+| 06 | `codex/m2-06-wait` 及两条定向修复分支 | 原件见 `tickets/06`、`06-creation-fix`、`06-guest-fix` | completed（`bd14a1e` 五原生 560 + 实际 64K 112 严格验收通过） |
 | 07 | `codex/m2-07-timers` | `.cache/worktrees/m2-07` | in_progress，一次 timer 与 TLA |
-| 09 | `codex/m2-09-host-notify` | `.cache/worktrees/m2-09` | in_progress，真实宿主循环通知 |
+| 09 | `codex/m2-09-host-notify` | `.cache/worktrees/m2-09`；归档 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
 | 10 | `codex/m2-10-work` | `.cache/worktrees/m2-10` | in_progress，C 有界工作闭环 |
-| 08、11–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派（13 直接 blocker 已满足） |
+| 13 | `codex/m2-13-process` | `.cache/worktrees/m2-13` | in_progress，C spawn 与实际退出回收 |
+| 08、11–12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
 
 ## 环境事实
 
@@ -117,5 +118,15 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 06 按自身范围 resolved，07、09、10 已领取；13 的直接 blocker 也满足，待槽位。并行实现能力位分别为 timer bit 19、HostNotify bit 20、C work bit 21，接口具体形状依父规格由公开头文件落实，新的全局错误码若需要由 root 协调避免碰撞。每票首个资源即保持预算及 close/quiesce 安全，不延后 19/20；全部票完成后才做一次整体独立审查。当前旧 M1 1,000 循环及 06 本地重复范围不冒充最终 T03 全资源混合，父 M2 仍 in_progress。
 
 ## 一次性测试入口修复
+
+`563ff33` / Full `41788055889` 最终 completed/failure，仅 Windows TTY resize 失败；09 的独立严格闭包及 root 再核均通过，按本票范围 resolved。五原生各 115/合计 575、实际 64K 115、包外应用 8、controlled fault 1、当前 M0 六目标 235；29 原 ZIP、12 nested、11 job 原日志及64 RECIPE/冻结 evaluator/同密封 SDK/双 archives/原生 loader/journal seal 与实际清理均核验，见 `out/qaplet-m2/full-563ff33/HANDOFF.md`、`verify/scope-summary.json`、`09-acceptance-check.json`。M0 console 镜像本次与完整 journal 不同，严格 transport 仍按实际密封 journal 通过，不要求诊断镜像完整。旧 adapter 故障及首次 SDK 下载 EOF、未校验 partial 被重试覆盖的过程缺口如实保留，不谎称该 partial 已归档。
+
+09 全部 2,308 个本地输出（348,998,746 逻辑字节）已保存至 `tickets/09/`，`store-09-created.json` 与 `store-09-verified.json` 通过；源树继续保留供冻结 consumer 重放。05 当前回归重新 claimed，独立旧验收不改标；本机同字节 ConPTY 普通/并行共 420 次未复现，不冒充修复。07 的真实元数据名称遗漏已修复；另一个 15ms timer/1ms wait 的 Windows 断言经两宿主实际单调时钟与受控暂停证明属于夹具未容纳合法 oversleep，正按 B05 修正夹具后重新供应，不修改产品等待或放宽 timeout。10 的真实 HostNotify lease 接线候选已绿，待07集成后完成三类轮转与最终供应；13 独立推进实际 spawn/reap 和继承安全。
+
+09 的源 tip `4615525` 已由独立 merger 合入 `2c44fc3`，本地逐项原始日志重放与供应身份补核通过，见 `out/qaplet-m2/merge-09/evidence-verification-006.json`；旧 Windows fault 消费 driver 被修订后的身份缺口保留，以冻结的新 driver 同 APE 重跑 1 项通过，不改原报告。当前集成的 Ubuntu `scripts/dev.py check` 再次通过：`out/qaplet-m2/check-notify-integration.json`，368 项中 179 实际通过、189 条件 skip，系统 C bootstrap 通过。准备推送当前集成取得新五原生及实际 64K；09 仍 awaiting_cross，父 M2 未完成。
+
+2026-11-04 继续实施时核对：07 的现有分支正在融合 `2c44fc3`，保留尚未完成的 merge 冲突；10 已合入该集成点并保留未提交测试增量，由 fresh implementer 接续，不重置代码或覆盖失败输出。09 已由独立 merger 完成机械合并，继续补齐原始日志重放收据并等待当前配方 Full；13 的直接 blocker 已满足，开始独立实施。父 M2 保持 in_progress。
+
+06 原始实施及两条修复 worktree 已在源对归档核验、干净/已合入/绝对路径与非 reparse 审计后清理，分支与全部原件保留。`completed-06-worktree-audit.json`、`completed-06-worktree-cleanup.json` 和三份 `store-06*-pre-cleanup/verified.json` 保存收据。guest 修复的 604 个原件实际来自主树 `out/m2-06-guest-fix`，该原始输出也继续保留；不以空 worktree/out 冒充原件来源。清理不改变旧报告或产品验收范围。
 
 01 首次 Git shim 为 `git init` 夹具误注入 worktree 环境，向共享 `.git/config` 写入 `core.worktree=/mnt/d/Workspace/dairn/qaplet/.cache/worktrees/m2-01`，使 Windows Git 报 `/mnt` 无效。根代理与独立 merger 先用显式 git-dir/work-tree 确认集成分支 `791af3d` 且干净，保存 `out/qaplet-m2/git-config-before-worktree-repair.txt` 后，仅按精确值移除该项，普通 Windows Git 恢复。01/03 的临时 shim 已改为仅当前仓库的只读查询，其他 fixture 和写操作使用真实 Git；修正后的本地检查分别通过。没有改写产品或历史验收以掩盖此次失败。

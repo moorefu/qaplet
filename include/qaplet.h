@@ -52,6 +52,7 @@ enum {
   QAPLET_CAP_M2_RUNTIME = 1u << 17,
   QAPLET_CAP_M2_WAIT = 1u << 18,
   QAPLET_CAP_M2_WORK = 1u << 21,
+  QAPLET_CAP_M2_TIMERS = 1u << 19,
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
@@ -270,6 +271,35 @@ typedef struct {
  * Runtime identity and generation reject cross-instance and stale releases.
  * These values cannot validate a Runtime pointer after destroy. */
 typedef struct { uint64_t runtime_id, slot, generation; } qaplet_keepalive;
+typedef struct { uint64_t runtime_id, slot, generation; } qaplet_timer;
+typedef void (*qaplet_timer_callback)(qaplet_runtime *, const qaplet_timer *, void *userdata);
+#define QAPLET_TIMER_INIT {0, 0, 0}
+/* One-shot, default ref, owner-only M2 resource. delay_ms is a nonnegative
+ * safe integer (<= 2^53-1) and its absolute nanosecond deadline must fit.
+ * The callback is never synchronous with create. Code/userdata stay borrowed
+ * through callback return, even after self-cancellation. For an unclaimed
+ * timer the borrow ends at cancellation or owner terminal cleanup. The callback
+ * borrows its token pointer only during the call; a value copy may be retained.
+ * Timer operations may reenter owner JS/Host/timer callbacks; eval, nested
+ * drives, close and destroy remain forbidden there. Output changes on success
+ * only. Completion/cancel/stop/close invalidate the identity. A callback's own
+ * record stays charged until it returns, including after self-cancellation. */
+qaplet_code qaplet_timer_create(qaplet_runtime *, uint64_t delay_ms,
+    qaplet_timer_callback, void *userdata, qaplet_timer *output, qaplet_diagnostic *);
+qaplet_code qaplet_timer_cancel(qaplet_runtime *, const qaplet_timer *, qaplet_diagnostic *);
+qaplet_code qaplet_timer_ref(qaplet_runtime *, const qaplet_timer *, int referenced, qaplet_diagnostic *);
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t current, peak, referenced, ready, reserved_bytes, next_timeout_ms;
+} qaplet_timer_snapshot;
+#define QAPLET_TIMER_SNAPSHOT_INIT {sizeof(qaplet_timer_snapshot), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, UINT64_MAX}
+/* Any thread, including CLOSED. Full size required. current includes records
+ * held by an executing callback; reserved_bytes is the fixed SDK slot table.
+ * next_timeout_ms is the rounded-up monotonic delay to any timer, including
+ * unref; UINT64_MAX means no scheduled timer. It is a snapshot, not a wake
+ * registration or a keepalive promise. ready timers have delay 0. The Host
+ * must separately arrange notifications for cross-thread work. */
+qaplet_code qaplet_get_timer_snapshot(qaplet_runtime *, qaplet_timer_snapshot *, qaplet_diagnostic *);
 #define QAPLET_KEEPALIVE_INIT {0, 0, 0}
 #define QAPLET_M2_LIMITS_INIT {sizeof(qaplet_m2_limits), QAPLET_ABI_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define QAPLET_M2_CONFIG_INIT {sizeof(qaplet_m2_config), QAPLET_ABI_VERSION, 0, QAPLET_M2_LIMITS_INIT, {0}}

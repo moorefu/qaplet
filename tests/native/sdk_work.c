@@ -407,6 +407,9 @@ static int limits_contract(void) {
   puts("M2 work limits: real default 8MiB subquota within 16MiB total; simultaneous native metadata/data preflight; retained data charged; count independent; no permanent capacity failure: pass");
   return 0;
 }
+static void release_from_timer(qaplet_runtime *runtime,const qaplet_timer *timer,void *userdata) {
+  (void)runtime;(void)timer;release_gate(userdata);
+}
 static int completion_contract(void) {
   qaplet_config base=QAPLET_CONFIG_INIT;base.limits.event_queue_slots=1;
   qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
@@ -438,7 +441,23 @@ static int completion_contract(void) {
   CHECK(qaplet_work_copy_result(runtime,&a,&result,NULL)==QAPLET_OK && input==17 && result.state==QAPLET_WORK_SUCCEEDED);
   CHECK(qaplet_work_copy_result(runtime,&b,&result,NULL)==QAPLET_OK && input==17 && result.state==QAPLET_WORK_SUCCEEDED);
   CHECK(!finish(runtime) && !destroy_gate(&g));
-  puts("M2 work completion: explicit handler concurrency; saturated business queue cannot lose native records; worker publication retains ref; owner handoff; exact results: pass");
+  base=(qaplet_config)QAPLET_CONFIG_INIT;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate waiting={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};h.userdata=&waiting;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  CHECK(qaplet_work_submit(runtime,"two",3,&input,1,&a,NULL)==QAPLET_OK);wait_entered(&waiting,1,0);
+  qaplet_timer ready=QAPLET_TIMER_INIT,later=QAPLET_TIMER_INIT;
+  CHECK(qaplet_timer_create(runtime,0,release_from_timer,&waiting,&ready,NULL)==QAPLET_OK);
+  CHECK(qaplet_timer_ref(runtime,&ready,0,NULL)==QAPLET_OK);
+  CHECK(qaplet_timer_create(runtime,5000,release_from_timer,&waiting,&later,NULL)==QAPLET_OK);
+  CHECK(qaplet_timer_ref(runtime,&later,0,NULL)==QAPLET_OK);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  qaplet_timer_snapshot timers=QAPLET_TIMER_SNAPSHOT_INIT;
+  CHECK(qaplet_get_timer_snapshot(runtime,&timers,NULL)==QAPLET_OK && timers.current==1 && !timers.referenced && !timers.ready);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.completed==1 && !stats.pending_handoffs && stats.operations==1);
+  CHECK(qaplet_timer_cancel(runtime,&later,NULL)==QAPLET_OK);
+  CHECK(!finish(runtime) && !destroy_gate(&waiting));
+  puts("M2 work completion: explicit concurrency; saturated events retain native records; owner handoff retains ref; work permits ready unref timer; last handoff leaves unref timer idle; exact results: pass");
   return 0;
 }
 typedef struct { pthread_mutex_t mutex;pthread_cond_t condition;pthread_t owner;int ready,hold,released; } host_hint;
@@ -523,7 +542,38 @@ static int scheduling_contract(void) {
   CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.progressed);
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs);
   CHECK(!finish(runtime) && !destroy_gate(&g));
-  puts("M2 work scheduling: native completions and business events share bounded delivery fairly; jobs checkpoints precede each handoff; cursor survives pumps: pass");
+  base=(qaplet_config)QAPLET_CONFIG_INIT;base.limits.pump_jobs=1;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate mixed={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};h.userdata=&mixed;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  const char prepare[]="Promise.all([import('qaplet:events'),import('qaplet:timers')]).then(([e,t])=>{e.onEvent(()=>{});globalThis.install=()=>{for(let i=0;i<32;++i)t.setTimeout(()=>{let p=Promise.resolve();for(let j=0;j<3;++j)p=p.then(()=>{})},0)}})";
+  CHECK(qaplet_eval(runtime,prepare,sizeof(prepare)-1,&progress,NULL)==QAPLET_OK);
+  while (progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_eval(runtime,"install();42",12,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+  for (unsigned i=0;i<32;++i) {
+    CHECK(qaplet_post_event(runtime,i,0,NULL,0,NULL)==QAPLET_OK);
+    CHECK(qaplet_work_submit(runtime,"quick",5,NULL,0,&tasks[i],NULL)==QAPLET_OK);
+  }
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();} while (stats.completed<32);
+  qaplet_timer_snapshot timers=QAPLET_TIMER_SNAPSHOT_INIT;
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==31);
+  CHECK(qaplet_get_timer_snapshot(runtime,&timers,NULL)==QAPLET_OK && timers.current==31);
+  CHECK(qaplet_get_snapshot(runtime,&events,NULL)==QAPLET_OK && !events.events_consumed);
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==31);
+  CHECK(qaplet_get_timer_snapshot(runtime,&timers,NULL)==QAPLET_OK && timers.current==31);
+  CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_get_snapshot(runtime,&events,NULL)==QAPLET_OK && events.events_consumed==1);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==30);
+  CHECK(qaplet_get_timer_snapshot(runtime,&timers,NULL)==QAPLET_OK && timers.current==30);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs);
+  CHECK(qaplet_get_timer_snapshot(runtime,&timers,NULL)==QAPLET_OK && !timers.current);
+  CHECK(qaplet_get_snapshot(runtime,&events,NULL)==QAPLET_OK && events.events_consumed==32);
+  CHECK(!finish(runtime) && !destroy_gate(&mixed));
+  puts("M2 work scheduling: completion/timer/event bounded rotation; complete jobs before each handoff; persisted cursor across jobs-only pumps; all categories drain: pass");
   return 0;
 }
 int sdk_work(const char *mode) {

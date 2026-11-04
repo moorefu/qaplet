@@ -207,6 +207,7 @@ void qaplet_wake_locked(qaplet_runtime *runtime) {
 void qaplet_loop_shutdown(qaplet_runtime *runtime) {
   if (!runtime->m2_enabled) return;
   qaplet_work_shutdown(runtime);
+  qaplet_timers_dispose(runtime);
   pthread_mutex_lock(&runtime->mutex);
   qaplet_notification notification = {0};
   if (!runtime->loop_closed) notification = qaplet_notify_prepare_locked(runtime);
@@ -377,7 +378,7 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   qaplet_query_abi(&abi);
   pthread_mutex_lock(&runtime->mutex);
   value.capabilities = runtime->m2_enabled ? abi.capabilities : abi.capabilities &
-    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY);
+    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY);
   value.lifecycle = runtime->snapshot.lifecycle;
   value.phase = runtime->snapshot.phase;
   value.termination_reason = runtime->snapshot.termination_reason;
@@ -441,7 +442,7 @@ static qaplet_code drive_preflight(qaplet_runtime *runtime, uint64_t wait,
   return code;
 }
 
-static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
+static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous, int entry_only,
                          qaplet_drive_result *output, qaplet_diagnostic *diagnostic) {
   qaplet_code code = drive_preflight(runtime, wait, output, diagnostic);
   if (code) return qaplet_report(diagnostic, code);
@@ -454,9 +455,10 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
   uint64_t remaining = wait * 1000000;
   qaplet_drive_reason reason = QAPLET_DRIVE_IDLE;
   for (;;) {
-    code = qaplet_pump_ready(runtime, &progress, diagnostic);
+    code = qaplet_pump_ready(runtime, &progress, diagnostic, entry_only ? 2 : continuous);
     progressed |= progress.progressed;
     if (code) { reason = code == QAPLET_EXECUTION_STOPPED ? QAPLET_DRIVE_STOPPED : QAPLET_DRIVE_ERROR; break; }
+    if (entry_only && progress.phase == QAPLET_PHASE_DONE) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (!continuous && progress.progressed) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (JS_IsJobPending(runtime->engine) || qaplet_events_pending(runtime)) continue;
     pthread_mutex_lock(&runtime->mutex);
@@ -474,7 +476,7 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
     if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth || qaplet_work_ready_locked(runtime)) {
       pthread_mutex_unlock(&runtime->mutex); continue;
     }
-    if (!runtime->keepalive_tokens && !runtime->work_snapshot.pending_handoffs) {
+    if (!runtime->keepalive_tokens && !runtime->work_snapshot.pending_handoffs && !qaplet_timers_ref_locked(runtime)) {
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
@@ -484,6 +486,11 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
     }
     uint64_t before, duration = continuous ? UINT64_MAX : remaining;
     if (!qaplet_clock_locked(runtime, &before)) { pthread_mutex_unlock(&runtime->mutex); continue; }
+    uint64_t timer_deadline;
+    if (qaplet_timers_deadline_locked(runtime, &timer_deadline)) {
+      if (timer_deadline <= before) { pthread_mutex_unlock(&runtime->mutex); continue; }
+      if (duration > timer_deadline - before) duration = timer_deadline - before;
+    }
     if (runtime->execution_active) {
       if (before >= runtime->execution_deadline_ns) { pthread_mutex_unlock(&runtime->mutex); continue; }
       uint64_t until_deadline = runtime->execution_deadline_ns - before;
@@ -517,10 +524,13 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
 
 qaplet_code qaplet_run_once(qaplet_runtime *runtime, uint64_t wait,
                            qaplet_drive_result *output, qaplet_diagnostic *diagnostic) {
-  return drive(runtime, wait, 0, output, diagnostic);
+  return drive(runtime, wait, 0, 0, output, diagnostic);
 }
 qaplet_code qaplet_run(qaplet_runtime *runtime, qaplet_drive_result *output, qaplet_diagnostic *diagnostic) {
-  return drive(runtime, 0, 1, output, diagnostic);
+  return drive(runtime, 0, 1, 0, output, diagnostic);
+}
+qaplet_code qaplet_drive_entry(qaplet_runtime *runtime, qaplet_drive_result *output, qaplet_diagnostic *diagnostic) {
+  return drive(runtime, 0, 1, 1, output, diagnostic);
 }
 qaplet_code qaplet_native_retain(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);

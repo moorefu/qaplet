@@ -98,6 +98,21 @@ Windows 唯一 optional blocked 是旧 symlink fixture 的 winerror 1314，未�
 
 ## 待最终集成验收
 
+07 合入 integration `fa4d768` 后，本票融合公开能力19/20/21、SDK目录和声明，
+保持旧必需 ABI subset 与真实全集 metadata 分开验证。公开 work scheduling
+用例增加32个 work、32个JS timer、32个事件，在 `pump_jobs=1` 下以三次 pump
+观察公开队列/保留结果/timer 快照：首轮 work/timer 后 jobs 未结算，第二轮只做
+jobs，第三轮先交付事件再轮转 work/timer。机械合并候选
+`timer-mixed-red.json` 实际在第三轮事件计数断言失败，持久三类 cursor 修复后
+`timer-mixed-green.json` 通过，同时通过原 ledger/capacity 用例。
+
+公开 completion 用例新增由 unref timer 释放阻塞 work 的可控交接。原07自动
+timer资格在 work 仍 ref 时忽略 timer，`timer-work-live-red.json` 被5秒外层
+supervisor终止，保留失败。自动资格和 driver 存活同时包含 pending handoff 后，
+当前 ref work 允许 ready unref timer，最后 handoff 后剩余远期 unref timer
+不再保活。`timer-final-green.json` 的13个 work 用例全部 pass，无 stderr 或
+timeout；这些仍为增量候选，最终密封供应另行绑定。
+
 接续实施保留前代理未提交的公开 `--m2-work-notify` tracer。合入真实 09 后，
 `out/m2-10/notify-red.json` 编译成功，但 Host 自有条件变量等不到 native 完成
 提示，被外层 5 秒 supervisor 终止，明确为失败。worker 完成、worker 退出、
