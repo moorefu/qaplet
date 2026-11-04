@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress
+**Execution state:** awaiting_cross
 
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] 显式路径、Unicode/空格/特殊 argv、Runtime cwd 和创建时环境快照/完整替换成立，不搜索 PATH/PATHEXT 或隐式 shell。
-- [ ] 输入 UTF-8/NUL、项数/字节、缺程序及创建中失败有稳定拒绝和清理，旧入口结果不被未接受调用擦除。
-- [ ] ignore/inherit 等已完成子集有真实 C SDK 闭环；尚未完成的 pipe 行为不得被默认为成功或悄悄改成 ignore。
-- [ ] 直接子进程退出/reap 与实际 native 事实可观察，默认 ref 与进程/句柄额度从资源首次出现起有效。
-- [ ] 随资源引入实现 stop/close 的最小安全终止回收与保留，继承只含授权 stdio，不能泄漏 waker 或临时句柄。
+- [x] 显式路径、Unicode/空格/特殊 argv、Runtime cwd 和创建时环境快照/完整替换成立，不搜索 PATH/PATHEXT 或隐式 shell。
+- [x] 输入 UTF-8/NUL、项数/字节、缺程序及创建中失败有稳定拒绝和清理，旧入口结果不被未接受调用擦除。
+- [x] ignore/inherit 等已完成子集有真实 C SDK 闭环；尚未完成的 pipe 行为不得被默认为成功或悄悄改成 ignore。
+- [x] 直接子进程退出/reap 与实际 native 事实可观察，默认 ref 与进程/句柄额度从资源首次出现起有效。
+- [x] 随资源引入实现 stop/close 的最小安全终止回收与保留，继承只含授权 stdio，不能泄漏 waker 或临时句柄。
 
 ## Blocking details
 
@@ -62,4 +62,11 @@
 32 项配额、默认环境合计预算。详见 [13 验证记录](../13-process-validation.md)。
 按 root 调度先候选交接，等待 filefix/08 实际集成后 followup 最终重供；当前保持
 `claimed / in_progress`，尚未标 awaiting_cross 或 resolved。
+
+2026-11-04：恢复后已融合实际 filefix/08/02 集成，产品冻结 `6583ed3`，最新 SDK recipe
+77 项。Linux normal162 / Windows161+optional；package39、原fault2均双宿主通过，
+Process 包外公开9及 Linux系统8/Windows系统4通过。真实archive各15个 ELF成员、
+Raw/Git blob/LF/ZIP/SDK/loader和实际驱动 imports已核验。详见[13验证记录](../13-process-validation.md)
+及 `out/m2-13/closure/handoff.json`。本地交付转 `claimed / awaiting_cross`；独立 merger
+与新的 Full/实际64K 由 root 安排，不以当前局部成功关闭父验收组或后续14–16能力。
 

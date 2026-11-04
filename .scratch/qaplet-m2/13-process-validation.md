@@ -1,8 +1,8 @@
 # 13 · C Host 显式 spawn 与实际退出/reap
 
-2026-11-04。票保持 `claimed / in_progress`。这是中间候选记录，尚未最终交付；
-root 将先合入 10 的 Windows 文件夹具修复及 08 的四类调度，再 followup 本工作树完成
-最终 SDK 重供、完整检查与 `awaiting_cross` handoff。不能用本页局部结果关闭父验收组。
+2026-11-04。本地实现与适用双宿主验证完成，票保持 `claimed / awaiting_cross`。
+当前供应为 `out/m2-13/closure/`，不能与下面保留的旧候选 `final/` 混用。
+独立 merger 及新的 Cross/Full/实际 64K 由 root 安排；本页不能关闭父验收组。
 
 工作树为 `.cache/worktrees/m2-13`，分支 `codex/m2-13-process`。起点 `8167dc1`；
 实现提交 `628b11d`，timer 集成合并 `768eb56`，完成交接账本修复 `98b52c2`；
@@ -29,8 +29,9 @@ root 将先合入 10 的 Windows 文件夹具修复及 08 的四类调度，再 
   不重碰数值；不能证明原生责任结束时 destroy 保持 BUSY。
 - get_status 只观察原生事实并执行非阻塞 housekeeping；handoff 在 owner drive 完成。
   活跃入口沿用累计 dispatch/deadline，pure C 完成不创建新 JS ledger、不擦除最近结果。
-  当前 completion/timer/event 共 32 项；completion 内 work/process 通过独立持久 cursor
-  公平轮转。08 合入时须保留这一 provider 层，不把 process 再分一个阶段或额外 32 项。
+  completion/timer/immediate/event 共 32 项；completion 内 work/process 通过独立持久
+  cursor 公平轮转。已融合 08，保留完整 jobs 检查点、immediate cutoff、跨 pump cursor
+  和 entry-only 完成即返回的边界；process 没有第五阶段或额外 32 项。
 
 没有公开本票范围外的完整 cancel、pipe/EOF、JS process 模块、整树/温和信号能力。
 
@@ -56,6 +57,9 @@ root 将先合入 10 的 Windows 文件夹具修复及 08 的四类调度，再 
 | `merged-faults-green/` | 失去 PID、清理首因、拒绝后 child 回滚、TLS、stop/create 全部通过 |
 | `environment-budget-red/` | 默认环境快照与新 argv 合计超过公开 process_data_bytes，旧实现仍接受；真红 |
 | `environment-budget-green/` | 合计输入预算修复；Linux/Windows 当前同字节 8 项公开 C 候选合同均 pass，原日志与 `*-cases.json` 保留 |
+| `fourway-red/`、`fourway-red-corrected-fixture/` | 对保留融合前对象新增 immediate 场景，两场景真红；最终修正夹具仍红，排除夹具返回 token 对象的混淆 |
+| `fourway-green/` | 首次融合夹具直接返回不支持桥接的 timer 对象，保留失败；只把安装函数改为返回 undefined |
+| `fourway-green-2/` | 最终公开九模式同 APE Linux/Windows 全绿；四类调度及 ref child/unref timer/immediate 通过 |
 
 当前 8 项候选覆盖：输入/复制、OS 拒绝与旧结果、独立 count/helper/handle/registration/
 native storage 与默认环境合计预算、ignore/inherit、stop/unref、Runtime/generation、
@@ -78,7 +82,10 @@ inherit fixture 以文件 volume/index 身份判定额外 HANDLE，不按数值�
 GetStdHandle 输入槽暂设 INVALID_HANDLE（真实 error 6），SDK 克隆 C fd0；child 实测为
 FILE_TYPE_PIPE=3，随后原标准槽恢复、reap/quiesce/destroy 成功。`final/std-route/` 保留
 最初极小 PE 夹具自身节布局空洞导致 error193 的失败；只给独立 PE 填齐节跨度后重验，
-没有改产品或 SDK 迁就夹具。此分路目前绑定旧候选供应，最终重供后还须重新绑定。
+没有改产品或 SDK 迁就夹具。此分路绑定旧候选供应。
+新 `closure/std-route-verified/windows.json` 已重新绑定当前供应：本次 parent/child 实测
+FILE_TYPE_CHAR=2，一致；raw error 6、C fd0 仍有效、原标准槽恢复和完整清理通过。
+两次实际类型分别保留，不把旧 PIPE 结果套用到新命令。
 
 固定 archive 有 sys_waitid thunk，没有 public waitid wrapper。`waitid-abi/` 保存原始
 双架构对象、archive/object SHA、实际反汇编：x64 分派到 systemfive，ARM64 保留 Linux
@@ -91,7 +98,7 @@ Darwin 原型是四参数。P_PID=1/参数依据 [Linux UAPI](https://raw.github
 Linux 真实系统夹具证明 WNOWAIT 两次后仍可 reap、EINTR/EINVAL/ECHILD 和 exit/kill 两序。
 这些结果不外推为已执行的 macOS/ARM64/64K。
 
-## 旧候选供应与仍需完成的交付
+## 旧候选供应的保留范围
 
 `out/m2-13/final/` 是合入 Work 之前的独立正常 producer：74 项 recipe，dirty=true 原样
 保留；Linux 134 pass，Windows 133 pass + 1 既有可选 symlink blocked；密封 ZIP 包外
@@ -100,8 +107,36 @@ Linux 真实系统夹具证明 WNOWAIT 两次后仍可 reap、EINTR/EINVAL/ECHIL
 Ubuntu check 为 368 总、191 条按其显式输入条件 skip，真实 C bootstrap 通过。
 上述供应不能证明后加的 Work 融合/PID/环境预算/新公开目录。
 
-恢复本票后必须合入 root 实际 filefix/08 tip，保留 completion provider 和四类主 cursor，
-重新生成普通 SDK/双 archive/ZIP/三 APE，执行完整目录、包外正常/故障、原故障及 std-route。
-逐项核验 Raw/Git blob/LF recipe 与供应字节，执行当前 Ubuntu check，追加最终身份和
-handoff 后才标为 `claimed / awaiting_cross`。新的 Cross/Full/64K 由 root 独立安排；
-未完成项、旧失败、旧源码/配方及先前真实平台成绩各保留原范围，不签发 release-ready。
+## 当前最终本地供应与交接
+
+实际合入 filefix `166ab50`、08 `6c8c0ea`，产品冻结 `6583ed37158f9a33039dc8aa1915fa76005dd72f`。
+之后合入 root 明确的 `codex/m2-integration`：`5bf82a4`（文档）、`620b996`（独立 02 探针），
+77 项 SDK 输入逐项不变。Git 名为 `main` 的旧工作线不属于此次集成，从未合入。
+
+| 当前原件（均在 `out/m2-13/closure/`） | 适用实测范围 |
+|---|---|
+| `build.json` | 普通 Ubuntu producer，77 项权威 recipe，dirty=true 原样保留；SDK、双 archive、79 成员密封 ZIP、三 fat APE |
+| `linux.json` / `windows.json` | Linux 162 pass；Windows 161 pass + 1 既有可选 file-symlink blocked；无必需缺项 |
+| `package.json` / `package-windows.json` | 两平台各 39 pass；只从实际 ZIP 在源树外编译应用/Work/timer/immediate，Windows 不重编 |
+| `fault.json` / `fault-windows.json` | 原 M2 和 Work 两组系统故障，两平台各 2 pass，保留四个初始化 stage/uncertain fd/notify/timer/work 范围 |
+| `process-package-build.json` | ZIP 在 POSIX `/tmp` 两源树外解包，只用供应公开头和两架构 archive；编译 Process 正常/系统夹具，消费前后原字节相等 |
+| `process-package-linux.json` | 公开 9 pass + 受控系统 8 pass；包含真实 WNOWAIT/EINTR/EINVAL/ECHILD、exit/kill 两序、PID 退休、拒绝后回滚、TLS gate |
+| `process-package-windows.json` | 同字节公开 9 pass + 适用系统 4 pass；无未执行 POSIX 系统夹具的 Win 成绩 |
+| `std-route-verified/windows.json` | 当前供应的 C fd0 与原生 GetStdHandle 分路、恢复、reap 和完整清理 |
+| `devcheck.json` | Ubuntu 权威 check：369 总，177 执行通过、192 按显式输入条件 skip；真实 C bootstrap 通过；M0 Core 保持 not_run |
+| `02-narrow.json` | 新合入 02 探针的 Python 窄检查：7 总，2 执行通过、5 按显式输入条件 skip；不冒充 02 的原生平台成绩 |
+| `imports-*.json` | 实际消费/包外/系统/std-route/check 驱动的 repo imports 前后身份一致；原 producer 的 77 项 recipe 自身前后复核；额外 ci_identity.py 与产品/tip blob 一致 |
+| `source-supply-verified.json` | Raw/Git product blob/Git tip blob/LF 与供应逐项一致；ZIP/SDK/loader 前后核验；两 archive 各实际 15 个 ELF64 little-endian REL 成员，机器 62/183 |
+
+九个公开 Process 模式为 scheduling/liveness/identity/ledger/limits/inherit/inputs/errors/cleanup。
+共享调度首 pump 恰为 14 Process + 15 Work + timer + immediate + event = 32，下一 pump
+交完其余；事件槽饱和不丢 native 完成。ref child 允许 ready unref timer/immediate，child
+unref 后自然 IDLE 不交付，显式 pump 再交付；本票没有 JS process API。
+
+当前 recipe `4b8e39bad12fb43e70745950b4d519e673ac746435160d6d38dd6a9945fe9040`，
+SDK `7526066d584e4564a15b80c3e732735a77beb49702e31221e7789783c815418e`，
+ZIP `7d9cabfc64f5cbaab32a806d09da4b825c6b638dde293289d7ed3deafb684e49`（16,247,317 bytes）。
+双 archive 与全部 APE/loader 的完整 SHA、原命令、实际宿主及日志由上述报告保存。
+
+当前本地 handoff 为 `closure/handoff.json`。本票不签发新的 macOS/ARM64/64K、完整
+cancel/pipe/JS process、父验收组或 release-ready；旧红灯、旧供应与候选映射各保留其原范围。
