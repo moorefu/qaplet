@@ -532,6 +532,30 @@
           "with": {"name": "m1-sdk-build-${{ github.sha }}", "path": "out/sdk"}
         },
         {
+          "name": "Select the fixed same-repository guest input supply",
+          "id": "guest-input-plan",
+          "if": "${{ matrix.page_size == 65536 }}",
+          "run": "python scripts/guest_inputs.py plan --config guests/ci-inputs.json --github-output \"$GITHUB_OUTPUT\" --report out/page-gaps/${{ matrix.page_size }}/supply-plan.json"
+        },
+        {
+          "name": "Read the pinned guest input commit from this repository",
+          "id": "guest-input-checkout",
+          "if": "${{ matrix.page_size == 65536 }}",
+          "uses": "actions/checkout@v7",
+          "with": {
+            "repository": "${{ github.repository }}",
+            "ref": "${{ steps.guest-input-plan.outputs.source_commit }}",
+            "path": ".cache/guests/supplied",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Verify and explicitly import the complete locked guest profile",
+          "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
+          "env": {"CI_GUEST_INPUT_COMMIT": "${{ steps.guest-input-plan.outputs.source_commit }}"},
+          "run": "python scripts/guest_inputs.py import --source-dir .cache/guests/supplied --source-commit \"$CI_GUEST_INPUT_COMMIT\" --cache .cache/guests --page-size 65536 --report out/page-gaps/${{ matrix.page_size }}/supply-import.json"
+        },
+        {
           "name": "Explicitly fetch immutable locked guest inputs",
           "run": "python scripts/arm64_guest.py fetch --cache .cache/guests --page-size ${{ matrix.page_size }} --report out/page-gaps/${{ matrix.page_size }}/acquisition.json"
         },

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "page_size": 65536,
+  "source_commit": "c67014e83205e70a74eb6fc23f2a341793072598",
+  "guest_lock": {
+    "sha256": "22b7512319c9484071eaf90e4db22bde4f0ecf8300e2997f72e5e149a01a976e",
+    "size_bytes": 5692
+  }
+}
