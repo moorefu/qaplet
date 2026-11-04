@@ -23,7 +23,7 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 | 10 | [纯 C Host 的有界原生工作闭环](issues/10-c-host-bounded-work.md) | [06](issues/06-wait-events-keepalive-stop.md) | claimed |
 | 11 | [任务取消竞争、结果 release 与容量保留](issues/11-work-cancel-result-retention.md) | [10](issues/10-c-host-bounded-work.md) | ready-for-agent |
 | 12 | [JS 命名工作、Promise 与取消闭环](issues/12-js-named-work-promises.md) | [08](issues/08-interval-immediate-fair-checkpoints.md)、[11](issues/11-work-cancel-result-retention.md) | ready-for-agent |
-| 13 | [纯 C Host 的显式 spawn 与退出观察](issues/13-c-host-process-spawn-exit.md) | [04](issues/04-process-inheritance-os-probes.md)、[06](issues/06-wait-events-keepalive-stop.md) | ready-for-agent |
+| 13 | [纯 C Host 的显式 spawn 与退出观察](issues/13-c-host-process-spawn-exit.md) | [04](issues/04-process-inheritance-os-probes.md)、[06](issues/06-wait-events-keepalive-stop.md) | claimed |
 | 14 | [直接子进程取消、回收与关闭竞争](issues/14-process-cancel-reap.md) | [13](issues/13-c-host-process-spawn-exit.md) | ready-for-agent |
 | 15 | [子进程三路有界字节 I/O 与 EOF](issues/15-c-host-process-pipe-io.md) | [03](issues/03-pipe-stdio-cancel-os-probes.md)、[11](issues/11-work-cancel-result-retention.md)、[13](issues/13-c-host-process-spawn-exit.md) | ready-for-agent |
 | 16 | [JS Process 与 stdio 的完整异步闭环](issues/16-js-process-stdio-liveness.md) | [12](issues/12-js-named-work-promises.md)、[14](issues/14-process-cancel-reap.md)、[15](issues/15-c-host-process-pipe-io.md) | ready-for-agent |

@@ -119,6 +119,8 @@ guest 修复经独立 merger 合入 `bd14a1eb319ceba93ffe362f8b0a1d6df6438b7d`�
 
 ## 一次性测试入口修复
 
+09 的源 tip `4615525` 已由独立 merger 合入 `2c44fc3`，本地逐项原始日志重放与供应身份补核通过，见 `out/qaplet-m2/merge-09/evidence-verification-006.json`；旧 Windows fault 消费 driver 被修订后的身份缺口保留，以冻结的新 driver 同 APE 重跑 1 项通过，不改原报告。当前集成的 Ubuntu `scripts/dev.py check` 再次通过：`out/qaplet-m2/check-notify-integration.json`，368 项中 179 实际通过、189 条件 skip，系统 C bootstrap 通过。准备推送当前集成取得新五原生及实际 64K；09 仍 awaiting_cross，父 M2 未完成。
+
 2026-11-04 继续实施时核对：07 的现有分支正在融合 `2c44fc3`，保留尚未完成的 merge 冲突；10 已合入该集成点并保留未提交测试增量，由 fresh implementer 接续，不重置代码或覆盖失败输出。09 已由独立 merger 完成机械合并，继续补齐原始日志重放收据并等待当前配方 Full；13 的直接 blocker 已满足，开始独立实施。父 M2 保持 in_progress。
 
 06 原始实施及两条修复 worktree 已在源对归档核验、干净/已合入/绝对路径与非 reparse 审计后清理，分支与全部原件保留。`completed-06-worktree-audit.json`、`completed-06-worktree-cleanup.json` 和三份 `store-06*-pre-cleanup/verified.json` 保存收据。guest 修复的 604 个原件实际来自主树 `out/m2-06-guest-fix`，该原始输出也继续保留；不以空 worktree/out 冒充原件来源。清理不改变旧报告或产品验收范围。
