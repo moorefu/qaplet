@@ -58,7 +58,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/stdio.c", "src/js_io.c", "src/js_io.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/stdio.c", "src/js_io.c", "src/js_io.h", "src/js_async.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -88,6 +88,19 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 33521663, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-js-cycles", ["--m2-process-js-cycles", "{self}", "{launcher}"], "M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass\n"),
+    ("m2-process-js-liveness", ["--m2-process-js-liveness", "{self}", "{launcher}"], "M2 process JS liveness: unref natural idle; ref restores keepalive; discarded Process survives bounded cyclic GC pressure; explicit owner drive observes natural exit and closure: pass\n"),
+    ("m2-process-js-terminal", ["--m2-process-js-terminal", "{self}", "{launcher}"], "M2 process JS terminal: owner stop/dispatch/caught allocation failure cancels child and IO before close; ordinary callback error recovers; no then/catch/finally after termination; CLOSED engine released; actual quiesce/destroy: pass\n"),
+    ("m2-process-js-limits", ["--m2-process-js-limits", "{self}", "{launcher}"], "M2 process JS limits: Work/IO share two operations/eight reserved bytes; atomic count/data refusal; BUSY priority; cancelled reservations retained through owner handoff then released: pass\n"),
+    ("m2-process-js-io-cancel", ["--m2-process-js-io-cancel", "{self}", "{launcher}"], "M2 process JS IO cancel: strict uncoerced byte endpoints; deterministic cancel-before-issue; copied read error bytes; no lost pipe data; actual child reap and closure: pass\n"),
+    ("m2-process-js-partial", ["--m2-process-js-partial", "{self}", "{launcher}"], "M2 process JS partial write: controlled 4096-byte consumer; stable native error and actual accepted byte count; completion-first cancel; ordinary error cleanup: pass\n"),
+    ("m2-process-js-backpressure", ["--m2-process-js-backpressure", "{self}", "{launcher}"], "M2 process JS backpressure: controlled producer; no implicit collection; independent stderr; ordered 1MiB binary pull; bounded chunks and EOF: pass\n"),
+    ("m2-process-js-lifetime", ["--m2-process-js-lifetime", "{self}", "{launcher}"], "M2 process JS lifetime: EOF before exit; cancel before actual reap; native facts; unread binary output after exit; ref through managed closure; repeated close/cancel: pass\n"),
+    ("m2-process-js-inputs", ["--m2-process-js-inputs", "{self}", "{launcher}"], "M2 process JS inputs: strict path/options/UTF-8; copied Unicode argv and cwd; complete environment mapping and factory snapshot; ordinary rejection cleanup: pass\n"),
+    ("m2-process-js-issue", ["--m2-process-js-issue", "{self}", "{launcher}"], "M2 process JS issue: IO accepted from a JS job issues before native wait without an auxiliary timer; actual write and reap: pass\n"),
+    ("m2-process-js-finish-after", ["--m2-process-js-finish-after", "{self}", "{launcher}"], "M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass\n"),
+    ("m2-process-js-bytes", ["--m2-process-js-bytes", "{self}", "{launcher}"], "M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass\n"),
+    ("m2-process-js-basic", ["--m2-process-js-basic", "{self}", "{launcher}"], "M2 process JS basic: explicit spawn; owner exit/reap Promise; managed closure; result and cleanup: pass\n"),
     ("m2-stdio-c-close-js", ["--m2-stdio-c-close-js"], "M2 stdio C-close JS observation: no IO task; bounded completion/ref through full jobs; unref explicit pump; Runtime close suppresses pending user jobs; original handles and cleanup preserved: pass\n"),
     ("m2-stdio-js-errors", ["--m2-stdio-js-errors"], "M2 stdio ordinary JS error: callback code7 preserves OPEN and attached streams; later JS consumes EOF and returns42; terminal cleanup remains explicit: pass\n"),
     ("m2-stdio-classify", ["--m2-stdio-classify"], "M2 stdio inspect: default untouched; real stdin pipe/file/invalid classification; separate attach support: pass\n"),
@@ -336,6 +349,7 @@ def package_consume(args, report, directory):
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "js-process-build", output, js_faults=True)
         compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output, faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
@@ -433,6 +447,21 @@ def package_consume(args, report, directory):
                 "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "controlled_system_fixture": True, "platforms": platforms,
                 "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-js-process-faults.com"
+        for mode, expected, platforms in JS_PROCESS_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Public JS Process/IO system boundary, compiled outside source from the sealed SDK"})
     artifact=output / ("qaplet-stdio-faults.com" if args.operation=="fault-consume" else "qaplet-stdio-host.com")
     stdio_cases=STDIO_FAULT_CASES if args.operation=="fault-consume" else tuple((suffix,arguments,expected) for suffix,arguments,expected in HOST_CASES if suffix.startswith("m2-stdio-"))
     for suffix,arguments,expected in stdio_cases:
@@ -634,6 +663,10 @@ PROCESS_FAULT_CASES = (
     ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
     ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
 )
+JS_PROCESS_FAULT_CASES = (
+    ("--m2-process-js-start-fault", "M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass\n", ["Windows"]),
+    ("--m2-process-js-reap-fault", "M2 process JS uncertain reap: real stolen wait; rejected exit preserves ECHILD/unreaped facts; closed stays pending; ref requires explicit unref; CLOSED retains unknown ownership; quiesce pending/destroy BUSY; no cleanup success claimed: pass\n", ["POSIX"]),
+)
 IO_FAULT_CASES = (
     ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
     ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
@@ -645,19 +678,19 @@ IO_FAULT_CASES = (
 )
 
 
-def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False):
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False, js_faults=False):
     """Public package-only Process application; wrapped OS fixture is separate."""
     (work / "tmp").mkdir(parents=True)
-    name = "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
+    name = "qaplet-js-process-faults" if js_faults else "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
     source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
-    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    symbols = ("pthread_create", "sys_waitid") if js_faults else ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
-    report["io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+    report["js_process_controlled_system_fixture" if js_faults else "io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
         "source": identity(source), "include_directories": [str(sdk / "include")],
         "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
-        "wrapped_symbols": list(symbols), "scope": "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
-    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "wrapped_symbols": list(symbols), "scope": "public JS Process/IO with controlled pthread start failure" if js_faults else "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE", *(["-DSDK_JS_START_FAULT"] if js_faults else []),
         "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
         args.compile_timeout, work, environment)
     link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],
@@ -774,7 +807,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/stdio.c", ROOT / "src/js_io.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/stdio.c", ROOT / "src/js_io.c", ROOT / "src/js_async.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)
