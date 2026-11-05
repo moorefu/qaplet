@@ -116,7 +116,10 @@ static JSValue endpoint_operation(JSContext *c,JSValueConst self,int argc,JSValu
   if(!code){t=js_mallocz(c,sizeof(*t));if(!t)code=QAPLET_MEMORY_LIMIT;else {t->refs=1;t->resolve=t->reject=JS_UNDEFINED;t->token=(qaplet_io_operation)QAPLET_IO_OPERATION_INIT;JS_SetOpaque(object,t);if(promise_property(c,object,"promise",&t->resolve,&t->reject)<0)code=QAPLET_MEMORY_LIMIT;}}
   if(!code){r->bridge_active=1;code=writing ? qaplet_io_write(r,&e->token,bytes,length,&t->token,NULL) : qaplet_io_read(r,&e->token,length,&t->token,NULL);r->bridge_active=0;}
   JS_FreeValue(c,buffer);
-  if(code){if(t){JS_FreeValue(c,t->resolve);JS_FreeValue(c,t->reject);}JS_FreeValue(c,object);return fail(c,code);}
+  if(code){if(t){JS_FreeValue(c,t->resolve);JS_FreeValue(c,t->reject);}JS_FreeValue(c,object);
+    if(code==QAPLET_IO_ERROR){qaplet_io_snapshot status=QAPLET_IO_SNAPSHOT_INIT;
+      if(!qaplet_get_io_snapshot(r,&status,NULL)){JSValue error=error_value(c,code,status.start_error_domain,status.start_error,0);return JS_IsException(error) ? error : JS_Throw(c,error);}}
+    return fail(c,code);}
   t->endpoint=e;++e->refs;++t->refs;t->next=r->js_io_tasks;r->js_io_tasks=t;return object;
 }
 static JSValue endpoint_control(JSContext *c,JSValueConst self,int argc,JSValueConst *argv,int magic) {
