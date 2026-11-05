@@ -81,6 +81,9 @@ resolves `{bytesWritten}`; errors carry `code`, `errorDomain`, `error`, and
 their explicit attachment snapshot at first import. Close/finish and await `closed`
 before the Host detaches a stream represented in JS; detach invalidates old JS
 handles and does not rebind cached module exports.
+Detach returns `BUSY` without closing or invalidating anything while a JS wrapper
+still owns close delivery or its full jobs checkpoint. After C `qaplet_io_close`
+and owner driving complete that handoff, the Host can retry detach safely.
 
 POSIX pipes must already have Host-authorized `O_NONBLOCK`. Windows pipes must
 be real overlapped byte pipes, with a queryable quota for writes. Synchronous

@@ -116,3 +116,17 @@ jobs、unref 等显式 pump、Runtime close 丢弃尚未运行 mark、ordinary e
 [Microsoft IoIsOperationSynchronous](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ioisoperationsynchronous)
 说明 QueryInformationFile 类查询本身采用同步 API 语义，即使被查询句柄用于
 异步 I/O；这补充 FileModeInformation 查询语义，不替代本地真实类型和回收证据。
+
+`build-final-3` 与 `devcheck-3` 是 source `159bd900` 的成功冻结范围。交接前只读
+核查发现相邻 detach 路径：`detach-red-{linux,windows}` 以同一公开 close seam
+单变量切换 Host 动作，真实返回 OK 后旧 token 已 INVALID_HANDLE，JS closed 的
+责任被提前撤去。`d5019b8` 选择 BUSY 无副作用拒绝：JS wrapper 仍承担关闭或
+完整 jobs 交付时，不关闭、不失效、不提前退休。C close + owner full checkpoint
+之后可重试 detach。`detach-green-{linux,windows}` 覆盖交付前、跨 jobs 中 BUSY、
+完整交付后成功失效，以及原 default-ref/unref/Runtime close 屏障和数据/错误回归。
+不是仅通过文档排除该组合。
+
+最后修复只改变 C/header/adapter 及对应 C fixture；`devcheck-3` 的完整工具检查
+保持其原 source 范围，最终审计逐个证明全部 tracked Python 字节与该次冻结一致。
+当前源另执行 preflight，最新 SDK 的完整 native/package/fault/终端边界重新验收。
+只有第四份供应及最终 receipt 被选为本地交接；此前成功和失败均保留各自范围。
