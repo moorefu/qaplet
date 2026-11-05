@@ -1,0 +1,47 @@
+{
+  "name": "Qaplet change scope",
+  "description": "Always-created fail-closed scope decision; no product pass is claimed",
+  "inputs": {
+    "report": {
+      "description": "Scope report under the workflow evidence output",
+      "required": true
+    }
+  },
+  "outputs": {
+    "m0": {
+      "description": "m0 affected",
+      "value": "${{ steps.plan.outputs.m0 }}"
+    },
+    "foundation": {
+      "description": "foundation affected",
+      "value": "${{ steps.plan.outputs.foundation }}"
+    },
+    "svc_scm": {
+      "description": "svc_scm affected",
+      "value": "${{ steps.plan.outputs.svc_scm }}"
+    },
+    "svc_job": {
+      "description": "svc_job affected",
+      "value": "${{ steps.plan.outputs.svc_job }}"
+    },
+    "workflow_tools": {
+      "description": "workflow_tools affected",
+      "value": "${{ steps.plan.outputs.workflow_tools }}"
+    }
+  },
+  "runs": {
+    "using": "composite",
+    "steps": [
+      {
+        "id": "plan",
+        "shell": "bash",
+        "env": {
+          "CI_EVENT_NAME": "${{ github.event_name }}",
+          "CI_REF": "${{ github.ref }}",
+          "CI_SCOPE_REPORT": "${{ inputs.report }}"
+        },
+        "run": "python scripts/ci_tiers.py plan --event-name \"$CI_EVENT_NAME\" --event-json \"$GITHUB_EVENT_PATH\" --ref \"$CI_REF\" --github-output \"$GITHUB_OUTPUT\" --report \"$CI_SCOPE_REPORT\""
+      }
+    ]
+  }
+}

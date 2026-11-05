@@ -37,15 +37,11 @@ collection 必须使用新报告路径，保存全部失败尝试。成功报告
 选择层级，并输出可重放的 JSON 与 GitHub outputs；计划中的 `status=pass` 只表示选择有效，
 `execution_status=not_run` 和 `evidence_verified=false` 不表示执行通过。
 
-- 每次 branch push 运行 Ubuntu Fast：仓库/统一锁检查与实际 Hello、eval、ESM/Promise producer。
-  正式 M2 的 `codex/m2-integration` 推送提升为 Full，以便在集成点及时取得当前五原生及实际 64K 证据；仍保持非默认分支不可写可信缓存。普通实施分支继续 Fast。
-- PR 运行 Cross：同一 Ubuntu producer 分发给 Linux x64/ARM64、Windows x64、macOS x64/ARM64。
-  除 `docs/`、`.scratch/` 和根级已知文字说明外的改动均提升到 Full，包含新增未知源码位置、
-  Engine/Host/SDK/include、锁、patch、native fixture 和 CI 脚本。无法取得 PR diff 时失败。
-- 每日 03:17 UTC、`v*rc*` / `v*RC*` tag push 和敏感 PR 运行 Full：增加实测 ARM64 页补缺、
-  64K 深探针、实际断网双构建及供应输入拒绝；Full 不宣称已实现未来 Node/soak/network TLS 合同。
-- `workflow_dispatch` 的 `tier` 可显式选择 fast/cross/full，在所选 ref 重放。手工执行和本地
-  CLI 静态检查须与实际远程 run/commit 的成绩分开记录。
+- 普通 Engine/JS/应用 push（包括 M2 integration）选择 Fast；共享原生/公开 ABI 选择 Cross，五个声明目标均保留；Windows 专用 fixture 选择真实 Windows。工具链、CI 关键路径或未知风险升级 Full。实际 push before/after 与 PR merge-base diff 不可取得时失败，手工层级不可降低已知风险。
+- 每日 03:17 UTC、RC tag、显式 full 继续完整原生/实际 64K/Core；Release 加长测与发布合同单独判定。Node/soak/network 未实现项不冒称通过。
+- Fast 的独立 Ubuntu job 只构建当前 SDK 并运行相关 Runtime/ESM/Promise/生命周期与最小公开 C 合同，不构建历史 M0/四类 OS probes或执行 offline pair。Cross/Full portable producer 一次供应，同字节给选中真实 native；测试宿主不重编译。
+- Full offline pair/refusal/seal 位于独立 `offline-rebuild`，和 native consumer 并行，Core仍等待其原件。Fast/Targeted 新提交取消同范围旧运行；Full/RC/手工证据运行使用独立 run ID，不能自动取消。
+- 既有五个 workflow 与检查 job 继续创建。统一 scope action 选择相关重作业，非相关范围只保留选择报告，不能把它当产品执行通过；SCM/Job按共享依赖传播。无需改变保护设置。详细规则、前后对照与复测命令见[当前执行优化](../plans/qaplet-v1.5-execution-optimization.md)。
 
 恢复输入缓存之后仍无条件执行原件 SHA/长度、源码、完整 toolchain tree 与 helper 验证。
 cache key 绑定统一锁原始字节，不使用宽松 restore prefix；只有可信默认分支的 push、schedule、
@@ -117,3 +113,11 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 3. 插件传输失败先做一次有限重试，仍失败就报告查询暂不可用。GitHub 404 与账号登录状态分别核验；读取当前身份和仓库可见范围后再判断是否需要用户重新授权。
 
 每次只返回判定所需字段和失败片段。保留已取得的 run/报告对象供后续解析；只有重新运行、状态尚未结束或用户要求刷新时才再次查询远程。
+
+## 本地快速入口、复用与效率观测
+
+`make check-fast` / `make test-engine` / `make test-loop` / `make test-work` / `make test-process` / `make test-tty` / `make test-ci` 委派 `dev.py check-fast --profile …`。原 pinned Makefile 字节保持不变，GNUmakefile 包装提供快捷目标。首次没有匹配供应时只从已验 root 缓存构建；不主动 fetch/QEMU。匹配供应可用 `--supplier-report FILE --supplier-dir DIR` 显式指定，坏或未完成缓存拒绝，原失败保留。TTY 产品未实现时返回 blocked。`--plan` 无执行成绩。
+
+`ci_evidence.py reuse --input-report FILE --commit SHA --profile engine --expected-os Linux --expected-arch x86_64 --report out/reuse.json` 重核同SHA/recipe/测试合同、未过期成功结果与SDK/raw logs，保留原执行/producer/CI身份。复用只是原开发范围的既有结果，不生成新宿主或Full成绩。远程成功run先用既有`runs`核对、归档用`verify`重放；没有有效证明不跳过必需验收。
+
+`ci_evidence.py efficiency --input-response RUN_JSON --jobs-response JOBS_JSON --tier fast --report out/efficiency.json` 离线观测原始API。m0收尾用`efficiency-actions`只读当前run的元数据并保存原件/快照；报告job和最终conclusion可能未完成时保持可见。runner0/空steps的等待不算产品执行，继承attempt排除新增Runner成本，cache/平台/归因缺信息保留null/Unknown。步骤名分类的build含验证，不能直接从关键路径减去阶段合计。失败分类包含Product、ABI、Toolchain、Runner、Missing Resource、Evidence、Cancelled、Unknown。基准和样本限制见[审计](../reviews/qaplet-development-efficiency-review.md)。

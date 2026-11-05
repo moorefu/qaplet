@@ -13,6 +13,7 @@
 | 任务 | 入口与含义 |
 | --- | --- |
 | 日常检查 | `python3 scripts/dev.py check`，先预检，再复用现有 `make check` |
+| 相关功能快速检查 | `make check-fast` 或 `python3 scripts/dev.py check-fast --profile engine`；支持 loop/work/process/tty/ci，未实现的 TTY 明确 blocked；[当前分层](plans/qaplet-v1.5-execution-optimization.md) |
 | 快速仓库预检 | `python3 scripts/dev.py preflight --report out/preflight.json` |
 | 完整证据回归 | `python3 scripts/check_evidence.py --config FILE --report out/evidence.json`，所需输入和测试均必须执行 |
 | 构建Hello/eval | `python3 scripts/dev.py build-ape`，复用已锁定构建脚本 |

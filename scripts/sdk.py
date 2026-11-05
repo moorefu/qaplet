@@ -819,6 +819,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "matrix"))
     parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
+    parser.add_argument("--target-plan", type=Path, help="Explicit CI native target plan; never narrows Full")
     parser.add_argument("--input-report", type=Path, action="append", default=[])
     parser.add_argument("--input-dir", type=Path, action="append", default=[])
     parser.add_argument("--source-cache", type=Path, default=cache / "quickjs")

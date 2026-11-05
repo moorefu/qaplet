@@ -3,6 +3,7 @@
 """Acquire or verify explicit CI archives and emit small, typed report summaries."""
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 import hashlib
 import ipaddress
 import json
@@ -24,11 +25,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def guard_report_target(args):
     target = args.report.resolve()
+    if args.operation == "efficiency-actions":
+        if target.exists() or target.name in ("run.json", "jobs.json") or not args.output_dir.resolve().is_relative_to(ROOT / "out") or not target.is_relative_to(ROOT / "out"):
+            raise ValueError("Use a new efficiency report/output under checkout out/")
+        return
+    if args.operation == "reuse" and target.exists():
+        raise ValueError("Use a new reuse report; original evidence is immutable")
     if args.operation == "fetch-actions" and target.exists():
         raise ValueError("A NEW collection report is required; prior attempts are retained")
-    if args.operation in ("summarize", "runs"):
-        source = args.input_report if args.operation == "summarize" else args.input_response
-        if target == source.resolve():
+    if args.operation in ("summarize", "runs", "efficiency", "reuse"):
+        source = args.input_report if args.operation in ("summarize", "reuse") else args.input_response
+        sources = [source, *getattr(args, "jobs_response", [])]
+        if any(target == path.resolve() for path in sources):
             raise ValueError("Report target collides with its source input")
         return
     if target == args.manifest.resolve() or target.is_relative_to(args.output_dir.resolve()):
@@ -395,6 +403,179 @@ def runs(path, commit):
             "input_response": identity(path), "network_requests": 0}
 
 
+FAILURE_CLASSES = ("Product Regression", "Platform ABI", "Build / Toolchain", "Environment / Runner",
+                   "Missing Resource", "Evidence / Aggregation", "Cancelled / Superseded", "Unknown")
+
+
+def reuse(args):
+    """Replay current local contracts and original bytes, without new OS execution."""
+    import local_check
+    import sdk
+    from core_gate import require
+    from sdk_matrix import catalog
+
+    value = read_json(args.input_report)
+    require(value.get("report_kind") == "qaplet-local-check" and value.get("status") == "pass" and
+            value.get("execution_status") == "executed" and value.get("scope") == "development-only",
+            "Only a successful actual local execution can be reused")
+    require(value.get("commit") == args.commit and re.fullmatch(r"[0-9a-f]{40}", args.commit), "Reuse requires the same exact commit")
+    require(value.get("profile") == args.profile and args.profile != "ci", "Reuse requires the same product contract profile")
+    require(value.get("contract_sha256") == local_check.contract_identity(args.profile)["sha256"], "Test contract changed")
+    expected = local_check.current_recipe()
+    require(value.get("current_recipe_sha256") == expected["sha256"], "Product recipe changed")
+    elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(value["finished_at"].replace("Z", "+00:00"))).total_seconds()
+    require(0 <= elapsed <= args.max_age_hours * 3600, "Successful execution is stale or in the future")
+    supplier = value["supplier"]
+    reference = supplier["producer_report"]
+    require(identity(reference["path"]) == reference, "Original supplier report changed")
+    artifacts = args.supplier_dir or Path(supplier["artifacts_directory"])
+    local_check.validate_supplier(Path(reference["path"]), artifacts.resolve(), expected)
+    checked, original_reports = {}, []
+    for key in ("runtime", "public_c"):
+        section = value[key]
+        if key == "public_c" and section["status"] == "not_applicable":
+            continue
+        require(section["status"] == "pass", "Selected execution section failed")
+        ref = section["report"]
+        require(identity(ref["path"]) == ref, "Original execution report changed")
+        incoming = read_json(Path(ref["path"]))
+        require(incoming["status"] == "pass", "Original execution failed")
+        if key == "public_c":
+            require(incoming.get("report_kind") == "qaplet-local-c-compile" and
+                    incoming.get("scope") == "public-header-compile" and incoming.get("commands") and
+                    incoming["inputs_before"] == incoming["inputs_after"], "Actual stable public C compilation required")
+            for item in [*incoming["inputs_after"], *incoming["compiler"], incoming["object"], *incoming["dependency_files"]]:
+                observed = identity(item["path"])
+                require(all(observed[field] == item[field] for field in ("sha256", "size_bytes")), "Public C input/compiler/object bytes changed")
+                checked[item["path"]] = observed
+            require(incoming["object"].get("elf_class") == 64 and incoming["object"].get("elf_type") == "REL" and
+                    incoming["object"].get("machine") in (62, 183), "Measured ordinary C object required")
+            observed_object = local_check.verify_object(Path(incoming["object"]["path"]), incoming["host"]["execution_arch"])
+            require(observed_object == incoming["object"], "Ordinary C object format differs from its measured record")
+            for command in incoming["commands"]:
+                require(command["exit_code"] == 0 and not command["timed_out"], "Public C compile command failed")
+                for stream in ("stdout", "stderr"):
+                    checked[command[stream + "_log"]] = identity(command[stream + "_log"])
+            original_reports.append(ref)
+            continue
+        if key == "runtime":
+            host = incoming["host"]
+            require((host["os"], host["execution_arch"]) == (args.expected_os, args.expected_arch) and
+                    host["execution_mode"] == "native", "Original execution does not cover the requested native platform")
+        with local_check.selected_catalog(local_check.select_cases(args.profile)):
+            wanted = {row[0]: row for row in catalog(value["runtime"]["host"])}
+        require({case["case_id"] for case in incoming["cases"]} == set(wanted), "Incomplete selected test catalog")
+        for case in incoming["cases"]:
+            _, _, _, code, output, error, contains = wanted[case["case_id"]]
+            require(case["status"] == "pass" and len(case["commands"]) == 1, "Nonpassing/missing actual test command")
+            command = case["commands"][0]
+            raw = []
+            for stream in ("stdout", "stderr"):
+                log = Path(command[stream + "_log"])
+                checked[str(log)] = identity(log)
+                raw.append(log.read_bytes())
+            require(not command["timed_out"] and command["exit_code"] == code and
+                    raw[0] == output.encode("utf-8") and (error.encode("utf-8") in raw[1] if contains and error else raw[1] == error.encode("utf-8")),
+                    "Original raw process result contradicts the current test contract")
+            artifact = case["artifact"]
+            observed = identity(artifact["path"])
+            require(all(observed[field] == artifact[field] for field in ("sha256", "size_bytes")), "Executed artifact changed")
+        original_reports.append(ref)
+    return {"status": "pass", "scope": "verified-local-result-reuse", "execution_status": "reused_previous",
+        "commit": args.commit, "profile": args.profile, "recipe_sha256": expected["sha256"],
+        "contract_sha256": value["contract_sha256"], "original_execution": identity(args.input_report),
+        "original_ci": value.get("ci"), "original_host": value["runtime"]["host"], "original_finished_at": value["finished_at"],
+        "original_reports": original_reports, "original_supplier": supplier, "checked_logs": list(checked.values()),
+        "evidence_verified": False, "cross_verified": False, "full_verified": False, "release_ready": False,
+        "network_requests": 0, "new_product_executions": 0, "reason": "Verified reuse of the same development contract; no new platform/CI or release pass"}
+
+
+def efficiency(args):
+    """Only retained API observations; missing timestamps/cache facts stay null."""
+    def instant(value):
+        return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
+
+    def seconds(start, end):
+        a, b = instant(start), instant(end)
+        if a is None or b is None:
+            return None
+        if b < a:
+            raise ValueError("Reversed API timing interval")
+        return (b - a).total_seconds()
+
+    run = read_json(args.input_response)
+    if not re.fullmatch(r"[0-9a-f]{40}", run.get("head_sha", "")) or not run.get("id"):
+        raise ValueError("Exact retained Actions run identity required")
+    start = run.get("run_started_at") or run.get("created_at")
+    rows, seen, ends = [], set(), []
+    for source in args.jobs_response:
+        for job in read_json(source)["jobs"]:
+            if job.get("run_id") != run["id"] or job["id"] in seen:
+                raise ValueError("Duplicate job or job from another run")
+            seen.add(job["id"])
+            inherited = bool(start and job.get("completed_at") and instant(job["completed_at"]) < instant(start))
+            actual = bool(job.get("runner_id") and job.get("steps"))
+            phases = dict.fromkeys(("build_and_verify", "test", "evidence", "other"), 0)
+            steps = []
+            for step in job.get("steps", []):
+                name = step["name"].lower()
+                phase = ("evidence" if any(word in name for word in ("upload", "download", "retain", "collect", "seal", "aggregate")) else
+                         "build_and_verify" if any(word in name for word in ("build", "compile", "acquire", "populate", "fetch")) else
+                         "test" if any(word in name for word in ("execute", "run ", "test", "contract", "check")) else "other")
+                duration = seconds(step.get("started_at"), step.get("completed_at")) if actual else None
+                steps.append({"name": step["name"], "phase": phase, "seconds": duration, "conclusion": step.get("conclusion")})
+                if duration is not None:
+                    phases[phase] += duration
+            if not inherited and job.get("completed_at"):
+                ends.append(job["completed_at"])
+            rows.append({"id": job["id"], "workflow": run.get("name"), "job": job["name"],
+                "platform": None, "architecture": None, "runner_name": job.get("runner_name"), "labels": job.get("labels"),
+                "conclusion": job.get("conclusion"), "inherited_execution": inherited,
+                "execution_seconds": seconds(job.get("started_at"), job.get("completed_at")) if actual else None,
+                "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual else None,
+                "unexecuted_observation_seconds": seconds(job.get("started_at"), job.get("completed_at")) if not actual else None,
+                **{key + "_seconds": value if actual else None for key, value in phases.items()}, "steps": steps})
+    return {"status": "pass", "scope": "ci-efficiency-observation", "evidence_verified": False,
+        "commit": run["head_sha"], "tier": args.tier, "run_id": run["id"], "run_attempt": run.get("run_attempt"),
+        "workflow": run.get("name"), "run_status": run.get("status"), "conclusion": run.get("conclusion"),
+        "workflow_span_seconds": seconds(start, max(ends, key=instant)) if ends else None,
+        "api_state_span_seconds": seconds(run.get("created_at"), run.get("updated_at")),
+        "runner_seconds": sum(row["execution_seconds"] or 0 for row in rows if not row["inherited_execution"]),
+        "queue_seconds": sum(row["queue_seconds"] or 0 for row in rows if not row["inherited_execution"]) if any(
+            row["queue_seconds"] is not None and not row["inherited_execution"] for row in rows) else None,
+        "cache_hit": None, "verified_artifact_reuse": None,
+        "failure_class": None if run.get("conclusion") == "success" else args.failure_class,
+        "failure_detail": args.failure_detail, "attribution_source": "explicit input; Unknown without diagnosis",
+        "phase_method": "step-name classification; build includes validation, other remains separate; sums are not critical-path subtraction",
+        "sources": [identity(path) for path in [args.input_response, *args.jobs_response]], "jobs": rows,
+        "network_requests": 0, "p50_seconds": None, "p95_seconds": None}
+
+
+def efficiency_actions(args):
+    """Bounded, read-only current-run metadata; tokens never leave api.github.com."""
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    if not run_id.isdigit() or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise ValueError("Actual Actions run/repository environment required")
+    args.output_dir.mkdir(parents=True, exist_ok=False)
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "qaplet-ci-efficiency"}
+    if os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+    for name, suffix in (("run", ""), ("jobs", "/jobs?per_page=100")):
+        request = urllib.request.Request("https://api.github.com/repos/" + repository + "/actions/runs/" + run_id + suffix, headers=headers)
+        with urllib.request.build_opener(NoReferenceRedirect()).open(request, timeout=30) as response:
+            data = response.read(4 * 1024 * 1024 + 1)
+        if len(data) > 4 * 1024 * 1024:
+            raise ValueError("Efficiency metadata exceeds bounded response")
+        (args.output_dir / (name + ".json")).write_bytes(data)
+    args.input_response, args.jobs_response = args.output_dir / "run.json", [args.output_dir / "jobs.json"]
+    if read_json(args.jobs_response[0]).get("total_count", 0) > 100:
+        raise ValueError("Jobs metadata exceeds bounded first page")
+    result = efficiency(args)
+    result.update(network_requests=2, observation="Current-run snapshot; reporting job/final conclusion may still be unfinished")
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
@@ -418,6 +599,27 @@ def main():
     run_list.add_argument("--input-response", type=Path, required=True)
     run_list.add_argument("--commit", required=True)
     run_list.add_argument("--report", type=Path, required=True)
+    measured = commands.add_parser("efficiency", help="Measure retained run/jobs API JSON; never trigger CI")
+    measured.add_argument("--input-response", type=Path, required=True)
+    measured.add_argument("--jobs-response", type=Path, action="append", required=True)
+    measured.add_argument("--tier", choices=("fast", "cross", "full", "release", "unknown"), required=True)
+    measured.add_argument("--failure-class", choices=FAILURE_CLASSES, default="Unknown")
+    measured.add_argument("--failure-detail", default="")
+    measured.add_argument("--report", type=Path, required=True)
+    automatic = commands.add_parser("efficiency-actions", help="Capture bounded current-run API metadata using the existing Actions token")
+    automatic.add_argument("--output-dir", type=Path, required=True)
+    automatic.add_argument("--report", type=Path, required=True)
+    automatic.add_argument("--tier", choices=("fast", "cross", "full", "release", "unknown"), required=True)
+    automatic.set_defaults(failure_class="Unknown", failure_detail="")
+    reusable = commands.add_parser("reuse", help="Verify an existing successful same-SHA/recipe/contract development result")
+    reusable.add_argument("--input-report", type=Path, required=True)
+    reusable.add_argument("--commit", required=True)
+    reusable.add_argument("--profile", choices=("all", "engine", "loop", "work", "process"), required=True)
+    reusable.add_argument("--expected-os", choices=("Linux", "Windows", "Darwin"), required=True)
+    reusable.add_argument("--expected-arch", choices=("x86_64", "aarch64"), required=True)
+    reusable.add_argument("--supplier-dir", type=Path)
+    reusable.add_argument("--max-age-hours", type=int, choices=range(1, 169), default=24)
+    reusable.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     started = now()
     target_validated = False
@@ -429,6 +631,12 @@ def main():
             result = summarize(args.input_report)
         elif args.operation == "runs":
             result = runs(args.input_response, args.commit)
+        elif args.operation == "efficiency":
+            result = efficiency(args)
+        elif args.operation == "reuse":
+            result = reuse(args)
+        elif args.operation == "efficiency-actions":
+            result = efficiency_actions(args)
         else:
             result = collect(args)
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
