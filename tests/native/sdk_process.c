@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include "libc/dce.h"
@@ -937,13 +938,42 @@ static int js_cycles(void) {
 }
 #ifdef SDK_JS_START_FAULT
 static _Atomic int js_fail_next_thread;
+static _Atomic int js_steal_next_wait;
 int __real_pthread_create(pthread_t *,const pthread_attr_t *,void *(*)(void *),void *);
+int __real_sys_waitid(int,int,void *,int,void *);
+int __wrap_sys_waitid(int type,int pid,void *info,int options,void *usage) {
+  int result=__real_sys_waitid(type,pid,info,options,usage);
+  if(!result && atomic_exchange(&js_steal_next_wait,0)){int status=0;if(waitpid(pid,&status,0)!=pid)return -1;errno=ECHILD;return -1;}
+  return result;
+}
 int __wrap_pthread_create(pthread_t *thread,const pthread_attr_t *attr,void *(*function)(void *),void *userdata) {
   if(atomic_exchange(&js_fail_next_thread,0))return EAGAIN;
   return __real_pthread_create(thread,attr,function,userdata);
 }
 static qaplet_code js_arm_start(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
   (void)r;(void)call;(void)argc;(void)argv;(void)opaque;atomic_store(&js_fail_next_thread,1);return QAPLET_OK;
+}
+static qaplet_code js_arm_wait(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)r;(void)call;(void)argc;(void)argv;(void)opaque;atomic_store(&js_steal_next_wait,1);return QAPLET_OK;
+}
+static int js_reap_fault(void) {
+  CHECK(!IsWindows());qaplet_process_options o;prepare(&o,"--empty");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);unsigned marks=0;
+  qaplet_host_export items[2]={QAPLET_HOST_EXPORT_INIT,QAPLET_HOST_EXPORT_INIT};items[0].name="arm";items[0].name_length=3;items[0].kind=QAPLET_HOST_FUNCTION;items[0].function=js_arm_wait;
+  items[1].name="mark";items[1].name_length=4;items[1].kind=QAPLET_HOST_FUNCTION;items[1].function=cleanup_mark;items[1].userdata=&marks;
+  qaplet_host_module module=QAPLET_HOST_MODULE_INIT;module.name="host:reap";module.name_length=9;module.exports=items;module.export_count=2;CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+  char source[1200];snprintf(source,sizeof(source),"Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('host:reap')]).then(async ([{spawn},{argv},{arm,mark}])=>{"
+    "arm();globalThis.p=spawn(argv[0],{argv:[...argv],env:[],stdio:['ignore','ignore','ignore']});p.closed.then(mark,mark);"
+    "const e=await p.exited.catch(e=>e);if(e.code!==%d||e.reaped!==false||e.errorDomain!==%u||e.error!==%d)throw Error('reap error facts');return 42})",QAPLET_PROCESS_ERROR,QAPLET_ERROR_DOMAIN_ERRNO,ECHILD);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&progress,NULL);double until=milliseconds()+5000;
+  while(!code && milliseconds()<until){code=qaplet_run_once(r,1000,&drive,NULL);if(drive.phase==QAPLET_PHASE_DONE)break;}
+  qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && !marks && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.referenced==1;
+  if(passed){const char *unref="p.unref();p.hasRef()===false";qaplet_result result=QAPLET_RESULT_INIT;passed=qaplet_eval(r,unref,strlen(unref),&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean;}
+  CHECK(qaplet_close(r,NULL)==QAPLET_PROCESS_ERROR);until=milliseconds()+5000;
+  do{CHECK(qaplet_quiesce(r,0,&drive,NULL)==QAPLET_PROCESS_ERROR);CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK);if(!ps.helper_threads)break;sched_yield();}while(milliseconds()<until);
+  qaplet_m2_snapshot snapshot=QAPLET_M2_SNAPSHOT_INIT;CHECK(qaplet_get_m2_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_CLOSED && !snapshot.engine_current_bytes && snapshot.native_state==QAPLET_NATIVE_CLEANING && !snapshot.native_handles);
+  CHECK(ps.processes==1 && !ps.helper_threads && !marks && qaplet_destroy(r,NULL)==QAPLET_BUSY);CHECK(passed && !atomic_load(&js_steal_next_wait));
+  puts("M2 process JS uncertain reap: real stolen wait; rejected exit preserves ECHILD/unreaped facts; closed stays pending; ref requires explicit unref; CLOSED retains unknown ownership; quiesce pending/destroy BUSY; no cleanup success claimed: pass");return 0;
 }
 static int js_start_fault(void) {
   CHECK(IsWindows());qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
@@ -1166,6 +1196,7 @@ int sdk_process(int argc,char **argv) {
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
 #ifdef SDK_JS_START_FAULT
+  if (!strcmp(argv[1],"--m2-process-js-reap-fault")) {int result=js_reap_fault();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
   if (!strcmp(argv[1],"--m2-process-js-start-fault")) {int result=js_start_fault();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
 #endif
   if (!strcmp(argv[1],"--m2-process-js-cycles")) {int result=js_cycles();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}

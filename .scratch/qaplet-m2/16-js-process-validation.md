@@ -80,6 +80,14 @@ PROCESS_IO。STDIO 常量和状态/ref 基础由 17 共享，未完成 17 时不
   计 accepted、下一次 IO 恢复并实际完成清理。参数等拒绝不携带旧 OS 错误。
   此夹具随 host-process.c 的独立条件分支分发，fault consumer 单独链接受控
   pthread 边界；正常 SDK/CLI/Host 不含该 wrap。
+- `reap-red-linux`：复用真实 sys_waitid 观察后由夹具实际 waitpid 偷走 reap 的
+  OS 边界，SDK 正确报 ECHILD/reaped=false，但 JS closed 曾错误成功、默认 ref
+  在完整 checkpoint 后被撤。`reap-green-linux` 分别保存实际 reaped 位，并把
+  collect/handoff 的自动解除 ref 和显式 set_ref 的有效期都绑定实际 reap。
+  closed 保持未决，显式 unref 可解除自然等待；CLOSED 后 engine=0，未知原生
+  记录/容量保留，quiesce 仍报 PROCESS_ERROR/WAIT_TIMEOUT，destroy BUSY。
+  本用例的通过表示安全保留这一负向合同，绝不表示 native cleanup 完成；
+  有界保留随受控 Host 进程结束收口。17 的 stdio 供应不依赖此 Process 专属增量。
 
 部分写最终夹具使用公开 io_block_bytes=1 MiB 的有限覆盖配置，默认值仍是
 64 KiB；Linux pipe 显式缩为一个实际内核页，不能把页大小固定为 4096。

@@ -9,7 +9,7 @@ struct js_process {
   js_process *next;
   qaplet_process token;
   unsigned refs;
-  int exited, closed, checkpoint;
+  int exited, reaped, closed, checkpoint;
   qaplet_code code;
   qaplet_io_endpoint stdio[3];
   unsigned ended[3];
@@ -65,7 +65,7 @@ static JSValue process_method(JSContext *c,JSValueConst self,int argc,JSValueCon
   return code ? fail(c,code) : JS_UNDEFINED;
 }
 static void process_closed(qaplet_runtime *r,js_process *p) {
-  if(!p->closed && p->exited && p->ended[0] && p->ended[1] && p->ended[2]){p->closed=p->checkpoint=1;settle(r,p->close_resolve,JS_UNDEFINED);}
+  if(!p->closed && p->exited && p->reaped && p->ended[0] && p->ended[1] && p->ended[2]){p->closed=p->checkpoint=1;settle(r,p->close_resolve,JS_UNDEFINED);}
 }
 static void endpoint_closed(qaplet_runtime *r,const qaplet_io_endpoint *token) {
   for(js_process *p=r->js_processes;p;p=p->next)for(int i=0;i<3;++i)
@@ -77,7 +77,7 @@ static int deliver_process(qaplet_runtime *r,const qaplet_process *token) {
   if(!p)return 0;if(!begin_delivery(r))return -1;
   qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
   qaplet_code code=qaplet_get_process_status(r,token,&status,NULL);if(code)return -1;
-  p->exited=1;p->code=status.code;
+  p->exited=1;p->reaped=status.reaped;p->code=status.code;
   JSValue value=status.code ? operation_error(r->context,status.code,status.error_domain,status.error) : JS_NewObject(r->context);
   if(!JS_IsException(value)){
     if(JS_DefinePropertyValueStr(r->context,value,"code",JS_NewInt32(r->context,status.code),JS_PROP_C_W_E)<0 ||

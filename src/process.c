@@ -202,7 +202,7 @@ void qaplet_process_collect(qaplet_runtime *r) {
   qaplet_process_pool *pool=r->process_pool;
   if (pool->slots) for (uint64_t i=0;i<r->m2_limits.processes;++i) {
     process_slot *s=&pool->slots[i];
-    if(s->active && s->status.delivered && !s->js_handoff && s->status.referenced &&
+    if(s->active && s->status.reaped && s->status.delivered && !s->js_handoff && s->status.referenced &&
        qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])){
       s->status.referenced=0;--r->process_snapshot.referenced;
     }
@@ -253,7 +253,7 @@ unsigned qaplet_process_handoff(qaplet_runtime *r,uint64_t maximum) {
      * creates no JS execution and cannot replace the last completed result. */
     if (r->execution_active && qaplet_execution_dispatch_locked(r)) break;
     s->status.delivered=1; ++count; increment(&r->process_snapshot.completed);
-    if (s->status.referenced && qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])) { s->status.referenced=0; --r->process_snapshot.referenced; }
+    if (s->status.reaped && s->status.referenced && qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])) { s->status.referenced=0; --r->process_snapshot.referenced; }
   }
   pthread_mutex_unlock(&r->mutex);
   return count;
@@ -656,7 +656,7 @@ qaplet_code qaplet_process_set_ref(qaplet_runtime *r,const qaplet_process *token
   pthread_mutex_lock(&r->mutex); process_slot *s=lookup_locked(r,token);
   if (!s) code=QAPLET_INVALID_HANDLE;
   else if (r->snapshot.lifecycle!=QAPLET_OPEN) code=QAPLET_BAD_STATE;
-  else if ((!s->status.delivered || !qaplet_io_ended_locked(r,&s->stdio[0]) || !qaplet_io_ended_locked(r,&s->stdio[1]) || !qaplet_io_ended_locked(r,&s->stdio[2])) && s->status.referenced!=ref) { if (ref) ++r->process_snapshot.referenced; else --r->process_snapshot.referenced; s->status.referenced=ref; }
+  else if ((!s->status.reaped || !s->status.delivered || !qaplet_io_ended_locked(r,&s->stdio[0]) || !qaplet_io_ended_locked(r,&s->stdio[1]) || !qaplet_io_ended_locked(r,&s->stdio[2])) && s->status.referenced!=ref) { if (ref) ++r->process_snapshot.referenced; else --r->process_snapshot.referenced; s->status.referenced=ref; }
   pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
 }
 qaplet_code qaplet_process_release(qaplet_runtime *r,const qaplet_process *token,qaplet_diagnostic *d) {

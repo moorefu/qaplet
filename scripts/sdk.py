@@ -434,11 +434,13 @@ def package_consume(args, report, directory):
                 "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "controlled_system_fixture": True, "platforms": platforms,
                 "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
-    if args.operation == "fault-consume" and os.name == "nt":
+    if args.operation == "fault-consume":
         artifact = output / "qaplet-js-process-faults.com"
         for mode, expected, platforms in JS_PROCESS_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
             executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
-                [artifact, mode, artifact, "-"], args.timeout, expected=None)
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-"], args.timeout, expected=None)
             passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
             report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
                 "status": "pass" if passed else "fail", "command": executed,
@@ -640,6 +642,7 @@ PROCESS_FAULT_CASES = (
 )
 JS_PROCESS_FAULT_CASES = (
     ("--m2-process-js-start-fault", "M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass\n", ["Windows"]),
+    ("--m2-process-js-reap-fault", "M2 process JS uncertain reap: real stolen wait; rejected exit preserves ECHILD/unreaped facts; closed stays pending; ref requires explicit unref; CLOSED retains unknown ownership; quiesce pending/destroy BUSY; no cleanup success claimed: pass\n", ["POSIX"]),
 )
 IO_FAULT_CASES = (
     ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
@@ -657,7 +660,7 @@ def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, 
     (work / "tmp").mkdir(parents=True)
     name = "qaplet-js-process-faults" if js_faults else "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
     source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
-    symbols = ("pthread_create",) if js_faults else ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    symbols = ("pthread_create", "sys_waitid") if js_faults else ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
     report["js_process_controlled_system_fixture" if js_faults else "io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {

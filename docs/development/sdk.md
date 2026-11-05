@@ -49,6 +49,10 @@ facts. `closed` resolves after reap and all managed endpoints end. It remains
 separate from helper exit and the Host's native quiescence barrier. A ref Process
 keeps the loop alive through reap, managed pipe closure and the complete owner
 jobs checkpoint. Unref and garbage collection do not cancel it.
+If a native wait fails and the SDK cannot establish reap, `exited` rejects with
+the actual unreaped/error facts and `closed` stays pending. The default reference
+remains until explicit unref/stop/close. Native ownership and capacity remain
+retained even after unref; cleanup errors and BUSY destroy report that uncertainty.
 
 `endpoint.read(n)` and `endpoint.write(bytes)` return an IO Task with `promise`
 and `cancel()`. Reads use a positive integer bound and resolve to
@@ -88,6 +92,9 @@ remain until the complete jobs checkpoint; physical IO/helpers retain their
 storage until completion/join even after logical release. Stop/close drop the JS
 roots without running remaining then/catch/finally callbacks, start direct-child
 cancellation, and leave native cleanup to close/quiesce/destroy.
+An ordinary completion callback error returns to the Host after its jobs
+checkpoint, preserving an OPEN Runtime and its existing child/IO resources for
+further owner drive.
 
 `python3 scripts/sdk.py build` produces `qaplet-sdk.zip` on Ubuntu with the
 public header, x86_64 and hidden `.aarch64` static archives, complete pure C
