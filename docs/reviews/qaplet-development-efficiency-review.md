@@ -136,3 +136,5 @@ M1既有保存记录为101,472文件/13,947,727,301逻辑字节，最终376,477,
 本地完整check399项（199pass/200skip）及真实C bootstrap通过。最终热供应all118项/1000生命周期20.659秒，engine40项/1000生命周期14.201秒；普通公开头C编译约0.31秒。当前SDK首次供应209.761秒，单列cold；早期187.640秒的冗余包外链和一次Makefile漂移锁拒绝均保留。与旧CI不同宿主/范围，未计算提速比例。新的同SHA/recipe/contract成功结果复用已对实际all/engine原件验证，0新产品执行，身份不改。精确命令和限制见[本地验证](../../.scratch/qaplet-efficiency/validation.md)。
 
 [执行优化](../plans/qaplet-v1.5-execution-optimization.md)提供前后调度/关键路径对照、条件工期和恢复CI后的同口径复测；[npm路线](../plans/qaplet-npm-compatibility-roadmap.md)使用实际发布包而非过期main摘要。改后远端计时、跨run自动跳过和全部未来产品能力仍无执行证明；账单阻塞期间不触发CI。没有改main、发布、可见性、付款或保护设置。
+
+最终根集成补充：完整本地402项（204pass/198skip）与C bootstrap通过；14+CI当前SDK同字节Linux/Windows各120项、1000生命周期通过。Linux默认缓存热检查24.826秒，Windows19.778秒；首次供件230.663秒，连同检查255.925秒，和前面的CI工作区118项范围分别保存。旧build检查已改always结果门禁（producer改portable-build），24项CI合同覆盖计划/所选Fast/Cross/offline/guest失败传播，不能用条件skip绕过旧required check。Fast原件包含实际SDK供应和日志，未将cache目录存在当证据。

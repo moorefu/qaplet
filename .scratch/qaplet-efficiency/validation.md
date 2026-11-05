@@ -36,3 +36,13 @@
 无actionlint/Actions服务端执行或改后远端时长；旧Fast样本与本次WSL热检查不同宿主/范围，不计算提速百分比。cold供件不满足L0 90秒目标，和热检查分列。未做新macOS/ARM64/64K/Full/Release，不标M2完成。
 
 本轮并行完成的既有14已独立合入根 `e11a032448a4e86d64cf37dddffa01b41e9f6a5f`（实际no-ff merge `25d3eb12`）；它的Linux179/Windows178+optional1、包外65×2及故障12/10属于14新组合供应，见主 `out/qaplet-m2/merge-14-fusion-js12/HANDOFF.md`，不能与CI工作区旧12产品的118项相加成新全树成绩。15继续自己的系统分支修复。
+
+## 根集成后的最终验证
+
+CI分支 `db543b5` 自然合入14后的根，实际merge为 `d3a73052eeb515a17051ada63e106e1ce51da45e`。随后仅补CI required gate、相关测试和文档，不改SDK产品recipe。最终原`build`名字用always门禁传播实际所选结果，producer为`portable-build`；计划失败、Fast失败/skip、Cross缺失、Full offline/Core/被选guest失败都不能绕过旧保护检查。Full缺页未选中时不强迫运行guest。24项CI合同（22pass/2显式资源skip）及Build/APE合同7项（5pass/2skip）通过。
+
+根Ubuntu完整检查为402项，204pass/198skip，真实C bootstrap通过。最终增量门禁正负测试另执行通过；不把fixture job结果当真实GitHub运行。
+
+根实际当前SDK recipe `8693fa48c43385fc14aad3226a873791d273e9b05a51644a36859bc64ec1dcf5`，SDK `77fb4ad1268bef6fe24bede5e603f23b79a779b37fa735a43c37fe6891aba5f3`：Ubuntu首次供应230.663秒，含该构建的all检查255.925秒；默认匹配缓存的all为120/120、24.826秒；Windows消费同字节SDK，all120/120、19.778秒。两端都完成1000生命周期；Windows未编译产品。新supplier与旧CI工作区118项原件分开，不混算。
+
+根原件在 `out/qaplet-efficiency/{final-local-check.json,integrated-local,integrated-warm,integrated-windows}/`。Fast上传除报告/raw还保留该supplier的SDK/producer/report/evidence与隐藏ARM archive，排除objects临时构建目录；不能只留指向未保存cache的报告。远端新workflow仍未运行，不声明其2–4分钟目标或服务端保护配置已验证。

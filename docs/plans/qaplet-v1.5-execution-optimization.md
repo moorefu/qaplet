@@ -36,6 +36,8 @@ L0 争取 30–90 秒、L1 争取 2–4 分钟是测量目标。首次物化当�
 
 所有五个现有 workflow 身份和既有检查 job 名保留。复用单一 `.github/actions/ci-scope` 调用相同选择器；不使用 workflow 级 paths 来隐藏检查。无关范围上传 `scope.json`，表示没有选中产品执行，不伪装测试通过。SCM/Job 的 Windows consumer 只在对应 producer 真正被选中时运行。保护设置细项不可读，未改仓库设置。
 
+M0 原 `build` 检查保留为始终运行的最终门禁，portable producer 移到 `portable-build`。门禁读取实际 `needs`，Fast失败、被选Cross缺报告/作业失败、Full offline/Core失败或计划失败均阻断；不能仅把旧build跳过、让新的Fast失败漏出旧保护规则。Full实际页补缺可因原生覆盖而skip，完整Core仍必须成功。GitHub对条件跳过的job与路径过滤整个workflow的处理不同，且失败依赖可能跳过后继；因此显式用always门禁传播结果。[官方说明](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)。
+
 ### 关键路径、并发与复用
 
 Fast 单独生产当前 SDK，不等待 Full。L0 的最小 C 冒烟只用 Ubuntu PATH `cc` 编译公开头调用者为普通 ELF 对象，核对实际 source/header/compiler 闭包前后字节；它不构建 Runtime/portable SDK，不签发包外链接成绩。Full 的 `offline-rebuild` 在独立 Ubuntu job 中运行，和 native consumer 并行，原件使用独立 `out/full-offline/` 命名空间，经 `m0-offline-SHA` 交给同一 Core consumer，避免与 portable producer 的原路径映射冲突。Full Core 仍等待 offline 成功，不删除其 pair、供应拒绝或 recipe receipt。其他 consumer 不编译产品。
@@ -43,6 +45,8 @@ Fast 单独生产当前 SDK，不等待 Full。L0 的最小 C 冒烟只用 Ubunt
 Fast/Targeted 的同分支、同 job/平台旧运行可被新提交取消。Full/RC 使用 run ID 隔离且不自动取消；独立工作流的手工运行也使用独立 ID。效率报告 job 不取消证据运行。
 
 本地 supplier 按当前产品 recipe 选择、逐件校验 distribution/ZIP/统一锁后复用；目录存在不代表通过。每次普通 L0 仍实际执行所选行为。`ci_evidence.py reuse` 另提供显式成功结果复用：同 SHA、当前 recipe、当前选中测试合同、明确平台、未过期成功执行，重核原报告、SDK 和原始进程日志。它引用原 producer/report/CI/时间，不签发新 OS、Cross 或 Full 成绩；旧失败、未执行、合同变更、坏字节或陈旧结果拒绝。现有成功 Actions run 则先用 `runs` 收据核对 SHA，原 ZIP 使用既有 `verify` 重放；没有有效证据时不能跳过必需作业。本次不宣称已验证跨 run 自动远端跳过。
+
+Fast原件上传包含supplier的SDK、producer报告和evidence/隐藏ARM archive，排除objects临时目录，避免留下仅指向未保存cache的报告。当前根组合已实测：Linux默认匹配供应all120项24.826秒，Windows同字节120项19.778秒，均含1000生命周期。首次供应230.663秒、含供件检查255.925秒，单列cold；这是WSL/本机的开发成绩，不是改后Actions耗时或完整Cross。
 
 ## 效率测量与改造前后
 

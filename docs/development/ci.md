@@ -43,6 +43,8 @@ collection 必须使用新报告路径，保存全部失败尝试。成功报告
 - Full offline pair/refusal/seal 位于独立 `offline-rebuild`，和 native consumer 并行，Core仍等待其原件。Fast/Targeted 新提交取消同范围旧运行；Full/RC/手工证据运行使用独立 run ID，不能自动取消。
 - 既有五个 workflow 与检查 job 继续创建。统一 scope action 选择相关重作业，非相关范围只保留选择报告，不能把它当产品执行通过；SCM/Job按共享依赖传播。无需改变保护设置。详细规则、前后对照与复测命令见[当前执行优化](../plans/qaplet-v1.5-execution-optimization.md)。
 
+M0保留原`build`作为always最终required gate，原producer改为`portable-build`。它核对计划和本次选中Fast/Cross/Full的真实job结果，任何必需作业failed/cancelled/skipped均失败（Full实际page-gap可skip，但Core必须成功）。这是为了兼容只要求旧build名称的保护配置，避免新Fast失败却旧build条件skip通过。效率观测job单独容许观测失败，不豁免产品门禁。
+
 恢复输入缓存之后仍无条件执行原件 SHA/长度、源码、完整 toolchain tree 与 helper 验证。
 cache key 绑定统一锁原始字节，不使用宽松 restore prefix；只有可信默认分支的 push、schedule、
 manual run 且所有验证成功才可 save。PR（包括同仓库 PR）不能写可信 cache。fork PR 只使用

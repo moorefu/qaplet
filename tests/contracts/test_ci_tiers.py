@@ -48,8 +48,8 @@ class CITiersContract(unittest.TestCase):
 
     def test_creation_fault_fixture_is_required_separately_from_normal_sdk(self):
         value = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
-        steps = value["jobs"]["build"]["steps"]
-        value["jobs"]["build"]["steps"] = [step for step in steps
+        steps = value["jobs"]["portable-build"]["steps"]
+        value["jobs"]["portable-build"]["steps"] = [step for step in steps
             if "scripts/sdk.py fault-consume" not in step.get("run", "")]
         with tempfile.TemporaryDirectory(prefix="qaplet-creation-fault-ci-") as temp:
             work = Path(temp)
@@ -66,7 +66,7 @@ class CITiersContract(unittest.TestCase):
             work = Path(temp)
             mutations = []
             for script in ("m2_waker.py", "m2_stdio.py", "m2_process.py", "m2_tty.py"):
-                for job in ("build", "native-startup", "arm64-page-gaps"):
+                for job in ("portable-build", "native-startup", "arm64-page-gaps"):
                     value = json.loads(json.dumps(original))
                     value["jobs"][job]["steps"] = [step for step in value["jobs"][job]["steps"]
                         if script not in step.get("run", "")]
@@ -107,7 +107,7 @@ class CITiersContract(unittest.TestCase):
         os.chown(work, uid, gid)
         try:
             workflow = json.loads((ROOT / ".github/workflows/m0.yml").read_text(encoding="utf-8"))
-            command = next(step["run"] for step in workflow["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
+            command = next(step["run"] for step in workflow["jobs"]["offline-rebuild"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
             first = command.splitlines()[0]
             if first.startswith("mkdir -p "):
                 setup = subprocess.run([*runner, "sh", "-ec", first], cwd=work, capture_output=True, text=True, timeout=10)
@@ -174,9 +174,9 @@ class CITiersContract(unittest.TestCase):
                 if mutation == "missing_core":
                     del value["jobs"]["full-core"]
                 elif mutation == "disabled_build":
-                    value["jobs"]["build"]["if"] = "${{ false }}"
+                    value["jobs"]["portable-build"]["if"] = "${{ false }}"
                 elif mutation == "skipped_compile":
-                    next(step for step in value["jobs"]["build"]["steps"] if step.get("run") == "make build-ape OUT=out/m0")["if"] = "${{ false }}"
+                    next(step for step in value["jobs"]["portable-build"]["steps"] if step.get("run") == "make build-ape OUT=out/m0")["if"] = "${{ false }}"
                 elif mutation == "tolerated_probe":
                     next(step for step in value["jobs"]["arm64-page-gaps"]["steps"] if "scripts/arm64_guest.py run" in step.get("run", ""))["continue-on-error"] = True
                 elif mutation == "empty_native":
@@ -257,13 +257,13 @@ class CITiersContract(unittest.TestCase):
                 return process.returncode, json.loads((work / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(check(original)[0], 0)
             bypass = json.loads(json.dumps(original))
-            verify = next(step for step in bypass["jobs"]["build"]["steps"] if "fetch_locked_toolchain.py" in step.get("run", ""))
+            verify = next(step for step in bypass["jobs"]["portable-build"]["steps"] if "fetch_locked_toolchain.py" in step.get("run", ""))
             verify["if"] = "${{ steps.cache.outputs.cache-hit != 'true' }}"
             code, result = check(bypass)
             self.assertEqual(code, 1)
             self.assertIn("cache", result["reason"].lower())
             save = json.loads(json.dumps(original))
-            step = next(step for step in save["jobs"]["build"]["steps"] if step.get("uses", "").startswith("actions/cache/save@"))
+            step = next(step for step in save["jobs"]["portable-build"]["steps"] if step.get("uses", "").startswith("actions/cache/save@"))
             step["if"] = "${{ always() }}"
             code, result = check(save)
             self.assertEqual(code, 1)

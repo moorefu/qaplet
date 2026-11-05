@@ -11,12 +11,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class EfficiencyReportContract(unittest.TestCase):
     def test_reuse_refuses_plans_failed_execution_and_changed_commit(self):
-        for status, execution in (("planned", "not_run"), ("fail", "executed"), ("pass", "not_run")):
+        for status, execution in (("planned", "not_run"), ("fail", "executed"), ("pass", "not_run"), ("pass", "executed")):
             with self.subTest(status=status, execution=execution), tempfile.TemporaryDirectory() as temp:
                 work = Path(temp)
                 original = work / "original.json"
                 original.write_text(json.dumps({"report_kind": "qaplet-local-check", "status": status,
-                    "execution_status": execution, "scope": "development-only"}), encoding="utf-8")
+                    "execution_status": execution, "scope": "development-only", "commit": "b" * 40}), encoding="utf-8")
                 before = original.read_bytes()
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/ci_evidence.py"), "reuse",
                     "--input-report", str(original), "--commit", "a" * 40, "--profile", "engine",
