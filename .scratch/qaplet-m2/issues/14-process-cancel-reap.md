@@ -6,9 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** local_complete_pending_merge；本地Linux/Windows实施与验证完成，待独立合并；完整Cross deferred。
+**Execution state:** local_complete；本地Linux/Windows实现、供应验收与独立合并完成，完整Cross `cross_deferred`。
 
-**Local implementation/validation:** complete；正式 Local development 放行由独立 merger 合入后登记。
+**Local development:** complete；实际集成merge `25d3eb12bfecb4661d64cb32a8460217426167d0`，支持本地后续开发。完整跨平台、CI与组合长测仍待验收，`Status: claimed`保留。
 
 **Execution prerequisites:** 13的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
@@ -61,4 +61,6 @@
 2026-11-05：本地公开取消、终止即回收、确定性 helper/TLS 物理保留、真实 native error/wake 故障与 Windows HANDLE 复用均通过。正常供应 Linux 172pass、Windows 171pass+既有可选 symlink 限制1；包外两端各58pass；独立故障 Linux12/Windows9pass；devcheck380=180pass+200条件skip，C bootstrap通过。详见[本票验证记录](../14-process-cancel-validation.md)。保持 claimed，不提前关闭 full ticket/父M2，不 push/触发 CI；待独立 merger 合入后登记本地依赖放行。
 
 2026-11-05（融合12）：已融合实际integration 3d03f85，保留JS Work7项及Process cancel/terminal/包外路径。15真实IO gate发现的Windows child已exit/helper未pub竞争由14唯一提交5724f4e修复；旧供应cancel/close两序实际red，新组合正式fault均green，活child真实native5仍保留。新normal Linux179pass/Win178pass+optional1，package两端65pass，fault Linux12/Win10pass，相关SDKNative三项pass/0skip；不重复380。旧sourceout冻结，新原件独占主out/qaplet-m2/14-fusion-js12，见[融合验证](../14-fusion-js12-validation.md)。继续待独立merger放行本地开发，不改变claimed/fullCross deferred。
+
+2026-11-05（独立合并）：实际source `1294230b0e508e9b8fafb4bd6b610e461569423f` no-ff合入actual integration `3d03f855867ae363cfb528c55a4c2b1c7b54e58e`，根merge为 `25d3eb12bfecb4661d64cb32a8460217426167d0`。新scope相对旧preaudit的catalog并集、Windows red两序与正式green、normal/package/fault原始日志、77配方raw/Git/LF、79 ZIP成员、双archive各15 ELF64 REL、三APE headers、79 tracked Python及Ubuntu postmerge preflight均核验通过。原sourceout、新供应和旧冻结归档未改写；仅root19个既有非配方Python的CRLF恢复为Git原始LF，无产品diff。交接见主 `out/qaplet-m2/merge-14-fusion-js12/HANDOFF.md` / `handoff.json`。登记Local development complete与cross_deferred；不重复380/QEMU/Full，不push/CI/整体Review，不关闭父票或全范围验收。
 

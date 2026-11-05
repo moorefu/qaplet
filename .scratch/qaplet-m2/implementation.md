@@ -265,3 +265,15 @@ skipped，20继承provider/0新上传，未冒称A2取消或新执行。18原报
 新fixture的本地实际64K SDK170/170、Process10/Work20/取消7、27payload/1081journal
 与seal、QEMU0无timeout及原件不变性已经核验，明确ci=null；详主
 `out/qaplet-m2/local64k-nofile-034/HANDOFF.md`、`handoff.json`。不将本地实测替代CI或完整Core。
+
+2026-11-05（14与实际12独立融合合并）：票14 source `1294230b` 已no-ff合入actual
+integration `3d03f855`，根merge `25d3eb12bfecb4661d64cb32a8460217426167d0`，tree等于source。
+新组合供件normal Linux179/Windows178+既有optional1、包外两端65、fault Linux12/
+Windows10及SDKNative3/0skip的当前catalog/raw日志均核验；新Windows已exit/helper未pub
+竞争由14唯一修复5724f4e负责，旧密封SDK cancel/close两序真实red与正式green分别保留。
+77配方raw/Git/LF、ZIP79、双archive各15 ELF64 REL、三APE headers及Ubuntu postmerge
+preflight通过；root19个既有非配方Python仅CRLF恢复为Git原始LF，未改产品字节。
+旧preaudit/冻结原件直接引用、无整out重复制，原source和供应未改写。14登记Local
+development complete，claimed/cross_deferred保留；15已收到actual integration SHA。
+详主 `out/qaplet-m2/merge-14-fusion-js12/HANDOFF.md`、`handoff.json`。不重复380/QEMU/
+Full，不push/触发CI/整体Review；父M2、其他原生平台、actual64K及组合长测仍未验收。
