@@ -93,6 +93,7 @@ def planned(args, ctx, output):
     if args.operation == "check-fast":
         return [[python, "-B", str(repo / "scripts/local_check.py"), "--profile", args.profile,
                  "--output-dir", str(output), "--report", str(output / "local-check.json"),
+                 *[part for path in args.reuse_report for part in ("--reuse-report", str(path.resolve()))],
                  *(["--supplier-report", str(args.supplier_report.resolve()), "--supplier-dir", str(args.supplier_dir.resolve())]
                    if args.supplier_report and args.supplier_dir else [])]]
     if args.operation == "check":
@@ -126,6 +127,7 @@ def main():
     parser.add_argument("--profile", choices=("all", "engine", "loop", "work", "process", "tty", "ci"), default="all")
     parser.add_argument("--supplier-report", type=Path)
     parser.add_argument("--supplier-dir", type=Path)
+    parser.add_argument("--reuse-report", type=Path, action="append", default=[])
     parser.add_argument("--repo", type=Path, default=ROOT)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--output-dir", type=Path)

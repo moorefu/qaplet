@@ -96,7 +96,15 @@ def classify(paths):
     rank, reasons, windows_only = 0, [], bool(paths)
     shared = {"scripts/build_ape.py", "scripts/ape_helpers.py", "scripts/native_toolchain.py",
               "scripts/input_lock.py", "scripts/nightly_toolchain.py", "scripts/fetch_locked_toolchain.py",
-              "scripts/workflow_support.py", "scripts/evidence.py", "scripts/foundation.py"}
+              "scripts/workflow_support.py", "scripts/evidence.py", "scripts/foundation.py", "scripts/startup.py"}
+    private_scm = {"apps/svc/probes/scm_main.c", "apps/svc/probes/scm_callbacks.c", "apps/svc/probes/scm_abi.h",
+                   "scripts/svc_scm.py", "scripts/svc_scm_windows.py", "tests/contracts/test_svc_scm.py",
+                   ".github/workflows/svc-scm.yml"}
+    private_job = {"apps/svc/probes/job_probe.c", "scripts/svc_job.py", "scripts/svc_job_windows.py",
+                   "tests/contracts/test_svc_job.py", "tests/contracts/fixtures/svc-job-missing-export.json",
+                   ".github/workflows/svc-job.yml"}
+    native_sources = {"src/" + name for name in ("work.c", "values.c", "timers.c", "runtime_internal.h", "runtime.c",
+        "process.c", "modules.c", "loop.c", "io_internal.h", "io.c", "host_module.c", "execution.c", "events.c", "cli.c")}
     for path in paths:
         if path.startswith(("docs/", ".scratch/")) or path in ("README.md", "GLOSSARY.md", "LICENSE", "AGENTS.md"):
             continue
@@ -105,19 +113,23 @@ def classify(paths):
             scopes = dict.fromkeys(scopes, True)
             rank = max(rank, 3)
             reasons.append("toolchain/build/ABI dependency")
-        elif "svc_scm" in path or "svc-scm" in path:
+        elif path in private_scm:
             scopes["svc_scm"] = True
-        elif "svc_job" in path or "svc-job" in path:
+        elif path in private_job:
             scopes["svc_job"] = True
         elif path in (".github/workflows/foundation.yml", "tests/contracts/test_foundation.py"):
             scopes["foundation"] = True
         elif path in ("src/execution.c", "src/values.c"):
             scopes["m0"] = True
             rank = max(rank, 1)
-        elif path.startswith(("src/", "include/", "tests/native/")) or path.startswith("scripts/m2_"):
+        elif path.startswith("include/"):
+            scopes["m0"] = True
+            rank = max(rank, 3)
+            reasons.append("public SDK header: ABI safety requires Full")
+        elif path in native_sources or ((path.startswith("tests/native/") or path.startswith("scripts/m2_")) and (ROOT / path).is_file()):
             scopes["m0"] = True
             rank = max(rank, 2)
-            reasons.append("public ABI or native OS behavior")
+            reasons.append("native OS behavior")
         elif path.startswith(("examples/", "tests/fixtures/modules/")):
             scopes["m0"] = True
             rank = max(rank, 1)
@@ -361,6 +373,16 @@ def check_tier_transport(workflow):
     require(jobs["fast"].get("if") == "${{ needs.tier-plan.outputs.run_fast == 'true' }}" and
             jobs["fast"].get("needs") == "tier-plan" and jobs["fast"].get("runs-on") == "ubuntu-24.04", "Fast requires its real Ubuntu product job")
     fast_runs = [step["run"] for step in jobs["fast"]["steps"] if "run" in step]
+    reuse_condition = "${{ steps.reuse.outputs.reused != 'true' }}"
+    fast_steps = jobs["fast"]["steps"]
+    reuse_steps = [step for step in fast_steps if step.get("id") == "reuse"]
+    require(len(reuse_steps) == 1 and "if" not in reuse_steps[0] and reuse_steps[0].get("run") ==
+            'python scripts/local_check.py --profile all --reuse-only --reuse-actions --output-dir out/fast --report out/fast/reuse-check.json --github-output "$GITHUB_OUTPUT"' and
+            reuse_steps[0].get("env") == {"GITHUB_TOKEN": "${{ github.token }}"},
+            "Fast must strictly verify original same-SHA successful evidence before execution")
+    require(fast_steps.index(reuse_steps[0]) < next(i for i, step in enumerate(fast_steps) if "fetch_locked_toolchain" in step.get("run", "")) and
+            all(step.get("if") == reuse_condition for step in fast_steps if "run" in step and step.get("id") != "reuse"),
+            "Only verified reuse may skip Fast acquisition/compilation/execution; miss must execute")
     require(fast_runs[-1] == "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json" and
             not any("offline_integrity" in run or "make check " in run or "m2_" in run or "build-ape" in run for run in fast_runs),
             "Fast must compile/run current SDK behavior without historical apps, offline pair or guest")
@@ -396,13 +418,16 @@ def check_tier_transport(workflow):
             if uses.startswith("actions/cache/"):
                 require(name in ("portable-build", "fast", "offline-rebuild") and step.get("with", {}) == {"path": cache_paths, "key": "${{ needs.tier-plan.outputs.cache_key }}"}, "Cache must bind exact locked input bytes")
                 if uses.startswith("actions/cache/save@"):
-                    require(step.get("if") == "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}", "Only verified trusted default-branch events may save caches")
+                    expected_save = "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}"
+                    if name == "fast":
+                        expected_save = expected_save.replace("${{ success()", "${{ steps.reuse.outputs.reused != 'true' && success()")
+                    require(step.get("if") == expected_save, "Only verified trusted default-branch events may save caches")
                 else:
-                    require(uses.startswith("actions/cache/restore@") and "if" not in step, "Only split cache restore/save is permitted")
+                    require(uses.startswith("actions/cache/restore@") and (step.get("if") == reuse_condition if name == "fast" else "if" not in step), "Only split cache restore/save is permitted")
             elif "actions/cache@" in uses:
                 raise ValueError("Trusted cache policy requires separate restore/save")
             if any(command in run for command in ("fetch_locked_toolchain.py", "make quickjs-fetch", "scripts/ape_helpers.py fetch", "scripts/startup_loaders.py fetch")):
-                require("if" not in step, "Restored cache inputs must always be verified; cache-hit bypass refused")
+                require(step.get("if") == reuse_condition if name == "fast" else "if" not in step, "Restored cache inputs must always be verified; cache-hit bypass refused")
     build = jobs["portable-build"]["steps"]
     require(all("if" not in step for step in build if "run" in step and not any(command in step["run"] for command in
                 ("sudo apt-get", "scripts/offline_integrity.py run", "scripts/ci_tiers.py seal-offline"))), "Required Fast input/compiler/probe commands cannot be skipped")
@@ -476,8 +501,9 @@ def check_tier_transport(workflow):
         if name in ("tier-plan", "ci-efficiency"):
             continue
         concurrency = job.get("concurrency", {})
-        require(concurrency.get("cancel-in-progress") == "${{ needs.tier-plan.outputs.run_full != 'true' }}" and
-                "github.run_id" in concurrency.get("group", ""), "Full/RC evidence cannot be auto-cancelled: " + name)
+        require(concurrency.get("cancel-in-progress") == "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}" and
+                "(github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref" in concurrency.get("group", ""),
+                "Manual/Full/RC evidence cannot be auto-cancelled: " + name)
     measured = jobs.get("ci-efficiency", {})
     require(measured.get("if") == "${{ always() }}" and measured.get("continue-on-error") is True and
             measured.get("concurrency", {}).get("cancel-in-progress") is False and

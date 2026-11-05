@@ -19,7 +19,7 @@ GitHub 插件取得 API 结果后先保留原始 JSON，仅将判定字段返回
 }
 ```
 
-缓存固定为主工作区 `.cache/downloads/ci/<name>.zip`；已有坏缓存立即失败。每个交付文件检查CRC，拒绝越界路径、symlink、大小写重复和超限解包，重复验证同时拒绝已修改或额外文件。临时下载/解包目录在失败后清理，既有解包目录的错误字节保留。收据含原归档与逐文件摘要、物理root，可作为Core manifest的transports输入；原报告中的路径保持不变，显式path_mappings负责迁移。collection报告使用checkout的out下、解包目录之外的独立文件；目标检查未完整成功或发现与输入/交付字节碰撞时，只在终端报告错误，保持原字节。
+普通 fetch 缓存固定为主工作区 `.cache/downloads/ci/<name>.zip`；fetch-actions 用 `<provider-artifact-id>-<name>.zip` 区分同名不同 run 的原 ZIP，离线 verify 沿原 receipt 的 archive.path 重核。旧缓存和收据路径保留，已有坏缓存立即失败。每个交付文件检查CRC，拒绝越界路径、symlink、大小写重复和超限解包，重复验证同时拒绝已修改或额外文件。临时下载/解包目录在失败后清理，既有解包目录的错误字节保留。收据含原归档与逐文件摘要、物理root，可作为Core manifest的transports输入；原报告中的路径保持不变，显式path_mappings负责迁移。collection报告使用checkout的out下、解包目录之外的独立文件；目标检查未完整成功或发现与输入/交付字节碰撞时，只在终端报告错误，保持原字节。
 
 `ci_evidence.py summarize --input-report <report.json> --report out/summary.json` 按已知schema/report_kind提取计数和清理事实。汇总明确 evidence_verified=false，不能代替完整consumer或新的OS执行；deep producer缺ci时保持null，Job supervisor从facts.cleanup读取。完整结果写报告，终端只显示短摘要。
 
@@ -37,7 +37,7 @@ collection 必须使用新报告路径，保存全部失败尝试。成功报告
 选择层级，并输出可重放的 JSON 与 GitHub outputs；计划中的 `status=pass` 只表示选择有效，
 `execution_status=not_run` 和 `evidence_verified=false` 不表示执行通过。
 
-- 普通 Engine/JS/应用 push（包括 M2 integration）选择 Fast；共享原生/公开 ABI 选择 Cross，五个声明目标均保留；Windows 专用 fixture 选择真实 Windows。工具链、CI 关键路径或未知风险升级 Full。实际 push before/after 与 PR merge-base diff 不可取得时失败，手工层级不可降低已知风险。
+- 普通 Engine/JS/应用 push（包括 M2 integration）选择 Fast；一般共享原生 OS 改动选择 Cross，五个声明目标均保留；公开 SDK 头无法证明非 ABI 编辑时保守选择 Full，手工 Cross/Fast 不可降低，仍含五 native、实际 64K/offline/Core；Windows 专用 fixture 选择真实 Windows。工具链、CI 关键路径或未知风险升级 Full。实际 push before/after 与 PR merge-base diff 不可取得时失败，手工层级不可降低已知风险。
 - 每日 03:17 UTC、RC tag、显式 full 继续完整原生/实际 64K/Core；Release 加长测与发布合同单独判定。Node/soak/network 未实现项不冒称通过。
 - Fast 的独立 Ubuntu job 只构建当前 SDK 并运行相关 Runtime/ESM/Promise/生命周期与最小公开 C 合同，不构建历史 M0/四类 OS probes或执行 offline pair。Cross/Full portable producer 一次供应，同字节给选中真实 native；测试宿主不重编译。
 - Full offline pair/refusal/seal 位于独立 `offline-rebuild`，和 native consumer 并行，Core仍等待其原件。Fast/Targeted 新提交取消同范围旧运行；Full/RC/手工证据运行使用独立 run ID，不能自动取消。
@@ -120,6 +120,10 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 `make check-fast` / `make test-engine` / `make test-loop` / `make test-work` / `make test-process` / `make test-tty` / `make test-ci` 委派 `dev.py check-fast --profile …`。原 pinned Makefile 字节保持不变，GNUmakefile 包装提供快捷目标。首次没有匹配供应时只从已验 root 缓存构建；不主动 fetch/QEMU。匹配供应可用 `--supplier-report FILE --supplier-dir DIR` 显式指定，坏或未完成缓存拒绝，原失败保留。TTY 产品未实现时返回 blocked。`--plan` 无执行成绩。
 
-`ci_evidence.py reuse --input-report FILE --commit SHA --profile engine --expected-os Linux --expected-arch x86_64 --report out/reuse.json` 重核同SHA/recipe/测试合同、未过期成功结果与SDK/raw logs，保留原执行/producer/CI身份。复用只是原开发范围的既有结果，不生成新宿主或Full成绩。远程成功run先用既有`runs`核对、归档用`verify`重放；没有有效证明不跳过必需验收。
+`dev.py check-fast` / `local_check.py` 在真实执行前自动读取主 `.cache/build/local-check-results/` 的一个成功报告指针；key 绑定精确 SHA、产品 recipe、选中测试合同、OS/架构。指针只用于定位，每次仍复用既有 `ci_evidence.reuse` 重核原成功执行、SDK/ZIP、完整所选 catalog 与 raw logs，默认有效期 24 小时。没有指针不扫描历史 out；可用 `--reuse-report FILE` 显式选择原件。命中时 `execution_status=reused_previous`、新产品执行为 0，原执行/producer/CI/平台/时间保留；miss/reject 留在新报告后继续实际执行，不重写原失败或原报告。该复用只适用于原开发合同，不签发新 OS、Cross、Full 或 Release 成绩。
+
+CI Fast 在任何输入获取之前执行同一 CLI 的 `--reuse-only --reuse-actions`：只读查询同精确 SHA 的成功 M0 run（最近列表中至多三个候选，当前重跑可取上一次成功 attempt），沿既有 fetch-actions 检查 provider run/commit/expiry、ZIP digest/长度，再 offline verify 全部解包字节，并复验原 SDK/进程日志。默认网络预算 30 秒，单次 metadata 请求至多 5 秒；超时、无权限、过期、缺件或错身份保留拒绝并回落实际获取/编译/执行。原 artifact 的 SDK、日志、provider 和 ZIP 随新报告保留；路径映射只在内存使用，不改原件。没有有效证明不会跳过所选行为，复用不扩大可信 cache 写权限；命中不 save 输入 cache。token 只发固定 GitHub API，literal loopback 测试不携带 token，签名 URL 不落盘。
+
+独立 `ci_evidence.py reuse --input-report FILE --commit SHA --profile engine --expected-os Linux --expected-arch x86_64 --report out/reuse.json` 仍可作只读复验；生产入口已经调用同一验证函数。远端实际调度尚未运行，本地 loopback/API 合同与实际 Linux/Windows 原件复用分别记录。
 
 `ci_evidence.py efficiency --input-response RUN_JSON --jobs-response JOBS_JSON --tier fast --report out/efficiency.json` 离线观测原始API。m0收尾用`efficiency-actions`只读当前run的元数据并保存原件/快照；报告job和最终conclusion可能未完成时保持可见。runner0/空steps的等待不算产品执行，继承attempt排除新增Runner成本，cache/平台/归因缺信息保留null/Unknown。步骤名分类的build含验证，不能直接从关键路径减去阶段合计。失败分类包含Product、ABI、Toolchain、Runner、Missing Resource、Evidence、Cancelled、Unknown。基准和样本限制见[审计](../reviews/qaplet-development-efficiency-review.md)。

@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import time
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -105,7 +106,7 @@ class NoReferenceRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fresh_reference(endpoint):
+def fresh_reference(endpoint, timeout=45):
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     # Only the fixed API host receives an existing token. Redirect download is unauthenticated.
     token = os.environ.get("GITHUB_TOKEN") if endpoint.startswith("https://api.github.com/") else None
@@ -115,7 +116,7 @@ def fresh_reference(endpoint):
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(endpoint, headers=headers)
     try:
-        with urllib.request.build_opener(NoReferenceRedirect()).open(request, timeout=45):
+        with urllib.request.build_opener(NoReferenceRedirect()).open(request, timeout=timeout):
             raise ValueError("Provider did not return a download reference")
     except urllib.error.HTTPError as redirect:
         if redirect.code not in (301, 302, 303, 307, 308):
@@ -148,9 +149,24 @@ def matches(path, expected):
     return all(actual[key] == expected[key] for key in ("sha256", "size_bytes"))
 
 
-def acquire(item, cache, manifest, allow_fetch, attempts=None):
-    target = cache / (item["name"] + ".zip")
+def request_timeout(deadline, maximum):
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ValueError("Successful-result discovery budget exhausted; execute fresh")
+    return min(maximum, remaining)
+
+
+def acquire(item, cache, manifest, allow_fetch, attempts=None, deadline=None):
     expected = item["archive"]
+    # Provider IDs distinguish repeated artifacts with the same name/SHA. Older
+    # receipts still point to their immutable original file and remain valid.
+    target = cache / ((str(item["id"]) + "-" if expected.get("reference") else "") + item["name"] + ".zip")
+    if expected.get("path"):
+        retained = local_path(expected["path"], manifest.resolve().parent)
+        if retained.resolve().is_relative_to(cache.resolve()):
+            target = retained
     if target.exists():
         if target.is_symlink() or not matches(target, expected):
             raise ValueError("Cached archive identity mismatch: " + item["name"])
@@ -174,12 +190,13 @@ def acquire(item, cache, manifest, allow_fetch, attempts=None):
             try:
                 for attempt in range(1, 3 if reference else 2):
                     # Resolve each reference immediately before its download, in this process.
-                    fresh = fresh_reference(reference) if reference else check_url(url)
+                    fresh = fresh_reference(reference, request_timeout(deadline, 10 if deadline else 45)) if reference else check_url(url)
                     try:
                         opener = urllib.request.build_opener(CheckedRedirect())
-                        with opener.open(fresh, timeout=45) as incoming, temporary.open("xb") as output:
+                        with opener.open(fresh, timeout=request_timeout(deadline, 10 if deadline else 45)) as incoming, temporary.open("xb") as output:
                             total = 0
                             while block := incoming.read(1024 * 1024):
+                                request_timeout(deadline, 45)
                                 total += len(block)
                                 if total > expected["size_bytes"]:
                                     raise ValueError("Downloaded archive exceeds declared length")
@@ -304,7 +321,7 @@ def collect(args):
     output.mkdir(parents=True, exist_ok=True)
     records = []
     for item in items:
-        archive = acquire(item, cache, args.manifest, args.operation in ("fetch", "fetch-actions"), getattr(args, "attempts", None))
+        archive = acquire(item, cache, args.manifest, args.operation in ("fetch", "fetch-actions"), getattr(args, "attempts", None), getattr(args, "deadline", None))
         destination = output / item["name"]
         files = unpack(archive, destination, args.max_unpacked_bytes)
         records.append({"id": item["id"], "name": item["name"], "archive": identity(archive),
@@ -414,6 +431,24 @@ def reuse(args):
     from core_gate import require
     from sdk_matrix import catalog
 
+    mappings = getattr(args, "path_mappings", [])
+    def resolve(path):
+        normalized = str(path).replace("\\", "/")
+        matches = [(source, target) for source, target in mappings
+                   if normalized == source or normalized.startswith(source + "/")]
+        if matches:
+            source, target = max(matches, key=lambda row: len(row[0]))
+            result = (Path(target) / normalized[len(source):].lstrip("/")).resolve()
+            require(result.is_relative_to(Path(target).resolve()), "Reuse mapping escaped archive root")
+            return result
+        return Path(path)
+
+    def verify_ref(ref):
+        path = resolve(ref["path"])
+        observed = identity(path)
+        require(all(observed[key] == ref[key] for key in ("sha256", "size_bytes")), "Original evidence bytes changed")
+        return path
+
     value = read_json(args.input_report)
     require(value.get("report_kind") == "qaplet-local-check" and value.get("status") == "pass" and
             value.get("execution_status") == "executed" and value.get("scope") == "development-only",
@@ -427,9 +462,9 @@ def reuse(args):
     require(0 <= elapsed <= args.max_age_hours * 3600, "Successful execution is stale or in the future")
     supplier = value["supplier"]
     reference = supplier["producer_report"]
-    require(identity(reference["path"]) == reference, "Original supplier report changed")
-    artifacts = args.supplier_dir or Path(supplier["artifacts_directory"])
-    local_check.validate_supplier(Path(reference["path"]), artifacts.resolve(), expected)
+    producer_path = verify_ref(reference)
+    artifacts = args.supplier_dir or resolve(supplier["artifacts_directory"])
+    producer = local_check.validate_supplier(producer_path, artifacts.resolve(), expected)
     checked, original_reports = {}, []
     for key in ("runtime", "public_c"):
         section = value[key]
@@ -437,48 +472,52 @@ def reuse(args):
             continue
         require(section["status"] == "pass", "Selected execution section failed")
         ref = section["report"]
-        require(identity(ref["path"]) == ref, "Original execution report changed")
-        incoming = read_json(Path(ref["path"]))
+        incoming = read_json(verify_ref(ref))
         require(incoming["status"] == "pass", "Original execution failed")
         if key == "public_c":
             require(incoming.get("report_kind") == "qaplet-local-c-compile" and
                     incoming.get("scope") == "public-header-compile" and incoming.get("commands") and
                     incoming["inputs_before"] == incoming["inputs_after"], "Actual stable public C compilation required")
             for item in [*incoming["inputs_after"], *incoming["compiler"], incoming["object"], *incoming["dependency_files"]]:
-                observed = identity(item["path"])
+                observed = identity(resolve(item["path"]))
                 require(all(observed[field] == item[field] for field in ("sha256", "size_bytes")), "Public C input/compiler/object bytes changed")
                 checked[item["path"]] = observed
             require(incoming["object"].get("elf_class") == 64 and incoming["object"].get("elf_type") == "REL" and
                     incoming["object"].get("machine") in (62, 183), "Measured ordinary C object required")
-            observed_object = local_check.verify_object(Path(incoming["object"]["path"]), incoming["host"]["execution_arch"])
-            require(observed_object == incoming["object"], "Ordinary C object format differs from its measured record")
+            observed_object = local_check.verify_object(resolve(incoming["object"]["path"]), incoming["host"]["execution_arch"])
+            require(all(observed_object[key] == incoming["object"][key] for key in ("sha256", "size_bytes", "elf_class", "elf_type", "machine")), "Ordinary C object format differs from its measured record")
             for command in incoming["commands"]:
                 require(command["exit_code"] == 0 and not command["timed_out"], "Public C compile command failed")
                 for stream in ("stdout", "stderr"):
-                    checked[command[stream + "_log"]] = identity(command[stream + "_log"])
+                    checked[command[stream + "_log"]] = identity(resolve(command[stream + "_log"]))
             original_reports.append(ref)
             continue
         if key == "runtime":
             host = incoming["host"]
             require((host["os"], host["execution_arch"]) == (args.expected_os, args.expected_arch) and
-                    host["execution_mode"] == "native", "Original execution does not cover the requested native platform")
+                    host["execution_mode"] == "native" and host.get("cpu", host["execution_arch"]) == host["execution_arch"],
+                    "Original execution does not cover the requested native platform")
+            require(host == value["runtime"]["host"] and incoming.get("ci") == value.get("ci"), "Original execution host/CI identity differs")
         with local_check.selected_catalog(local_check.select_cases(args.profile)):
             wanted = {row[0]: row for row in catalog(value["runtime"]["host"])}
-        require({case["case_id"] for case in incoming["cases"]} == set(wanted), "Incomplete selected test catalog")
+        require(len(incoming["cases"]) == len(wanted) and {case["case_id"] for case in incoming["cases"]} == set(wanted), "Incomplete selected test catalog")
         for case in incoming["cases"]:
             _, _, _, code, output, error, contains = wanted[case["case_id"]]
             require(case["status"] == "pass" and len(case["commands"]) == 1, "Nonpassing/missing actual test command")
             command = case["commands"][0]
             raw = []
             for stream in ("stdout", "stderr"):
-                log = Path(command[stream + "_log"])
+                log = resolve(command[stream + "_log"])
                 checked[str(log)] = identity(log)
                 raw.append(log.read_bytes())
             require(not command["timed_out"] and command["exit_code"] == code and
                     raw[0] == output.encode("utf-8") and (error.encode("utf-8") in raw[1] if contains and error else raw[1] == error.encode("utf-8")),
                     "Original raw process result contradicts the current test contract")
             artifact = case["artifact"]
-            observed = identity(artifact["path"])
+            supplied = [row for row in producer["artifacts"] if row["name"] == case["case_id"].split(".", 1)[0]]
+            require(len(supplied) == 1 and all(artifact[field] == supplied[0][field] for field in ("sha256", "size_bytes")),
+                    "Executed artifact differs from the verified supplier")
+            observed = identity(resolve(artifact["path"]))
             require(all(observed[field] == artifact[field] for field in ("sha256", "size_bytes")), "Executed artifact changed")
         original_reports.append(ref)
     return {"status": "pass", "scope": "verified-local-result-reuse", "execution_status": "reused_previous",
@@ -488,6 +527,104 @@ def reuse(args):
         "original_reports": original_reports, "original_supplier": supplier, "checked_logs": list(checked.values()),
         "evidence_verified": False, "cross_verified": False, "full_verified": False, "release_ready": False,
         "network_requests": 0, "new_product_executions": 0, "reason": "Verified reuse of the same development contract; no new platform/CI or release pass"}
+
+
+def actions_reuse_candidates(args, directory):
+    """Bounded read-only discovery; original provider/ZIP/report bytes stay intact."""
+    from types import SimpleNamespace
+    repository = args.reuse_repository or os.environ.get("GITHUB_REPOSITORY", "")
+    base = args.reuse_api_base.rstrip("/")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise ValueError("Actions reuse requires an exact repository")
+    if base != "https://api.github.com" and not re.fullmatch(r"http://127\.0\.0\.1:[0-9]+", base):
+        raise ValueError("Reuse API must be GitHub or explicit unauthenticated literal loopback")
+    directory.mkdir(parents=True, exist_ok=False)
+    deadline = time.monotonic() + args.reuse_timeout_seconds
+
+    def metadata(suffix, target):
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "qaplet-ci-reuse"}
+        token = os.environ.get("GITHUB_TOKEN") if base == "https://api.github.com" else None
+        if token:
+            if "\n" in token or "\r" in token:
+                raise ValueError("Invalid provider read token")
+            headers["Authorization"] = "Bearer " + token
+        request = urllib.request.Request(base + "/repos/" + repository + "/actions/" + suffix, headers=headers)
+        try:
+            with urllib.request.build_opener(NoReferenceRedirect()).open(request, timeout=request_timeout(deadline, 5)) as response:
+                data = response.read(4 * 1024 * 1024 + 1)
+        except urllib.error.HTTPError as error:
+            raise ValueError("Actions reuse metadata failed: HTTP " + str(error.code)) from None
+        if len(data) > 4 * 1024 * 1024:
+            raise ValueError("Actions reuse metadata exceeds bounded response")
+        target.write_bytes(data)
+        return read_json(target)
+
+    response = directory / "runs.json"
+    metadata("workflows/m0.yml/runs?head_sha=" + args.commit + "&status=success&per_page=10", response)
+    selected_runs = runs(response, args.commit)["runs"] if read_json(response).get("workflow_runs") else []
+    # A rerun changes current-run status to in_progress. Its last successful
+    # attempt is still eligible, with its original attempt identity preserved.
+    attempt, current = os.environ.get("GITHUB_RUN_ATTEMPT", "1"), os.environ.get("GITHUB_RUN_ID", "")
+    if attempt.isdigit() and int(attempt) > 1 and current.isdigit():
+        previous = metadata("runs/" + current + "/attempts/" + str(int(attempt) - 1), directory / "previous-attempt.json")
+        if previous.get("head_sha") == args.commit:
+            selected_runs.insert(0, previous)
+    for run in selected_runs[:3]:
+        request_timeout(deadline, 5)
+        if run.get("status") != "completed" or run.get("conclusion") != "success":
+            continue
+        run_id = run["id"]
+        if type(run_id) is not int or run_id <= 0:
+            continue
+        work = directory / (str(run_id) + "-" + uuid.uuid4().hex)
+        work.mkdir()
+        try:
+            catalog_path = work / "provider.json"
+            provider = metadata("runs/" + str(run_id) + "/artifacts?per_page=100", catalog_path)
+            if provider.get("total_count", 0) > 100:
+                raise ValueError("Actions artifact catalog exceeds bounded first page")
+            rows = [row for row in provider["artifacts"] if row.get("name") == "qaplet-fast-" + args.commit and row.get("expired") is False]
+            if len(rows) != 1:
+                raise ValueError("One original Fast artifact required")
+            row = rows[0]
+            options = SimpleNamespace(operation="fetch-actions", repo=ROOT, manifest=catalog_path, repository=repository,
+                commit=args.commit, run_id=run_id, artifact_id=[row["id"]], api_base=base,
+                output_dir=work / "collected", max_unpacked_bytes=2 * 1024**3, attempts=[], deadline=deadline)
+            try:
+                collection = collect(options)
+            finally:
+                write_json(work / "acquisition-attempts.json", options.attempts)
+            write_json(work / "collection.json", collection)
+            # Repeat the same archive and inventory verification completely offline.
+            write_json(work / "local-manifest.json", collection["local_manifest"])
+            options.operation, options.manifest = "verify", work / "local-manifest.json"
+            write_json(work / "verify.json", collect(options))
+            archive = collection["artifacts"][0]
+            shutil.copyfile(archive["archive"]["path"], work / "original.zip")
+            root = Path(archive["root"])
+            reports = [root / "out/fast/check.json", root / "fast/check.json", root / "check.json"]
+            reports = [path for path in reports if path.is_file()]
+            if len(reports) != 1:
+                raise ValueError("Original actual Fast check report missing or ambiguous")
+            value = read_json(reports[0])
+            ci = value.get("ci") or {}
+            if str(ci.get("run_id")) != str(run_id) or ci.get("commit") != args.commit:
+                raise ValueError("Original execution CI identity differs from selected provider run")
+            original = value["supplier"]["artifacts_directory"].replace("\\", "/")
+            marker = "/.cache/build/local-check/"
+            if marker not in original:
+                raise ValueError("Original Fast artifact has no unambiguous checkout root")
+            original_root = original.split(marker, 1)[0]
+            # Multi-path upload retains the repository common ancestor. Legacy
+            # flattened artifacts cannot prove all references and fall back.
+            if not (root / ".cache/build/local-check").is_dir():
+                raise ValueError("Original Fast artifact omits supplier bytes")
+            yield reports[0], [(original_root, str(root))], {"run": run, "artifact": row,
+                "collection": identity(work / "collection.json"), "archive": identity(work / "original.zip")}
+        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+            write_json(work / "rejected.json", {"status": "fail", "reason": str(error)[:500]})
+            args.reuse_attempts.append({"provider_run_id": run_id, "status": "fail", "reason": str(error)[:500],
+                                       "rejection": identity(work / "rejected.json")})
 
 
 def efficiency(args):
