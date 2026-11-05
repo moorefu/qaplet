@@ -1,5 +1,17 @@
 # Qaplet Embed SDK
 
+M2 JavaScript can call a Host's pre-registered WorkPool handler with
+`import { submit } from 'qaplet:work'` and
+`const task = submit('handlerName', new Uint8Array(inputBytes))`.
+`await task.promise` yields copied `Uint8Array` output. Task `cancel()`, `ref()`,
+`unref()` and `hasRef()` control logical cancellation and loop liveness;
+discarding the handle does not cancel work. Errors have numeric `code`,
+`errorDomain` and `error` properties. Cancellation rejects with `CANCELLED`
+(28); cancel after completion throws `ALREADY_COMPLETED` (29). The default ref
+and native result remain through owner Promise settlement and its complete jobs
+checkpoint. Physical native calls retain their buffers until they return. Host
+work code/userdata stay valid through native quiescence, including after close.
+
 This package supplies ABI 1 public C declarations, static Cosmopolitan archives
 for x86_64 and aarch64, source modules, the CLI, and audited portable C Hosts.
 The hidden `lib/.aarch64/libqaplet.a` is required by cosmocc; preserve it when
