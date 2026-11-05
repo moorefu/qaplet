@@ -1,5 +1,36 @@
 # Embed SDK development
 
+M2 `qaplet:work` exports `submit(name, input)`. The Host registers the named
+native handler before the first execution. `name` must be a string and `input`
+a genuine, non-shared `Uint8Array`; neither argument is implicitly coerced.
+Acceptance copies its current view bytes and reserves the handler's full output
+capacity using the same bounded WorkPool as C submission.
+
+```js
+import { submit } from 'qaplet:work';
+const task = submit('read', encodedPath);
+const bytes = await task.promise; // a copied Uint8Array
+```
+
+The Task has `cancel()`, `ref()`, `unref()` and `hasRef()`. New tasks default to
+ref. `cancel()` records cancellation; repeated accepted cancellation succeeds,
+while completion winning first throws an Error with `code: 29`
+(`ALREADY_COMPLETED`). Cancellation rejects `promise` with `code: 28`
+(`CANCELLED`), without inventing a native error. Work operation errors have own
+numeric `code`, `errorDomain` and `error` properties; ordinary native errors
+retain their domain/value and do not permanently fail the Runtime.
+
+The owner settles the Promise through the completion category and completes its
+runnable jobs before releasing the task's default ref and native result. A
+cancelled call still running physically retains its copied buffers and capacity.
+`unref()` only changes natural loop exit; an explicit pump/run_once can deliver
+ready unref work. Keeping a completed Task or Promise does not retain native
+results, and discarding a Task does not cancel it. Finished tasks report
+`hasRef() === false`; ref/unref then have no effect. Stop/close release their JS
+references without running remaining then/catch/finally callbacks. Work code and
+userdata remain valid until native quiescence. The existing public C submit,
+result-copy and release callback/drive guards retain their documented behavior.
+
 `python3 scripts/sdk.py build` produces `qaplet-sdk.zip` on Ubuntu with the
 public header, x86_64 and hidden `.aarch64` static archives, complete pure C
 application, source modules, licenses, manifest and audited Host/CLI/application

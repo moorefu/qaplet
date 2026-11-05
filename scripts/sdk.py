@@ -87,6 +87,13 @@ EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, s
 HOST_CASES = (
     ("m2-process-terminal", ["--m2-process-terminal", "{self}", "{launcher}"], "M2 process terminal cleanup: PENDING/ordinary-error close; owner STOPPED/FAILED force/reap before close; first cause retained; queued jobs/finally never run; native cleanup drained: pass\n"),
     ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
+    ("m2-work-js-errors", ["--m2-work-js-errors"], "M2 work JS errors: strict uncoerced names/Uint8Array; atomic missing/oversized refusal; bounded output rejection; real errno domain/value; caught operation errors preserve OPEN and recover capacity: pass\n"),
+    ("m2-work-js-stop", ["--m2-work-js-stop"], "M2 work JS stop: owner confirmation cancels queued and running tasks; no then/catch/finally after stop; CLOSED releases engine but retains physical bytes/code/userdata; finite quiesce retries and actual native exit: pass\n"),
+    ("m2-work-js-ledgers", ["--m2-work-js-ledgers"], "M2 work JS ledgers: active entry and independent completion share cumulative jobs/dispatch budget across pumps; infinite jobs fail at exact limit; terminal task resources retire: pass\n"),
+    ("m2-work-js-cancel", ["--m2-work-js-cancel"], "M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass\n"),
+    ("m2-work-js-checkpoints", ["--m2-work-js-checkpoints"], "M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass\n"),
+    ("m2-work-js-liveness", ["--m2-work-js-liveness"], "M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass\n"),
+    ("m2-work-js-file", ["--m2-work-js-file"], "M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass\n"),
     ("m2-process-query", ["--m2-process-query", "{self}", "{launcher}"], "M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass\n"),
     ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass\n"),
     ("m2-process-liveness", ["--m2-process-liveness", "{self}", "{launcher}"], "M2 process liveness: referenced child permits ready unref timer/immediate; unref child returns naturally; explicit pump delivers; physical cleanup: pass\n"),
@@ -325,7 +332,8 @@ def package_consume(args, report, directory):
         if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
         executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
-        expected = (next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
+        expected = ("controlled M2 work JS allocation: actual SDK calloc refusal from caught JS submit remains permanent; no accepted task; first cause preserved; native and engine cleanup: pass\n" +
+                    next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
                     "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion/cancel survives wake failure; join error independently retained CLOSED/BUSY without identity retry or false cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",

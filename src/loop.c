@@ -497,14 +497,14 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
         qaplet_control_failure_locked(runtime, got < 0 ? errno : EIO);
       runtime->wake_pending = 0;
     }
-    if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth || qaplet_work_ready_locked(runtime)) {
+    if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth) {
       pthread_mutex_unlock(&runtime->mutex); continue;
     }
-    if (!runtime->keepalive_tokens && !runtime->work_snapshot.pending_handoffs && !qaplet_process_referenced_locked(runtime) && !qaplet_timers_ref_locked(runtime)) {
+    if (!runtime->keepalive_tokens && !qaplet_work_referenced_locked(runtime) && !qaplet_process_referenced_locked(runtime) && !qaplet_timers_ref_locked(runtime)) {
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
-    if (qaplet_process_pending_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
+    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
     if (!continuous && !remaining) {
       reason = QAPLET_DRIVE_WAIT_TIMEOUT;
       pthread_mutex_unlock(&runtime->mutex); break;
