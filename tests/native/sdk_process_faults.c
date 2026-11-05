@@ -100,6 +100,60 @@ static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t condition=PTHREAD_COND_INITIALIZER;
 static int destructor_entered,destructor_released;
 static int helper_entered,helper_released,hold_helper;
+static _Atomic int native_exit_gate;
+static int native_exit_entered,native_exit_released;
+extern int __real_GetExitCodeProcess(int64_t,uint32_t *);
+int __wrap_GetExitCodeProcess(int64_t handle,uint32_t *code) {
+  int result=__real_GetExitCodeProcess(handle,code);
+  if (result && *code==37 && atomic_load(&native_exit_gate)) {
+    pthread_mutex_lock(&mutex); native_exit_entered=1; pthread_cond_broadcast(&condition);
+    while (!native_exit_released) pthread_cond_wait(&condition,&mutex);
+    pthread_mutex_unlock(&mutex);
+  }
+  return result;
+}
+static int exited_child_race(const char *child,unsigned first) {
+  CHECK(IsWindows());
+  for (unsigned closing=first;closing<2;++closing) {
+    qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+    m.limits.processes=1; m.limits.helper_threads=1;
+    qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    native_exit_entered=native_exit_released=0; atomic_store(&native_exit_gate,1);
+    qaplet_string argv[]={{child,strlen(child)},{"--empty",7}};
+    qaplet_process_options o=QAPLET_PROCESS_OPTIONS_INIT; o.path=argv[0]; o.argv=argv; o.argc=2; o.flags=QAPLET_PROCESS_REPLACE_ENV;
+    for (unsigned i=0;i<3;++i) o.stdio[i]=QAPLET_PROCESS_IGNORE;
+    qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
+    CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_OK);
+    /* The real OS wait has completed and GetExitCodeProcess has returned 37.
+     * Only its return to the SDK helper is held, before publication/reap. */
+    pthread_mutex_lock(&mutex); while (!native_exit_entered) pthread_cond_wait(&condition,&mutex); pthread_mutex_unlock(&mutex);
+    CHECK(qaplet_get_process_status(r,&p,&s,NULL)==QAPLET_OK && !s.exited && !s.reaped && s.helper_active);
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    if (closing) {
+      qaplet_code code=qaplet_close(r,NULL);
+      if (code) { qaplet_m2_diagnostic detail=QAPLET_M2_DIAGNOSTIC_INIT; qaplet_get_m2_diagnostic(r,&detail,NULL); fprintf(stderr,"exit-before-publication close: code=%d cleanup=%u domain=%u native=%d\n",code,detail.cleanup_reason,detail.cleanup_error_domain,detail.cleanup_error); }
+      CHECK(code==QAPLET_OK);
+      CHECK(qaplet_quiesce(r,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(r,NULL)==QAPLET_BUSY);
+    } else {
+      CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+      CHECK(qaplet_get_process_status(r,&p,&s,NULL)==QAPLET_OK);
+      if (s.error_domain || s.error) fprintf(stderr,"exit-before-publication cancel: code=%d domain=%u native=%d reaped=%u\n",s.code,s.error_domain,s.error,s.reaped);
+      CHECK(s.code==QAPLET_CANCELLED && !s.reaped && !s.error_domain && !s.error);
+    }
+    pthread_mutex_lock(&mutex); native_exit_released=1; atomic_store(&native_exit_gate,0); pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex);
+    if (!closing) {
+      CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+      CHECK(qaplet_process_get_status(r,&p,&s,NULL)==QAPLET_OK && s.code==QAPLET_CANCELLED && s.exited && s.reaped && s.native_exit_code==37 && !s.native_signal && !s.error_domain && !s.error);
+      CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && qaplet_close(r,NULL)==QAPLET_OK);
+    }
+    CHECK(qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
+    qaplet_m2_snapshot native=QAPLET_M2_SNAPSHOT_INIT; qaplet_m2_diagnostic diagnostic=QAPLET_M2_DIAGNOSTIC_INIT;
+    CHECK(qaplet_get_m2_snapshot(r,&native,NULL)==QAPLET_OK && native.lifecycle==QAPLET_CLOSED && !native.native_handles && !native.native_uncertain_handles);
+    CHECK(qaplet_get_m2_diagnostic(r,&diagnostic,NULL)==QAPLET_OK && !diagnostic.cleanup_reason && !diagnostic.cleanup_error);
+    CHECK(qaplet_destroy(r,NULL)==QAPLET_OK);
+  }
+  puts(first ? "M2 process exited-child close race: native exit before publication; close/quiesce drains without false cleanup error: pass" : "M2 process exited-child race: real native exit37 before helper publication; cancel and close preserve actual exit without false terminate error; helper remains sole reap/close owner; retry quiesce drains: pass"); return 0;
+}
 static void *(*entry)(void *);
 static void *argument;
 static void destructor(void *unused) {
@@ -321,6 +375,7 @@ static int wait_probe(void) {
   puts("M2 process waitid: actual pinned thunk; WNOWAIT; EINTR/EINVAL/ECHILD; exit/kill orders; real reap: pass"); return 0;
 }
 int main(int argc,char **argv) {
+  if (argc==3 && (!strcmp(argv[1],"--exit-race") || !strcmp(argv[1],"--exit-race-close"))) return exited_child_race(argv[2],!strcmp(argv[1],"--exit-race-close"));
   if (argc==2 && !strcmp(argv[1],"--waitid")) return wait_probe();
   if (argc==3 && (!strcmp(argv[1],"--cancel-physical") || !strcmp(argv[1],"--cancel-error") || !strcmp(argv[1],"--cancel-wake"))) return cancel_fixture(argv[1],argv[2]);
   return argc==3 ? fixture(argv[1],argv[2]) : 2;

@@ -566,6 +566,7 @@ def compile_work_faults(args, report, directory, tree, helpers, sdk, work, outpu
 
 PROCESS_FAULT_SUCCESS = "M2 process system boundary: controlled failure/physical exit; retained capacity; safe close/quiesce/destroy: pass\n"
 PROCESS_FAULT_CASES = (
+    ("--exit-race", "M2 process exited-child race: real native exit37 before helper publication; cancel and close preserve actual exit without false terminate error; helper remains sole reap/close owner; retry quiesce drains: pass\n", ["Windows"]),
     ("--cancel-wake", "M2 process cancel wake: cancellation remains accepted after real wake failure; CANCELLED and actual reap preserved; first control cause survives stop/close; physical cleanup drains: pass\n", ["Windows", "POSIX"]),
     ("--cancel-physical", "M2 process cancel physical: accepted CANCELLED before reap; reap before helper TLS exit; release invalidates token while capacity retained; zero/finite quiesce and BUSY destroy; actual join releases resources: pass\n", ["Windows", "POSIX"]),
     ("--cancel-error", "M2 process cancel native error: accepted cancellation preserves actual terminate error and natural exit; physical retention and cleanup diagnostic independent: pass\n", ["Windows", "POSIX"]),
@@ -584,7 +585,7 @@ def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, 
     (work / "tmp").mkdir(parents=True)
     name = "qaplet-process-faults" if faults else "qaplet-process-host"
     source = sdk / ("process-faults.c" if faults else "host-process.c")
-    symbols = ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "send") if faults else ()
+    symbols = ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
     report["process_controlled_system_fixture" if faults else "external_process_consumer"] = {

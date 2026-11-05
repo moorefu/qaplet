@@ -255,7 +255,13 @@ static void terminate_locked(qaplet_runtime *r,process_slot *s) {
   s->terminating=1;
   int error=0; uint32_t domain=s->handle ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO;
   if (s->handle) {
-    if (!TerminateProcess(s->handle,0xD00D)) error=GetLastError();
+    if (!TerminateProcess(s->handle,0xD00D)) {
+      int native_error=GetLastError();
+      /* An exited process may refuse termination before the helper publishes
+       * its result. The owned HANDLE remains valid under this mutex; confirm
+       * native exit without publishing/reaping or masking a live-child error. */
+      if (WaitForSingleObject(s->handle,0)!=0) error=native_error;
+    }
   } else if (kill(s->pid,SIGKILL) && errno!=ESRCH) error=errno;
   if (error) {
     s->status.error_domain=domain; s->status.error=error;
