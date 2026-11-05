@@ -66,16 +66,27 @@ Ubuntu x86_64 / WSL2 Linux 6.6.87.2，页 4096；Windows 11 10.0.22000 / AMD64�
 
 | 最终报告 | Linux | Windows | 声明范围 |
 | --- | ---: | ---: | --- |
-| `signals-final-*` | 8 | 4 | 真 SIGINT/SIGTERM 等待、执行、最终 pipe 输出、无 Runtime help 满 pipe；真 Ctrl+C 等待、执行、overlapped/sync 最终 pipe 输出 |
+| `signals-final-*` | 8 | 4 | 真 SIGINT/SIGTERM 等待、READY 后中断、最终 pipe 输出、无 Runtime help 满 pipe；真 Ctrl+C 等待、READY 后中断、overlapped/sync 最终 pipe 输出；原 await execute 是弱门，不单独证明执行态 |
+| `strong-owned-final-*` | 2 | 1 | 同一非 async JS 调用栈直接 spawn 后 for(;;)，没有 await/挂起；已验证身份的独立 native child 才能发 READY，随后真实 OS 中断；不依赖私有状态、随机 sleep 或 PC 调试 |
 | `queue-final-*` | 2 | 1 | 单独公共 SDK C Host：已实际 QUEUE_FULL，OS relay 接受 stop；owner 后无 JS marks，丢弃两事件、QUIESCENT/destroy；不是 CLI 满队列端到端 |
 | `budget-final-*` | 1 | 1 | 独立 OS pthread 退休故障：首次中断后，native exit held 门内再送五次中断；两段共享预算、incomplete/1，未 destroy |
 | `late-final-*` | 1 | 1 | 独立 native hint 延迟：捕获 fd/HANDLE 后暂停，真实 Runtime destroy，创建替代对象，放行旧入口及真实 future 信号；原目标身份保留、替代对象未被触发 |
 | `mixed-final-*` | 2 | 1 | 无故障原生观察供应：公共 TTY read 接受、timer/stdio/直接 child；owner stop、完整模式恢复、真实强制终止和唯一 native reap、QUIESCENT/destroy；finally 的 forbidden child 未出现 |
 | `cli-final-*` | 67 | 72 | 既有结果、ESM/Script、公开负例、真实字节/stdio/TTY、overlapped/未知完成保留的受影响回归；包外 ZIP C consumer 在 Ubuntu 编译 |
 
-以上均 pass（总 161 个行为 case）。其中两端 budget，以及 Windows CLI 的未知
+以上均 pass（本票 Linux16/Windows9，连同既有回归共 164 个行为 case）。其中两端 budget，以及 Windows CLI 的未知
 GetOverlappedResult 负例，明确保持 `native_cleanup_complete=false`；它们通过的是诚实
 保留/未完成/退出 1，不能汇总成全部原生清理成功。工具合同为 1 pass、2 skip，另列。
+
+三项 strong 输入及原生 arm 属独立 out 证据，不改产品或 109 配方。arm APE 在 Ubuntu
+构建、两端同字节、不链接 SDK；真实 PID 文件后阻塞在 Host 身份验证门，之后才输出
+READY 并持续存活。Linux 初始 PPid 必须是 CLI，driver 已实际设置/读取 subreaper，
+owner 退出后 waitpid ECHILD 且 child proc 缺失，区别于 SDK 未 reap 而被 driver 收养。
+Windows 在 READY 前用真实 process snapshot、完整 image、child→CLI→controller 父链
+核验并保留 child HANDLE，之后真实 wait=0/GetExitCode=1。strong 的
+`native_cleanup_complete=null`：只声明该 scope 的执行态和可观测 child 退出；不把
+Windows 独立 Host wait 冒称 SDK 内部 reap 或全 Runtime QUIESCENT，后者由 mixed 原生
+观察 scope 单独证明。无未追踪 child。
 
 Linux driver 首批 final 记录了实际 target PID/signum，但未落盘 sender PID；未回填或猜测。
 独立 `observe-os-run.py` 在真实 os.kill 边界补录 sender/target PID、owner wchan、原生返回
@@ -104,6 +115,16 @@ native=null/launcher_exit256 只记夹具未闭合；原生 PID 与 Cosmopolitan
 改用真实 GetCurrentProcessId 后才取得共享 Console/实际投递/旧 CLI native exit2 的产品红。
 旧 Host 输出红的 supervisor timeout 只表示未完成。独立 fault 的初次包装崩溃、诊断未能
 写出的失败均不改绿，最终输入、制品与新执行另存。
+
+原 await READY execute 不据此重标成强执行态。后补 direct stdio.write→for(;;) 的输入未
+产生 READY，外层 timeout/kill 保持未完成；同 CLI child 的中间 arm 选择也保留实际
+Linux 通过/Windows 无 READY，Windows 该 SDK child 场景原因仍 unknown，不先归为产品
+成功或单纯夹具问题。root 独立对照 21/22 已供应 CLI 的 CREATE_NO_WINDOW + 真实普通
+文件 stdio，分别 exit0/READY/空 stderr（17.1/16.2ms），排除了纯无 Console 启动回归；
+原件复制于 `independent-root-no-console/`，保留 root 原身份/路径，不外推 SDK child 场景。
+后继 23 SDK 收口可保留 stderr 并观察 exited/closed 继续诊断，本票不扩展或猜测其原因。
+两次 Windows 失败残留 owner 均经原生 parent、精确 image/输入核实后才
+被 fixture 强制清理，不计为 SDK 清理。最终强门改用有真实身份与退休证据的 native arm。
 
 部分早期 tracer 只保留源 SHA、对象/APE、命令/日志，未完整保存当轮 C 输入，标为中间
 输入不可完整取回；不倒推补造。后续输入快照及最终 109 输入完整。实际 parent Python
