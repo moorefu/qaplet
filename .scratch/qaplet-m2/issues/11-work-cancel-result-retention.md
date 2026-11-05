@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** awaiting_cross；本地 C work 取消/释放与物理保留已验证，待独立 merger 及当前组合 Cross/实际 64K/Full。
+**Execution state:** local_complete；本地 C work 取消/释放与物理保留已验证且独立合并，当前组合 Cross/实际64K/Full仍为 `cross_deferred`。
 
 **External blocker:** GitHub 账号付款或支出限额拦截 job 启动，用户已提供页面原文；见[CI账单阻塞](../ci-billing-blocker.md)。独立merger已完成，当前缺口仍为完整平台证据。
 
