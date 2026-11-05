@@ -364,3 +364,12 @@ local_complete/cross_deferred，本地可放行19/20，未由merger领取；旧�
 共享文件按必要接口协调，不增加19→20边。19的旧IO诊断样式风险先公开证伪，不预称缺陷。
 20完成并独立合入才放行21，随后21→22、19/22→23。当前领取不等于本地完成；
 父spec、原38边/135AC、正式Cross/Full/实际64K/长测和最终整体Review保持待验，不push/CI。
+
+2026-11-05（20本地组合验收）：供应2产品`e3b4bc4`完成公开C/JS混合work/timer/直接child/
+pipe/stdio/TTY/HostNotify停止与两阶段清理；包外12/12两端通过，相关Host回归各23/23，独立包外
+stop/waker故障首因双序各2/2。同步binding到close、work到native真join、notify和未来producer到
+撤下/join的屏障分别证明；nonreturning和uncertain保持pending/BUSY，其他资源安全回收。
+SDK1完整normal保留212/211+optional1原身份，未充当SDK2全矩阵。真实ConPTY完整恢复、
+所有fixture/context失败和零等待重试修正见[本地记录](20-mixed-cleanup-validation.md)。
+20保持claimed、local_complete/cross_deferred，待独立合入才放行21；父M2、24–27最新矩阵、
+其他原生/实际64K/Cross/CI Full/组合长测/最终Review及发布仍未完成，不push或release-ready。
