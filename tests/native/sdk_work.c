@@ -985,7 +985,62 @@ static int js_liveness_contract(void) {
   puts("M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass");
   return 0;
 }
+typedef struct {char text[32];unsigned length;uint64_t handoffs[32];} js_trace;
+static qaplet_code js_mark(qaplet_runtime *runtime,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)call;js_trace *trace=opaque;
+  if(argc!=1 || argv[0].type!=QAPLET_VALUE_STRING || argv[0].length!=1 || trace->length==sizeof(trace->text)) return QAPLET_HOST_ERROR;
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  if(qaplet_get_work_snapshot(runtime,&stats,NULL)) return QAPLET_HOST_ERROR;
+  trace->handoffs[trace->length]=stats.pending_handoffs;trace->text[trace->length++]=*(const char *)argv[0].data;
+  return QAPLET_OK;
+}
+static int js_checkpoints_contract(void) {
+  for(unsigned bad=0;bad<2;++bad) {
+    qaplet_config base=QAPLET_CONFIG_INIT;base.limits.pump_jobs=1;
+    qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};js_trace trace={0};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.output_bytes=1;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    qaplet_host_export e=QAPLET_HOST_EXPORT_INIT;e.name="mark";e.name_length=4;e.kind=QAPLET_HOST_FUNCTION;e.function=js_mark;e.userdata=&trace;
+    qaplet_host_module m=QAPLET_HOST_MODULE_INIT;m.name="host:trace";m.name_length=10;m.exports=&e;m.export_count=1;
+    CHECK(qaplet_register_host_module(runtime,&m,NULL)==QAPLET_OK);
+    const char *source="Promise.all([import('qaplet:work'),import('qaplet:timers'),import('qaplet:events'),import('host:trace')]).then(([w,t,e,h])=>{"
+      "globalThis.submit=w.submit;globalThis.t=t;globalThis.mark=h.mark;e.onEvent(()=>mark('E'));"
+      "globalThis.install=bad=>{globalThis.task=submit('held',new Uint8Array([42]));task.promise.then(()=>{mark('W');"
+      "if(!task.hasRef())throw Error('early unref');let rejected=Promise.reject(Error('later'));"
+      "Promise.resolve().then(()=>mark('1')).then(()=>mark('2')).then(()=>rejected.catch(()=>mark('H')));"
+      "if(bad)throw Error('ordinary');});t.setTimeout(()=>mark('T'),0);t.setImmediate(()=>mark('I'));}})";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;
+    CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    while(progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+    source=bad ? "install(true);42" : "install(false);42";
+    CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+    wait_entered(&g,1,0);release_gate(&g);
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+    do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.running);
+    CHECK(qaplet_post_event(runtime,1,0,NULL,0,NULL)==QAPLET_OK);
+    CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING && trace.length==1 && trace.text[0]=='W');
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.pending_handoffs==1);
+    CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && trace.length==2 && trace.text[1]=='1');
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && !snapshot.events_consumed);
+    qaplet_code code=QAPLET_OK;
+    for(unsigned i=0;i<20 && !code;++i) {code=qaplet_pump(runtime,&progress,NULL);if(progress.phase==QAPLET_PHASE_DONE)break;}
+    CHECK(code==(bad ? QAPLET_JS_EXCEPTION : QAPLET_OK));
+    CHECK(trace.length==(bad ? 4 : 7) && !memcmp(trace.text,bad ? "W12H" : "W12HTIE",trace.length));
+    for(unsigned i=0;i<4;++i) CHECK(trace.handoffs[i]==1);
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.pending_handoffs);
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
+    if(bad) {CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && trace.length==7 && !memcmp(trace.text,"W12HTIE",7));}
+    for(unsigned i=4;i<7;++i)CHECK(!trace.handoffs[i]);
+    CHECK(!finish(runtime) && !destroy_gate(&g));
+  }
+  puts("M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
+  if (!strcmp(mode,"--m2-work-js-checkpoints")) return js_checkpoints_contract();
   if (!strcmp(mode,"--m2-work-js-liveness")) return js_liveness_contract();
   if (!strcmp(mode,"--m2-work-js-file")) return js_file_contract();
   if (!strcmp(mode,"--m2-work-cancel-limits")) return cancel_limits_contract();

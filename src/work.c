@@ -458,7 +458,10 @@ void qaplet_work_checkpoint(qaplet_runtime *runtime) {
   if (!pool || !pool->tasks) return;
   for (uint64_t i=0;i<runtime->m2_limits.operations;++i) {
     work_task *task=&pool->tasks[i];
-    if (!task->active || task->handoff!=2) continue;
+    pthread_mutex_lock(&runtime->mutex);
+    int pending=task->active && task->handoff==2;
+    pthread_mutex_unlock(&runtime->mutex);
+    if (!pending) continue;
     release_js(runtime,task);
     pthread_mutex_lock(&runtime->mutex);
     task->handoff=0;task->released=1;--runtime->work_snapshot.pending_handoffs;
@@ -522,7 +525,10 @@ void qaplet_work_shutdown(qaplet_runtime *runtime) {
   qaplet_work_pool *owner_pool=runtime->work_pool;
   if (owner_pool && owner_pool->tasks) for(uint64_t i=0;i<runtime->m2_limits.operations;++i) {
     work_task *task=&owner_pool->tasks[i];
-    if (task->active && task->js) {
+    pthread_mutex_lock(&runtime->mutex);
+    int pending=task->active && task->js;
+    pthread_mutex_unlock(&runtime->mutex);
+    if (pending) {
       release_js(runtime,task);
       pthread_mutex_lock(&runtime->mutex);task->released=1;pthread_mutex_unlock(&runtime->mutex);
     }
@@ -605,7 +611,7 @@ static JSValue work_method(JSContext *context,JSValueConst self,int argc,JSValue
   if (!handle) return throw_work(context,QAPLET_INVALID_HANDLE);
   if (magic) {
     pthread_mutex_lock(&runtime->mutex);
-    work_task *task=handle->terminal ? NULL : lookup(runtime,&handle->token);
+    work_task *task=lookup(runtime,&handle->token);
     if (task && magic!=3) task->referenced=magic==1;
     int referenced=task && task->referenced;
     pthread_mutex_unlock(&runtime->mutex);
