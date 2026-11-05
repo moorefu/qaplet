@@ -103,7 +103,7 @@ static int code_unit(qaplet_runtime *runtime, JSValueConst string, uint32_t inde
   return failed;
 }
 
-static qaplet_code string_size(qaplet_runtime *runtime, JSValueConst string, size_t *size) {
+qaplet_code qaplet_js_string_size(qaplet_runtime *runtime, JSValueConst string, size_t *size) {
   JSValue length_value = JS_GetPropertyStr(runtime->context, string, "length");
   uint32_t length;
   int failed = JS_IsException(length_value) || JS_ToUint32(runtime->context, &length, length_value);
@@ -315,7 +315,7 @@ qaplet_code qaplet_copy_js_value(qaplet_runtime *runtime, JSValueConst value, qa
     return store_bytes(runtime, value, result, data);
   } else if (JS_IsString(value)) {
     size_t length, encoded;
-    qaplet_code code = string_size(runtime, value, &length);
+    qaplet_code code = qaplet_js_string_size(runtime, value, &length);
     if (code) return code;
     const char *text = JS_ToCStringLen(runtime->context, &encoded, value);
     if (!text) return QAPLET_MEMORY_LIMIT;

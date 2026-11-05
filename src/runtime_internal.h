@@ -127,6 +127,9 @@ void qaplet_work_close(qaplet_runtime *);
 void qaplet_work_reap_locked(qaplet_runtime *);
 unsigned qaplet_work_handoff(qaplet_runtime *, uint64_t);
 int qaplet_work_ready_locked(qaplet_runtime *);
+int qaplet_work_referenced_locked(qaplet_runtime *);
+void qaplet_work_checkpoint(qaplet_runtime *);
+JSModuleDef *qaplet_work_load(qaplet_runtime *);
 /* Internal ready-work drive; caller holds the whole-call owner guard. */
 qaplet_code qaplet_pump_ready(qaplet_runtime *, qaplet_progress *, qaplet_diagnostic *, int automatic);
 /* CLI-only automatic drive, returning at entry completion before a new ledger. */
@@ -141,6 +144,7 @@ qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *, int immediate, u
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);
+qaplet_code qaplet_js_string_size(qaplet_runtime *, JSValueConst, size_t *);
 int qaplet_utf8_valid(const char *, size_t);
 qaplet_code qaplet_values_init(qaplet_runtime *);
 void qaplet_values_reset(qaplet_runtime *);

@@ -914,7 +914,304 @@ static int cancel_limits_contract(void) {
   puts("M2 work cancel limits: actual default 128 operations and 8MiB copied/reserved data within 16MiB total; cancel/release waits for owner and physical use; saturation atomic; physical bytes remain charged; ordinary capacity recovers: pass");
   return 0;
 }
+static int js_file_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  config.limits.operations=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="read";h.name_length=4;h.function=read_file;h.output_bytes=4;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  char path[]="./qaplet-js-work-XXXXXX";int fd=mkstemp(path);
+  unsigned char expected[]={0,255,17,42,99};
+  CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+  char source[2048];
+  /* A literal byte path avoids any text encoding or native pointer bridge. */
+  char encoded[512]={0};size_t used=0;
+  for(size_t i=0;i<=strlen(path);++i) used+=snprintf(encoded+used,sizeof(encoded)-used,"%s%u",i?",":"",(unsigned char)path[i]);
+  snprintf(source,sizeof(source),"import('qaplet:work').then(async ({submit})=>{"
+    "globalThis.submit=submit;let input=new Uint8Array([%s]);"
+    "let task=submit('read',input);input.fill(63);globalThis.savedTask=task;"
+    "let bytes=await task.promise;globalThis.savedBytes=bytes;"
+    "if(!(bytes instanceof Uint8Array)||String(bytes)!=='0,255,17,42')throw Error('bytes');return 42;})",encoded);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.data_bytes && !stats.pending_handoffs);
+  snprintf(source,sizeof(source),"submit('read',new Uint8Array([%s])).promise.then(b=>b[3])",encoded);
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.number==42);
+  CHECK(!unlink(path) && !finish(runtime));
+  puts("M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass");
+  return 0;
+}
+static int js_true(qaplet_runtime *,const char *);
+static int js_liveness_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;base.limits.engine_heap_bytes=2097152;
+  qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.operations=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:work'),import('qaplet:timers')]).then(([{submit},t])=>{globalThis.submit=submit;globalThis.setTimeout=t.setTimeout;globalThis.setInterval=t.setInterval;globalThis.trace='';"
+    "globalThis.task=submit('held',new Uint8Array([17]));"
+    "task.promise.then(b=>{trace+=b[0];});task.unref();if(task.hasRef())throw Error('ref');})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  wait_entered(&g,1,0);release_gate(&g);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.running);
+  CHECK(stats.operations==1 && stats.pending_handoffs==1);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && !drive.progressed);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.pending_handoffs==1);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  CHECK(qaplet_eval(runtime,"trace==='17' && !task.hasRef()",strlen("trace==='17' && !task.hasRef()"),&progress,NULL)==QAPLET_OK);
+  qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations);
+  source="globalThis.task=null;(()=>{let t=submit('held',new Uint8Array([42]));t.unref();t.ref();"
+    "if(!t.hasRef())throw Error('ref');t.promise.then(b=>{trace+=':'+b[0]});})();"
+    "for(let n=0;n<3000;++n){let a={x:new Array(64).fill(n)};a.self=a;}true";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_eval(runtime,"trace==='17:42'",strlen("trace==='17:42'"),&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.boolean);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.pending_handoffs);
+  source="globalThis.workDone=false;globalThis.timerDone=false;globalThis.background=submit('held',new Uint8Array([17]));"
+    "globalThis.alive=setInterval(()=>{},1);background.unref();background.promise.then(b=>{workDone=b[0]===17;alive.cancel()});setTimeout(()=>timerDone=true,0);42";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.completed<3);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(!js_true(runtime,"workDone && timerDone"));
+  source="globalThis.background=submit('held',new Uint8Array([42]));background.unref();background.promise.then(b=>b[0])";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.completed<4);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  CHECK(!finish(runtime) && !destroy_gate(&g));
+  puts("M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass");
+  return 0;
+}
+typedef struct {char text[32];unsigned length;uint64_t handoffs[32];} js_trace;
+static qaplet_code js_mark(qaplet_runtime *runtime,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)call;js_trace *trace=opaque;
+  if(argc!=1 || argv[0].type!=QAPLET_VALUE_STRING || argv[0].length!=1 || trace->length==sizeof(trace->text)) return QAPLET_HOST_ERROR;
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  if(qaplet_get_work_snapshot(runtime,&stats,NULL)) return QAPLET_HOST_ERROR;
+  trace->handoffs[trace->length]=stats.pending_handoffs;trace->text[trace->length++]=*(const char *)argv[0].data;
+  return QAPLET_OK;
+}
+static int js_checkpoints_contract(void) {
+  for(unsigned bad=0;bad<2;++bad) {
+    qaplet_config base=QAPLET_CONFIG_INIT;base.limits.pump_jobs=1;
+    qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};js_trace trace={0};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.output_bytes=1;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    qaplet_host_export e=QAPLET_HOST_EXPORT_INIT;e.name="mark";e.name_length=4;e.kind=QAPLET_HOST_FUNCTION;e.function=js_mark;e.userdata=&trace;
+    qaplet_host_module m=QAPLET_HOST_MODULE_INIT;m.name="host:trace";m.name_length=10;m.exports=&e;m.export_count=1;
+    CHECK(qaplet_register_host_module(runtime,&m,NULL)==QAPLET_OK);
+    const char *source="Promise.all([import('qaplet:work'),import('qaplet:timers'),import('qaplet:events'),import('host:trace')]).then(([w,t,e,h])=>{"
+      "globalThis.submit=w.submit;globalThis.t=t;globalThis.mark=h.mark;e.onEvent(()=>mark('E'));"
+      "globalThis.install=bad=>{globalThis.task=submit('held',new Uint8Array([42]));task.promise.then(()=>{mark('W');"
+      "if(!task.hasRef())throw Error('early unref');let rejected=Promise.reject(Error('later'));"
+      "Promise.resolve().then(()=>mark('1')).then(()=>mark('2')).then(()=>rejected.catch(()=>mark('H')));"
+      "if(bad)throw Error('ordinary');});t.setTimeout(()=>mark('T'),0);t.setImmediate(()=>mark('I'));}})";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;
+    CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    while(progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+    source=bad ? "install(true);42" : "install(false);42";
+    CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+    wait_entered(&g,1,0);release_gate(&g);
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+    do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.running);
+    CHECK(qaplet_post_event(runtime,1,0,NULL,0,NULL)==QAPLET_OK);
+    CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING && trace.length==1 && trace.text[0]=='W');
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.pending_handoffs==1);
+    CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && trace.length==2 && trace.text[1]=='1');
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && !snapshot.events_consumed);
+    qaplet_code code=QAPLET_OK;
+    for(unsigned i=0;i<20 && !code;++i) {code=qaplet_pump(runtime,&progress,NULL);if(progress.phase==QAPLET_PHASE_DONE)break;}
+    CHECK(code==(bad ? QAPLET_JS_EXCEPTION : QAPLET_OK));
+    CHECK(trace.length==(bad ? 4 : 7) && !memcmp(trace.text,bad ? "W12H" : "W12HTIE",trace.length));
+    for(unsigned i=0;i<4;++i) CHECK(trace.handoffs[i]==1);
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.pending_handoffs);
+    CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
+    if(bad) {CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK && trace.length==7 && !memcmp(trace.text,"W12HTIE",7));}
+    for(unsigned i=4;i<7;++i)CHECK(!trace.handoffs[i]);
+    CHECK(!finish(runtime) && !destroy_gate(&g));
+  }
+  puts("M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass");
+  return 0;
+}
+static int js_true(qaplet_runtime *runtime,const char *source) {
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);return 0;
+}
+static int js_cancel_contract(void) {
+  for(unsigned order=0;order<3;++order) {
+    char path[]="./qaplet-js-cancel-XXXXXX";int fd=mkstemp(path);unsigned char expected[]={0,255,17,42};
+    CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+    char encoded[512]={0};size_t used=0;
+    for(size_t i=0;i<=strlen(path);++i)used+=snprintf(encoded+used,sizeof(encoded)-used,"%s%u",i?",":"",(unsigned char)path[i]);
+    qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+    config.limits.operations=2;config.limits.worker_threads=1;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    file_gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="file";h.name_length=4;h.function=gated_file;h.userdata=&g;h.output_bytes=4;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    char source[2048];snprintf(source,sizeof(source),"import('qaplet:work').then(({submit})=>{globalThis.submit=submit;"
+      "globalThis.count=0;globalThis.queuedCount=0;globalThis.input=new Uint8Array([%s]);globalThis.task=submit('file',input);"
+      "input.fill(63);task.promise.then(b=>{if(String(b)!=='0,255,17,42')throw Error('bytes');++count;},"
+      "e=>{if(e.code!==28||e.errorDomain!==0||e.error!==0)throw Error('cancel');++count;});})",encoded);
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+    file_stage(&g,1);
+    snprintf(source,sizeof(source),"globalThis.queued=submit('file',new Uint8Array([%s]));"
+      "queued.promise.then(()=>{throw Error('queued ran')},e=>{if(e.code!==28)throw e;++queuedCount;});queued.cancel();queued.cancel();true",encoded);
+    CHECK(!js_true(runtime,source));
+    if(order==0) CHECK(!js_true(runtime,"task.cancel();task.cancel();true"));
+    file_allow(&g,0);file_stage(&g,2);
+    CHECK(!g.native_code && !memcmp(g.bytes,expected,4) && g.observed_cancel==(order==0));
+    if(order==1) CHECK(!js_true(runtime,"task.cancel();task.cancel();true"));
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+    if(order==2) {
+      file_allow(&g,1);
+      do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.running);
+      CHECK(!js_true(runtime,"(()=>{try{task.cancel()}catch(e){return e.code===29}return false})()"));
+    }
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    CHECK(!js_true(runtime,"count===1 && queuedCount===1 && !task.hasRef() && !queued.hasRef()"));
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs && stats.operations==(order!=2) && stats.running==(order!=2) && !stats.queued);
+    if(order!=2) {
+      CHECK(stats.data_bytes==strlen(path)+1+4);
+      qaplet_work_task native=QAPLET_WORK_TASK_INIT,refused=QAPLET_WORK_TASK_INIT;
+      CHECK(qaplet_work_submit(runtime,"file",4,path,strlen(path)+1,&native,NULL)==QAPLET_OK);
+      CHECK(qaplet_work_submit(runtime,"file",4,path,strlen(path)+1,&refused,NULL)==QAPLET_RESOURCE_LIMIT);
+      CHECK(qaplet_work_cancel(runtime,&native,NULL)==QAPLET_OK && qaplet_work_release(runtime,&native,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+      CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.running==1 && !stats.queued);
+      CHECK(!js_true(runtime,"task.cancel();queued.cancel();count===1 && queuedCount===1"));
+      CHECK(qaplet_close(runtime,NULL)==QAPLET_OK && qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+      CHECK(qaplet_quiesce(runtime,5,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+      qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+      CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && !state.engine_current_bytes && state.native_state==QAPLET_NATIVE_CLEANING);
+      file_allow(&g,1);
+    } else CHECK(!js_true(runtime,"(()=>{try{task.cancel()}catch(e){return e.code===29}return false})()"));
+    CHECK(!finish(runtime) && !pthread_cond_destroy(&g.condition) && !pthread_mutex_destroy(&g.mutex) && !unlink(path));
+  }
+  puts("M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass");
+  return 0;
+}
+static int js_errors_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.operations=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="read";h.name_length=4;h.function=read_file;h.input_bytes=64;h.output_bytes=4;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  h.name="overflow";h.name_length=8;h.function=overflow;CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  const char *source="import('qaplet:work').then(w=>{globalThis.submit=w.submit})";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+  source="(()=>{let hooks=0;function check(f,code){try{f()}catch(e){return e.code===code&&e.errorDomain===0&&e.error===0}return false}"
+    "let ok=check(()=>submit('absent',new Uint8Array()),20)&&check(()=>submit('read',new Uint8Array(65)),13)"
+    "&&check(()=>submit({toString(){++hooks;return 'read'}},new Uint8Array()),1)"
+    "&&check(()=>submit('read',new Uint16Array()),8)&&check(()=>submit('read',new Proxy(new Uint8Array(),{})),8)"
+    "&&check(()=>submit('read',new Uint8Array(new SharedArrayBuffer(1))),8)"
+    "&&check(()=>submit('\\ud800',new Uint8Array()),12)&&check(()=>submit('\\udc00',new Uint8Array()),12);return ok&&hooks===0})()";
+  CHECK(!js_true(runtime,source));
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.accepted && !stats.operations && !stats.worker_threads);
+  source="submit('overflow',new Uint8Array()).promise.then(()=>false,e=>e.code===13&&e.errorDomain===0&&e.error===0)";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);
+  char path[]="./qaplet-js-errors-XXXXXX";int fd=mkstemp(path);CHECK(fd>=0 && !close(fd) && !unlink(path));
+  char encoded[512]={0};size_t used=0;
+  for(size_t i=0;i<=strlen(path);++i)used+=snprintf(encoded+used,sizeof(encoded)-used,"%s%u",i?",":"",(unsigned char)path[i]);
+  char script[1024];snprintf(script,sizeof(script),"submit('read',new Uint8Array([%s])).promise.then(()=>false,e=>e.code===19&&e.errorDomain===%u&&e.error===%d)",encoded,QAPLET_ERROR_DOMAIN_ERRNO,ENOENT);
+  CHECK(qaplet_eval(runtime,script,strlen(script),&progress,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.accepted==2 && stats.completed==2 && !stats.operations && !stats.data_bytes);
+  qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+  CHECK(qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
+  CHECK(!js_true(runtime,"40+2===42") && !finish(runtime));
+  puts("M2 work JS errors: strict uncoerced names/Uint8Array; atomic missing/oversized refusal; bounded output rejection; real errno domain/value; caught operation errors preserve OPEN and recover capacity: pass");
+  return 0;
+}
+static int js_stop_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  config.limits.operations=2;config.limits.worker_threads=1;qaplet_runtime *runtime=NULL;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};js_trace trace={0};
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.input_bytes=1;h.output_bytes=1;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  qaplet_host_export e=QAPLET_HOST_EXPORT_INIT;e.name="mark";e.name_length=4;e.kind=QAPLET_HOST_FUNCTION;e.function=js_mark;e.userdata=&trace;
+  qaplet_host_module m=QAPLET_HOST_MODULE_INIT;m.name="host:trace";m.name_length=10;m.exports=&e;m.export_count=1;
+  CHECK(qaplet_register_host_module(runtime,&m,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:work'),import('host:trace')]).then(([w,h])=>{"
+    "for(let i=0;i<2;++i){let task=w.submit('held',new Uint8Array([17]));"
+    "task.promise.then(()=>h.mark('L'),()=>h.mark('R')).finally(()=>h.mark('F'));}})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+  wait_entered(&g,1,0);CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_EXECUTION_STOPPED && drive.reason==QAPLET_DRIVE_STOPPED && !trace.length);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.cancelled==2 && !stats.queued && stats.running==1 && stats.operations==1 && stats.data_bytes==2 && !stats.pending_handoffs);
+  CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_STOPPED);
+  CHECK(qaplet_close(runtime,NULL)==QAPLET_OK && !trace.length);
+  CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && !state.engine_current_bytes && state.native_state==QAPLET_NATIVE_CLEANING);
+  CHECK(qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  CHECK(qaplet_quiesce(runtime,5,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+  release_gate(&g);CHECK(!finish(runtime) && !trace.length && g.entered==1 && g.exited==1 && g.observed_cancel && g.seen==17 && !destroy_gate(&g));
+  puts("M2 work JS stop: owner confirmation cancels queued and running tasks; no then/catch/finally after stop; CLOSED releases engine but retains physical bytes/code/userdata; finite quiesce retries and actual native exit: pass");
+  return 0;
+}
+static int js_ledgers_contract(void) {
+  for(unsigned active=0;active<2;++active) {
+    qaplet_config base=QAPLET_CONFIG_INIT;base.limits.pump_jobs=1;base.limits.execution_dispatches=50;
+    qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.output_bytes=1;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    const char *source="import('qaplet:work').then(({submit})=>{globalThis.submit=submit})";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;
+    CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+    char script[512];snprintf(script,sizeof(script),"submit('held',new Uint8Array()).promise.then(()=>{function again(){Promise.resolve().then(again)}again()});%s",active ? "new Promise(()=>{})" : "42");
+    CHECK(qaplet_eval(runtime,script,strlen(script),&progress,NULL)==QAPLET_OK);
+    wait_entered(&g,1,0);release_gate(&g);
+    qaplet_work_snapshot work=QAPLET_WORK_SNAPSHOT_INIT;
+    do {CHECK(qaplet_get_work_snapshot(runtime,&work,NULL)==QAPLET_OK);sched_yield();}while(work.running);
+    qaplet_code code=QAPLET_OK;
+    for(unsigned i=0;i<60 && !code;++i)code=qaplet_pump(runtime,&progress,NULL);
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+    CHECK(code==QAPLET_DISPATCH_LIMIT && qaplet_get_snapshot(runtime,&snapshot,NULL)==QAPLET_OK && snapshot.execution_dispatches==50 && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_DISPATCH_LIMIT);
+    CHECK(qaplet_get_work_snapshot(runtime,&work,NULL)==QAPLET_OK && !work.operations && !work.pending_handoffs && !work.data_bytes);
+    CHECK(!finish(runtime) && !destroy_gate(&g));
+  }
+  puts("M2 work JS ledgers: active entry and independent completion share cumulative jobs/dispatch budget across pumps; infinite jobs fail at exact limit; terminal task resources retire: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
+  if (!strcmp(mode,"--m2-work-js-ledgers")) return js_ledgers_contract();
+  if (!strcmp(mode,"--m2-work-js-stop")) return js_stop_contract();
+  if (!strcmp(mode,"--m2-work-js-errors")) return js_errors_contract();
+  if (!strcmp(mode,"--m2-work-js-cancel")) return js_cancel_contract();
+  if (!strcmp(mode,"--m2-work-js-checkpoints")) return js_checkpoints_contract();
+  if (!strcmp(mode,"--m2-work-js-liveness")) return js_liveness_contract();
+  if (!strcmp(mode,"--m2-work-js-file")) return js_file_contract();
   if (!strcmp(mode,"--m2-work-cancel-limits")) return cancel_limits_contract();
   if (!strcmp(mode,"--m2-work-cancel-file")) return cancel_file_contract();
   if (!strcmp(mode,"--m2-work-cancel-permissions")) return cancel_permissions_contract();

@@ -67,7 +67,31 @@ static int finish(qaplet_runtime *runtime) {
   CHECK(qaplet_quiesce(runtime,100,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
   CHECK(qaplet_destroy(runtime,NULL)==QAPLET_OK);return 0;
 }
+static qaplet_code arm_allocation(qaplet_runtime *runtime,uint64_t call,size_t argc,const qaplet_value *argv,void *userdata) {
+  (void)runtime;(void)call;(void)argv;(void)userdata;
+  if(argc)return QAPLET_INVALID_ARGUMENT;
+  fail_allocation=1;return QAPLET_OK;
+}
+static int js_allocation_contract(void) {
+  qaplet_runtime *runtime=NULL;CHECK(!make(&runtime));
+  qaplet_host_export e=QAPLET_HOST_EXPORT_INIT;e.name="arm";e.name_length=3;e.kind=QAPLET_HOST_FUNCTION;e.function=arm_allocation;
+  qaplet_host_module m=QAPLET_HOST_MODULE_INIT;m.name="host:fault";m.name_length=10;m.exports=&e;m.export_count=1;
+  CHECK(qaplet_register_host_module(runtime,&m,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:work'),import('host:fault')]).then(([w,h])=>{globalThis.submit=w.submit;globalThis.arm=h.arm})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+  source="arm();try{submit('copy',new Uint8Array([17]))}catch(e){}42";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_MEMORY_LIMIT && !fail_allocation);
+  qaplet_work_snapshot work=QAPLET_WORK_SNAPSHOT_INIT;qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&work,NULL)==QAPLET_OK && !work.accepted && !work.operations && !work.data_bytes && !work.worker_threads);
+  CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_FAILED && state.termination_reason==QAPLET_MEMORY_LIMIT);
+  CHECK(qaplet_request_stop(runtime,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.termination_reason==QAPLET_MEMORY_LIMIT && !finish(runtime));
+  puts("controlled M2 work JS allocation: actual SDK calloc refusal from caught JS submit remains permanent; no accepted task; first cause preserved; native and engine cleanup: pass");return 0;
+}
 int main(void) {
+  CHECK(!js_allocation_contract());
   char directory[]="./qaplet-work-no-tmp-XXXXXX";
   CHECK(mkdtemp(directory));
   CHECK(snprintf(unavailable_tmp,sizeof(unavailable_tmp),"%s/absent/work-XXXXXX",directory)>0);

@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress；本地Linux/Windows阶段，完整Cross deferred。
+**Execution state:** local_complete；本地Linux/Windows实现与验收已完成，待独立合并；完整Cross `cross_deferred`。
+
+**Local development:** complete（本分支）；[实现、红绿与供应验收](../12-js-work-validation.md)。正式 `Status: claimed` 保留，不冒称完整跨平台完成。
 
 **Execution prerequisites:** 08已完成、11的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
@@ -18,11 +20,11 @@
 
 ## Acceptance criteria
 
-- [ ] 真实有界文件读取从命名 JS 调用走复制输入、worker、owner Promise 结算，C 与 JS 共用任务行为。
-- [ ] 任务对象取消、ref/unref 和结果映射正确；取消/完成竞争不重复结算，丢弃句柄不隐式取消。
-- [ ] owner 交接前保持默认 ref，Promise 结算及 jobs 处理后解除；JS 原生结果可回收但物理未退出数据仍保留。
-- [ ] 完成与 timer/immediate/事件按同一轮转和执行账本推进；jobs quota yield 不提前交付其他类别或判 rejection。
-- [ ] 普通 native/JS 错误、有限输出、实际分配拒绝、stop 后不再运行 JS 和 userdata 保留期均有公开 C Host/JS 验收。
+- [x] 本地Linux/Windows：真实有界文件读取从命名 JS 调用走复制输入、worker、owner Promise 结算，C 与 JS 共用任务行为。
+- [x] 本地Linux/Windows：任务对象取消、ref/unref 和结果映射正确；取消/完成竞争不重复结算，丢弃句柄不隐式取消。
+- [x] 本地Linux/Windows：owner 交接前保持默认 ref，Promise 结算及 jobs 处理后解除；JS 原生结果可回收但物理未退出数据仍保留。
+- [x] 本地Linux/Windows：完成与 timer/immediate/事件按同一轮转和执行账本推进；jobs quota yield 不提前交付其他类别或判 rejection。
+- [x] 本地Linux/Windows：普通 native/JS 错误、有限输出、实际分配拒绝、stop 后不再运行 JS 和 userdata 保留期均有公开 C Host/JS 验收。
 
 ## Blocking details
 
@@ -52,6 +54,12 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-05：完成本地纵向实现及Linux/Windows验收，供应产品源码 `bb220ce`。
+normal 为177pass / 176pass+既有optional symlink1，包外消费者两端各53pass，
+controlled fault各2pass。一次devcheck为380项=180pass+200条件skip，真实C bootstrap通过。
+红绿、真实原件、测试夹具修正和静态Python捕获范围详[本票记录](../12-js-work-validation.md)。
+完整Cross/CI/Mac/ARM64及长测未执行，继续claimed/cross_deferred，等待独立merger。
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
