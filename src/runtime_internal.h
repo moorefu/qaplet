@@ -127,6 +127,7 @@ void qaplet_work_close(qaplet_runtime *);
 void qaplet_work_reap_locked(qaplet_runtime *);
 unsigned qaplet_work_handoff(qaplet_runtime *, uint64_t);
 int qaplet_work_ready_locked(qaplet_runtime *);
+int qaplet_work_referenced_locked(qaplet_runtime *);
 void qaplet_work_checkpoint(qaplet_runtime *);
 JSModuleDef *qaplet_work_load(qaplet_runtime *);
 /* Internal ready-work drive; caller holds the whole-call owner guard. */

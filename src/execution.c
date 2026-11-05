@@ -308,8 +308,8 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     }
     qaplet_process_collect(runtime);
     pthread_mutex_lock(&runtime->mutex);
-    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || runtime->work_snapshot.pending_handoffs || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
-    int work_ready = qaplet_work_ready_locked(runtime);
+    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_work_referenced_locked(runtime) || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
+    int work_ready = timer_eligible && qaplet_work_ready_locked(runtime);
     int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
     pthread_mutex_unlock(&runtime->mutex);
     int timer_ready = timer_eligible && qaplet_timers_pending(runtime,0,0);

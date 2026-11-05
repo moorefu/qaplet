@@ -28,7 +28,7 @@ struct work_task {
   qaplet_code code;
   uint32_t error_domain;
   int32_t error;
-  int active, physical, cancelled, handoff, released;
+  int active, physical, cancelled, handoff, released, referenced;
   work_js *js;
   JSValue resolve, reject;
 };
@@ -278,7 +278,7 @@ static qaplet_code submit(qaplet_runtime *runtime,const char *name,size_t name_l
     runtime->host_registration_locked=1;
     uint64_t generation=task->generation+1;
     *task=(work_task){.generation=generation,.sequence=++pool->sequence,.handler=handler,
-      .data=data,.input_length=input_length,.data_size=bytes,.state=QAPLET_WORK_QUEUED,.active=1,.handoff=1,
+      .data=data,.input_length=input_length,.data_size=bytes,.state=QAPLET_WORK_QUEUED,.active=1,.handoff=1,.referenced=1,
       .js=js,.resolve=js ? capabilities[0] : JS_UNDEFINED,.reject=js ? capabilities[1] : JS_UNDEFINED};
     *output=(qaplet_work_task){runtime->runtime_id,slot,generation};
     if (js) {js->token=*output;++js->refs;}
@@ -428,6 +428,12 @@ int qaplet_work_ready_locked(qaplet_runtime *runtime) {
   qaplet_work_pool *pool=runtime->work_pool;
   if (pool && pool->tasks) for (uint64_t i=0;i<runtime->m2_limits.operations;++i)
     if (pool->tasks[i].active && pool->tasks[i].handoff==1 && terminal(&pool->tasks[i])) return 1;
+  return 0;
+}
+int qaplet_work_referenced_locked(qaplet_runtime *runtime) {
+  qaplet_work_pool *pool=runtime->work_pool;
+  if (pool && pool->tasks) for(uint64_t i=0;i<runtime->m2_limits.operations;++i)
+    if (pool->tasks[i].active && pool->tasks[i].handoff && pool->tasks[i].referenced) return 1;
   return 0;
 }
 static JSValue work_error(JSContext *context,qaplet_code code,uint32_t domain,int32_t native) {
@@ -592,11 +598,19 @@ static JSValue throw_work(JSContext *context,qaplet_code code) {
   JSValue error=work_error(context,code,0,0);
   return JS_IsException(error) ? error : JS_Throw(context,error);
 }
-static JSValue work_method(JSContext *context,JSValueConst self,int argc,JSValueConst *argv) {
+static JSValue work_method(JSContext *context,JSValueConst self,int argc,JSValueConst *argv,int magic) {
   (void)argc;(void)argv;
   qaplet_runtime *runtime=JS_GetContextOpaque(context);
   work_js *handle=JS_GetOpaque(self,work_class);
   if (!handle) return throw_work(context,QAPLET_INVALID_HANDLE);
+  if (magic) {
+    pthread_mutex_lock(&runtime->mutex);
+    work_task *task=handle->terminal ? NULL : lookup(runtime,&handle->token);
+    if (task && magic!=3) task->referenced=magic==1;
+    int referenced=task && task->referenced;
+    pthread_mutex_unlock(&runtime->mutex);
+    return magic==3 ? JS_NewBool(context,referenced) : JS_UNDEFINED;
+  }
   qaplet_code code=handle->terminal ? (handle->code==QAPLET_CANCELLED ? QAPLET_OK : QAPLET_ALREADY_COMPLETED) :
     qaplet_work_cancel(runtime,&handle->token,NULL);
   return code ? throw_work(context,code) : JS_UNDEFINED;
@@ -656,13 +670,17 @@ static JSValue js_submit(JSContext *context,JSValueConst self,int argc,JSValueCo
 static int initialize_work(JSContext *context,JSModuleDef *module) {
   return JS_SetModuleExport(context,module,"submit",JS_NewCFunction(context,js_submit,"submit",2));
 }
+static const JSCFunctionListEntry work_methods[]={
+  JS_CFUNC_MAGIC_DEF("cancel",0,work_method,0),JS_CFUNC_MAGIC_DEF("ref",0,work_method,1),
+  JS_CFUNC_MAGIC_DEF("unref",0,work_method,2),JS_CFUNC_MAGIC_DEF("hasRef",0,work_method,3),
+};
 JSModuleDef *qaplet_work_load(qaplet_runtime *runtime) {
   pthread_once(&work_class_once,allocate_work_class);
   JSClassDef definition={"QapletWorkTask",.finalizer=work_finalizer};
   if (JS_NewClass(runtime->engine,work_class,&definition)<0) return NULL;
   JSValue prototype=JS_NewObject(runtime->context);
   if (JS_IsException(prototype)) return NULL;
-  if (JS_SetPropertyStr(runtime->context,prototype,"cancel",JS_NewCFunction(runtime->context,work_method,"cancel",0))<0) {
+  if (JS_SetPropertyFunctionList(runtime->context,prototype,work_methods,sizeof(work_methods)/sizeof(*work_methods))<0) {
     JS_FreeValue(runtime->context,prototype);return NULL;
   }
   JS_SetClassProto(runtime->context,work_class,prototype);
