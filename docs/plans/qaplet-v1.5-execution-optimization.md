@@ -80,9 +80,9 @@ python scripts/ci_evidence.py efficiency --input-response out/saved-run.json \
 
 保持五个 triage label；不另造一套冲突状态。票据 `Status` 表示正式验收，既有 `Local development: complete`、`cross_deferred` 表示本地实现与平台待验两个轴。后继只可消费已稳定的开发接口，不绕过安全、资源和生命周期依赖。
 
-2026-11-05当前前置：12、14、15已本地完成并独立合并；16 JS Process与17 stdio可并行，18 TTY等待17；19/20等待16和18后可并行，再20→21→22、19/22→23收CLI/SDK。混合预算与关闭安全贯穿每项首次接入。24–27保留最终native/64K/soak/独立审查；[逐票开发前置与验证范围](../../.scratch/qaplet-m2/local-development.md#2026-11-05剩余开发前置与验证范围)是当前分派依据。每票保存本票与受影响回归；不因辅助报告变化重复全部历史工程验证，也不把旧产品证据签到新recipe。
+2026-11-05当前前置：16 JS Process与17 stdio已本地完成并独立合入`015cdb9f`、`caa439ae`；18 TTY正在独立实施。19/20的16前置已满足，等待18完成并独立合入后可并行，再20→21→22、19/22→23收CLI/SDK。混合预算与关闭安全贯穿每项首次接入。24–27保留最终native/64K/soak/独立审查；[逐票开发前置与验证范围](../../.scratch/qaplet-m2/local-development.md#2026-11-05剩余开发前置与验证范围)是当前分派依据。每票保存本票与受影响回归；不因辅助报告变化重复全部历史工程验证，也不把旧产品证据签到新recipe。
 
-P0效率改造已按固定范围及后续修复完成两轴独立审查，见[收口记录](../../.scratch/qaplet-efficiency/review-acceptance.md)，16/17已领取本地实施。完整跨平台不作为所有本地后继的调度障碍，正式resolved/ABI冻结仍须原验收条件。
+P0效率改造已按固定范围及后续修复完成两轴独立审查，见[收口记录](../../.scratch/qaplet-efficiency/review-acceptance.md)，16/17已独立本地合入，18已领取。完整跨平台不作为所有本地后继的调度障碍，正式resolved/ABI冻结仍须原验收条件。
 
 ## 交付里程碑与真实应用
 
