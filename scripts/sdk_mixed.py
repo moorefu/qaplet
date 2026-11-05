@@ -10,7 +10,8 @@ import sys
 import uuid
 
 import ape_helpers
-from build_ape import BuildError, audit, identity, link_portable, publish_ape, run
+from build_ape import BuildError, audit, identity, publish_ape, run
+from sdk_link import link_portable
 from foundation import host_facts, now, sha256
 from input_lock import consumption_purpose
 from startup import measured_host, select_loader

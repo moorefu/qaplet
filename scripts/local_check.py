@@ -77,8 +77,12 @@ def current_recipe():
 def contract_identity(profile):
     catalog = select_cases(profile)
     paths = ('scripts/local_check.py', 'scripts/sdk.py', 'scripts/sdk_matrix.py',
-             'scripts/startup.py', 'scripts/build_ape.py', 'scripts/foundation.py',
-             'scripts/workflow_support.py', 'scripts/input_lock.py')
+             'scripts/startup.py', 'scripts/build_ape.py', 'scripts/sdk_link.py', 'scripts/foundation.py',
+             'scripts/workflow_support.py', 'scripts/input_lock.py',
+             'scripts/sdk_signal.py', 'scripts/m2_cli_signal.py', 'scripts/m2_cli_signal_windows.py',
+             'scripts/m2_cli_signal_budget.py', 'scripts/m2_cli_signal_mixed.py', 'scripts/m2_cli_signal_strong.py',
+             'tests/contracts/test_sdk_native.py', 'tests/contracts/test_sdk_retention.py',
+             'tests/contracts/test_m2_cli_signal_tools.py')
     if profile == 'ci':
         paths += ('scripts/ci_tiers.py', 'scripts/dev.py', 'tests/contracts/test_local_check.py',
                   'tests/contracts/test_ci_tiers.py', 'tests/contracts/test_ci_efficiency.py')
