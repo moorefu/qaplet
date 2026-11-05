@@ -20,11 +20,11 @@ root 的 `out/qaplet-m2/sdk4-static-verification.json` 独立核过210实际原�
 | 普通 Host162 / CLI53 / 示例14 | s4-ordinary-guest.json | s4-ordinary-import.json | 229/229 |
 | fault25 / TTY13 / mixed12 | s4-special-guest.json | s4-special-verified-002.json | 50/50 |
 | CLI IO10 / 真实PTY4 / signal16 | s4-cli-guest.json | s4-cli-verified-002.json | 30/30 |
-| waker19 / process13 / stdio19 / TTY19 / pages64k12 | s4-backend-guest.json | s4-backend-verified.json | 82/82观察，7条guest命令 |
+| waker19 / process13 / stdio19 / TTY19 / pages64k12 | s4-backend-guest.json | s4-backend-verified-002.json | 82/82观察，7条guest命令 |
 | waitid相关ABI | s4-abi-guest.json | s4-abi-verified.json | 1/1 |
-| C9 lifecycle1000 / mixed100 | s4-c9-cycles-guest.json | s4-c9-cycles-verified.json | 1100实际循环，2条guest命令 |
+| C9 lifecycle1000 / mixed100 | s4-c9-cycles-guest.json | s4-c9-cycles-verified-002.json | 1100实际循环，2条guest命令 |
 
-只读总索引 `s4-matrix-001.json` 重核319条完整 guest 命令、394条语义记录及全部显式
+最终只读总索引 `s4-matrix-002.json` 重核319条完整 guest 命令、394条语义记录及全部显式
 原件索引；循环1100次另计。没有本票必需 fail、skip、not_run、缺项或超时。
 四 backend 是独立 OS/libc 探针，不是产品源码二进制，也没有链接 SDK archive。
 
@@ -117,4 +117,40 @@ CLI controller C1/C2对procfs size0和64K pipe容量的失败、C3–C7修正、
 `tool-negative-run-001.json`及其独立日志记录15测试全通过、产品重执行0，含缺signal、
 完整恢复、累计预算、late replacement、strong null、缺seal、有效reseal后缺START、
 afterhash改变、timeout清理拒绝。共享输入闭包还拒绝旧TTY transitive include和
-额外.o/.a/脚本/异常link flag。Ubuntu仓库检查与最终清洁交接身份另见out的HANDOFF。
+额外.o/.a/脚本/异常link flag。
+
+独立merger预核指出旧backend evaluator路径已演进（仅补输出已存在拒绝）。其原96bf/8123
+字节确切保留于 `cli-controller-7/inputs/scripts/m2_guest_backend.py`，由该supply.json的
+named original/retained pair绑定，不靠SHA搜索。旧C9 consumer759a/9125的完整pre-edit helper
+没有exact retained（C7只保存更早ffce/7611），此历史工具source限制诚实保留，不能重构后冒充原件。
+最终 `final-readonly-run-001.json` 在执行前逐字冻结全部当前Python helper闭包，随后只读签发
+backend002/cycles002/matrix002；所有产品guest原件不变、产品重执行0，旧报告不retag。
+
+## 仓库检查与合法 Linux 文件系统对照
+
+原DrvFS `dev-check-001/workflow.json`：check-ci三项通过，441测试/502.888s，
+两个errors为既有CI reuse原16模式method的 `duplicate-all-missing`、`prior-original`
+30秒timeout，224项optional skip。`check-followup-001.json` 精确原method复验仍同2个
+timeout（362.932s），其余14通过；另补真实bootstrap通过。两次fail均原样保留，不写成全绿。
+
+`ci-timeout-diagnostic-001.json` 两个窄case保留原synthetic workspace和8/16/24s定时栈：
+在本地Path.resolve/stat/is_symlink、unpack/extracted_files/identity、workspace/git_read，
+没有HTTP等待。首/tmp对照 `ci-timeout-ext4-001.json` 虽底层CLI各3秒exit0，one-off
+recorder漏return导致原断言未执行，仍为fail。固定ZIP直接把output放/tmp又被原生产
+checkout/out guard拒绝，prior-original原断言失败，不能把guard拒绝造成的miss当合同通过。
+两次失败现场都已逐字存回 `failed-ci-controls-preservation-001.json`，不以/tmp为唯一proof。
+
+合法同HEAD `294f865f2c8f188d5030fb5e51c287b3e64c96ac` 的 once-use detached worktree
+`/tmp/qaplet-m2-25-linux-check-20261105` 保持完整合法checkout/out；主物理.cache仍D根，
+没有新建嵌套可复用输入（测试留下的空.cache目录另记）。固定red原ZIP/commit/artifactID/
+provider元数据/预期重放，两case真实语义分别3.3006s/3.3045s通过，原30秒、全部断言和
+生产guard未改。明确差异为同字节CLI的实际source路径、checkout/out/report/github-output
+路径及动态loopback端口，不宣称argv字节相同或仅output单变量。
+
+该合法Ubuntu原生文件系统checkout执行原始完整 `dev.py check`，444测试/104.936s、
+227项optional skip与bootstrap通过；相较原441多3项是融合root24后的原始测试目录。
+没有修改任何CI生产脚本、原test/断言/timeout或SDK，也没有重跑产品guest。
+`linux-check-preservation-001.json` 保存实际GitHEAD、115配方、source/test/helper逐字相等、
+宿主/FS/cache/guard、完整stdout/stderr/argv和原件的持久副本。四份融合root24的Markdown
+仅CRLF差异先逐字核GitLF，再单次 `git -c core.autocrlf=input status`；未改配置或重写文档原件。
+最终clean source与准确收据SHA见本票out的HANDOFF，native一次性worktree未删。
