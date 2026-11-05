@@ -440,7 +440,7 @@ def validate_mixed(incoming, evidence):
                 "Mixed retained-negative cleanup fact differs")
         require([row["requested_active_wait_ms"] for row in case["wait_observations"]] == [0, 5, 5],
                 "Mixed finite public quiesce observations differ")
-        waits = str(Path(case["marker"]["path"]).parent / "mixed-waits.ndjson")
+        waits = str(evidence.resolve(case["marker"]["path"]).parent / "mixed-waits.ndjson")
         require([json.loads(line) for line in evidence.read(waits).decode().splitlines()] == case["wait_observations"],
                 "Mixed active waits differ from actual original records")
         if "tty" in name:
