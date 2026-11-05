@@ -39,7 +39,7 @@ typedef struct io_endpoint {
   int terminal,lease_active,restored,original_flags,terminal_helpers,resize_watch,resize_pending;
   struct termios original_mode;
   uint32_t console_mode;
-  uint64_t terminal_device,terminal_inode,terminal_special;
+  uint64_t terminal_device,terminal_inode,terminal_special,terminal_session;
   qaplet_tty_status tty_status;
   struct io_endpoint *lease_next;
   struct io_endpoint *lease_owner,*group_previous,*group_last;
@@ -51,15 +51,15 @@ typedef struct io_endpoint {
  * Lock order is Runtime acceptance mutex, then this registry mutex. */
 static pthread_mutex_t terminal_mutex=PTHREAD_MUTEX_INITIALIZER;
 static io_endpoint *terminal_leases;
-static int terminal_conflict(uint64_t device,uint64_t inode,uint64_t special) {
+static int terminal_conflict(uint64_t device,uint64_t inode,uint64_t special,uint64_t session) {
   int conflict=0;pthread_mutex_lock(&terminal_mutex);
-  for(io_endpoint *p=terminal_leases;p;p=p->lease_next)if(IsWindows() || (p->terminal_device==device && p->terminal_inode==inode && p->terminal_special==special)){conflict=1;break;}
+  for(io_endpoint *p=terminal_leases;p;p=p->lease_next)if(IsWindows() || (p->terminal_device==device && p->terminal_inode==inode && p->terminal_special==special) || (session && session==p->terminal_session)){conflict=1;break;}
   pthread_mutex_unlock(&terminal_mutex);return conflict;
 }
 static int terminal_claim(io_endpoint *e) {
   int conflict=0;pthread_mutex_lock(&terminal_mutex);
   for(io_endpoint *p=terminal_leases;p;p=p->lease_next)
-    if(IsWindows() || (e->terminal_device==p->terminal_device && e->terminal_inode==p->terminal_inode && e->terminal_special==p->terminal_special)){conflict=1;break;}
+    if(IsWindows() || (e->terminal_device==p->terminal_device && e->terminal_inode==p->terminal_inode && e->terminal_special==p->terminal_special) || (e->terminal_session && e->terminal_session==p->terminal_session)){conflict=1;break;}
   if(!conflict){e->lease_next=terminal_leases;terminal_leases=e;}
   pthread_mutex_unlock(&terminal_mutex);return !conflict;
 }
@@ -542,19 +542,24 @@ static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *
   if(info.kind!=QAPLET_STDIO_TTY && info.kind!=QAPLET_STDIO_CONSOLE)return qaplet_report(d,QAPLET_UNSUPPORTED);
   struct stat identity={0};
   if(!IsWindows() && fstat(source,&identity))return qaplet_report(d,QAPLET_IO_ERROR);
+  /* Query the terminal named by this descriptor, never the caller's ordinary
+   * getsid(0). /dev/tty and the actual pts slave have different device nodes
+   * but name one controlling terminal. A noncontrolling PTY has no such ID and
+   * retains its full device/inode identity, allowing unrelated PTYs to coexist. */
+  pid_t queried_session=IsWindows() ? -1 : tcgetsid(source);uint64_t terminal_session=queried_session>0 ? queried_session : 0;
   io_endpoint *root=NULL;pthread_mutex_lock(&r->mutex);
   if(joining){io_endpoint *member=endpoint_locked(r,joining);
     if(!member || !member->terminal)code=QAPLET_INVALID_HANDLE;
     else if(!member->lease_active || member->ended)code=QAPLET_BAD_STATE;
     else {root=member->lease_owner ? member->lease_owner : member;
-      if(!IsWindows() && (root->terminal_device!=(uint64_t)identity.st_dev || root->terminal_inode!=(uint64_t)identity.st_ino || root->terminal_special!=(uint64_t)identity.st_rdev))code=QAPLET_UNSUPPORTED;
+      if(!IsWindows() && !(root->terminal_device==(uint64_t)identity.st_dev && root->terminal_inode==(uint64_t)identity.st_ino && root->terminal_special==(uint64_t)identity.st_rdev) && !(terminal_session && root->terminal_session==terminal_session))code=QAPLET_UNSUPPORTED;
     }
   }
   if(!code && qaplet_io_standard_locked(r,stream,NULL,NULL))code=QAPLET_BUSY;
   if(r->io_pool)for(uint64_t i=0;!code && i<r->m2_limits.native_handles;++i){io_endpoint *e=&r->io_pool->endpoints[i];
-    if(e->active && e->lease_active && (!root || e->lease_owner!=root) && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev)))code=QAPLET_BUSY;
+    if(e->active && e->lease_active && (!root || e->lease_owner!=root) && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev) || (terminal_session && terminal_session==e->terminal_session)))code=QAPLET_BUSY;
   }
-  if(!code && !root && terminal_conflict(identity.st_dev,identity.st_ino,identity.st_rdev))code=QAPLET_BUSY;
+  if(!code && !root && terminal_conflict(identity.st_dev,identity.st_ino,identity.st_rdev,terminal_session))code=QAPLET_BUSY;
   unsigned control=IsWindows() && (!r->io_pool || !r->io_pool->terminal_joiner_active);
   if(!code && (r->native_handles>r->m2_limits.native_handles-1-control || r->reactor_registrations>=r->m2_limits.reactor_registrations || (control && r->helper_threads>=r->m2_limits.helper_threads)))code=QAPLET_RESOURCE_LIMIT;
   pthread_mutex_unlock(&r->mutex);if(code)return qaplet_report(d,code);
@@ -578,7 +583,7 @@ static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *
     uint64_t generation=e->generation+1;info.supported=1;info.attached=1;
     *e=(io_endpoint){.generation=generation,.active=1,.writing=stream!=0,.fd=fd,.handle=handle,.referenced=1,.standard=stream+1,.standard_info=info,
       .terminal=1,.regular=IsWindows(),.lease_active=1,.original_flags=flags,.original_mode=original,.console_mode=mode,
-      .terminal_device=identity.st_dev,.terminal_inode=identity.st_ino,.terminal_special=identity.st_rdev,.tty_status=QAPLET_TTY_STATUS_INIT};
+      .terminal_device=identity.st_dev,.terminal_inode=identity.st_ino,.terminal_special=identity.st_rdev,.terminal_session=terminal_session,.tty_status=QAPLET_TTY_STATUS_INIT};
     e->lease_owner=root ? root : e;e->group_previous=root ? root->group_last : NULL;e->group_last=root ? NULL : e;
     if(!root && !terminal_claim(e)){
       e->lease_active=0;e->active=0;if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);

@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <poll.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -22,6 +23,16 @@
 extern int64_t CreateFile(const char16_t *,uint32_t,uint32_t,void *,uint32_t,uint32_t,int64_t);
 extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
 #define CHECK(c) do{if(!(c)){fprintf(stderr,"TTY public contract line %d: %s (errno %d)\n",__LINE__,#c,errno);return 1;}}while(0)
+/* The test launcher deliberately creates a new session. Private PTYs must not
+ * become its controlling terminal implicitly or close(master) sends SIGHUP.
+ * Only the explicit SIGWINCH/alias fixtures acquire a controlling terminal. */
+static int private_pty(int *master,int *slave){
+  *slave=-1;*master=posix_openpt(O_RDWR|O_NOCTTY);if(*master<0)return -1;
+  char *name=NULL;if(!grantpt(*master) && !unlockpt(*master))name=ptsname(*master);
+  if(name)*slave=open(name,O_RDWR|O_NOCTTY);
+  if(*slave>=0)return 0;
+  int error=errno;close(*master);*master=-1;errno=error;return -1;
+}
 static int record_mode(const char *stage,int fd,int64_t handle){
   FILE *file=fopen("tty-native.ndjson","ab");if(!file)return 0;
   int ok=1;
@@ -44,7 +55,7 @@ static int lease(void){
     console=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);CHECK(console!=-1 && GetConsoleMode(console,&mode));
     for(int i=0;i<2;++i){saved_handle[i]=GetStdHandle(-10-i);CHECK(SetStdHandle(-10-i,console));}
   }else{
-    CHECK(!openpty(&master,&slave,NULL,NULL,NULL));CHECK(!tcgetattr(slave,&before));
+    CHECK(!private_pty(&master,&slave));CHECK(!tcgetattr(slave,&before));
     for(int i=0;i<2;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(slave,i)==i);}
   }
   CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
@@ -75,7 +86,7 @@ static int lease(void){
   puts("M2 TTY lease: explicit terminal acquisition; native alias conflict; full mode and shared flag readback; idempotent release; Host originals survive and native resources retire: pass");return 0;
 }
 static int resize(void){
-  CHECK(!IsWindows());int master=-1,slave=-1,saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0);
+  CHECK(!IsWindows());int master=-1,slave=-1,saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0);
   struct winsize size={.ws_col=80,.ws_row=24};CHECK(!ioctl(slave,TIOCSWINSZ,&size));
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
   CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
@@ -97,7 +108,7 @@ static int resize(void){
   puts("M2 TTY resize: real kernel sizes; 10000 Host notifications coalesce to latest query; bounded storage and single revision; unwatch rejects late producer; cleanup: pass");return 0;
 }
 static int js(void){
-  CHECK(!IsWindows());int master=-1,slave=-1,saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0);
+  CHECK(!IsWindows());int master=-1,slave=-1,saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0);
   struct termios before,after;CHECK(!tcgetattr(slave,&before));struct winsize size={.ws_col=80,.ws_row=24};CHECK(!ioctl(slave,TIOCSWINSZ,&size));
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
   CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
@@ -171,7 +182,7 @@ static int stop_close(void){
   for(unsigned path=0;path<2;++path){
     int master=-1,slave=-1,saved=-1,saved_output=-1;int64_t original=0,console=0,original_output=0,output=0;struct termios before,after;uint32_t mode=0,output_mode=0,checked=0;
     if(IsWindows()){original=GetStdHandle(-10);console=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);CHECK(console!=-1 && GetConsoleMode(console,&mode) && SetStdHandle(-10,console));}
-    else{saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
+    else{saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
     if(IsWindows()){original_output=GetStdHandle(-11);output=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);CHECK(output!=-1 && GetConsoleMode(output,&output_mode) && SetStdHandle(-11,output));}
     else{saved_output=dup(1);CHECK(saved_output>=0 && dup2(slave,1)==1);}
     qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
@@ -246,7 +257,7 @@ static void resize_signal_handler(int signal){(void)signal;int saved=errno;char 
 typedef struct {qaplet_runtime *runtime;qaplet_io_endpoint endpoint;int fd;qaplet_code code;int signalled;} resize_bridge;
 static void *publish_native_resize(void *opaque){resize_bridge *bridge=opaque;struct pollfd fd={bridge->fd,POLLIN,0};char event=0;bridge->signalled=poll(&fd,1,2000)==1 && read(bridge->fd,&event,1)==1 && event=='W';bridge->code=bridge->signalled ? qaplet_tty_notify_resize(bridge->runtime,&bridge->endpoint,NULL) : QAPLET_IO_ERROR;return NULL;}
 static int resize_signal(void){
-  CHECK(!IsWindows());int master,slave,events[2],ack[2],saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && !pipe(events) && !pipe(ack));
+  CHECK(!IsWindows());int master,slave,events[2],ack[2],saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && !pipe(events) && !pipe(ack));
   struct sigaction before,after;CHECK(!sigaction(SIGWINCH,NULL,&before));
   pid_t child=fork();CHECK(child>=0);
   if(!child){
@@ -268,7 +279,7 @@ static int resize_signal(void){
   puts("M2 TTY SIGWINCH: actual foreground PTY resize reaches Host signal self-pipe; native producer publishes across threads; owner queries final100x33 while child lives; SDK signal disposition unchanged; joined/reaped/closed: pass");return 0;
 }
 static int bytes(void){
-  CHECK(!IsWindows());int master,slave,saved[2]={dup(0),dup(1)};CHECK(saved[0]>=0 && saved[1]>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0);
+  CHECK(!IsWindows());int master,slave,saved[2]={dup(0),dup(1)};CHECK(saved[0]>=0 && saved[1]>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0);
   struct termios before,after;CHECK(!tcgetattr(slave,&before));int flags=fcntl(slave,F_GETFL);
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.operations=1;m.limits.operation_data_bytes=16;m.limits.io_block_bytes=16;m.limits.pump_io_bytes=3;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;options.flags=QAPLET_TTY_RAW;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint e=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_tty_acquire(r,0,&options,&e,&status,NULL)==QAPLET_OK);
@@ -290,7 +301,7 @@ static int bytes(void){
 static int identities(void){
   int master=-1,slave=-1,saved=-1;int64_t original=0,console=0,source=0;struct termios before,after;uint32_t mode=0,checked=0;
   if(IsWindows()){original=GetStdHandle(-10);console=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);CHECK(console!=-1 && DuplicateHandle(GetCurrentProcess(),console,GetCurrentProcess(),&source,0,0,2) && GetConsoleMode(console,&mode) && SetStdHandle(-10,console));}
-  else{saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
+  else{saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.native_handles=3;m.limits.reactor_registrations=1;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;options.flags=QAPLET_TTY_RAW;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint e=QAPLET_IO_ENDPOINT_INIT;
   CHECK(qaplet_tty_acquire(r,0,&options,&e,&status,NULL)==QAPLET_RESOURCE_LIMIT && !e.generation && qaplet_close(r,NULL)==QAPLET_OK && qaplet_destroy(r,NULL)==QAPLET_OK);
@@ -320,7 +331,7 @@ static int join_js(void){
   if(IsWindows()){
     input=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);output=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);CHECK(input!=-1 && output!=-1 && GetConsoleMode(input,&im) && GetConsoleMode(output,&om) && FlushConsoleInputBuffer(input));
     for(unsigned i=0;i<2;++i)original[i]=GetStdHandle(-10-i);CHECK(SetStdHandle(-10,input) && SetStdHandle(-11,output));
-  }else{CHECK(!openpty(&master,&slave,NULL,NULL,NULL) && !tcgetattr(slave,&before));for(unsigned i=0;i<2;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(slave,i)==i);}}
+  }else{CHECK(!private_pty(&master,&slave) && !tcgetattr(slave,&before));for(unsigned i=0;i<2;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(slave,i)==i);}}
   CHECK(record_mode("input.before",0,input) && record_mode("output.before",1,output));
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.pump_io_bytes=1;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   const char *source="import('qaplet:stdio').then(m=>{const input=m.acquireTerminal(0,{raw:true}),output=input.joinTerminal(1,{vt:true});if(input.getSize().columns!==80)throw Error('joined size');input.unref();return new Promise(resolve=>input.watchResize(async s=>{if(s.columns!==100||s.rows!==33)throw Error('latest');input.ref();input.unwatchResize();await output.write(new Uint8Array([65,228,184,173,240,159,153,130,90])).promise;let bytes=[];while(bytes.length<5){let next=await input.read(5-bytes.length).promise;bytes.push(...next.bytes)}if(bytes.join(',')!=='65,228,184,173,90')throw Error('input');input.releaseTerminal();await Promise.all([input.closed,output.closed]);resolve(42)}))})";
@@ -345,12 +356,12 @@ static int join_js(void){
 static int join_c(void){
   int master=-1,slave=-1,output_fd=-1,output_flags=0,saved[2]={-1,-1};int64_t input=0,output=0,original[2]={0};struct termios before,after;uint32_t im=0,om=0,checked;
   if(IsWindows()){input=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);output=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);CHECK(input!=-1 && output!=-1 && GetConsoleMode(input,&im) && GetConsoleMode(output,&om));for(unsigned i=0;i<2;++i)original[i]=GetStdHandle(-10-i);CHECK(SetStdHandle(-10,input) && SetStdHandle(-11,output));}
-  else{CHECK(!openpty(&master,&slave,NULL,NULL,NULL) && !tcgetattr(slave,&before));output_fd=open(ptsname(master),O_RDWR|O_NOCTTY);CHECK(output_fd>=0);output_flags=fcntl(output_fd,F_GETFL)|O_APPEND;CHECK(!fcntl(output_fd,F_SETFL,output_flags));for(unsigned i=0;i<2;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(i ? output_fd : slave,i)==i);}}
+  else{CHECK(!private_pty(&master,&slave) && !tcgetattr(slave,&before));output_fd=open(ptsname(master),O_RDWR|O_NOCTTY);CHECK(output_fd>=0);output_flags=fcntl(output_fd,F_GETFL)|O_APPEND;CHECK(!fcntl(output_fd,F_SETFL,output_flags));for(unsigned i=0;i<2;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(i ? output_fd : slave,i)==i);}}
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL,*other=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
   qaplet_tty_options raw=QAPLET_TTY_OPTIONS_INIT,vt=QAPLET_TTY_OPTIONS_INIT;raw.flags=QAPLET_TTY_RAW;vt.flags=QAPLET_TTY_VT;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint in=QAPLET_IO_ENDPOINT_INIT,out=QAPLET_IO_ENDPOINT_INIT,refused=QAPLET_IO_ENDPOINT_INIT;
   CHECK(qaplet_tty_acquire(r,0,&raw,&in,&status,NULL)==QAPLET_OK && qaplet_tty_join(other,&in,1,&vt,&refused,&status,NULL)==QAPLET_INVALID_HANDLE && !refused.generation);
   if(!IsWindows()){
-    int other_master,other_slave;CHECK(!openpty(&other_master,&other_slave,NULL,NULL,NULL) && dup2(other_slave,1)==1);
+    int other_master,other_slave;CHECK(!private_pty(&other_master,&other_slave) && dup2(other_slave,1)==1);
     CHECK(qaplet_tty_join(r,&in,1,&vt,&refused,&status,NULL)==QAPLET_UNSUPPORTED && !refused.generation && dup2(output_fd,1)==1 && !close(other_slave) && !close(other_master));
   }
   CHECK(qaplet_tty_join(r,&in,1,&vt,&out,&status,NULL)==QAPLET_OK && status.active);
@@ -374,7 +385,33 @@ static int helper_limit(void){
   CHECK(qaplet_tty_release(r,&e,&status,NULL)==QAPLET_OK && status.restored && !finish_tty(r) && !finish_tty(other));
   CHECK(GetConsoleMode(console,&after) && after==mode && SetStdHandle(-11,saved) && CloseHandle(console));puts("M2 TTY helper limit: Console join control consumes one existing helper and requested stack; physical IO refuses atomically at quota1; conflicting Runtime starts no control helper; full native cleanup: pass");return 0;
 }
-int sdk_tty(int argc,char **argv){(void)argc;if(!strcmp(argv[1],"--m2-tty-helper-limit"))return helper_limit();if(!strcmp(argv[1],"--m2-tty-join-c"))return join_c();if(!strcmp(argv[1],"--m2-tty-join-js"))return join_js();if(!strcmp(argv[1],"--m2-tty-identities"))return identities();if(!strcmp(argv[1],"--m2-tty-bytes"))return bytes();if(!strcmp(argv[1],"--m2-tty-validation"))return validation();if(!strcmp(argv[1],"--m2-tty-resize-signal"))return resize_signal();if(!strcmp(argv[1],"--m2-tty-lease"))return lease();if(!strcmp(argv[1],"--m2-tty-resize"))return IsWindows() ? console_resize(0) : resize();if(!strcmp(argv[1],"--m2-tty-js"))return IsWindows() ? console_resize(1) : js();if(!strcmp(argv[1],"--m2-tty-output"))return output();if(!strcmp(argv[1],"--m2-tty-input"))return input();if(!strcmp(argv[1],"--m2-tty-stop-close"))return stop_close();return 2;}
+static int controlling_alias_child(int master,int slave){
+  CHECK(setsid()>0 && !ioctl(slave,TIOCSCTTY,0) && !tcsetpgrp(slave,getpgrp()));
+  int alias=open("/dev/tty",O_RDWR|O_NOCTTY),other_master,other_slave,saved[2]={dup(0),dup(1)};CHECK(alias>=0 && saved[0]>=0 && saved[1]>=0 && !private_pty(&other_master,&other_slave) && dup2(slave,0)==0 && dup2(alias,1)==1);
+  struct stat a,b,other;struct termios before,alias_mode,restored,other_before,other_after;CHECK(!fstat(slave,&a) && !fstat(alias,&b) && !fstat(other_slave,&other) && !tcgetattr(slave,&before) && !tcgetattr(other_slave,&other_before));
+  pid_t tty_sid=tcgetsid(slave),alias_sid=tcgetsid(alias),other_sid=tcgetsid(other_slave);
+  CHECK(tty_sid>0 && tty_sid==alias_sid && (a.st_dev!=b.st_dev || a.st_ino!=b.st_ino || a.st_rdev!=b.st_rdev));
+  qaplet_config config=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *first=NULL,*second=NULL;CHECK(qaplet_create_m2(&config,&m,&first,NULL)==QAPLET_OK && qaplet_create_m2(&config,&m,&second,NULL)==QAPLET_OK);
+  qaplet_tty_options raw=QAPLET_TTY_OPTIONS_INIT;raw.flags=QAPLET_TTY_RAW;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint root=QAPLET_IO_ENDPOINT_INIT,conflict=QAPLET_IO_ENDPOINT_INIT,independent=QAPLET_IO_ENDPOINT_INIT;
+  CHECK(qaplet_tty_acquire(first,0,&raw,&root,&status,NULL)==QAPLET_OK && !tcgetattr(alias,&alias_mode) && !same(&before,&alias_mode));
+  qaplet_code conflict_code=qaplet_tty_acquire(second,1,&raw,&conflict,&status,NULL);
+  if(conflict_code==QAPLET_OK)CHECK(qaplet_tty_release(second,&conflict,&status,NULL)==QAPLET_OK && qaplet_stdio_detach(second,1,NULL)==QAPLET_OK);
+  CHECK(dup2(other_slave,1)==1);qaplet_code unrelated_code=qaplet_tty_acquire(second,1,&raw,&independent,&status,NULL);
+  CHECK(unrelated_code==QAPLET_OK && qaplet_tty_release(second,&independent,&status,NULL)==QAPLET_OK && !tcgetattr(other_slave,&other_after) && same(&other_before,&other_after) && !finish_tty(second));
+  CHECK(dup2(alias,1)==1);qaplet_io_endpoint joined=QAPLET_IO_ENDPOINT_INIT;qaplet_code joined_code=qaplet_tty_join(first,&root,1,&raw,&joined,&status,NULL);
+  CHECK(joined_code==QAPLET_OK);
+  CHECK(qaplet_tty_release(first,&root,&status,NULL)==QAPLET_OK && !tcgetattr(slave,&restored) && same(&before,&restored) && !finish_tty(first));
+  FILE *facts=fopen("tty-controlling-alias.json","wb");CHECK(facts);
+  fprintf(facts,"{\"pts\":{\"dev\":%llu,\"ino\":%llu,\"rdev\":%llu,\"tcgetsid\":%ld},\"dev_tty\":{\"dev\":%llu,\"ino\":%llu,\"rdev\":%llu,\"tcgetsid\":%ld},\"unrelated\":{\"dev\":%llu,\"ino\":%llu,\"rdev\":%llu,\"tcgetsid\":%ld},\"ordinary_session\":%ld,\"alias_conflict_code\":%u,\"unrelated_lease_code\":%u,\"same_terminal_join_code\":%u,\"full_restore_readback\":true}\n",(unsigned long long)a.st_dev,(unsigned long long)a.st_ino,(unsigned long long)a.st_rdev,(long)tty_sid,(unsigned long long)b.st_dev,(unsigned long long)b.st_ino,(unsigned long long)b.st_rdev,(long)alias_sid,(unsigned long long)other.st_dev,(unsigned long long)other.st_ino,(unsigned long long)other.st_rdev,(long)other_sid,(long)getsid(0),conflict_code,unrelated_code,joined_code);CHECK(!fclose(facts));
+  CHECK(dup2(saved[0],0)==0 && dup2(saved[1],1)==1 && !close(saved[0]) && !close(saved[1]) && !close(alias) && !close(slave) && !close(master) && !close(other_slave) && !close(other_master));
+  if(conflict_code!=QAPLET_BUSY){fprintf(stderr,"TTY controlling alias accepted conflicting lease: code=%u; original state restored and both Runtimes cleaned\n",conflict_code);return 1;}return 0;
+}
+static int controlling_alias(void){
+  CHECK(!IsWindows());int master,slave;CHECK(!private_pty(&master,&slave));pid_t child=fork();CHECK(child>=0);if(!child)_exit(controlling_alias_child(master,slave));
+  int status;CHECK(waitpid(child,&status,0)==child && WIFEXITED(status));CHECK(!close(master) && !close(slave));if(WEXITSTATUS(status))return 1;
+  puts("M2 TTY controlling alias: actual pts and dev-tty fstat differ but terminal queries identify one controlling terminal; cross Runtime conflict refused; unrelated PTY in same process/session allowed; full restoration and child reap: pass");return 0;
+}
+int sdk_tty(int argc,char **argv){(void)argc;if(!strcmp(argv[1],"--m2-tty-controlling-alias"))return controlling_alias();if(!strcmp(argv[1],"--m2-tty-helper-limit"))return helper_limit();if(!strcmp(argv[1],"--m2-tty-join-c"))return join_c();if(!strcmp(argv[1],"--m2-tty-join-js"))return join_js();if(!strcmp(argv[1],"--m2-tty-identities"))return identities();if(!strcmp(argv[1],"--m2-tty-bytes"))return bytes();if(!strcmp(argv[1],"--m2-tty-validation"))return validation();if(!strcmp(argv[1],"--m2-tty-resize-signal"))return resize_signal();if(!strcmp(argv[1],"--m2-tty-lease"))return lease();if(!strcmp(argv[1],"--m2-tty-resize"))return IsWindows() ? console_resize(0) : resize();if(!strcmp(argv[1],"--m2-tty-js"))return IsWindows() ? console_resize(1) : js();if(!strcmp(argv[1],"--m2-tty-output"))return output();if(!strcmp(argv[1],"--m2-tty-input"))return input();if(!strcmp(argv[1],"--m2-tty-stop-close"))return stop_close();return 2;}
 #ifdef QAPLET_TTY_STANDALONE
 int main(int argc,char **argv){return sdk_tty(argc,argv);}
 #endif

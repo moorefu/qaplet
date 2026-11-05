@@ -210,6 +210,11 @@ independent lease across SDK Runtimes. The SDK owns only non-inheritable
 duplicates; the Host coordinates replacement, concurrent use and changes made
 outside the SDK. Separately loaded SDK copies and other processes require Host
 coordination. No private CONIN$/CONOUT$ fallback is opened.
+POSIX identity combines the actual device/inode facts with a positive
+`tcgetsid(fd)` queried from that terminal, so `/dev/tty` cannot evade a lease on
+its controlling pts slave. The caller's ordinary process session is not a
+terminal identity; unrelated PTYs can coexist. This additional controlling-alias
+case is validated separately from dup aliases and shared-state restoration.
 
 In JS, `qaplet:stdio` exports `acquireTerminal(stream,{raw,vt})`; the returned
 endpoint provides `joinTerminal`, `getSize`, `watchResize`, `unwatchResize` and

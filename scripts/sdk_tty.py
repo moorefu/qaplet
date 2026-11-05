@@ -25,6 +25,7 @@ NORMAL=(
  ("--m2-tty-stop-close","M2 TTY stop/close: pending native input; stop publication leaves modes for owner; owner confirms cancellation; repeated close and native quiesce join before full restoration; Host originals survive and native resources zero: pass\n"),
 )
 POSIX=(
+ ("--m2-tty-controlling-alias","M2 TTY controlling alias: actual pts and dev-tty fstat differ but terminal queries identify one controlling terminal; cross Runtime conflict refused; unrelated PTY in same process/session allowed; full restoration and child reap: pass\n"),
  ("--m2-tty-bytes","M2 TTY POSIX bytes: exact all256/NUL/invalid UTF8 raw input and output; three-byte native budget; retained results occupy shared count/data; rejection atomic; full mode/flags restored: pass\n"),
  ("--m2-tty-resize-signal","M2 TTY SIGWINCH: actual foreground PTY resize reaches Host signal self-pipe; native producer publishes across threads; owner queries final100x33 while child lives; SDK signal disposition unchanged; joined/reaped/closed: pass\n"),
  ("--m2-tty-resize","M2 TTY resize: real kernel sizes; 10000 Host notifications coalesce to latest query; bounded storage and single revision; unwatch rejects late producer; cleanup: pass\n"),
@@ -98,8 +99,14 @@ def run_supplied(args,report,directory,artifacts,loader):
             cleanup=not windows or native is not None and not native['timed_out'] and native['exit_code']==0 and not native['error'] and all(native['cleanup'].values())
             measured_mode=mode in ('--m2-tty-lease','--m2-tty-join-js')
             snapshots=mode_readback(work) if measured_mode else None
+            alias=None
+            if mode=='--m2-tty-controlling-alias' and (work/'tty-controlling-alias.json').exists():
+                alias=json.loads((work/'tty-controlling-alias.json').read_text())
+                a,b,c=alias['pts'],alias['dev_tty'],alias['unrelated']
+                if (a['dev'],a['ino'],a['rdev'])==(b['dev'],b['ino'],b['rdev']) or a['tcgetsid']<=0 or a['tcgetsid']!=b['tcgetsid'] or c['tcgetsid']==a['tcgetsid'] or alias['alias_conflict_code']!=4 or alias['unrelated_lease_code']!=0 or alias['same_terminal_join_code']!=0 or alias['full_restore_readback'] is not True:raise BuildError('Actual controlling-terminal alias identity and independent-PTY facts required')
             passed=executed['exit_code']==0 and not executed['timed_out'] and raw_stdout==expected.encode() and not raw_stderr and cleanup and (not measured_mode or snapshots is not None)
-            report['cases'].append({'case_id':name,'status':'pass' if passed else 'fail','required':True,'controlled_system_fixture':fault,'command':executed,'expected':{'exit_code':0,'stdout':expected,'stderr':''},'actual':{'exit_code':executed['exit_code'],'stdout':stdout,'stderr':stderr,'timed_out':executed['timed_out']},'native_console':native,'full_mode_readback':snapshots,'artifact':before,'sdk_sha256':report['sdk']['sha256'],'scope':'Current supplied public SDK; private PTY/ConPTY are Host fixtures, not public creation APIs'})
+            if mode=='--m2-tty-controlling-alias' and alias is None:passed=False
+            report['cases'].append({'case_id':name,'status':'pass' if passed else 'fail','required':True,'controlled_system_fixture':fault,'command':executed,'expected':{'exit_code':0,'stdout':expected,'stderr':''},'actual':{'exit_code':executed['exit_code'],'stdout':stdout,'stderr':stderr,'timed_out':executed['timed_out']},'native_console':native,'full_mode_readback':snapshots,'controlling_alias':alias,'artifact':before,'sdk_sha256':report['sdk']['sha256'],'scope':'Current supplied public SDK; private PTY/ConPTY are Host fixtures, not public creation APIs'})
         if identity(artifact)!=before:raise BuildError('TTY consumer artifact changed during execution')
 
 def console_child(args):

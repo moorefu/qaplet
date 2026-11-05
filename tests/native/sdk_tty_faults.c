@@ -56,7 +56,7 @@ bool32 __wrap_WriteConsole(int64_t handle,const void *text,uint32_t n,uint32_t *
 static int restore_failure(void){
   int master=-1,slave=-1,saved=-1,saved_output=-1;int64_t original=0,console=0,original_output=0,output=0;struct termios before,after;uint32_t mode=0,output_mode=0,checked=0;
   if(IsWindows()){original=GetStdHandle(-10);console=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);CHECK(console!=-1 && GetConsoleMode(console,&mode) && SetStdHandle(-10,console));}
-  else{saved=dup(0);CHECK(saved>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
+  else{saved=dup(0);CHECK(saved>=0 && !private_pty(&master,&slave) && dup2(slave,0)==0 && !tcgetattr(slave,&before));}
   if(IsWindows()){output=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);original_output=GetStdHandle(-11);CHECK(output!=-1 && GetConsoleMode(output,&output_mode) && SetStdHandle(-11,output));}
   else{saved_output=dup(1);CHECK(saved_output>=0 && dup2(slave,1)==1);}
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL,*other=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
@@ -166,7 +166,7 @@ static int control_lifetime(int fail_start){
   puts(fail_start ? "controlled TTY control startup: pthread EAGAIN refuses lease before mode mutation; original errno and OPEN retained; no accepted endpoint/helper; retry succeeds and all native resources retire: pass" : "controlled TTY control exit: real control-thread TLS destructor retains one helper/handle/requested stack after JS close; zero quiesce pending and destroy BUSY; actual exit/join retires control resource: pass");return 0;
 }
 static int io_error(void){
-  CHECK(!IsWindows());int master,slave,saved[2]={dup(0),dup(1)};struct termios before,after;CHECK(saved[0]>=0 && saved[1]>=0 && !openpty(&master,&slave,NULL,NULL,NULL) && !tcgetattr(slave,&before) && dup2(slave,0)==0 && dup2(slave,1)==1);
+  CHECK(!IsWindows());int master,slave,saved[2]={dup(0),dup(1)};struct termios before,after;CHECK(saved[0]>=0 && saved[1]>=0 && !private_pty(&master,&slave) && !tcgetattr(slave,&before) && dup2(slave,0)==0 && dup2(slave,1)==1);
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.operations=2;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   qaplet_tty_options raw=QAPLET_TTY_OPTIONS_INIT,vt=QAPLET_TTY_OPTIONS_INIT;raw.flags=QAPLET_TTY_RAW;vt.flags=QAPLET_TTY_VT;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint input=QAPLET_IO_ENDPOINT_INIT,output=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_tty_acquire(r,0,&raw,&input,&status,NULL)==QAPLET_OK && qaplet_tty_join(r,&input,1,&vt,&output,&status,NULL)==QAPLET_OK);
   qaplet_io_operation in=QAPLET_IO_OPERATION_INIT,out=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_read(r,&input,4,&in,NULL)==QAPLET_OK && qaplet_io_write(r,&output,"data",4,&out,NULL)==QAPLET_OK);atomic_store(&fail_terminal_read,1);

@@ -558,6 +558,9 @@ token、共享 operation/data、native handle/registration 和 helper 限额。�
 标准路由必须是相同终端；`join` 明确将另一个 stream 加入已有独占组，不打开隐藏
 CONIN$/CONOUT$。第二个独立租约（含另一个 SDK Runtime）拒绝终端别名冲突；跨进程、
 分别加载的 SDK 副本及 SDK 外原生修改仍由 Host 协调。原标准句柄始终借用不关闭。
+POSIX 除真实 fstat dev/ino/rdev，还使用针对该端点的正值 `tcgetsid(fd)` 作为控制终端
+别名佐证；不是普通 `getsid(0)` 或“同一进程即同一终端”。`/dev/tty` 与控制 pts 的
+不同 fstat、相同终端查询有独立红绿；同进程/session 的无关 PTY 仍可同时租用。
 
 JS 扩展既有 `qaplet:stdio`：`acquireTerminal(stream,{raw,vt})` 返回 IO facade，
 `joinTerminal` 加入输出，`getSize/watchResize/unwatchResize/releaseTerminal` 提供
