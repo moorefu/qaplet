@@ -586,6 +586,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
     peak(r->native_handles,&r->native_handles_peak); peak(r->reactor_registrations,&r->reactor_registrations_peak); ++r->process_snapshot.helper_threads;
     r->process_snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;
     ++r->helper_threads; r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;
+    peak(r->helper_threads,&r->helper_threads_peak); peak(r->helper_stack_bytes,&r->helper_stack_bytes_peak);
     peak(r->process_snapshot.helper_threads,&r->process_snapshot.helper_threads_peak); peak(r->process_snapshot.helper_stack_bytes,&r->process_snapshot.helper_stack_bytes_peak);
   }
   pthread_mutex_unlock(&r->mutex);
@@ -685,7 +686,7 @@ qaplet_code qaplet_get_process_snapshot(qaplet_runtime *r,qaplet_process_snapsho
   pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
 }
 qaplet_code qaplet_process_get_stdio(qaplet_runtime *r,const qaplet_process *t,uint32_t stream,qaplet_io_endpoint *out,qaplet_diagnostic *d) {
-  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));
+  qaplet_code code=qaplet_check_diagnostic(d);if(code)return code;if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));
   if(!code && stream>2)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);process_slot *s=lookup_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!s || r->snapshot.lifecycle==QAPLET_CLOSED)code=QAPLET_INVALID_HANDLE;

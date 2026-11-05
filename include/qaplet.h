@@ -577,6 +577,22 @@ qaplet_code qaplet_io_copy_result(qaplet_runtime *,const qaplet_io_operation *,q
 qaplet_code qaplet_io_release(qaplet_runtime *,const qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_diagnostic *);
 
+/* Additional M2 resource POD; existing snapshot layouts remain unchanged.
+ * Any thread, including CLOSED; full versioned size required. Operation data
+ * is a subset of native_storage_bytes. Helpers include Process, file/Console
+ * IO and the bounded Console join controller through their real exit/join.
+ * Stack bytes are requested OS thread stacks, separate from SDK heap and RSS.
+ * Peaks survive pool retirement. Separate query calls are not one transaction. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t operations, operations_peak, operation_data_bytes, operation_data_bytes_peak;
+  uint64_t io_endpoints, io_endpoints_peak, io_operations, io_operations_peak;
+  uint64_t io_data_bytes, io_data_bytes_peak;
+  uint64_t helper_threads, helper_threads_peak, helper_stack_bytes, helper_stack_bytes_peak;
+} qaplet_resource_snapshot;
+#define QAPLET_RESOURCE_SNAPSHOT_INIT {sizeof(qaplet_resource_snapshot),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+qaplet_code qaplet_get_resource_snapshot(qaplet_runtime *,qaplet_resource_snapshot *,qaplet_diagnostic *);
+
 /* Explicit Host standard streams (0 stdin, 1 stdout, 2 stderr), M2 only.
  * inspect classifies the real current fd / Win32 GetStdHandle independently
  * of attach support. Creation never inspects, duplicates or changes stdio.

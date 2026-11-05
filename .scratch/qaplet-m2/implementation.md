@@ -364,3 +364,12 @@ local_complete/cross_deferred，本地可放行19/20，未由merger领取；旧�
 共享文件按必要接口协调，不增加19→20边。19的旧IO诊断样式风险先公开证伪，不预称缺陷。
 20完成并独立合入才放行21，随后21→22、19/22→23。当前领取不等于本地完成；
 父spec、原38边/135AC、正式Cross/Full/实际64K/长测和最终整体Review保持待验，不push/CI。
+
+2026-11-05（19本地预算/观测/首因）：产品冻结1c4a91c，旧IO诊断以公开SDK16入口
+canary/HostNotify在Linux及同字节Windows真实red后最小前置修复；新增独立resource POD
+补共享helper和IO当前/持久峰值，保留旧ABI布局。小公开额度联立timer/token/handler/Work/
+child/stdio、8MiB子额与原生总额/环境、cancel/C保留/physical容量及8种混合永久故障首因
+已公开验证；原ZIP包外真实TTY/Console+Work、环境增量也单列。当前normal214/213+optional1、
+package99/99、fault25/26通过，完整当前TTY及工具/原件/失败见[19验证记录](19-aggregate-validation.md)。
+保持claimed/local_complete/cross_deferred，交独立merger，不自合root；正式矩阵/实际64K/
+CI/Full/长测、父M2及整体Review继续待验，原Blocked by/AC和父spec不改。
