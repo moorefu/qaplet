@@ -505,7 +505,7 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
-    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime) || qaplet_io_ready_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
+    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime) || qaplet_io_ready_locked(runtime) || qaplet_io_issuable_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
     if (!continuous && !remaining) {
       reason = QAPLET_DRIVE_WAIT_TIMEOUT;
       pthread_mutex_unlock(&runtime->mutex); break;

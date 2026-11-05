@@ -12,6 +12,9 @@ void qaplet_io_shutdown(qaplet_runtime *,int closing);
 void qaplet_io_collect(qaplet_runtime *);
 unsigned qaplet_io_pump(qaplet_runtime *,uint64_t *);
 int qaplet_io_ready_locked(qaplet_runtime *);
+/* Native requests accepted from JS after this pump's issue phase must be
+ * issued before sleeping. POSIX EAGAIN pipes still wait for fd readiness. */
+int qaplet_io_issuable_locked(qaplet_runtime *);
 int qaplet_io_referenced_locked(qaplet_runtime *);
 unsigned qaplet_io_handoff(qaplet_runtime *,uint64_t);
 /* Release JS handoffs after the complete Promise jobs checkpoint. No JS. */
