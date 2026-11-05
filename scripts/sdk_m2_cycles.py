@@ -48,6 +48,13 @@ def inspect(stdout, stderr, exit_code, mode, requested):
     frozen = [row for row in rows if row.get("baseline_frozen")]
     baseline_keys = ("baseline_operations", "baseline_data_bytes", "baseline_timers", "baseline_processes",
                      "baseline_io_endpoints", "baseline_handles", "baseline_helpers", "baseline_workers")
+    if final.get("fixture_protocol_version") == 9:
+        baseline_keys += ("baseline_keepalive_tokens",)
+        if (not final["observer_identity_verified"] or final["baseline_keepalive_tokens"] or
+                any(final[key] for key in ("quiescent_helpers", "quiescent_workers", "quiescent_keepalive_tokens"))):
+            raise ValueError("Actual native identity and token/worker/helper cleanup facts are required")
+        if final["observer_resolutions"] != (1 if final["os_resource_source"].startswith("GetProcessHandleCount") else 0):
+            raise ValueError("The Windows observer must resolve its borrowed module APIs once")
     if frozen and any(tuple(row[key] for key in baseline_keys) != tuple(frozen[0][key] for key in baseline_keys)
                       for row in frozen):
         raise ValueError("Frozen OPEN resource baseline changed")

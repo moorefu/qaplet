@@ -69,3 +69,14 @@ original C stdout/stderr and terminal bytes are all retained.
 the small read-only inspector shared by the native, guest and Full consumers.
 Build success, these short fixture checks, and guest export do not certify the
 five-native matrix, a one-hour soak, or release readiness.
+
+Protocol C9 resolves Windows observer APIs once from a borrowed, already-loaded
+`kernel32.dll`, caches verified native PID/TID, and fails when any required API
+is unavailable. It never increments DLL references for sampling or silently
+substitutes a POSIX identifier. [`GetModuleHandleW`](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandlew)
+does not add a module reference. Thread enumeration accepts only the documented
+[`ERROR_NO_MORE_FILES` end condition](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-thread32next);
+`/proc` directory errors also fail rather than accepting partial counts.
+The raw idle waits include their actual pre-call timer count/ref count and drive
+reason. OPEN keepalive tokens must be exactly zero, and final raw observations
+separately show zero quiescent worker/helper/token counts.
