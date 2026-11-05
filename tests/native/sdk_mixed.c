@@ -48,11 +48,14 @@ static qaplet_code mixed_work(qaplet_work_context *context,const void *input,siz
 static void wait_entered(mixed_gate *g) { pthread_mutex_lock(&g->mutex);while(!g->entered)pthread_cond_wait(&g->condition,&g->mutex);pthread_mutex_unlock(&g->mutex); }
 static unsigned probe_cancel(mixed_gate *g) { pthread_mutex_lock(&g->mutex);++g->probe;pthread_cond_broadcast(&g->condition);while(g->probed!=g->probe)pthread_cond_wait(&g->condition,&g->mutex);unsigned result=g->cancelled;pthread_mutex_unlock(&g->mutex);return result; }
 static void release_work(mixed_gate *g) { pthread_mutex_lock(&g->mutex);g->released=1;pthread_cond_broadcast(&g->condition);pthread_mutex_unlock(&g->mutex); }
+typedef struct { unsigned calls;FILE *resource; } mixed_binding;
+static unsigned forbidden_calls;
 static qaplet_code mark(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
-  (void)r;(void)call;(void)argc;(void)argv;mixed_gate *g=opaque;++g->calls;return g->magic==0x1234abcd ? QAPLET_OK : QAPLET_HOST_ERROR;
+  (void)r;(void)call;(void)argc;(void)argv;mixed_binding *binding=opaque;++binding->calls;
+  return fputc('B',binding->resource)!=EOF ? QAPLET_OK : QAPLET_HOST_ERROR;
 }
 static qaplet_code forbidden(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
-  (void)r;(void)call;(void)argc;(void)argv;++((mixed_gate *)opaque)->forbidden;return QAPLET_OK;
+  (void)r;(void)call;(void)argc;(void)argv;(void)opaque;++forbidden_calls;return QAPLET_OK;
 }
 static unsigned echo_calls;
 static qaplet_code echo_work(qaplet_work_context *context,const void *input,size_t n,qaplet_work_output *output,void *opaque) {
@@ -60,13 +63,13 @@ static qaplet_code echo_work(qaplet_work_context *context,const void *input,size
   if(n!=1 || !output->capacity)return QAPLET_HOST_ERROR;
   __atomic_add_fetch(&echo_calls,1,__ATOMIC_RELAXED);*(unsigned char *)output->data=*(const unsigned char *)input;output->length=1;return QAPLET_OK;
 }
-static int register_mixed(qaplet_runtime *r,mixed_gate *g) {
+static int register_mixed(qaplet_runtime *r,mixed_gate *g,mixed_binding *binding) {
   qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="held";h.name_length=4;h.function=mixed_work;h.userdata=g;h.input_bytes=1;h.output_bytes=1;
   CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);
   h.name="echo";h.function=echo_work;CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);
   qaplet_host_export e[2]={QAPLET_HOST_EXPORT_INIT,QAPLET_HOST_EXPORT_INIT};
-  e[0].name="mark";e[0].name_length=4;e[0].kind=QAPLET_HOST_FUNCTION;e[0].function=mark;e[0].userdata=g;
-  e[1].name="forbidden";e[1].name_length=9;e[1].kind=QAPLET_HOST_FUNCTION;e[1].function=forbidden;e[1].userdata=g;
+  e[0].name="mark";e[0].name_length=4;e[0].kind=QAPLET_HOST_FUNCTION;e[0].function=mark;e[0].userdata=binding;
+  e[1].name="forbidden";e[1].name_length=9;e[1].kind=QAPLET_HOST_FUNCTION;e[1].function=forbidden;e[1].userdata=binding;
   qaplet_host_module m=QAPLET_HOST_MODULE_INIT;m.name="host:mixed";m.name_length=10;m.exports=e;m.export_count=2;
   CHECK(qaplet_register_host_module(r,&m,NULL)==QAPLET_OK);return 0;
 }
@@ -159,10 +162,13 @@ static int restored_stdio(mixed_stdio *f) {
 
 static int stop_mixed(const char *self,const char *loader,const char *native_child,int terminal,int nonreturning,int races) {
   mixed_gate g=MIXED_GATE_INIT;unsigned notices=0;
+  mixed_binding *binding=calloc(1,sizeof(*binding));CHECK(binding);
+  int binding_fd=open("./mixed-binding",O_RDWR|O_CREAT|O_TRUNC,0600);CHECK(binding_fd>=0);
+  binding->resource=fdopen(binding_fd,"w+b");CHECK(binding->resource);
   mixed_stdio fixture;CHECK(!prepare_stdio(&fixture,terminal));
   qaplet_config b=QAPLET_CONFIG_INIT;b.limits.event_queue_slots=1;
   qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.worker_threads=1;
-  qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && !register_mixed(r,&g));
+  qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && !register_mixed(r,&g,binding));
   qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=MIXED_NOTIFY;hook.userdata=&notices;
   CHECK(qaplet_set_host_notify(r,&hook,NULL)==QAPLET_OK);
   qaplet_io_endpoint stdio=QAPLET_IO_ENDPOINT_INIT,tty=QAPLET_IO_ENDPOINT_INIT;
@@ -204,7 +210,7 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
    * not cancel queued records or start owner resource shutdown. */
   CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && work.running==1 && work.queued==1 && work.cancelled==prior_cancelled && probe_cancel(&g));
   CHECK(qaplet_get_process_status(r,&child,&child_state,NULL)==QAPLET_OK && !child_state.exited && !child_state.code);
-  CHECK(qaplet_get_timer_snapshot(r,&timers,NULL)==QAPLET_OK && timers.current==1 && !g.forbidden);
+  CHECK(qaplet_get_timer_snapshot(r,&timers,NULL)==QAPLET_OK && timers.current==1 && !forbidden_calls);
   qaplet_io_status io_state=QAPLET_IO_STATUS_INIT;
   CHECK(qaplet_get_io_status(r,&file_write,&io_state,NULL)==QAPLET_OK && io_state.state==QAPLET_IO_PENDING);
   if(terminal) { qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;CHECK(qaplet_get_tty_status(r,&tty,&status,NULL)==QAPLET_OK && status.active && !status.restored); }
@@ -215,9 +221,12 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
   CHECK(qaplet_get_timer_snapshot(r,&timers,NULL)==QAPLET_OK && !timers.current);
   double until=milliseconds()+5000;
   do { CHECK(qaplet_process_get_status(r,&child,&child_state,NULL)==QAPLET_OK);if(child_state.reaped)break; } while(milliseconds()<until);
-  CHECK(child_state.reaped && child_state.exited && child_state.code==QAPLET_CANCELLED && !g.forbidden);
+  CHECK(child_state.reaped && child_state.exited && child_state.code==QAPLET_CANCELLED && !forbidden_calls);
   MIXED_FAULT_STAGE(2,r);
-  CHECK(qaplet_close(r,NULL)==MIXED_CLEANUP_CODE && !g.forbidden && g.calls==1);
+  CHECK(qaplet_close(r,NULL)==MIXED_CLEANUP_CODE && !forbidden_calls && binding->calls==1);
+  /* Old synchronous Host binding storage is no longer needed after close.
+   * Its independent resource/data are actually freed while work still uses g. */
+  CHECK(!fflush(binding->resource) && ftell(binding->resource)==1 && !fclose(binding->resource) && !unlink("./mixed-binding"));free(binding);
   CHECK(qaplet_get_process_status(r,&child,&child_state,NULL)==QAPLET_INVALID_HANDLE && qaplet_get_io_status(r,&read,&io_state,NULL)==QAPLET_INVALID_HANDLE && qaplet_get_io_status(r,&file_write,&io_state,NULL)==QAPLET_INVALID_HANDLE);
   CHECK(qaplet_get_m2_snapshot(r,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && !state.engine_current_bytes && state.native_state==QAPLET_NATIVE_CLEANING);
   for(unsigned i=0;i<3;++i) {
@@ -236,9 +245,16 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
     fflush(stdout);exit(0); /* Host supervisor ends the fixture, not SDK cleanup. */
   }
   release_work(&g);MIXED_FAULT_STAGE(3,r);
+  if(MIXED_UNKNOWN) {
+    /* A retained cleanup error deliberately ends active waiting. Repeated
+     * public zero-wait collection still joins every independently safe worker. */
+    double until=milliseconds()+5000;
+    do { CHECK(qaplet_quiesce(r,0,&drive,NULL)==MIXED_CLEANUP_CODE && qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK);if(!work.worker_threads)break; }while(milliseconds()<until);
+    CHECK(!work.worker_threads && !work.operations && !work.data_bytes);
+  }
   CHECK(qaplet_quiesce(r,5000,&drive,NULL)==MIXED_CLEANUP_CODE && drive.reason==(MIXED_UNKNOWN ? QAPLET_DRIVE_WAIT_TIMEOUT : QAPLET_DRIVE_QUIESCENT));
   CHECK(qaplet_get_m2_snapshot(r,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && !state.native_handles && state.native_uncertain_handles==MIXED_UNKNOWN && !state.reactor_registrations);
-  CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && !work.operations && !work.worker_threads && !work.data_bytes && g.entered==1 && g.exited==1 && g.cancelled && !g.forbidden && notices);
+  CHECK(qaplet_get_work_snapshot(r,&work,NULL)==QAPLET_OK && !work.operations && !work.worker_threads && !work.data_bytes && g.entered==1 && g.exited==1 && g.cancelled && !forbidden_calls && notices);
   /* All future producers were withdrawn and joined above. Host-owned binding,
    * work and notify storage is released only after its respective barrier. */
   MIXED_FAULT_STAGE(4,r);

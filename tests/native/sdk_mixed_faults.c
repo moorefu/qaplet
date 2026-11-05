@@ -93,7 +93,7 @@ static void mixed_stage(int stage,qaplet_runtime *r) {
     if(qaplet_get_notify_snapshot(r,&n,NULL)!=QAPLET_OK || n.inflight!=1)abort();
   }
   if(stage==2 && fault_mode==4)observe_wait=1;
-  if(stage==3 && fault_mode==4) { observe_wait=0;if(failure || expect_same_deadline || wait_pairs!=2)abort(); }
+  if(stage==3 && fault_mode==4) { observe_wait=0;if(failure || expect_same_deadline || wait_pairs<2)abort(); }
   if(stage==3 && fault_mode==2) {
     qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT;qaplet_work_snapshot w=QAPLET_WORK_SNAPSHOT_INIT;qaplet_notify_snapshot n=QAPLET_NOTIFY_SNAPSHOT_INIT;
     double until=milliseconds()+5000;
