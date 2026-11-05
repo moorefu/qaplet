@@ -338,6 +338,7 @@ def package_consume(args, report, directory):
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "js-process-build", output, js_faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
@@ -433,6 +434,19 @@ def package_consume(args, report, directory):
                 "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "controlled_system_fixture": True, "platforms": platforms,
                 "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
+    if args.operation == "fault-consume" and os.name == "nt":
+        artifact = output / "qaplet-js-process-faults.com"
+        for mode, expected, platforms in JS_PROCESS_FAULT_CASES:
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [artifact, mode, artifact, "-"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Public JS Process/IO system boundary, compiled outside source from the sealed SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -624,6 +638,9 @@ PROCESS_FAULT_CASES = (
     ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
     ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
 )
+JS_PROCESS_FAULT_CASES = (
+    ("--m2-process-js-start-fault", "M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass\n", ["Windows"]),
+)
 IO_FAULT_CASES = (
     ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
     ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
@@ -635,19 +652,19 @@ IO_FAULT_CASES = (
 )
 
 
-def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False):
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False, js_faults=False):
     """Public package-only Process application; wrapped OS fixture is separate."""
     (work / "tmp").mkdir(parents=True)
-    name = "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
+    name = "qaplet-js-process-faults" if js_faults else "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
     source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
-    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    symbols = ("pthread_create",) if js_faults else ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
-    report["io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+    report["js_process_controlled_system_fixture" if js_faults else "io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
         "source": identity(source), "include_directories": [str(sdk / "include")],
         "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
-        "wrapped_symbols": list(symbols), "scope": "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
-    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "wrapped_symbols": list(symbols), "scope": "public JS Process/IO with controlled pthread start failure" if js_faults else "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE", *(["-DSDK_JS_START_FAULT"] if js_faults else []),
         "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
         args.compile_timeout, work, environment)
     link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],

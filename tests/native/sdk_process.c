@@ -906,7 +906,7 @@ static int js_issue(void) {
 }
 static int js_closed_case_limits(const char *mode,const char *source,int tiny) {
   qaplet_process_options o;prepare(&o,mode);qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
-  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;if(tiny){m.limits.operations=2;m.limits.operation_data_bytes=8;m.limits.io_block_bytes=4;}qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;if(tiny){m.limits.operations=2;m.limits.operation_data_bytes=8;m.limits.io_block_bytes=4;}else if(!strcmp(mode,"--partial-input"))m.limits.io_block_bytes=1048576;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   if(tiny){qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="quota";h.name_length=5;h.function=io_quota_work;h.input_bytes=3;h.output_bytes=1;CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);}
   char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;
   qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
@@ -935,6 +935,33 @@ static int js_cycles(void) {
   for(unsigned i=0;i<100;++i)CHECK(!js_io_cancel(1));
   puts("M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass");return 0;
 }
+#ifdef SDK_JS_START_FAULT
+static _Atomic int js_fail_next_thread;
+int __real_pthread_create(pthread_t *,const pthread_attr_t *,void *(*)(void *),void *);
+int __wrap_pthread_create(pthread_t *thread,const pthread_attr_t *attr,void *(*function)(void *),void *userdata) {
+  if(atomic_exchange(&js_fail_next_thread,0))return EAGAIN;
+  return __real_pthread_create(thread,attr,function,userdata);
+}
+static qaplet_code js_arm_start(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)r;(void)call;(void)argc;(void)argv;(void)opaque;atomic_store(&js_fail_next_thread,1);return QAPLET_OK;
+}
+static int js_start_fault(void) {
+  CHECK(IsWindows());qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_host_export item=QAPLET_HOST_EXPORT_INIT;item.name="arm";item.name_length=3;item.kind=QAPLET_HOST_FUNCTION;item.function=js_arm_start;
+  qaplet_host_module module=QAPLET_HOST_MODULE_INIT;module.name="host:io-start";module.name_length=13;module.exports=&item;module.export_count=1;CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+  char source[1800];snprintf(source,sizeof(source),"Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('host:io-start')]).then(async ([{spawn},{argv},{arm}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});arm();try{p.stdout.read(1);throw Error('missing OS start refusal')}catch(e){if(e.code!==%d||e.errorDomain!==%u||e.error!==%d)throw Error('start error fields '+e.code+':'+e.errorDomain+':'+e.error)}"
+    "try{p.stdout.read(0);throw Error('missing input refusal')}catch(e){if(e.code!==1||e.errorDomain!==0||e.error!==0)throw Error('stale OS error')}"
+    "if((await p.stdout.read(1).promise).bytes[0]!==82)throw Error('recovery');p.stdin.finish();for(const endpoint of [p.stdout,p.stderr])for(;;){if((await endpoint.read(1).promise).eof)break}"
+    "if((await p.exited).exitCode!==37)throw Error('exit');await p.closed;return 42})",QAPLET_IO_ERROR,QAPLET_ERROR_DOMAIN_ERRNO,EAGAIN);
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);if(!code)code=qaplet_run(r,&drive,&d);if(code)fprintf(stderr,"JS IO start code=%d diagnostic=%s\n",code,message);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.accepted==3 && !io.shared_operations && !io.shared_data_bytes;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(passed && !atomic_load(&js_fail_next_thread));
+  puts("M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass");return 0;
+}
+#endif
 static int js_liveness(void) {
   qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;b.limits.engine_heap_bytes=1024*1024;
   qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
@@ -1015,8 +1042,8 @@ static int js_backpressure(void) {
 static int js_partial(void) {
   const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
     "const p=spawn(argv[0],{argv:[...argv]});if((await p.stdout.read(1).promise).bytes[0]!==82)throw Error('ready');"
-    "const w=p.stdin.write(new Uint8Array(65536).fill(90));const e=await w.promise.then(()=>{throw Error('missing partial error')},e=>e);"
-    "if(e.code!==30||!e.errorDomain||!e.error||e.bytesWritten<4096||e.bytesWritten>=65536)throw Error('partial bytes '+e.bytesWritten);"
+    "const w=p.stdin.write(new Uint8Array(1048576).fill(90));const e=await w.promise.then(()=>{throw Error('missing partial error')},e=>e);"
+    "if(e.code!==30||!e.errorDomain||!e.error||e.bytesWritten<4096||e.bytesWritten>=1048576)throw Error('partial bytes '+e.bytesWritten);"
     "await p.stdin.closed;for(const endpoint of [p.stdout,p.stderr])for(;;){if((await endpoint.read(16).promise).eof)break}"
     "if((await p.exited).exitCode!==37)throw Error('consumption');await p.closed;try{p.cancel();throw Error('completion cancel')}catch(e){if(e.code!==29)throw e}return 42})";
   CHECK(!js_closed_case("--partial-input",source));puts("M2 process JS partial write: controlled 4096-byte consumer; stable native error and actual accepted byte count; completion-first cancel; ordinary error cleanup: pass");return 0;
@@ -1085,8 +1112,10 @@ static int child(int argc,char **argv) {
      * A full write into a 64K kernel pipe is also valid OS acceptance, so it
      * cannot prove the partial-error contract without this explicit capacity. */
     /* Linux UAPI F_LINUX_SPECIFIC_BASE(1024)+7; the pinned portable header
-     * omits this Linux-only fixture control. Never use it on another OS. */
-    if(IsLinux())CHECK(fcntl(0,1031,4096)==4096);
+     * omits this Linux-only fixture control. Use one actual kernel page so
+     * this fixture also works on a 64K kernel. Its public IO block override
+     * is 1MiB, greater than that capacity. Never use this command on another OS. */
+    if(IsLinux()){long page=sysconf(_SC_PAGESIZE);CHECK(page>0 && fcntl(0,1031,page)==page);}
     CHECK(write(1,"R",1)==1);
     while(total<sizeof(data)){ssize_t n=read(0,data+total,sizeof(data)-total);if(n<=0)return 98;total+=n;}
     for(size_t i=0;i<sizeof(data);++i)if(data[i]!=0x5a)return 98;
@@ -1136,6 +1165,9 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+#ifdef SDK_JS_START_FAULT
+  if (!strcmp(argv[1],"--m2-process-js-start-fault")) {int result=js_start_fault();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+#endif
   if (!strcmp(argv[1],"--m2-process-js-cycles")) {int result=js_cycles();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
   if (!strcmp(argv[1],"--m2-process-js-liveness")) {int result=js_liveness();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
   if (!strcmp(argv[1],"--m2-process-js-io-cancel")) {int result=js_io_cancel(0);CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}

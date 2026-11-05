@@ -63,10 +63,37 @@ PROCESS_IO。STDIO 常量和状态/ref 基础由 17 共享，未完成 17 时不
   14.98s，Linux约数秒，具体原件保留实际时长。
 - `combined-quick-*`：JS Work 与 IO 共用 2 个 operation / 8 个预留字节，
   BUSY 优先，拒绝无部分接受，完整 checkpoint 后额度归还。
+- `final-smoke-*` 中新增普通完成回调 Error 后，Runtime 仍 OPEN 却丢失了
+  现有 Process/IO；原 `pump`/`run` 在任何错误上无条件 shutdown。`ba7c030`
+  仅对非 OPEN 的终止状态取消，`ordinary-green-*` 与后续 run/pump 两路径
+  均能继续求值 42，原 C terminal/stop/dispatch/OOM 清理保持通过。
+- `finish-direction-red-*`：关闭后的读端点 finish 被误当成幂等成功。
+  `54f9d31` 将方向校验置于 closed 幂等前，双平台 green 与公开 C BAD_STATE 一致。
+- 17 的 `4bf3fa4`（本分支 `91b3598`）为 C owner 闲置关闭增加预留的
+  control 完成记录：owner 只读公开 POD，按既有 IO provider/32 交付单元和
+  完整 jobs 检查点交付 closed；`1ced9ec`（本分支 `49a24f4`）将其计入既有
+  IO pending_handoffs，无新公开布局。`control-fusion-*` 全重编后的 13 个
+  JS Process 用例通过，循环也再次通过；这些仍保留自己的候选源码范围。
+- `io-start-red-windows`：公开 JS spawn 后由 Host 精确令下一次 pthread_create
+  返回 EAGAIN，JS 旧错误为 code 30 / domain 0 / native 0。`86abf4f` 仅在本次
+  IO_ERROR 时读取公开 start-error snapshot，green 保留 ERRNO/EAGAIN，失败未
+  计 accepted、下一次 IO 恢复并实际完成清理。参数等拒绝不携带旧 OS 错误。
+  此夹具随 host-process.c 的独立条件分支分发，fault consumer 单独链接受控
+  pthread 边界；正常 SDK/CLI/Host 不含该 wrap。
+
+部分写最终夹具使用公开 io_block_bytes=1 MiB 的有限覆盖配置，默认值仍是
+64 KiB；Linux pipe 显式缩为一个实际内核页，不能把页大小固定为 4096。
+child 确认消费 4096 字节后关闭，实际已写量严格在消费量与 1 MiB 请求量之间。
+这修正了在实际 64K 内核上“一个 pipe 页就是整个 64K 请求”的夹具假设；
+当前未执行 64K 产品，不据此宣称该目标通过。
 
 候选 `iterate.py` 每次布局/Runtime 源变化都重编全部 Runtime 源单元，
 只复用不变 QuickJS 对象；仅改 Host 时逐字核对所有 Runtime/header 和旧 archive。
 这些输出明确标记 exploratory-candidate，不能替代最终供应 ZIP/SDK 成绩。
+早期 Windows 候选 receipt 的 page_size=4096 是字面占位值，不是实测，不能
+作为平台验收；后续候选改为 mmap.PAGESIZE。最终验收以 SDK native facts 和
+实际 Host 测量为准。带 DEBUG 前缀的旧候选仅验证 C 断言，最终 catalog 仍要求
+精确 stdout、空 stderr；旧调试日志不改写。
 
 ## 最终验证与保留范围
 
