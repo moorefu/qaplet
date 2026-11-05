@@ -14,6 +14,66 @@ import sdk_m2_soak
 
 
 class FullObservationContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_C9_CYCLE_REPORT'), 'Actual current C9 cycle soak required')
+    def test_actual_c9_requires_identity_quiescent_counts_and_ref_wait_metadata(self):
+        report = json.loads(Path(os.environ['QAPLET_M2_C9_CYCLE_REPORT']).read_text(encoding='utf-8'))
+        case = report['cases'][0]
+        rows = [json.loads(line) for line in Path(case['progress']['path']).read_bytes().splitlines()]
+        sdk_m2_soak.inspect_protocol(rows, case['observations'], required=True)
+        for key in ('fixture_protocol_version', 'observer_identity_verified', 'baseline_keepalive_tokens',
+                    'quiescent_helpers', 'quiescent_workers', 'quiescent_keepalive_tokens'):
+            changed = copy.deepcopy(rows)
+            del changed[-1][key]
+            with self.subTest(missing=key), self.assertRaises(ValueError):
+                sdk_m2_soak.inspect_protocol(changed, changed[-1], required=True)
+        raw_waits = Path(case['waits']['path']).read_bytes()
+        sdk_m2_soak.inspect_waits(raw_waits, case['observations'], required_protocol=True)
+        waits = [json.loads(line) for line in raw_waits.splitlines()]
+        for key in ('timer_current_before', 'timer_referenced_before', 'drive_reason'):
+            for missing in (True, False):
+                changed = copy.deepcopy(waits)
+                if missing:
+                    del changed[0][key]
+                else:
+                    changed[0][key] = 0
+                with self.subTest(wait_field=key, missing=missing), self.assertRaises(ValueError):
+                    sdk_m2_soak.inspect_waits(('\n'.join(json.dumps(row) for row in changed)+'\n').encode(),
+                                             case['observations'], required_protocol=True)
+
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_CYCLE_SOAK_REPORT'), 'Actual historical C8 cycle soak required')
+    def test_actual_legacy_protocol_cannot_be_used_as_c9_full(self):
+        report = json.loads(Path(os.environ['QAPLET_M2_CYCLE_SOAK_REPORT']).read_text(encoding='utf-8'))
+        case = report['cases'][0]
+        rows = [json.loads(line) for line in Path(case['progress']['path']).read_bytes().splitlines()]
+        with self.assertRaises(ValueError):
+            sdk_m2_soak.inspect_protocol(rows, case['observations'], required=True)
+
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_FULL_SELECTION'), 'Four actual Full originals required')
+    def test_actual_full_join_rejects_missing_duplicate_failed_and_contradictory_originals(self):
+        selection_path = Path(os.environ['QAPLET_M2_FULL_SELECTION'])
+        selection = json.loads(selection_path.read_text(encoding='utf-8'))
+        resolve = sdk_m2_soak.EvidencePaths(selection, selection_path.parent).resolve
+        paths = [resolve(path) for path in selection['reports']]
+        self.assertEqual(sdk_m2_soak.aggregate_native_reports(paths, resolve)['status'], 'pass')
+        for missing in (paths[:-1], [paths[0], paths[0], *paths[2:]]):
+            with self.assertRaises(ValueError):
+                sdk_m2_soak.aggregate_native_reports(missing, resolve)
+        original = json.loads(paths[0].read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as temporary:
+            for field, value in [('status', 'fail'), ('status', 'skipped'), ('status', 'not_run'),
+                                 ('scope', 'smoke'), ('sdk.sha256', 'f'*64),
+                                 ('command.timed_out', True), ('host.kernel', None)]:
+                mutated = copy.deepcopy(original)
+                parent = mutated
+                keys = field.split('.')
+                for key in keys[:-1]:
+                    parent = parent[key]
+                parent[keys[-1]] = value
+                target = Path(temporary) / 'changed-run.json'
+                target.write_text(json.dumps(mutated), encoding='utf-8')
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    sdk_m2_soak.aggregate_native_reports([target, *paths[1:]], resolve)
+
     @unittest.skipUnless(os.environ.get('QAPLET_M2_FULL_RUN'), 'Actual Full runner smoke required')
     def test_actual_persistent_runtime_rejects_rolling_or_nonzero_resource_baselines(self):
         report = json.loads(Path(os.environ['QAPLET_M2_FULL_RUN']).read_text(encoding='utf-8'))

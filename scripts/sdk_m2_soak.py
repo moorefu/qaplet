@@ -179,6 +179,9 @@ def sample_summary(command):
         raise ValueError('OS CPU or elapsed sample counters regressed')
     progress_rows = [json.loads(line) for line in complete_lines(command['progress_log'])]
     ready = next((row for row in progress_rows if row.get('type') == 'ready'), {})
+    if ready and (ready['process_id'] != command['target_pid'] or
+                  any(row['process_id'] != ready['process_id'] for row in active)):
+        raise ValueError('OS observer PID differs from the actual fixture native identity')
     owner = ready.get('owner_thread_id')
     owner_waits, wait_kinds = 0, {}
     phases = {}
@@ -219,7 +222,7 @@ def validate_duration(command, final, minimum_seconds):
         raise ValueError('Full requires fixture monotonic elapsed at least the requested duration')
 
 
-def inspect_waits(raw, final):
+def inspect_waits(raw, final, *, required_protocol=False):
     rows = [json.loads(line) for line in raw.splitlines()]
     measurement = 'whole qaplet_run_once call; not timer lateness'
     if not rows or len(rows) != final['idle_wait_calls']:
@@ -229,6 +232,12 @@ def inspect_waits(raw, final):
                 not isinstance(row['requested_ms'], int) or row['requested_ms'] <= 0 or
                 not math.isfinite(row['actual_monotonic_elapsed_ms']) or row['actual_monotonic_elapsed_ms'] < 0):
             raise ValueError('Wait identity or actual monotonic measurement is invalid')
+        if required_protocol or final.get('fixture_protocol_version') == 9:
+            fields = ('timer_current_before', 'timer_referenced_before', 'drive_reason')
+            if any(key not in row for key in fields) or any(type(row[key]) is not int for key in fields):
+                raise ValueError('C9 requires actual pre-wait timer/ref and returned drive reason')
+            if row['timer_current_before'] <= 0 or row['timer_referenced_before'] <= 0 or row['drive_reason'] not in (1, 2):
+                raise ValueError('Idle call did not have a ref timer or valid OPEN progress/timeout outcome')
     requested = sum(row['requested_ms'] for row in rows)
     durations = [row['actual_monotonic_elapsed_ms'] for row in rows]
     elapsed = math.fsum(durations)
@@ -236,9 +245,12 @@ def inspect_waits(raw, final):
     rounding = (len(rows) + 1) * .000001
     if requested != final['idle_wait_requested_ms'] or abs(elapsed - final['idle_wait_elapsed_ms']) > rounding:
         raise ValueError('Raw wait calls contradict the accumulated fixture measurements')
-    return {'measurement': measurement, 'source': 'cycles-waits.ndjson: fixture monotonic clock around actual SDK call',
+    result = {'measurement': measurement, 'source': 'cycles-waits.ndjson: fixture monotonic clock around actual SDK call',
             'calls': len(rows), 'requested_ms_total': requested, 'elapsed_ms_total': elapsed,
             'minimum_ms': min(durations), 'maximum_ms': max(durations), 'mean_ms': elapsed / len(rows)}
+    if required_protocol or final.get('fixture_protocol_version') == 9:
+        result.update(timer_ref_verified=True, drive_reasons=sorted({row['drive_reason'] for row in rows}))
+    return result
 
 
 def check_identity(selected, resolve=Path):
@@ -247,14 +259,32 @@ def check_identity(selected, resolve=Path):
         raise ValueError('Selected evidence changed: ' + selected['path'])
 
 
+def inspect_protocol(rows, final, *, required):
+    if not required and not any('fixture_protocol_version' in row for row in rows):
+        return  # Explicit historical smoke scope; never usable as current Full.
+    fields = ('fixture_protocol_version', 'observer_identity_verified', 'observer_resolutions',
+              'baseline_keepalive_tokens', 'quiescent_helpers', 'quiescent_workers', 'quiescent_keepalive_tokens')
+    for row in rows:
+        if any(key not in row for key in fields):
+            raise ValueError('C9 raw protocol/observer/token/quiescence fields are required')
+        if row['fixture_protocol_version'] != 9 or row['observer_identity_verified'] is not True:
+            raise ValueError('Current Full requires C9 and verified native observer identity')
+        if any(type(row[key]) is not int or row[key] != 0 for key in
+               ('baseline_keepalive_tokens', 'quiescent_helpers', 'quiescent_workers', 'quiescent_keepalive_tokens')):
+            raise ValueError('C9 token/worker/helper cleanup observations must be explicit zero counts')
+        if row['observer_resolutions'] != (1 if row['os_resource_source'].startswith('GetProcessHandleCount') else 0):
+            raise ValueError('Native observer resolution provenance differs')
+
+
 def validate_resources(rows, final, purpose):
     zero = ('baseline_operations', 'baseline_data_bytes', 'baseline_timers',
             'baseline_processes', 'baseline_io_endpoints')
     if any(row[key] != 0 for row in rows for key in zero):
         raise ValueError('Operation/data/timer/process/endpoint resources did not return to zero')
-    if any(row.get('baseline_keepalive_tokens', 0) != 0 for row in rows):
-        raise ValueError('Keepalive tokens did not return to zero')
-    if purpose == 'full' and 'baseline_keepalive_tokens' not in final:
+    if 'baseline_keepalive_tokens' in final:
+        if any('baseline_keepalive_tokens' not in row or row['baseline_keepalive_tokens'] != 0 for row in rows):
+            raise ValueError('Keepalive tokens did not return to zero')
+    elif purpose == 'full':
         raise ValueError('Full requires directly measured keepalive token baseline')
     baseline = [index for index, row in enumerate(rows) if row['type'] == 'os-baseline']
     if len(baseline) != 1 or final['warmup_instances'] != 3:
@@ -300,7 +330,9 @@ def inspect_run(report, resolve=Path):
     raw_progress = resolve(command['progress_log']).read_bytes()
     final = sdk_m2_cycles.inspect(raw_progress,
         resolve(command['stderr_log']).read_bytes(), command['exit_code'], report['mode'], report['requested'])
-    validate_resources([json.loads(line) for line in raw_progress.splitlines()], final, report['purpose'])
+    progress_rows = [json.loads(line) for line in raw_progress.splitlines()]
+    inspect_protocol(progress_rows, final, required=report['purpose'] == 'full')
+    validate_resources(progress_rows, final, report['purpose'])
     local_command = dict(command)
     for key in ('stdout_log', 'stderr_log', 'samples_log', 'progress_log'):
         local_command[key] = str(resolve(command[key]))
@@ -310,7 +342,8 @@ def inspect_run(report, resolve=Path):
     if report['mode'] == 'soak':
         if not command.get('waits_log'):
             raise ValueError('Actual soak wait-call raw evidence is missing')
-        measured['wait_calls'] = inspect_waits(resolve(command['waits_log']).read_bytes(), final)
+        measured['wait_calls'] = inspect_waits(resolve(command['waits_log']).read_bytes(), final,
+                                               required_protocol=report['purpose'] == 'full')
         validate_duration(command, final, report['requested'])
         if final['runtime_instances'] != 1 or final['created'] != 1:
             raise ValueError('Soak requires one persistent Runtime')
