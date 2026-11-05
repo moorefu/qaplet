@@ -69,6 +69,14 @@ def validate_loader(args, incoming, evidence):
 def validate_native(args, incoming, producer, selected, evidence, directory):
     consume_identity(incoming, {})
     check_ci_commit(producer, incoming)
+    consumer = incoming.get("consumer_identity", {})
+    require(consumer.get("contract") == sdk.consumer_contract(), "Native consumer helper/test/calling catalog identity differs")
+    retained = unique(consumer.get("inputs", []), "file")
+    require(set(retained) == {row["file"] for row in consumer["contract"]["files"]}, "Complete retained consumer inputs required")
+    for row in consumer["contract"]["files"]:
+        saved = retained[row["file"]]
+        require(same(saved["original"], row) and same(saved["retained"], row), "Retained consumer bytes differ: " + row["file"])
+        evidence.read(saved["retained"])
     require(same(incoming.get("producer_report", {}), selected), "Native producer report differs from selected SDK")
     for field in ("source", "toolchain", "build", "sdk", "sdk_recipe", "package", "distribution"):
         require(incoming.get(field) == producer[field], "Native context differs from selected producer: " + field)
@@ -116,8 +124,9 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                 "Native argv/cwd required")
         artifact_path = original_path(artifacts[name]["path"], command["cwd"])
         modules = posixpath.dirname(artifact_path) + "/sdk/modules"
-        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{launcher}"))}
-        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
+        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{cli}", "{launcher}"))}
+        cli_path = original_path(artifacts["qaplet"]["path"], command["cwd"])
+        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{cli}", cli_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
         wanted = ([] if host["os"] == "Windows" else [normalized(loader["path"])]) + [artifact_path, *arguments]
         actual_argv = list(command["argv"])
         prefix = 1 if host["os"] == "Windows" else 2
@@ -127,6 +136,21 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
             if i - prefix in module_arguments:
                 actual_argv[i] = normalized(actual_argv[i])
         require(actual_argv == wanted, "Actual invocation contradicts SDK catalog: " + case_id)
+        if case_id in ("qaplet-host.m2-mixed-stop", "qaplet-host.m2-mixed-races", "qaplet-host.m2-mixed-nonreturning"):
+            work = normalized(incoming["evidence_directory"]) + "/" + case_id
+            require(normalized(command["cwd"]) == work, "Mixed smoke requires its own report/case working directory")
+            require(all(normalized(value).startswith("/") or
+                        len(normalized(value)) > 2 and normalized(value)[1:3] == ":/"
+                        for value in command["argv"][:prefix]), "Mixed loader/artifact must be resolved before changing cwd")
+            for field, filename in (("marker", "mixed-result.txt"), ("wait_trace", "mixed-waits.ndjson")):
+                require(isinstance(case.get(field), dict) and normalized(case[field]["path"]) == work + "/" + filename,
+                        "Mixed fixed-name evidence must belong to its actual working directory")
+            require(evidence.read(case["marker"]) == output.encode("utf-8"), "Mixed marker differs from public contract")
+            waits = [json.loads(line) for line in evidence.read(case["wait_trace"]).decode("utf-8").splitlines()]
+            require(waits == case.get("wait_observations") and
+                    [row["requested_active_wait_ms"] for row in waits] == [0, 5, 5], "Mixed actual wait trace differs")
+            require(case.get("native_cleanup_complete") is (case_id != "qaplet-host.m2-mixed-nonreturning"),
+                    "Mixed physical native cleanup scope differs")
         require(all(normalized(command[key + "_log"]).startswith(normalized(incoming["evidence_directory"]) + "/")
                     for key in ("stdout", "stderr")), "Native raw logs must belong to the selected evidence root")
         raw = [evidence.read(command[key + "_log"]) for key in ("stdout", "stderr")]

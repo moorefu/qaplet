@@ -7,13 +7,47 @@ import json
 import os
 from pathlib import Path
 import selectors
+import shutil
 import signal
 import subprocess
 import time
 
 
 def identity(path):
-    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size_bytes": path.stat().st_size}
+    return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size_bytes": path.stat().st_size}
+
+
+def capture_inputs(directory):
+    root = Path(__file__).resolve().parents[1]
+    names = ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
+             "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py",
+             "tests/native/sdk_cli_signal_arm.c", "tests/contracts/test_m2_cli_signal_tools.py")
+    files = []
+    for name in names:
+        source, target = root / name, directory / "inputs" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        before, saved = identity(source), identity(target)
+        if before["sha256"] != saved["sha256"]:
+            raise ValueError("Signal helper changed while preserving inputs: " + name)
+        files.append({"file": name, "original": before, "retained": saved})
+    return {"version": 1, "files": files}
+
+
+def send_signal(pid, signum):
+    """Record the actual sender syscall without changing its OS semantics."""
+    try:
+        wchan, wchan_error = Path(f"/proc/{pid}/wchan").read_text(), None
+    except OSError as error:
+        wchan, wchan_error = "unknown", {"errno": error.errno, "error": str(error)}
+    row = {"sender_pid": os.getpid(), "target_pid": pid, "signal": int(signum),
+           "target_wchan": wchan, "wchan_error": wchan_error, "api": "os.kill",
+           "monotonic_ns": time.monotonic_ns(), "return_value": None, "errno": 0}
+    try:
+        row["return_value"] = os.kill(pid, signum)
+    except OSError as error:
+        row.update(errno=error.errno, error=str(error))
+    return row
 
 
 def linux_case(cli, loader, directory, signum, mode):
@@ -49,7 +83,7 @@ def linux_case(cli, loader, directory, signum, mode):
             out.extend(chunk)
             if b"READY\n" in out or (mode == "output" and out): ready = True; break
     before = time.monotonic()
-    if ready: os.kill(p.pid, signum)
+    delivery = send_signal(p.pid, signum) if ready else None
     try: _, errors = p.communicate(timeout=12)
     except subprocess.TimeoutExpired:
         expired = True; p.kill(); _, errors = p.communicate()
@@ -59,7 +93,7 @@ def linux_case(cli, loader, directory, signum, mode):
         out.extend(chunk)
     os.close(pair[0]); selector.close()
     (directory / "stdout.bin").write_bytes(out); (directory / "stderr.log").write_bytes(errors)
-    passed = ready and not expired and p.returncode == 1 and b"EXECUTION_STOPPED" in errors and b"AFTER" not in out and b"cleanup incomplete" not in errors
+    passed = ready and delivery["errno"] == 0 and not expired and p.returncode == 1 and b"EXECUTION_STOPPED" in errors and b"AFTER" not in out and b"cleanup incomplete" not in errors
     queue_path = directory / "queue-result.json"
     queue_result = json.loads(queue_path.read_text()) if queue_path.is_file() else None
     if mode == "queue": passed = passed and bool(queue_result and queue_result["queue_full"] and queue_result["owner_stopped"] and queue_result["sdk_destroyed"] and queue_result["user_marks"] == 0 and queue_result["events_dropped"] == 2 and queue_result["sdk_unix_dispositions_preserved"])
@@ -67,7 +101,7 @@ def linux_case(cli, loader, directory, signum, mode):
     if mode == "output": scope = "Actual supplied CLI; copied eval result final Host output accepted into paused real pipe, then real OS signal"
     if mode == "help": scope = "Actual supplied CLI help, no Runtime; real full stdout pipe and observed owner OS poll/pipe_write wait before OS signal"
     return {"case": f"linux-{signal.Signals(signum).name}-{mode}", "status": "pass" if passed else "fail", "argv": argv,
-        "pid": p.pid, "real_os_signal": signum if ready else None, "ready_accepted": ready, "exit_code": p.returncode,
+        "pid": p.pid, "real_os_signal": signum if ready else None, "signal_delivery": delivery, "ready_accepted": ready, "exit_code": p.returncode,
         "supervisor_timeout": expired, "elapsed_after_send_seconds": time.monotonic()-before,
         "stdout": identity(directory / "stdout.bin"), "stderr": identity(directory / "stderr.log"),
         "native_cleanup_complete": passed, "queue_result": queue_result, "scope": scope}
@@ -79,12 +113,14 @@ def main():
     p.add_argument("--report", type=Path, required=True)
     p.add_argument("--mode", choices=("wait", "execute", "output", "help", "queue", "all"), default="all")
     p.add_argument("--signal", choices=("SIGINT", "SIGTERM", "all"), default="all")
-    args = p.parse_args(); args.report.parent.mkdir(parents=True, exist_ok=True)
+    args = p.parse_args(); args.report = args.report.resolve(); args.report.parent.mkdir(parents=True, exist_ok=True)
+    consumer = capture_inputs(args.report.parent / (args.report.stem + "-raw"))
     modes = ("wait", "execute", "output", "help") if args.mode == "all" else (args.mode,)
     signals = (signal.SIGINT, signal.SIGTERM) if args.signal == "all" else (getattr(signal, args.signal),)
     cases = [linux_case(args.cli.resolve(), [str(args.loader.resolve())] if args.loader else [], args.report.parent / (args.report.stem+"-raw") / f"{signum}-{mode}", signum, mode) for signum in signals for mode in modes]
     report = {"status": "pass" if all(c["status"] == "pass" for c in cases) else "fail", "cli": identity(args.cli), "script": identity(Path(__file__)),
-              "host": {"uname": list(os.uname()), "page_size": os.sysconf("SC_PAGESIZE")}, "cases": cases, "ci": None}
+              "host": {"uname": list(os.uname()), "page_size": os.sysconf("SC_PAGESIZE")}, "cases": cases, "ci": None,
+              "consumer_identity": consumer, "execution_gate": "execute awaits stdout READY; continuation may not have entered for(;;); use m2_cli_signal_strong.py for the unsuspended gate"}
     args.report.write_text(json.dumps(report, indent=2)+"\n"); print(json.dumps({"status": report["status"], "report": str(args.report)}))
     return report["status"] != "pass"
 

@@ -17,8 +17,9 @@ import uuid
 import zipfile
 
 import ape_helpers
-from build_ape import (BuildError, SOURCES, audit, headers, identity, link_portable,
+from build_ape import (BuildError, SOURCES, audit, headers, identity,
                        native_toolchain, prepare_portable_helpers, publish_ape, run, verify_inputs)
+from sdk_link import link_portable
 from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from input_lock import component, consume_identity, consumption_purpose
@@ -30,6 +31,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_cli_signal_arm.c", "cli-signal-arm.c", None, None),
     ("tests/native/sdk_cli_signal.c", "cli-signal.c", None, None),
     ("tests/native/sdk_cli_signal_faults.c", "cli-signal-faults.c", None, None),
     ("tests/native/sdk_cli_signal_late.c", "cli-signal-late.c", None, None),
@@ -73,7 +75,7 @@ HOST_UNITS = (
 
 RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/stdio.c", "src/js_io.c", "src/js_io.h", "src/js_async.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
-          "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "scripts/sdk.py", "scripts/sdk_link.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
           "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
           "scripts/quickjs_source.py", "scripts/workflow_support.py",
@@ -87,7 +89,7 @@ RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
 RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
-           "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py")
+           "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
 EXAMPLE_CASES = (
@@ -107,6 +109,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-cli-child", ["--m2-process-cli-child", "{cli}", "{launcher}"], "M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass\n"),
     ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
     ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
     ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
@@ -338,6 +341,39 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def consumer_contract():
+    names = (*RECIPE, "tests/contracts/test_sdk_native.py", "tests/contracts/test_sdk_retention.py",
+             "tests/contracts/test_m2_cli_signal_tools.py")
+    files = [{"file": name, "sha256": sha256(ROOT / name), "size_bytes": (ROOT / name).stat().st_size}
+             for name in dict.fromkeys(names)]
+    value = {"version": 1, "files": files, "host_cases": HOST_CASES,
+             "cli_cases": CLI_CASES, "example_cases": EXAMPLE_CASES}
+    value = json.loads(json.dumps(value))
+    return {"sha256": digest(value), **value}
+
+
+def capture_consumer_inputs(report, directory):
+    """Freeze actual helper/source bytes and calling context before execution."""
+    contract = consumer_contract()
+    snapshots = []
+    for row in contract["files"]:
+        source, target = ROOT / row["file"], directory / "consumer-inputs" / row["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        saved = identity(target)
+        if any(saved[key] != row[key] for key in ("sha256", "size_bytes")):
+            raise BuildError("Consumer input changed while preserving it: " + row["file"])
+        snapshots.append({"file": row["file"], "original": identity(source), "retained": saved})
+    entrypoint = Path(sys.argv[0])
+    entrypoint_saved = None
+    if entrypoint.is_file():
+        saved = directory / "consumer-entrypoint.py"
+        shutil.copyfile(entrypoint, saved)
+        entrypoint_saved = {"original": identity(entrypoint), "retained": identity(saved)}
+    report["consumer_identity"] = {"contract": contract, "inputs": snapshots,
+        "invocation": {"argv": list(sys.argv), "cwd": str(Path.cwd()), "entrypoint": entrypoint_saved}}
+
+
 def recipe_identity(files, input_id, cflags=()):
     """Pure portable SDK identity; execution/Git metadata is attached separately."""
     value = {"version": 1, "files": [dict(row) for row in files], "input_id": input_id,
@@ -350,6 +386,7 @@ def recipe_identity(files, input_id, cflags=()):
 def package_consume(args, report, directory):
     if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
         raise BuildError("SDK package compilation runs on Ubuntu only", "blocked")
+    capture_consumer_inputs(report, directory)
     producer = read_json(args.build_report)
     if not producer.get("package"):
         raise BuildError("A sealed SDK package containing the complete public C application is required")
@@ -373,6 +410,22 @@ def package_consume(args, report, directory):
     with zipfile.ZipFile(supplied / producer["package"]["file"]) as archive:
         archive.extractall(external)
     check_package(producer, external, check_archive=False)
+    # Preserve exact extracted inputs before the first compiler/helper runs.
+    # Original paths still describe actual argv; each copy binds to one ZIP member.
+    snapshots = directory / "external-inputs"
+    retained = report["external_consumer"]["retained_inputs"] = []
+    for member in producer["package"]["members"]:
+        if not member["file"].startswith("sdk/"):
+            continue
+        source, target = external / member["file"], snapshots / member["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = identity(source)
+        shutil.copyfile(source, target)
+        saved = identity(target)
+        if any(before[key] != member[key] or saved[key] != member[key] for key in ("sha256", "size_bytes")):
+            raise BuildError("External compiler input differs from exact SDK ZIP member: " + member["file"])
+        retained.append({"package_member": {key: member[key] for key in ("file", "sha256", "size_bytes")},
+                         "original": before, "retained": saved})
     original = verify_inputs(args, report, directory)
     tree = native_toolchain(args, report, directory, original)
     helpers = prepare_portable_helpers(args, report, directory, tree)
@@ -473,7 +526,7 @@ def package_consume(args, report, directory):
                  for mode, expected, platforms in PROCESS_FAULT_CASES if ("Windows" if os.name == "nt" else "POSIX") in platforms]
     else:
         artifact = output / "qaplet-process-host.com"
-        cases = [(suffix, [value.replace("{self}", str(artifact)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments], expected, ["Windows", "POSIX"])
+        cases = [(suffix, [value.replace("{self}", str(artifact)).replace("{cli}", str(supplied / "qaplet.com")).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments], expected, ["Windows", "POSIX"])
                  for suffix, arguments, expected in HOST_CASES if suffix.startswith("m2-process-")]
     for suffix, arguments, expected, platforms in cases:
         executed, stdout, stderr = run(report, directory, artifact.stem + "." + suffix,
@@ -963,6 +1016,7 @@ def build(args, report, directory):
 
 
 def consume(args, report, directory):
+    capture_consumer_inputs(report, directory)
     if not args.build_report or not args.artifact:
         raise BuildError("Supplied Ubuntu producer report and Host artifact are required", "blocked")
     producer = read_json(args.build_report)
@@ -1020,18 +1074,35 @@ def consume(args, report, directory):
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
                   sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], package=producer["package"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact, example_artifact])
     measured_host(args, report, directory)
-    loader = select_loader(args, report)
+    loader = [str(Path(path).resolve()) for path in select_loader(args, report)]
+    # Resolve against the caller's original context before entering a per-case
+    # directory. Fixed-name mixed markers must never share a report/host cwd.
+    host_path = args.artifact.resolve()
+    modules_path = host_path.parent / "sdk/modules"
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
         cli_path.chmod(cli_path.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
-        arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")).replace("{self}", str(args.artifact.resolve())).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
+        case_id = "qaplet-host." + suffix
+        mixed = suffix in ("m2-mixed-stop", "m2-mixed-races", "m2-mixed-nonreturning")
+        cwd = directory / case_id if mixed else ROOT
+        if mixed:
+            cwd.mkdir()
+        arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
-                                      [*loader, args.artifact, *arguments], args.timeout, expected=None)
+                                      [*loader, host_path, *arguments], args.timeout, cwd, expected=None)
         if suffix == "facts":
             expected = json.dumps({"probe": "qaplet-host", "arch": report["host"]["execution_arch"],
                                    "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        mixed_evidence = {}
+        if mixed:
+            marker, waits = cwd / "mixed-result.txt", cwd / "mixed-waits.ndjson"
+            records = [json.loads(line) for line in waits.read_text(encoding="utf-8").splitlines()] if waits.is_file() else []
+            passed = passed and marker.is_file() and marker.read_bytes() == expected.encode("utf-8") and [row["requested_active_wait_ms"] for row in records] == [0, 5, 5]
+            mixed_evidence = {"marker": identity(marker) if marker.is_file() else None,
+                "wait_trace": identity(waits) if waits.is_file() else None, "wait_observations": records,
+                "native_cleanup_complete": suffix != "m2-mixed-nonreturning" if passed else False}
         required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")
         # This supplied Cosmopolitan PE reports exit(77) as 19712 on the measured
         # Windows host; retain its actual exit and explicit fixture limitation.
@@ -1043,7 +1114,7 @@ def consume(args, report, directory):
             "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
             "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
             "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
-            "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else ""})
+            "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else "", **mixed_evidence})
     for suffix, arguments, expected_exit, expected_stdout, stderr_contains in CLI_CASES:
         arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")) for value in arguments]
         executed, _, _ = run(report, directory, "qaplet." + suffix, [*loader, cli_path, *arguments], args.timeout, expected=None)
