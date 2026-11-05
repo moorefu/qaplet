@@ -55,7 +55,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -77,7 +77,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 16744447, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -85,6 +85,8 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-pipe-bytes", ["--m2-process-pipe-bytes", "{self}", "{launcher}"], "M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass\n"),
+    ("m2-process-pipe-defaults", ["--m2-process-pipe-defaults", "{self}", "{launcher}"], "M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass\n"),
     ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
     ("m2-process-query", ["--m2-process-query", "{self}", "{launcher}"], "M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass\n"),
     ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass\n"),
@@ -373,7 +375,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -620,7 +622,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)

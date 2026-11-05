@@ -127,6 +127,17 @@ qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *runtime) {
   pthread_mutex_unlock(&runtime->mutex);
   return lifecycle;
 }
+qaplet_code qaplet_operation_reserve_locked(qaplet_runtime *r,size_t bytes) {
+  if (r->operations_current>=r->m2_limits.operations || bytes>r->m2_limits.operation_data_bytes-r->operation_data_current)
+    return QAPLET_RESOURCE_LIMIT;
+  ++r->operations_current; r->operation_data_current+=bytes;
+  if (r->operations_current>r->operations_peak) r->operations_peak=r->operations_current;
+  if (r->operation_data_current>r->operation_data_peak) r->operation_data_peak=r->operation_data_current;
+  return QAPLET_OK;
+}
+void qaplet_operation_retire_locked(qaplet_runtime *r,size_t bytes) {
+  --r->operations_current; r->operation_data_current-=bytes;
+}
 
 qaplet_code qaplet_query_abi(qaplet_abi *output) {
   if (qaplet_in_notify) return QAPLET_BUSY;
@@ -135,7 +146,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 

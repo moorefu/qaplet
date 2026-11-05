@@ -11,6 +11,7 @@ typedef struct qaplet_module qaplet_module;
 typedef struct qaplet_module_alias qaplet_module_alias;
 typedef struct qaplet_host_record qaplet_host_record;
 typedef struct qaplet_process_pool qaplet_process_pool;
+typedef struct qaplet_io_pool qaplet_io_pool;
 
 typedef struct qaplet_work_pool qaplet_work_pool;
 typedef struct qaplet_timer_slot qaplet_timer_slot;
@@ -27,6 +28,8 @@ struct qaplet_runtime {
   uint64_t native_retained;
   qaplet_work_pool *work_pool;
   qaplet_work_snapshot work_snapshot;
+  uint64_t operations_current, operations_peak, operation_data_current, operation_data_peak;
+  qaplet_io_pool *io_pool;
   qaplet_notify_function notify_function;
   void *notify_userdata;
   uint64_t notify_inflight, notify_inflight_peak;
@@ -91,6 +94,10 @@ struct qaplet_runtime {
   unsigned ready_cursor, completion_cursor;
 };
 qaplet_code qaplet_check_structure(const void *, size_t);
+/* Work and I/O share one count/data reservation. Acceptance mutex required.
+ * Physical use and pending owner handoff both precede retirement. */
+qaplet_code qaplet_operation_reserve_locked(qaplet_runtime *, size_t);
+void qaplet_operation_retire_locked(qaplet_runtime *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);

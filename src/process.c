@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #define _COSMO_SOURCE 1
 #include "runtime_internal.h"
+#include "io_internal.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -40,6 +41,7 @@ typedef struct {
   pid_t pid;
   int64_t handle;
   qaplet_process_status status;
+  qaplet_io_endpoint stdio[3];
 } process_slot;
 struct qaplet_process_pool {
   process_slot *slots;
@@ -189,15 +191,21 @@ static process_slot *lookup_locked(qaplet_runtime *r,const qaplet_process *token
   return s->active && s->accepted && !s->released && s->generation==token->generation ? s : NULL;
 }
 static void retire_locked(qaplet_runtime *r,process_slot *s) {
+  for(int i=0;i<3;++i)qaplet_io_detach_locked(r,&s->stdio[i]);
   s->active=0; --r->process_snapshot.processes;
   if (s->accepted && !s->released) --r->process_snapshot.retained_results;
 }
 void qaplet_process_collect(qaplet_runtime *r) {
+  qaplet_io_collect(r);
   if (!r->process_pool) return;
   pthread_mutex_lock(&r->mutex);
   qaplet_process_pool *pool=r->process_pool;
   if (pool->slots) for (uint64_t i=0;i<r->m2_limits.processes;++i) {
     process_slot *s=&pool->slots[i];
+    if(s->active && s->status.delivered && s->status.referenced &&
+       qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])){
+      s->status.referenced=0;--r->process_snapshot.referenced;
+    }
     if (!s->active || !s->finished) continue;
     if (s->helper && !s->join_retired) {
       s->join_retired=1;
@@ -213,7 +221,8 @@ void qaplet_process_collect(qaplet_runtime *r) {
         --r->helper_threads; r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;
       }
     }
-    if (!s->identity_uncertain && !s->helper && (!s->accepted || s->released || pool->closing) && (s->pid<=0 && !s->handle || s->status.reaped)) retire_locked(r,s);
+    if (!s->identity_uncertain && !s->helper && (!s->accepted || s->released || pool->closing) && (s->pid<=0 && !s->handle || s->status.reaped) &&
+        qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])) retire_locked(r,s);
   }
   if (pool->closing && !r->process_snapshot.processes && !r->process_snapshot.helper_threads) {
     free_locked(r,pool->environment,pool->environment_size);
@@ -236,7 +245,7 @@ unsigned qaplet_process_handoff(qaplet_runtime *r,uint64_t maximum) {
      * creates no JS execution and cannot replace the last completed result. */
     if (r->execution_active && qaplet_execution_dispatch_locked(r)) break;
     s->status.delivered=1; ++count; increment(&r->process_snapshot.completed);
-    if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
+    if (s->status.referenced && qaplet_io_ended_locked(r,&s->stdio[0]) && qaplet_io_ended_locked(r,&s->stdio[1]) && qaplet_io_ended_locked(r,&s->stdio[2])) { s->status.referenced=0; --r->process_snapshot.referenced; }
   }
   pthread_mutex_unlock(&r->mutex);
   return count;
@@ -292,6 +301,7 @@ qaplet_code qaplet_process_cancel(qaplet_runtime *r,const qaplet_process *token,
   return qaplet_report(d,code);
 }
 void qaplet_process_close(qaplet_runtime *r) {
+  qaplet_io_shutdown(r,1);
   if (r->process_pool) {
     pthread_mutex_lock(&r->mutex); r->process_pool->closing=1;
     if (r->process_pool->slots) for (uint64_t i=0;i<r->m2_limits.processes;++i) {
@@ -303,6 +313,7 @@ void qaplet_process_close(qaplet_runtime *r) {
   qaplet_process_shutdown(r);
 }
 void qaplet_process_shutdown(qaplet_runtime *r) {
+  qaplet_io_shutdown(r,0);
   if (!r->process_pool) return;
   pthread_mutex_lock(&r->mutex);
   qaplet_process_pool *pool=r->process_pool;
@@ -364,6 +375,11 @@ static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char *
     nulls[i]=open("/dev/null",(i ? O_WRONLY : O_RDONLY)|O_CLOEXEC);
     if (nulls[i]<0) error=errno; else { acquired(r); error=private_fd(r,&nulls[i]); }
   }
+  for (int i=0;i<3 && !error;++i) if (o->stdio[i]==QAPLET_PROCESS_PIPE) {
+    int64_t unused=0;qaplet_process_status failure=QAPLET_PROCESS_STATUS_INIT;
+    qaplet_code code=qaplet_io_pipe(r,i==0,&s->stdio[i],&nulls[i],&unused,&failure);
+    if(code)error=failure.error ? failure.error : code==QAPLET_RESOURCE_LIMIT ? EMFILE : ENOMEM;
+  }
   if (!error) {
     s->pid=fork();
     if (!s->pid) {
@@ -421,6 +437,11 @@ static int spawn_windows(qaplet_runtime *r,process_slot *s,const char *path,char
   for (size_t i=0;env[i];++i) { tprecode8to16(block+cursor,envchars-cursor,env[i]); while (block[cursor]) ++cursor; ++cursor; }
   block[cursor]=0; if (!cursor) block[1]=0;
   for (int i=0;i<3;++i) {
+    if(o->stdio[i]==QAPLET_PROCESS_PIPE){
+      qaplet_code code=qaplet_io_pipe(r,i==0,&s->stdio[i],&nulls[i],&handles[i],failure);
+      if(code){failure->code=code;error=failure->error ? failure->error : 8;goto done;}
+      startup.StartupInfo.stdiofds[i]=handles[i];continue;
+    }
     int fd=i;
     if (o->stdio[i]==QAPLET_PROCESS_IGNORE) {
       fd=nulls[i]=open("/dev/null",(i ? O_WRONLY : O_RDONLY)|O_CLOEXEC);
@@ -482,7 +503,6 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
     size_t encoded=bytes;
     if (!add_size(&encoded,r->process_pool->environment_data_bytes,r->m2_limits.process_data_bytes)) code=QAPLET_RESOURCE_LIMIT;
   }
-  for (int i=0;i<3 && !code;++i) if (o->stdio[i]==QAPLET_PROCESS_PIPE) code=QAPLET_UNSUPPORTED;
   for (int i=0;i<3 && !code;++i) if (o->stdio[i]==QAPLET_PROCESS_INHERIT && fcntl(i,F_GETFD)<0) {
     code=QAPLET_PROCESS_ERROR; value.error_domain=QAPLET_ERROR_DOMAIN_ERRNO; value.error=errno;
   }
@@ -502,11 +522,13 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
     scratch=(envchars+32768+2*PATH_MAX)*2+attributes;
   }
   size_t handles=IsWindows() ? 6 : 3+!!IsXnu();
+  unsigned pipes=0;
+  for(int i=0;i<3;++i)if(o->stdio[i]==QAPLET_PROCESS_PIPE){++pipes;handles+=IsWindows() ? 1 : 2;}
   for (int i=0;i<3;++i) handles+=o->stdio[i]==QAPLET_PROCESS_IGNORE;
   if (!IsWindows()) for (int i=0;i<3;++i) if (fcntl(i,F_GETFD)<0) { ++handles; break; }
   pthread_mutex_lock(&r->mutex);
   if (r->process_snapshot.processes>=r->m2_limits.processes || r->helper_threads>=r->m2_limits.helper_threads ||
-      handles>r->m2_limits.native_handles-r->native_handles || r->reactor_registrations>=r->m2_limits.reactor_registrations || metadata>SIZE_MAX-bytes || scratch>SIZE_MAX-metadata-bytes || !fits_locked(r,metadata+bytes+scratch)) code=QAPLET_RESOURCE_LIMIT;
+      handles>r->m2_limits.native_handles-r->native_handles || pipes+1>r->m2_limits.reactor_registrations-r->reactor_registrations || metadata>SIZE_MAX-bytes || scratch>SIZE_MAX-metadata-bytes || !fits_locked(r,metadata+bytes+scratch)) code=QAPLET_RESOURCE_LIMIT;
   pthread_mutex_unlock(&r->mutex);
   if (code) goto rejected;
   if (!pool->slots) {
@@ -555,6 +577,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
       if (!value.code && !value.error_domain) { value.error_domain=IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO; value.error=error; }
       value.helper_active=1;
       slot->released=1;
+      for(int i=0;i<3;++i)qaplet_io_detach_locked(r,&slot->stdio[i]);
       terminate_locked(r,slot);
     } else if (r->snapshot.lifecycle!=QAPLET_OPEN) {
       /* Stop won before spawn acceptance. The newly created direct child is
@@ -611,7 +634,7 @@ qaplet_code qaplet_process_set_ref(qaplet_runtime *r,const qaplet_process *token
   pthread_mutex_lock(&r->mutex); process_slot *s=lookup_locked(r,token);
   if (!s) code=QAPLET_INVALID_HANDLE;
   else if (r->snapshot.lifecycle!=QAPLET_OPEN) code=QAPLET_BAD_STATE;
-  else if (!s->status.delivered && s->status.referenced!=ref) { if (ref) ++r->process_snapshot.referenced; else --r->process_snapshot.referenced; s->status.referenced=ref; }
+  else if ((!s->status.delivered || !qaplet_io_ended_locked(r,&s->stdio[0]) || !qaplet_io_ended_locked(r,&s->stdio[1]) || !qaplet_io_ended_locked(r,&s->stdio[2])) && s->status.referenced!=ref) { if (ref) ++r->process_snapshot.referenced; else --r->process_snapshot.referenced; s->status.referenced=ref; }
   pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
 }
 qaplet_code qaplet_process_release(qaplet_runtime *r,const qaplet_process *token,qaplet_diagnostic *d) {
@@ -622,6 +645,7 @@ qaplet_code qaplet_process_release(qaplet_runtime *r,const qaplet_process *token
   qaplet_process_collect(r); pthread_mutex_lock(&r->mutex); process_slot *s=lookup_locked(r,token);
   if (!s) code=QAPLET_INVALID_HANDLE;
   else if (!s->status.reaped) code=QAPLET_BUSY;
+  else if(!qaplet_io_ended_locked(r,&s->stdio[0]) || !qaplet_io_ended_locked(r,&s->stdio[1]) || !qaplet_io_ended_locked(r,&s->stdio[2]))code=QAPLET_BUSY;
   else {
     s->released=1; --r->process_snapshot.retained_results;
     if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
@@ -637,4 +661,12 @@ qaplet_code qaplet_get_process_snapshot(qaplet_runtime *r,qaplet_process_snapsho
   if (!r->m2_enabled) code=QAPLET_UNSUPPORTED;
   else memcpy((char *)out+8,(char *)&r->process_snapshot+8,sizeof(*out)-8);
   pthread_mutex_unlock(&r->mutex); return qaplet_report(d,code);
+}
+qaplet_code qaplet_process_get_stdio(qaplet_runtime *r,const qaplet_process *t,uint32_t stream,qaplet_io_endpoint *out,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));
+  if(!code && stream>2)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);process_slot *s=lookup_locked(r,t);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!s || r->snapshot.lifecycle==QAPLET_CLOSED)code=QAPLET_INVALID_HANDLE;
+  else if(!s->stdio[stream].generation)code=QAPLET_UNSUPPORTED;else *out=s->stdio[stream];
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }

@@ -22,11 +22,13 @@ void entry(void) {
   U16 **argv=CommandLineToArgvW(GetCommandLineW(),&argc);
   if (!argv || argc<2) ExitProcess(98);
   U32 amount=0; unsigned char byte;
-  if (equal(argv[1],u"--inherit")) {
+  if (equal(argv[1],u"--inherit") || equal(argv[1],u"--pipe")) {
+    if(equal(argv[1],u"--inherit")) {
     H identities[4]={0}; int field=0;
     for (U16 *p=argv[2];*p && field<4;++p) if (*p==':') ++field; else if (*p>='0' && *p<='9') identities[field]=identities[field]*10+*p-'0';
     struct FileInfo info;
     if (GetFileInformationByHandle(identities[0],&info) && info.volume==identities[1] && info.index_high==identities[2] && info.index_low==identities[3]) ExitProcess(98);
+    }
     unsigned char data[16],expected[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'}; U32 n=0,written=0;
     int pass=ReadFile(GetStdHandle(-10u),data,16,&n,0) && n==5;
     for (int i=0;i<5;++i) pass=pass && data[i]==expected[i];

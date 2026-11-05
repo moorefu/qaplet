@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: MIT */
+#ifndef QAPLET_IO_INTERNAL_H
+#define QAPLET_IO_INTERNAL_H
+#include "runtime_internal.h"
+#include <poll.h>
+/* Owned pipe adapter. Child ends are returned to ProcessHost's existing
+ * inheritance/rollback owner; parent ends belong exclusively to this module. */
+qaplet_code qaplet_io_pipe(qaplet_runtime *,int,qaplet_io_endpoint *,int *,int64_t *,qaplet_process_status *);
+int qaplet_io_ended_locked(qaplet_runtime *,const qaplet_io_endpoint *);
+void qaplet_io_detach_locked(qaplet_runtime *,const qaplet_io_endpoint *);
+void qaplet_io_shutdown(qaplet_runtime *,int closing);
+void qaplet_io_collect(qaplet_runtime *);
+unsigned qaplet_io_pump(qaplet_runtime *,uint64_t *);
+int qaplet_io_ready_locked(qaplet_runtime *);
+unsigned qaplet_io_handoff(qaplet_runtime *,uint64_t);
+/* Acceptance mutex held. Stable scratch belongs to the owner drive. */
+struct pollfd *qaplet_io_poll_locked(qaplet_runtime *,nfds_t *);
+#endif

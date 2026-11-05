@@ -83,6 +83,62 @@ static int pipe_defaults(void) {
   CHECK(!finish(r));
   puts("M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass");return 0;
 }
+static int io_result(qaplet_runtime *r,qaplet_io_operation *o,qaplet_io_result *result) {
+  double until=milliseconds()+5000;qaplet_io_status status=QAPLET_IO_STATUS_INIT;
+  do {
+    CHECK(qaplet_get_io_status(r,o,&status,NULL)==QAPLET_OK);
+    if(status.state!=QAPLET_IO_PENDING && !status.physical_pending && !status.pending_handoff)break;
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run_once(r,1000,&drive,NULL)==QAPLET_OK);
+  }while(milliseconds()<until);
+  if(status.state==QAPLET_IO_PENDING || status.physical_pending || status.pending_handoff)
+    fprintf(stderr,"I/O stalled state=%u physical=%u handoff=%u helper=%u bytes=%llu code=%u error=%d\n",status.state,status.physical_pending,status.pending_handoff,status.helper_active,(unsigned long long)status.length,status.code,status.error);
+  CHECK(status.state!=QAPLET_IO_PENDING && !status.physical_pending && !status.pending_handoff);
+  CHECK(qaplet_io_copy_result(r,o,result,NULL)==QAPLET_OK);return 0;
+}
+static int pipe_bytes(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_process_options options;prepare(&options,"--pipe");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+  qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status process=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(spawn_ok(r,&options,&p,&process,NULL)==QAPLET_OK);
+  qaplet_io_endpoint endpoints[3]={QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT};
+  for(int i=0;i<3;++i)CHECK(qaplet_process_get_stdio(r,&p,i,&endpoints[i],NULL)==QAPLET_OK);
+  qaplet_io_operation out=QAPLET_IO_OPERATION_INIT,err=QAPLET_IO_OPERATION_INIT,in=QAPLET_IO_OPERATION_INIT,rejected=QAPLET_IO_OPERATION_INIT;
+  CHECK(qaplet_io_read(r,&endpoints[1],64,&out,NULL)==QAPLET_OK);
+  CHECK(qaplet_io_read(r,&endpoints[1],1,&rejected,NULL)==QAPLET_BUSY && !rejected.runtime_id);
+  qaplet_io_status pending=QAPLET_IO_STATUS_INIT;CHECK(qaplet_get_io_status(r,&out,&pending,NULL)==QAPLET_OK && pending.state==QAPLET_IO_PENDING && !pending.eof);
+  CHECK(qaplet_io_read(r,&endpoints[2],64,&err,NULL)==QAPLET_OK);
+  unsigned char input[]={'I',0,255,'N','\n'},output[64],errors[64];
+  CHECK(qaplet_io_write(r,&endpoints[0],input,sizeof(input),&in,NULL)==QAPLET_OK);memset(input,'?',sizeof(input));
+  CHECK(qaplet_io_write(r,&endpoints[0],"X",1,&rejected,NULL)==QAPLET_BUSY);
+  CHECK(qaplet_io_finish(r,&endpoints[0],NULL)==QAPLET_OK);
+  qaplet_io_result result=QAPLET_IO_RESULT_INIT;CHECK(!io_result(r,&in,&result) && !result.code && result.length==5 && !result.eof);
+  CHECK(qaplet_io_release(r,&in,NULL)==QAPLET_OK && qaplet_get_io_status(r,&in,&pending,NULL)==QAPLET_INVALID_HANDLE);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=output;result.capacity=sizeof(output);
+  CHECK(!io_result(r,&out,&result) && !result.code && result.length==5 && !result.eof && !memcmp(output,"I\0\xffN\n",5));
+  CHECK(qaplet_io_release(r,&out,NULL)==QAPLET_OK);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=errors;result.capacity=sizeof(errors);
+  CHECK(!io_result(r,&err,&result) && !result.code && result.length==4 && !result.eof && !memcmp(errors,"E\0\xfeR",4));
+  CHECK(qaplet_io_release(r,&err,NULL)==QAPLET_OK);
+  double until=milliseconds()+5000;
+  do{CHECK(qaplet_get_process_status(r,&p,&process,NULL)==QAPLET_OK);if(process.reaped)break;sched_yield();}while(milliseconds()<until);
+  CHECK(process.reaped && process.native_exit_code==37);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_process_status(r,&p,&process,NULL)==QAPLET_OK && process.delivered && process.referenced);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_BUSY);
+  CHECK(qaplet_io_read(r,&endpoints[1],64,&out,NULL)==QAPLET_OK && qaplet_io_read(r,&endpoints[2],64,&err,NULL)==QAPLET_OK);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=output;result.capacity=sizeof(output);
+  CHECK(!io_result(r,&out,&result) && !result.code && result.eof && !result.length);
+  CHECK(qaplet_io_release(r,&out,NULL)==QAPLET_OK);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=errors;result.capacity=sizeof(errors);
+  CHECK(!io_result(r,&err,&result) && !result.code && result.eof && !result.length);
+  CHECK(qaplet_io_release(r,&err,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
+  CHECK(!finish(r));
+  puts("M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass");return 0;
+}
 static int completed(qaplet_runtime *r,qaplet_process *p,uint32_t expected) {
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
   qaplet_code code=qaplet_run(r,&d,NULL);
@@ -222,7 +278,7 @@ static int errors(void) {
   qaplet_progress progress=QAPLET_PROGRESS_INIT; CHECK(qaplet_eval(r,"42",2,&progress,NULL)==QAPLET_OK);
   qaplet_process_options o; prepare(&o,"--empty");
   qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
-  o.stdio[0]=QAPLET_PROCESS_PIPE; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_UNSUPPORTED && !p.runtime_id);
+  o.stdio[0]=3; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_INVALID_ARGUMENT && !p.runtime_id);
   prepare(&o,"--empty"); o.path=(qaplet_string){"bad\0path",8}; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_INVALID_ARGUMENT);
   o.path=(qaplet_string){"\xff",1}; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_INVALID_UTF8);
   prepare(&o,"--empty"); o.argc=17; CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_RESOURCE_LIMIT);
@@ -581,7 +637,8 @@ static int query(void) {
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
-  if (!strcmp(mode,"--inherit")) {
+  if (!strcmp(mode,"--inherit") || !strcmp(mode,"--pipe")) {
+    if(!strcmp(mode,"--inherit")) {
     const char *cursor=argv[3];unsigned count=0;
     do {
       char *end;long fd=strtol(cursor,&end,10);
@@ -594,6 +651,7 @@ static int child(int argc,char **argv) {
       ++count;cursor=*end ? end+1 : end;
     } while (*cursor);
     if (count!=3) return 98;
+    }
     const unsigned char expected[]={'I',0,255,'N','\n'},errors[]={'E',0,254,'R'};
     unsigned char data[16]; ssize_t n=read(0,data,sizeof(data));
     if (n!=sizeof(expected) || memcmp(data,expected,sizeof(expected)) || read(0,data,sizeof(data))!=0) return 98;
@@ -623,6 +681,9 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+  if (!strcmp(argv[1],"--m2-process-pipe-bytes")) {
+    int result=pipe_bytes(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
   if (!strcmp(argv[1],"--m2-process-pipe-defaults")) {
     int result=pipe_defaults(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
   }
