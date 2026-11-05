@@ -8,6 +8,8 @@
 
 **Execution state:** local_complete
 
+**Local development:** complete
+
 **Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。当前SKU3的guest export不算执行，正式验收仍要求真实ARM64/65536完整适用合同及M2生命周期1000次、混合异步100次，旧产品170项成绩不能替代。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 99、100、101、102、103、104、105、107、109、110。
