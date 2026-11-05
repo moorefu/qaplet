@@ -1,5 +1,34 @@
 # Embed SDK development
 
+Mixed-resource lifetime validation is available through `sdk.py mixed-consume`.
+Ubuntu extracts the sealed ZIP outside the repository, compiles the delivered
+`host-mixed.c` and separate `mixed-faults.c` against its public header/archive,
+then runs work, timers, direct children, byte pipes, regular stdio and terminal
+leases in the same Runtime. The explicit six-helper test configuration covers
+the simultaneous Windows process/file/Console combination; it does not change
+the finite default of four helpers.
+
+`sdk_mixed.py` replays those supplied consumer bytes on Windows, including real
+ConPTY retirement and full native terminal-mode readback. Pass the SDK producer
+with `--producer`, the Ubuntu mixed consumer report with `--consumer`, the
+original supplied Host with `--supplied-host`, and consumer output with
+`--artifact-dir`. Both commands retain per-case raw logs and code/data identities.
+
+Entry DONE, drive IDLE, STOPPED, JS CLOSED and native QUIESCENT are separate
+observations. A request thread publishes stop; the owner starts cancellation and
+direct-child force/reap before close. Close releases synchronous Host bindings
+and the JS engine without executing pending user then/catch/finally jobs.
+Work code/data stay valid through native quiescence. HostNotify code/data and
+the Runtime additionally stay valid until future external calls are withdrawn
+and all in-flight producers are joined, even if native quiescence was observed.
+
+The mixed nonreturning-work and uncertain-close cases intentionally report
+`native_cleanup_complete: false`: destroy remains BUSY while other safe
+resources retire. Repeated zero-wait quiesce calls can continue collection after
+a cleanup error. Recorded finite waits are cumulative active-wait budgets,
+not a hard limit on the entire close/quiesce/native-destructor call. A supervisor
+timeout is an incomplete execution, never proof of native cleanup.
+
 M2 `qaplet_get_resource_snapshot` adds an independent, versioned POD alongside
 the existing snapshots. It reports the shared Work/I/O operation and data
 reservations, I/O endpoint/operation/data current values and peaks, and the

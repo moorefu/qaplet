@@ -244,6 +244,7 @@ static int abi_contract(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc > 1 && !strncmp(argv[1], "--m2-mixed", 10)) { extern int sdk_mixed(int,char **); return sdk_mixed(argc,argv); }
   extern int sdk_runtime(const char *), sdk_cli_contract(const char *);
   if (argc > 1 && !strncmp(argv[1], "--m2-aggregate-", 15)) { extern int sdk_aggregate(int,char **); return sdk_aggregate(argc,argv); }
   if (argc == 3 && !strcmp(argv[1], "--m2-timers-tla")) { extern int sdk_timers(const char *, const char *); return sdk_timers(argv[1], argv[2]); }

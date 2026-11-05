@@ -365,6 +365,15 @@ local_complete/cross_deferred，本地可放行19/20，未由merger领取；旧�
 20完成并独立合入才放行21，随后21→22、19/22→23。当前领取不等于本地完成；
 父spec、原38边/135AC、正式Cross/Full/实际64K/长测和最终整体Review保持待验，不push/CI。
 
+2026-11-05（20本地组合验收）：供应2产品`e3b4bc4`完成公开C/JS混合work/timer/直接child/
+pipe/stdio/TTY/HostNotify停止与两阶段清理；包外12/12两端通过，相关Host回归各23/23，独立包外
+stop/waker故障首因双序各2/2。同步binding到close、work到native真join、notify和未来producer到
+撤下/join的屏障分别证明；nonreturning和uncertain保持pending/BUSY，其他资源安全回收。
+SDK1完整normal保留212/211+optional1原身份，未充当SDK2全矩阵。真实ConPTY完整恢复、
+所有fixture/context失败和零等待重试修正见[本地记录](20-mixed-cleanup-validation.md)。
+20保持claimed、local_complete/cross_deferred，待独立合入才放行21；父M2、24–27最新矩阵、
+其他原生/实际64K/Cross/CI Full/组合长测/最终Review及发布仍未完成，不push或release-ready。
+
 2026-11-05（19本地预算/观测/首因）：产品冻结1c4a91c，旧IO诊断以公开SDK16入口
 canary/HostNotify在Linux及同字节Windows真实red后最小前置修复；新增独立resource POD
 补共享helper和IO当前/持久峰值，保留旧ABI布局。小公开额度联立timer/token/handler/Work/
@@ -386,3 +395,12 @@ pass，46解析/52编码和主物理.cache；产品执行0、无重建/重复sui
 接收与命令见主`out/qaplet-m2/merge-19-aggregate/HANDOFF.md`、`handoff.json`。
 19保持claimed/local_complete/cross_deferred；不提前完成20或领取后继，27票/38边/135AC、
 父M2/正式其他原生/当前64K/CI/Full/长测/整体Review及发布门禁均保持原范围，不push/CI。
+
+2026-11-05（20实际集成收口）：融合19实际no-ff `597020eb`及MD-only root `a4e5fec1`，
+最终SDK3冻结产品`0916ff72`、95recipe。Core/header与19产品`1c4a91c`逐文件同字节，
+新供应独立原ZIP包外mixed两端12/12、相关Host/aggregate/旧头各28/28、包外首因双序各2/2
+通过；ConPTY真清理、native pending/unknown保留和用户JS屏障仍单列。SDK1/2及19旧完整
+范围全部保留原source/SDK/dirty，未重贴或机械重跑全catalog。当前20仍claimed、
+local_complete/cross_deferred，待独立merger接收后才放行21；实际清洁HEAD/原件/回放摘要见
+[本地记录](20-mixed-cleanup-validation.md)及本worktree `out/m2-20-mixed/HANDOFF.md`、`handoff.json`。
+其他原生/当前64K/正式Cross/CI Full/24–27矩阵与组合长测、父M2和最终Review仍未完成。

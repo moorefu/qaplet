@@ -6,7 +6,10 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred；等待独立merger接收。
+
+**Local development:** complete；[本地组合验证](../20-mixed-cleanup-validation.md)及本worktree
+`out/m2-20-mixed/HANDOFF.md`、`handoff.json`保留不同供应/配方的实际执行身份。正式Cross/Full及最终矩阵仍deferred。
 
 **Execution prerequisites:** 09已resolved，16本地完成并独立合并`015cdb9f`（接收`71a5db50`），18本地完成并独立合并`3e85a272`（接收`64624ddd`）；全部当前开发前置已满足，已领取，与19并行。正式Cross/Full欠项不替代也不取消，验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -60,4 +63,17 @@
 `.cache/worktrees/m2-20-mixed-cleanup`从当前实际integration起步，fresh实现者TDD，与19并行。
 沿用全部资源既有有限预算、物理保留及唯一回收责任，验证混合场景而非延后首次安全。
 本票本地完成及独立合入后可放行21开发，正式Cross/Full与最终验收仍待验。
+
+2026-11-05：五项本地组合合同完成。SDK2产品`e3b4bc4`，包外纯C/JS混合资源两端各12/12、
+相关Host选定回归各23/23，独立包外stop/waker首因双序各2/2通过。真实TTY/ConPTY、同步binding
+close释放、work物理保留、通知在途与外部未来调用屏障分别验证。nonreturning/unknown明确保留
+pending/BUSY，其他资源仍安全退出/恢复，不声称最终native清理。SDK1完整normal与所有早期
+夹具/环境失败保留原身份，未重贴成绩。当前仍claimed、local_complete/cross_deferred，待独立接收；
+原Blocked by/AC/父spec及正式Cross/Full欠项不变，详本地验证和最终HANDOFF。
+
+2026-11-05（实际集成收口）：已融合19真实no-ff `597020eb`和后续MD-only实际root `a4e5fec1`。
+最终供应3产品`0916ff72`，Core/header与19产品逐文件同源；原ZIP包外mixed两端各12/12、
+当前相关Host/aggregate旧头回归各28/28、独立包外首因双序各2/2通过，完整ConPTY模式与
+实际原生回收/有意保留分别可见。旧供应1/2、所有失败和source/dirty均保留原身份，未重贴为
+新完整矩阵。最终清洁HEAD及原件摘要见HANDOFF，仍待独立接收后放行21；正式Cross/Full未完成。
 
