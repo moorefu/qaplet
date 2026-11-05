@@ -85,6 +85,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-work-js-cancel", ["--m2-work-js-cancel"], "M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass\n"),
     ("m2-work-js-checkpoints", ["--m2-work-js-checkpoints"], "M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass\n"),
     ("m2-work-js-liveness", ["--m2-work-js-liveness"], "M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass\n"),
     ("m2-work-js-file", ["--m2-work-js-file"], "M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass\n"),

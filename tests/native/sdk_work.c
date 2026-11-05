@@ -1039,7 +1039,68 @@ static int js_checkpoints_contract(void) {
   puts("M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass");
   return 0;
 }
+static int js_true(qaplet_runtime *runtime,const char *source) {
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);return 0;
+}
+static int js_cancel_contract(void) {
+  for(unsigned order=0;order<3;++order) {
+    char path[]="./qaplet-js-cancel-XXXXXX";int fd=mkstemp(path);unsigned char expected[]={0,255,17,42};
+    CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+    char encoded[512]={0};size_t used=0;
+    for(size_t i=0;i<=strlen(path);++i)used+=snprintf(encoded+used,sizeof(encoded)-used,"%s%u",i?",":"",(unsigned char)path[i]);
+    qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+    config.limits.operations=2;config.limits.worker_threads=1;qaplet_runtime *runtime=NULL;
+    CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+    file_gate g={.mutex=PTHREAD_MUTEX_INITIALIZER,.condition=PTHREAD_COND_INITIALIZER};
+    qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="file";h.name_length=4;h.function=gated_file;h.userdata=&g;h.output_bytes=4;
+    CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+    char source[2048];snprintf(source,sizeof(source),"import('qaplet:work').then(({submit})=>{globalThis.submit=submit;"
+      "globalThis.count=0;globalThis.queuedCount=0;globalThis.input=new Uint8Array([%s]);globalThis.task=submit('file',input);"
+      "input.fill(63);task.promise.then(b=>{if(String(b)!=='0,255,17,42')throw Error('bytes');++count;},"
+      "e=>{if(e.code!==28||e.errorDomain!==0||e.error!==0)throw Error('cancel');++count;});})",encoded);
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+    while(progress.phase==QAPLET_PHASE_PENDING)CHECK(qaplet_pump(runtime,&progress,NULL)==QAPLET_OK);
+    file_stage(&g,1);
+    snprintf(source,sizeof(source),"globalThis.queued=submit('file',new Uint8Array([%s]));"
+      "queued.promise.then(()=>{throw Error('queued ran')},e=>{if(e.code!==28)throw e;++queuedCount;});queued.cancel();queued.cancel();true",encoded);
+    CHECK(!js_true(runtime,source));
+    if(order==0) CHECK(!js_true(runtime,"task.cancel();task.cancel();true"));
+    file_allow(&g,0);file_stage(&g,2);
+    CHECK(!g.native_code && !memcmp(g.bytes,expected,4) && g.observed_cancel==(order==0));
+    if(order==1) CHECK(!js_true(runtime,"task.cancel();task.cancel();true"));
+    qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+    if(order==2) {
+      file_allow(&g,1);
+      do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.running);
+      CHECK(!js_true(runtime,"(()=>{try{task.cancel()}catch(e){return e.code===29}return false})()"));
+    }
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    CHECK(!js_true(runtime,"count===1 && queuedCount===1 && !task.hasRef() && !queued.hasRef()"));
+    CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.pending_handoffs && stats.operations==(order!=2) && stats.running==(order!=2) && !stats.queued);
+    if(order!=2) {
+      CHECK(stats.data_bytes==strlen(path)+1+4);
+      qaplet_work_task native=QAPLET_WORK_TASK_INIT,refused=QAPLET_WORK_TASK_INIT;
+      CHECK(qaplet_work_submit(runtime,"file",4,path,strlen(path)+1,&native,NULL)==QAPLET_OK);
+      CHECK(qaplet_work_submit(runtime,"file",4,path,strlen(path)+1,&refused,NULL)==QAPLET_RESOURCE_LIMIT);
+      CHECK(qaplet_work_cancel(runtime,&native,NULL)==QAPLET_OK && qaplet_work_release(runtime,&native,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+      CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && stats.operations==1 && stats.running==1 && !stats.queued);
+      CHECK(!js_true(runtime,"task.cancel();queued.cancel();count===1 && queuedCount===1"));
+      CHECK(qaplet_close(runtime,NULL)==QAPLET_OK && qaplet_quiesce(runtime,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+      CHECK(qaplet_quiesce(runtime,5,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(runtime,NULL)==QAPLET_BUSY);
+      qaplet_m2_snapshot state=QAPLET_M2_SNAPSHOT_INIT;
+      CHECK(qaplet_get_m2_snapshot(runtime,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_CLOSED && !state.engine_current_bytes && state.native_state==QAPLET_NATIVE_CLEANING);
+      file_allow(&g,1);
+    } else CHECK(!js_true(runtime,"(()=>{try{task.cancel()}catch(e){return e.code===29}return false})()"));
+    CHECK(!finish(runtime) && !pthread_cond_destroy(&g.condition) && !pthread_mutex_destroy(&g.mutex) && !unlink(path));
+  }
+  puts("M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
+  if (!strcmp(mode,"--m2-work-js-cancel")) return js_cancel_contract();
   if (!strcmp(mode,"--m2-work-js-checkpoints")) return js_checkpoints_contract();
   if (!strcmp(mode,"--m2-work-js-liveness")) return js_liveness_contract();
   if (!strcmp(mode,"--m2-work-js-file")) return js_file_contract();
