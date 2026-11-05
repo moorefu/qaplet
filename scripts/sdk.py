@@ -30,6 +30,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_stdio_faults.c", "stdio-faults.c", None, None),
+    ("tests/native/sdk_stdio.c", "host-stdio.c", "stdio-host.o", "host-stdio-compile"),
     ("tests/native/sdk_io_faults.c", "io-faults.c", None, None),
     ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
     ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
@@ -56,7 +58,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/stdio.c", "src/js_io.c", "src/js_io.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -78,7 +80,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 16744447, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 33521663, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -86,6 +88,13 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 16744447, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-stdio-classify", ["--m2-stdio-classify"], "M2 stdio inspect: default untouched; real stdin pipe/file/invalid classification; separate attach support: pass\n"),
+    ("m2-stdio-file", ["--m2-stdio-file"], "M2 stdio file: explicit borrowed stdin; binary short read/EOF/BUSY; idle versus operation ref; Host original survives; quiescent cleanup: pass\n"),
+    ("m2-stdio-pipe", ["--m2-stdio-pipe"], "M2 stdio pipe: real stdin redirection; unsafe blocking borrow refused without side effects; safe binary/NUL/short read/EOF/cancel/BUSY; shared flags and Host handle preserved: pass\n"),
+    ("m2-stdio-output-limits", ["--m2-stdio-output-limits"], "M2 stdio output limits: independent stdout/stderr copied binary writes; bounded 3-byte advances; shared count/data include retained results; refusal atomic; physical cleanup returns capacity: pass\n"),
+    ("m2-stdio-backpressure", ["--m2-stdio-backpressure"], "M2 stdio backpressure: real stdout pipe slow consumer; finite 64KiB reservation; pending/BUSY without hidden collection; exact ordered binary drain and written count; original handle/flags survive: pass\n"),
+    ("m2-stdio-js-defaults", ["--m2-stdio-js-defaults"], "M2 stdio JS default: declared module; three null exports until explicit Host attachment; no implicit native takeover: pass\n"),
+    ("m2-stdio-js-bytes", ["--m2-stdio-js-bytes"], "M2 stdio JS bytes: explicit Host streams; strict input/BUSY/cancel; Promise byte/NUL/EOF and independent copied writes; closed promises; standalone IO keeps awaited entry alive without timers: pass\n"),
     ("m2-process-pipe-lifetime", ["--m2-process-pipe-lifetime", "{self}", "{launcher}"], "M2 process pipe lifetime: EOF before child exit; stdin finish gates reap; process cancel preserves buffered binary output; native exit and managed EOF remain separate through ref handoff: pass\n"),
     ("m2-process-pipe-backpressure", ["--m2-process-pipe-backpressure", "{self}", "{launcher}"], "M2 process pipe backpressure: no output demand allocates no collection buffer; independent stderr; ordered 1MiB binary pull; per-pump byte quota; bounded retained data; EOF and cleanup: pass\n"),
     ("m2-process-pipe-shared-limits", ["--m2-process-pipe-shared-limits", "{self}", "{launcher}"], "M2 process pipe shared limits: Work and I/O share count and data; retained results and owner handoff keep reservations; ordinary saturation refuses atomically and recovers: pass\n"),
@@ -325,11 +334,13 @@ def package_consume(args, report, directory):
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
+        compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output, faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output)
+        compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -420,6 +431,16 @@ def package_consume(args, report, directory):
                 "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "controlled_system_fixture": True, "platforms": platforms,
                 "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
+    artifact=output / ("qaplet-stdio-faults.com" if args.operation=="fault-consume" else "qaplet-stdio-host.com")
+    stdio_cases=STDIO_FAULT_CASES if args.operation=="fault-consume" else tuple((suffix,arguments,expected) for suffix,arguments,expected in HOST_CASES if suffix.startswith("m2-stdio-"))
+    for suffix,arguments,expected in stdio_cases:
+        executed,stdout,stderr=run(report,directory,artifact.stem+"."+suffix,[*loader,artifact,*arguments],args.timeout,expected=None)
+        passed=executed["exit_code"]==0 and not executed["timed_out"] and stdout==expected and not stderr
+        report["cases"].append({"case_id":artifact.stem+"."+suffix,"required":True,"status":"pass" if passed else "fail",
+            "commands":[executed],"expected":{"exit_code":0,"stdout":expected,"stderr":""},
+            "actual":{"exit_code":executed["exit_code"],"stdout":stdout,"stderr":stderr,"timed_out":executed["timed_out"]},
+            "artifact":identity(artifact),"sdk_sha256":producer["sdk"]["sha256"],"controlled_system_fixture":args.operation=="fault-consume",
+            "reason":"Standard stream public C/JS Host compiled outside source checkouts from sealed supplied SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -436,7 +457,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io", "stdio"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -665,6 +686,27 @@ def compile_example(args, report, directory, tree, helpers, sdk, work, output):
     report["artifacts"].append(artifact)
 
 
+STDIO_FAULT_CASES=(
+    ("allocation",["--allocation"],"controlled stdio allocation: actual SDK attach storage refusal permanently fails; no token/duplicate/operation; Host original survives and native cleanup completes: pass\n"),
+    ("cancel",["--cancel"],"controlled stdio cancel: logical cancellation removes keepalive while syscall retains count/data/helper; copy BUSY until stable real bytes; single CANCELLED result then physical cleanup: pass\n"),
+    ("close",["--close"],"controlled stdio close: cancelled native file call retains bytes/count/helper through CLOSED; zero quiesce times out; destroy BUSY; actual exit/join returns capacity and preserves Host handle: pass\n"),
+    ("stop",["--stop"],"controlled stdio stop: owner confirms first stop and cancels in-flight file before close; physical data/helper retained through CLOSED/BUSY; actual native exit/join completes cleanup: pass\n"),
+    ("partial",["--partial"],"controlled stdio partial: real 2-byte prefix then native error; stable actual bytes and error domain; ordinary failure preserves OPEN; Host output preserved: pass\n"),
+    ("start",["--start"],"controlled stdio start: helper EAGAIN refuses atomically; no token/count/data/helper; stable errno; retry and real file cleanup: pass\n"),
+)
+def compile_stdio_consumer(args,report,directory,tree,helpers,sdk,work,output,faults=False):
+    (work/"tmp").mkdir(parents=True)
+    name="qaplet-stdio-faults" if faults else "qaplet-stdio-host"
+    source=sdk/("stdio-faults.c" if faults else "host-stdio.c")
+    symbols=("read","ReadFile","write","WriteFile","pthread_create","calloc") if faults else ()
+    environment=dict(os.environ,TMPDIR=str(work/"tmp"),SOURCE_DATE_EPOCH="0",LC_ALL="C",TZ="UTC",BUILDLOG=str(output/(name+".build-commands.log")))
+    report["stdio_controlled_system_fixture" if faults else "external_stdio_consumer"]={"source":identity(source),"include_directories":[str(sdk/"include")],"archive":identity(sdk/"lib/libqaplet.a"),"private_headers":False,"wrapped_symbols":list(symbols)}
+    run(report,directory,name+"-compile",[tree/"bin/cosmocc","-Os","-D_GNU_SOURCE","-DSDK_STANDALONE","-I"+str(sdk/"include"),"-ffile-prefix-map="+str(sdk)+"=sdk","-c",source,"-o",work/"host.o"],args.compile_timeout,work,environment)
+    link_portable(args,report,directory,tree,helpers,name,[work/"host.o",sdk/"lib/libqaplet.a"],work/(name+".com"),work,environment,libraries=(*("-Wl,--wrap="+s for s in symbols),"-lm","-lpthread"))
+    publish_ape(work,output,name,helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose("build",args.controlled_probe)))
+    artifact=audit(args,report,directory,tree,name,output);artifact["build_commands"]=identity(output/(name+".build-commands.log"));report["artifacts"].append(artifact)
+
+
 def example_cases(args, report, directory, artifact, modules, loader):
     if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
     for suffix, arguments, expected_exit, expected_stdout, stderr_contains in EXAMPLE_CASES:
@@ -729,7 +771,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/stdio.c", ROOT / "src/js_io.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)

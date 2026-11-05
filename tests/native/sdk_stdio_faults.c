@@ -14,10 +14,12 @@ extern bool32 __real_ReadFile(int64_t,void *,uint32_t,uint32_t *,struct NtOverla
 extern bool32 __real_WriteFile(int64_t,const void *,uint32_t,uint32_t *,struct NtOverlapped *);
 extern int __real_pthread_create(pthread_t *,const pthread_attr_t *,void *(*)(void *),void *);
 extern void SetLastError(uint32_t);
+extern void *__real_calloc(size_t,size_t);
 static pthread_mutex_t gate=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t condition=PTHREAD_COND_INITIALIZER;
 static int entered,released;
-static _Atomic int arm,partial,fail_start;
+static _Atomic int arm,partial,fail_start,fail_alloc;
+void *__wrap_calloc(size_t n,size_t size){return atomic_load(&fail_alloc) ? NULL : __real_calloc(n,size);}
 static void syscall_gate(void){
   if(!atomic_exchange(&arm,0))return;
   pthread_mutex_lock(&gate);entered=1;pthread_cond_broadcast(&condition);
@@ -42,6 +44,14 @@ static int lifecycle(const char *mode){
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.operations=1;
   qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;
+  if(!strcmp(mode,"--allocation")){
+    atomic_store(&fail_alloc,1);qaplet_code code=qaplet_stdio_attach(r,stream,&ep,&info,NULL);atomic_store(&fail_alloc,0);
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;
+    CHECK(code==QAPLET_MEMORY_LIMIT && !ep.generation && qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_MEMORY_LIMIT);
+    CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.endpoints && !io.operations && !io.data_bytes);
+    CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK && !restore_file(&f));
+    puts("controlled stdio allocation: actual SDK attach storage refusal permanently fails; no token/duplicate/operation; Host original survives and native cleanup completes: pass");return 0;
+  }
   CHECK(qaplet_stdio_attach(r,stream,&ep,&info,NULL)==QAPLET_OK);
   qaplet_io_operation op=QAPLET_IO_OPERATION_INIT;unsigned char bytes[8]={0};qaplet_io_result value=QAPLET_IO_RESULT_INIT;value.buffer=bytes;value.capacity=8;
   qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;
@@ -62,17 +72,21 @@ static int lifecycle(const char *mode){
     pthread_mutex_lock(&gate);while(!entered)pthread_cond_wait(&condition,&gate);pthread_mutex_unlock(&gate);
     qaplet_io_status status=QAPLET_IO_STATUS_INIT;
     CHECK(qaplet_get_io_status(r,&op,&status,NULL)==QAPLET_OK && status.physical_pending && status.helper_active);
-    CHECK(qaplet_io_cancel(r,&op,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    if(!strcmp(mode,"--stop")){
+      CHECK(qaplet_request_stop(r,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_EXECUTION_STOPPED && drive.reason==QAPLET_DRIVE_STOPPED);
+      qaplet_snapshot stopped=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&stopped,NULL)==QAPLET_OK && stopped.lifecycle==QAPLET_STOPPED && stopped.termination_reason==QAPLET_EXECUTION_STOPPED);
+    }else CHECK(qaplet_io_cancel(r,&op,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
     CHECK(qaplet_io_copy_result(r,&op,&value,NULL)==QAPLET_BUSY);
     CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.shared_operations==1 && io.shared_data_bytes==8 && io.helper_threads==1);
-    if(!strcmp(mode,"--close")){
+    int closing=!strcmp(mode,"--close") || !strcmp(mode,"--stop");
+    if(closing){
       CHECK(qaplet_io_release(r,&op,NULL)==QAPLET_OK && qaplet_get_io_status(r,&op,&status,NULL)==QAPLET_INVALID_HANDLE);
       CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
       CHECK(qaplet_destroy(r,NULL)==QAPLET_BUSY);
       CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.shared_operations==1 && io.shared_data_bytes==8 && io.helper_threads==1);
     }
     pthread_mutex_lock(&gate);released=1;pthread_cond_broadcast(&condition);pthread_mutex_unlock(&gate);
-    if(strcmp(mode,"--close")){
+    if(!closing){
       double until=deadline()+5;
       do{CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && qaplet_get_io_status(r,&op,&status,NULL)==QAPLET_OK);if(!status.physical_pending && !status.pending_handoff)break;sched_yield();}while(deadline()<until);
       CHECK(!status.physical_pending && !status.pending_handoff && qaplet_io_copy_result(r,&op,&value,NULL)==QAPLET_OK && value.code==QAPLET_CANCELLED && value.length==6 && !memcmp(bytes,payload,6));
@@ -88,6 +102,7 @@ static int lifecycle(const char *mode){
   if(!strcmp(mode,"--partial"))puts("controlled stdio partial: real 2-byte prefix then native error; stable actual bytes and error domain; ordinary failure preserves OPEN; Host output preserved: pass");
   else if(!strcmp(mode,"--start"))puts("controlled stdio start: helper EAGAIN refuses atomically; no token/count/data/helper; stable errno; retry and real file cleanup: pass");
   else if(!strcmp(mode,"--close"))puts("controlled stdio close: cancelled native file call retains bytes/count/helper through CLOSED; zero quiesce times out; destroy BUSY; actual exit/join returns capacity and preserves Host handle: pass");
+  else if(!strcmp(mode,"--stop"))puts("controlled stdio stop: owner confirms first stop and cancels in-flight file before close; physical data/helper retained through CLOSED/BUSY; actual native exit/join completes cleanup: pass");
   else puts("controlled stdio cancel: logical cancellation removes keepalive while syscall retains count/data/helper; copy BUSY until stable real bytes; single CANCELLED result then physical cleanup: pass");
   return 0;
 }

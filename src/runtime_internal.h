@@ -110,6 +110,7 @@ qaplet_code qaplet_owner(qaplet_runtime *);
  * points keep qaplet_owner, and HostNotify may never inherit this scope. */
 qaplet_code qaplet_resource_owner(qaplet_runtime *);
 JSModuleDef *qaplet_process_load(qaplet_runtime *);
+JSModuleDef *qaplet_stdio_load(qaplet_runtime *);
 void qaplet_js_async_checkpoint(qaplet_runtime *);
 void qaplet_js_async_shutdown(qaplet_runtime *);
 void qaplet_js_io_checkpoint(qaplet_runtime *);

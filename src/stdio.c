@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #define _COSMO_SOURCE 1
 #include "io_internal.h"
+#include "js_io.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -61,4 +62,28 @@ qaplet_code qaplet_stdio_inspect(qaplet_runtime *r,uint32_t stream,qaplet_stdio_
   qaplet_stdio_classify(stream,&info,&fd,&handle,&quota);
   pthread_mutex_lock(&r->mutex);info.attached=qaplet_io_standard_locked(r,stream,NULL,NULL);pthread_mutex_unlock(&r->mutex);
   memcpy((char *)out+8,(char *)&info+8,sizeof(info)-8);return qaplet_report(d,QAPLET_OK);
+}
+static int initialize_stdio(JSContext *context,JSModuleDef *module) {
+  qaplet_runtime *r=JS_GetContextOpaque(context);
+  static const char *names[]={"stdin","stdout","stderr"};
+  static const char *kinds[]={"invalid","pipe","file","tty","console","other"};
+  for(uint32_t stream=0;stream<3;++stream){
+    qaplet_io_endpoint endpoint=QAPLET_IO_ENDPOINT_INIT;qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;
+    r->bridge_active=1;qaplet_code code=qaplet_stdio_get(r,stream,&endpoint,&info,NULL);r->bridge_active=0;
+    JSValue value;
+    if(code==QAPLET_UNSUPPORTED)value=JS_NULL;
+    else if(code){JS_ThrowInternalError(context,"standard stream unavailable");return -1;}
+    else{
+      value=qaplet_js_io_endpoint(r,&endpoint,stream!=0);
+      if(!JS_IsException(value) && JS_DefinePropertyValueStr(context,value,"kind",JS_NewString(context,kinds[info.kind]),JS_PROP_ENUMERABLE)<0){JS_FreeValue(context,value);value=JS_EXCEPTION;}
+    }
+    if(JS_IsException(value))return -1;
+    if(JS_SetModuleExport(context,module,names[stream],value)<0)return -1;
+  }
+  return 0;
+}
+JSModuleDef *qaplet_stdio_load(qaplet_runtime *r) {
+  JSModuleDef *module=JS_NewCModule(r->context,"qaplet:stdio",initialize_stdio);
+  if(module && (JS_AddModuleExport(r->context,module,"stdin")<0 || JS_AddModuleExport(r->context,module,"stdout")<0 || JS_AddModuleExport(r->context,module,"stderr")<0))return NULL;
+  return module;
 }

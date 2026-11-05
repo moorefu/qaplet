@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <sched.h>
 #include <time.h>
+#include <termios.h>
+#include "libc/nt/console.h"
 #include <unistd.h>
 #include "libc/dce.h"
 #include "libc/nt/runtime.h"
@@ -171,11 +173,114 @@ static int output_limits(void){
   for(unsigned i=0;i<3;++i)CHECK(!restore_file(&f[i]));
   puts("M2 stdio output limits: independent stdout/stderr copied binary writes; bounded 3-byte advances; shared count/data include retained results; refusal atomic; physical cleanup returns capacity: pass");return 0;
 }
+static int js_defaults(void){
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="import('qaplet:stdio').then(m=>m.stdin===null&&m.stdout===null&&m.stderr===null)";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&progress,NULL);
+  if(code)fprintf(stderr,"stdio JS default import code=%d phase=%u\n",code,progress.phase);
+  CHECK(code==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK);
+  puts("M2 stdio JS default: declared module; three null exports until explicit Host attachment; no implicit native takeover: pass");return 0;
+}
+static int js_bytes(void){
+  file_fixture f[3];for(unsigned i=0;i<3;++i)CHECK(!install_file(&f[i],i));
+  const unsigned char payload[]={0,1,127,128,255,10};CHECK(write(f[0].fd,payload,6)==6 && lseek(f[0].fd,0,SEEK_SET)==0);
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;b.limits.execution_timeout_ms=2000;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  for(unsigned i=0;i<3;++i){qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;CHECK(qaplet_stdio_attach(r,i,&ep,&info,NULL)==QAPLET_OK);}
+  const char *source="import('qaplet:stdio').then(async m=>{"
+    "if(m.stdin.kind!=='file'||!m.stdin.hasRef())throw Error('kind/ref');"
+    "let invalid=0;for(const n of [-1,0,NaN,Infinity,1.5,'3']){try{m.stdin.read(n)}catch(e){if(e.code===1)invalid++}}if(invalid!==6)throw Error('strict read');"
+    "try{m.stdout.write('bytes');throw Error('accepted text')}catch(e){if(e.code!==8)throw e}"
+    "let cancelled=m.stdin.read(32);cancelled.cancel();cancelled.cancel();"
+    "await cancelled.promise.then(()=>{throw Error('cancel success')},e=>{if(e.code!==28||e.bytesWritten!==0)throw e});"
+    "const task=m.stdin.read(32);let busy=false;try{m.stdin.read(1)}catch(e){busy=e.code===4}if(!busy)throw Error('busy');"
+    "const first=await task.promise;if(first.eof||Array.from(first.bytes).join(',')!=='0,1,127,128,255,10')throw Error('bytes');"
+    "let input=new Uint8Array([0,255,1]);const write=m.stdout.write(input);input.fill(4);"
+    "if((await write.promise).bytesWritten!==3)throw Error('written');m.stdout.finish();await m.stdout.closed;"
+    "const err=m.stderr.write(new Uint8Array([9,0,8]));m.stderr.finish();if((await err.promise).bytesWritten!==3)throw Error('stderr');await m.stderr.closed;"
+    "const last=await m.stdin.read(32).promise;if(!last.eof||last.bytes.length)throw Error('eof');await m.stdin.closed;"
+    "m.stdout.finish();m.stderr.close();await Promise.all([m.stdout.closed,m.stderr.closed]);return 6})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&progress,NULL);
+  CHECK(code==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_diagnostic diagnostic=QAPLET_DIAGNOSTIC_INIT;char error[512];diagnostic.message=error;diagnostic.capacity=sizeof(error);
+  code=qaplet_run(r,&drive,&diagnostic);if(code)fprintf(stderr,"stdio JS bytes code=%d domain? %.*s\n",code,(int)diagnostic.length,error);
+  CHECK(code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==6);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK);
+  unsigned char output[3];const unsigned char expected[2][3]={{0,255,1},{9,0,8}};
+  for(unsigned i=1;i<3;++i)CHECK(lseek(f[i].fd,0,SEEK_SET)==0 && read(f[i].fd,output,3)==3 && !memcmp(output,expected[i-1],3));
+  for(unsigned i=0;i<3;++i)CHECK(!restore_file(&f[i]));
+  puts("M2 stdio JS bytes: explicit Host streams; strict input/BUSY/cancel; Promise byte/NUL/EOF and independent copied writes; closed promises; standalone IO keeps awaited entry alive without timers: pass");return 0;
+}
+static int terminal_kind(void){
+  int saved=-1,master=-1,slave=-1;int64_t original=0,console=0;struct termios before={0},after={0};uint32_t mode=0,mode_after=0;
+  if(IsWindows()){
+    original=GetStdHandle(-10);
+    /* ConPTY existence does not establish the APE startup's current stdin.
+     * Install the owned Console fixture as the actual native standard handle,
+     * then both the Host and product query GetStdHandle(-10), not CONIN$. */
+    console=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);CHECK(console!=-1 && SetStdHandle(-10,console));
+    CHECK(GetConsoleMode(GetStdHandle(-10),&mode));
+  }
+  else{master=posix_openpt(O_RDWR|O_NOCTTY);CHECK(master>=0 && !grantpt(master) && !unlockpt(master));slave=open(ptsname(master),O_RDWR|O_NOCTTY);saved=dup(0);CHECK(slave>=0 && saved>=0 && dup2(slave,0)==0 && !tcgetattr(0,&before));}
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;
+  CHECK(qaplet_stdio_inspect(r,0,&info,NULL)==QAPLET_OK && info.kind==(IsWindows() ? QAPLET_STDIO_CONSOLE : QAPLET_STDIO_TTY) && !info.supported);
+  CHECK(qaplet_stdio_attach(r,0,&ep,&info,NULL)==QAPLET_UNSUPPORTED && !ep.generation);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_destroy(r,NULL)==QAPLET_OK);
+  if(IsWindows())CHECK(GetConsoleMode(GetStdHandle(-10),&mode_after) && mode_after==mode && SetStdHandle(-10,original) && CloseHandle(console));
+  else CHECK(!tcgetattr(0,&after) && !memcmp(&before,&after,sizeof(before)) && dup2(saved,0)==0 && !close(saved) && !close(slave) && !close(master));
+  puts("M2 stdio terminal kind: real stdin TTY/Console classified; unsupported byte attachment refuses without changing terminal mode or closing original: pass");return 0;
+}
+static int pipe_backpressure(void){
+  unsigned char input[65536],output[4096];for(size_t i=0;i<sizeof(input);++i)input[i]=(unsigned char)(i%251);
+  size_t prefix=0;
+  int saved=-1,p[2]={-1,-1},flags=-1;int64_t saved_handle=0,handle=0,peer=0;
+  if(IsWindows()){
+    saved_handle=GetStdHandle(-11);char name[128];char16_t native[128];snprintf(name,sizeof(name),"\\\\.\\pipe\\qaplet-stdio-write-%d",getpid());for(size_t i=0;i<=strlen(name);++i)native[i]=(unsigned char)name[i];
+    handle=CreateNamedPipe(native,3|0x40000000u,8,1,4096,4096,0,NULL);CHECK(handle!=-1);
+    peer=CreateFile(native,0x80000000u,0,NULL,3,0,0);CHECK(peer!=-1);struct NtOverlapped connected={0};CHECK(ConnectNamedPipe(handle,&connected)||GetLastError()==535);CHECK(SetStdHandle(-11,handle));
+  }else{CHECK(!pipe(p));flags=fcntl(p[1],F_GETFL);CHECK(flags>=0 && !fcntl(p[1],F_SETFL,flags|O_NONBLOCK) && !fcntl(p[0],F_SETFL,O_NONBLOCK));saved=dup(1);CHECK(saved>=0 && dup2(p[1],1)==1);flags=fcntl(1,F_GETFL);
+    memset(output,0xa5,sizeof(output));ssize_t n;while(prefix<16*1024*1024 && (n=write(p[1],output,sizeof(output)))>0)prefix+=n;
+    CHECK(prefix>0 && prefix<16*1024*1024 && (errno==EAGAIN || errno==EWOULDBLOCK));
+  }
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_stdio_attach(r,1,&ep,&info,NULL)==QAPLET_OK && info.kind==QAPLET_STDIO_PIPE);
+  qaplet_io_operation op=QAPLET_IO_OPERATION_INIT,busy=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_write(r,&ep,input,sizeof(input),&op,NULL)==QAPLET_OK);
+  qaplet_io_status status=QAPLET_IO_STATUS_INIT;qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  for(unsigned i=0;i<4;++i)CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_io_status(r,&op,&status,NULL)==QAPLET_OK && status.state==QAPLET_IO_PENDING && status.length<sizeof(input));
+  CHECK(qaplet_io_write(r,&ep,input,1,&busy,NULL)==QAPLET_BUSY);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.operations==1 && io.data_bytes==sizeof(input));
+  struct timespec clock;clock_gettime(CLOCK_MONOTONIC,&clock);double until=clock.tv_sec+clock.tv_nsec/1e9+5;size_t seen=0;
+  while(seen<prefix+sizeof(input) || status.state==QAPLET_IO_PENDING || status.pending_handoff){
+    CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && qaplet_get_io_status(r,&op,&status,NULL)==QAPLET_OK);
+    ssize_t got=-1;
+    if(IsWindows()){uint32_t available=0,n=0;CHECK(PeekNamedPipe(peer,NULL,0,NULL,&available,NULL));if(available){CHECK(ReadFile(peer,output,available>sizeof(output)?sizeof(output):available,&n,NULL));got=n;}}
+    else got=read(p[0],output,sizeof(output));
+    if(got>0){CHECK(seen+(size_t)got<=prefix+sizeof(input));for(ssize_t i=0;i<got;++i)CHECK(output[i]==(seen+(size_t)i<prefix ? 0xa5 : input[seen+i-prefix]));seen+=got;}
+    clock_gettime(CLOCK_MONOTONIC,&clock);CHECK(clock.tv_sec+clock.tv_nsec/1e9<until);sched_yield();
+  }
+  qaplet_io_result value=QAPLET_IO_RESULT_INIT;CHECK(qaplet_io_copy_result(r,&op,&value,NULL)==QAPLET_OK && value.code==QAPLET_OK && value.length==sizeof(input) && seen==prefix+sizeof(input));
+  CHECK(qaplet_io_release(r,&op,NULL)==QAPLET_OK && qaplet_io_finish(r,&ep,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK);
+  if(IsWindows()){uint32_t original_flags=0;CHECK(GetHandleInformation(handle,&original_flags) && SetStdHandle(-11,saved_handle) && CloseHandle(handle) && CloseHandle(peer));}
+  else CHECK(fcntl(1,F_GETFL)==flags && dup2(saved,1)==1 && !close(saved) && !close(p[0]) && !close(p[1]));
+  puts("M2 stdio backpressure: real stdout pipe slow consumer; finite 64KiB reservation; pending/BUSY without hidden collection; exact ordered binary drain and written count; original handle/flags survive: pass");return 0;
+}
 int sdk_stdio(int argc,char **argv) {
+  if(argc>1 && !strncmp(argv[1],"--m2-stdio-",11)){char mode[64];snprintf(mode,sizeof(mode),"--%s",argv[1]+11);char *adapted[]={argv[0],mode};return sdk_stdio(2,adapted);}
   if(argc>1 && !strcmp(argv[1],"--classify"))return classify();
   if(argc>1 && !strcmp(argv[1],"--file"))return file_bytes();
   if(argc>1 && !strcmp(argv[1],"--pipe"))return pipe_bytes();
   if(argc>1 && !strcmp(argv[1],"--output-limits"))return output_limits();
+  if(argc>1 && !strcmp(argv[1],"--js-defaults"))return js_defaults();
+  if(argc>1 && !strcmp(argv[1],"--js-bytes"))return js_bytes();
+  if(argc>1 && !strcmp(argv[1],"--terminal"))return terminal_kind();
+  if(argc>1 && !strcmp(argv[1],"--backpressure"))return pipe_backpressure();
   qaplet_abi abi=QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi)==QAPLET_OK);
   CHECK(abi.capabilities & (1u<<24));
