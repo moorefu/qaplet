@@ -84,7 +84,9 @@ class EfficiencyContract(unittest.TestCase):
             self.assertIn("Full cannot narrow", json.loads(report.read_text(encoding="utf-8"))["reason"])
 
     def test_doc_and_application_scope_and_transitive_build_dependencies(self):
-        self.assertFalse(any(self.plan(["docs/INDEX.md"])["workflow_scope"].values()))
+        docs = self.plan(["docs/INDEX.md"])
+        self.assertFalse(any(docs["workflow_scope"].values()))
+        self.assertFalse(any(item["required"] for item in docs["contracts"]))
         scm = self.plan(["scripts/svc_scm.py"])["workflow_scope"]
         self.assertTrue(scm["svc_scm"])
         self.assertFalse(scm["svc_job"])
@@ -99,6 +101,42 @@ class EfficiencyContract(unittest.TestCase):
             self.assertTrue(value["workflow_scope"]["m0"])
             self.assertEqual(len(value["native_matrix"]["include"]), 5)
             self.assertFalse(value["release_ready"])
+
+
+class RequiredGateContract(unittest.TestCase):
+    def test_legacy_build_gate_rejects_selected_job_failure_skips_and_planner_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work = Path(temp)
+            for mode in ("fast-pass", "fast-fail", "fast-skip", "plan-fail", "docs", "cross-missing", "cross-pass",
+                         "full-offline-fail", "full-guest-fail", "full-pass", "full-native-pass"):
+                with self.subTest(mode=mode):
+                    results = {name: {"result": "skipped"} for name in ("fast", "portable-build", "native-startup", "page-plan",
+                        "arm64-page-gaps", "startup-matrix", "full-core", "offline-rebuild")}
+                    outputs = {"run_fast": "true", "run_cross": "false", "run_full": "false"}
+                    results["tier-plan"] = {"result": "success", "outputs": outputs}
+                    results["fast"]["result"] = "success"
+                    if mode == "fast-fail": results["fast"]["result"] = "failure"
+                    if mode == "fast-skip": results["fast"]["result"] = "skipped"
+                    if mode == "plan-fail": results["tier-plan"]["result"] = "failure"
+                    if mode == "docs": outputs["run_fast"] = "false"
+                    if mode.startswith(("cross-", "full-")):
+                        outputs.update(run_fast="false", run_cross="true")
+                        results["portable-build"]["result"] = "success"
+                    if mode == "cross-pass":
+                        for name in ("native-startup", "startup-matrix"):
+                            results[name]["result"] = "success"
+                    if mode.startswith("full-"):
+                        outputs["run_full"] = "true"
+                        for name in ("native-startup", "startup-matrix", "page-plan", "full-core"):
+                            results[name]["result"] = "success"
+                        results["offline-rebuild"]["result"] = "failure" if mode == "full-offline-fail" else "success"
+                        results["page-plan"]["outputs"] = {"needs_guest": "false" if mode == "full-native-pass" else "true"}
+                        results["arm64-page-gaps"]["result"] = "skipped" if mode == "full-native-pass" else "failure" if mode == "full-guest-fail" else "success"
+                    path = work / (mode + ".json")
+                    path.write_text(json.dumps(results), encoding="utf-8")
+                    result = subprocess.run([sys.executable, str(ROOT / "scripts/ci_tiers.py"), "gate",
+                        "--needs-json", str(path), "--report", str(work / (mode + "-report.json"))], capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0 if mode in ("fast-pass", "docs", "cross-pass", "full-pass", "full-native-pass") else 1, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

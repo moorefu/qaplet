@@ -161,10 +161,10 @@ def plan(args):
         raise ValueError("Unsupported CI event: " + name)
     default = event.get("repository", {}).get("default_branch")
     trusted = name in ("push", "schedule", "workflow_dispatch") and bool(default) and ref == "refs/heads/" + default
-    contracts = [{"id": "linux-engine", "state": "implemented", "stage": "M0-A", "required": True},
-                 {"id": "native-startup-io", "state": "implemented", "stage": "M0-B", "required": tier != "fast"},
-                 {"id": "arm64-page-gaps-deep-abi", "state": "implemented", "stage": "M0-B/C", "required": tier == "full"},
-                 {"id": "offline-rebuild-refusals", "state": "implemented", "stage": "M0", "required": tier == "full"},
+    contracts = [{"id": "linux-engine", "state": "implemented", "stage": "M0-A", "required": scopes["m0"]},
+                 {"id": "native-startup-io", "state": "implemented", "stage": "M0-B", "required": scopes["m0"] and tier != "fast"},
+                 {"id": "arm64-page-gaps-deep-abi", "state": "implemented", "stage": "M0-B/C", "required": scopes["m0"] and tier == "full"},
+                 {"id": "offline-rebuild-refusals", "state": "implemented", "stage": "M0", "required": scopes["m0"] and tier == "full"},
                  {"id": "node-compatibility", "state": "not_implemented", "stage": "M3", "required": False},
                  {"id": "runtime-soak", "state": "not_implemented", "stage": "M2", "required": False},
                  {"id": "network-tls-security", "state": "not_implemented", "stage": "M4", "required": False},
@@ -182,12 +182,12 @@ def plan(args):
 
 
 def check_workflow(workflow):
-    runner = workflow["jobs"]["build"]["runs-on"]
+    runner = workflow["jobs"]["portable-build"]["runs-on"]
     if not isinstance(runner, str) or not runner.startswith("ubuntu-"):
         raise ValueError("M0 product builds require an Ubuntu runner")
     if workflow.get("permissions") != {"contents": "read", "actions": "read"}:
         raise ValueError("M0 workflow must use read-only contents/actions permissions")
-    steps = workflow["jobs"]["build"]["steps"]
+    steps = workflow["jobs"]["portable-build"]["steps"]
     runs = [step["run"] for step in steps if "run" in step]
     expected = ["make check OUT=out/m0/check",
                 "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json",
@@ -205,7 +205,7 @@ def check_workflow(workflow):
                step["with"].get("if-no-files-found") == "error" for step in steps):
         raise ValueError("M0 must distribute original artifacts and failure evidence")
     for name, job in workflow["jobs"].items():
-        if name in ("build", "tier-plan", "fast", "offline-rebuild"):
+        if name in ("build", "portable-build", "tier-plan", "fast", "offline-rebuild"):
             continue
         for step in job.get("steps", []):
             if re.search(r"build-ape|(?:build_ape|native_io|pages64k|startup_loaders|m2_waker|m2_stdio|m2_process|m2_tty)\.py\s+build|cosmocc", step.get("run", "")):
@@ -213,7 +213,7 @@ def check_workflow(workflow):
     native = workflow["jobs"].get("native-startup", {})
     if native.get("strategy", {}).get("matrix") != "${{ fromJSON(needs.tier-plan.outputs.native_matrix) }}":
         raise ValueError("Native startup must consume the shared risk-directed matrix; Full declares all five")
-    if native.get("needs") != ["tier-plan", "build"] or native.get("strategy", {}).get("fail-fast") is not False:
+    if native.get("needs") != ["tier-plan", "portable-build"] or native.get("strategy", {}).get("fail-fast") is not False:
         raise ValueError("Native startup requires one distributed build and must retain every host result")
     native_steps = native.get("steps", [])
     if not any(step.get("uses", "").startswith("actions/download-artifact@") and step.get("with", {}).get("name") == "m0-build-${{ github.sha }}" for step in native_steps):
@@ -289,7 +289,7 @@ def check_guest_input_supply(workflow):
 def check_m2_probe_transport(workflow):
     """New backend facts keep their own suppliers, host logs and 64K semantics."""
     jobs = workflow["jobs"]
-    build = jobs["build"]["steps"]
+    build = jobs["portable-build"]["steps"]
     native = jobs["native-startup"]["steps"]
     guest = jobs["arm64-page-gaps"]["steps"]
     supplier = "m2-probes-build-${{ github.sha }}"
@@ -347,21 +347,32 @@ def check_tier_transport(workflow):
         "description": "Replay a tier on this exact ref", "type": "choice", "required": True,
         "default": "cross", "options": ["fast", "cross", "full"]}, "Manual replay must select an explicit tier")
     jobs = workflow["jobs"]
-    required = {"tier-plan", "fast", "build", "offline-rebuild", "native-startup", "page-plan", "arm64-page-gaps", "startup-matrix", "full-core"}
+    required = {"tier-plan", "fast", "build", "portable-build", "offline-rebuild", "native-startup", "page-plan", "arm64-page-gaps", "startup-matrix", "full-core"}
     require(required <= jobs.keys(), "Missing required tier job")
-    require(jobs["build"].get("needs") == "tier-plan" and jobs["build"].get("if") == "${{ needs.tier-plan.outputs.run_cross == 'true' }}", "Only Cross/Full require the complete portable supplier")
+    gate = jobs["build"]
+    require(gate.get("if") == "${{ always() }}" and gate.get("runs-on") == "ubuntu-24.04" and
+            set(gate.get("needs", [])) == required - {"build"} and "name" not in gate and
+            [step.get("run") for step in gate["steps"] if "run" in step] ==
+            ["python scripts/ci_tiers.py gate --report out/required-gate/result.json"] and
+            [step.get("env") for step in gate["steps"] if "run" in step] == [{"CI_JOB_RESULTS": "${{ toJSON(needs) }}"}] and
+            all("if" not in step for step in gate["steps"] if "run" in step),
+            "Existing build required check must always propagate every selected product failure on Ubuntu")
+    require(jobs["portable-build"].get("needs") == "tier-plan" and jobs["portable-build"].get("if") == "${{ needs.tier-plan.outputs.run_cross == 'true' }}", "Only Cross/Full require the complete portable supplier")
     require(jobs["fast"].get("if") == "${{ needs.tier-plan.outputs.run_fast == 'true' }}" and
             jobs["fast"].get("needs") == "tier-plan" and jobs["fast"].get("runs-on") == "ubuntu-24.04", "Fast requires its real Ubuntu product job")
     fast_runs = [step["run"] for step in jobs["fast"]["steps"] if "run" in step]
     require(fast_runs[-1] == "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json" and
             not any("offline_integrity" in run or "make check " in run or "m2_" in run or "build-ape" in run for run in fast_runs),
             "Fast must compile/run current SDK behavior without historical apps, offline pair or guest")
+    require(any(step.get("with", {}).get("path") == "out/fast/\nout/m0/\n.cache/build/local-check/\n!.cache/build/local-check/**/objects/**" and
+                step["with"].get("include-hidden-files") is True and step.get("if") == "${{ always() }}"
+                for step in jobs["fast"]["steps"]), "Fast must retain original supplier SDK/report/logs, including ARM archive, without build objects")
     selected = {
         "native-startup": "${{ needs.tier-plan.outputs.run_cross == 'true' }}",
-        "page-plan": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
-        "arm64-page-gaps": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
-        "startup-matrix": "${{ always() && needs.tier-plan.outputs.run_cross == 'true' && needs.build.result == 'success' }}",
-        "full-core": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
+        "page-plan": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.portable-build.result == 'success' }}",
+        "arm64-page-gaps": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.portable-build.result == 'success' && needs.page-plan.outputs.needs_guest == 'true' }}",
+        "startup-matrix": "${{ always() && needs.tier-plan.outputs.run_cross == 'true' && needs.portable-build.result == 'success' }}",
+        "full-core": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.portable-build.result == 'success' }}",
     }
     for name, condition in selected.items():
         require(jobs[name].get("if") == condition and "tier-plan" in jobs[name].get("needs", []), "Required tier condition/dependency differs: " + name)
@@ -383,7 +394,7 @@ def check_tier_transport(workflow):
             if uses.startswith("actions/checkout@"):
                 require(step.get("with", {}).get("persist-credentials") is False, "Checkout cannot retain credentials")
             if uses.startswith("actions/cache/"):
-                require(name in ("build", "fast", "offline-rebuild") and step.get("with", {}) == {"path": cache_paths, "key": "${{ needs.tier-plan.outputs.cache_key }}"}, "Cache must bind exact locked input bytes")
+                require(name in ("portable-build", "fast", "offline-rebuild") and step.get("with", {}) == {"path": cache_paths, "key": "${{ needs.tier-plan.outputs.cache_key }}"}, "Cache must bind exact locked input bytes")
                 if uses.startswith("actions/cache/save@"):
                     require(step.get("if") == "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}", "Only verified trusted default-branch events may save caches")
                 else:
@@ -392,7 +403,7 @@ def check_tier_transport(workflow):
                 raise ValueError("Trusted cache policy requires separate restore/save")
             if any(command in run for command in ("fetch_locked_toolchain.py", "make quickjs-fetch", "scripts/ape_helpers.py fetch", "scripts/startup_loaders.py fetch")):
                 require("if" not in step, "Restored cache inputs must always be verified; cache-hit bypass refused")
-    build = jobs["build"]["steps"]
+    build = jobs["portable-build"]["steps"]
     require(all("if" not in step for step in build if "run" in step and not any(command in step["run"] for command in
                 ("sudo apt-get", "scripts/offline_integrity.py run", "scripts/ci_tiers.py seal-offline"))), "Required Fast input/compiler/probe commands cannot be skipped")
     require(sum(step.get("uses", "").startswith("actions/cache/restore@") for step in build) == 1 and
@@ -405,7 +416,7 @@ def check_tier_transport(workflow):
     require(save > last_input, "Trusted cache save must follow complete restored-input verification")
     full_steps = jobs["offline-rebuild"]["steps"]
     require(jobs["offline-rebuild"].get("if") == "${{ needs.tier-plan.outputs.run_full == 'true' }}" and
-            jobs["offline-rebuild"].get("needs") == ["tier-plan", "build"] and
+            jobs["offline-rebuild"].get("needs") == ["tier-plan", "portable-build"] and
             jobs["offline-rebuild"].get("runs-on") == "ubuntu-24.04", "Offline evidence must be a separate Ubuntu Full-only supplier")
     offline = [step for step in full_steps if "scripts/offline_integrity.py run" in step.get("run", "")]
     require(len(offline) == 1 and "if" not in offline[0] and
@@ -450,7 +461,7 @@ def check_tier_transport(workflow):
     require(all(step.get("if") == "${{ !cancelled() && matrix.page_size == 65536 }}" for step in sdk_guest),
             "SDK guest execution must preserve native-first missing-64K selection and retain failures")
     core = jobs["full-core"]
-    require(core.get("needs") == ["tier-plan", "build", "native-startup", "arm64-page-gaps", "startup-matrix", "offline-rebuild"] and core.get("runs-on") == "ubuntu-24.04", "Full Core must await all selected same-commit jobs including offline evidence")
+    require(core.get("needs") == ["tier-plan", "portable-build", "native-startup", "arm64-page-gaps", "startup-matrix", "offline-rebuild"] and core.get("runs-on") == "ubuntu-24.04", "Full Core must await all selected same-commit jobs including offline evidence")
     require([step["run"] for step in core["steps"] if "run" in step] == [
         'python scripts/ci_tiers.py collect-actions --commit "$CI_COMMIT" --output-dir out/full/archives --report out/full/acquisition.json',
         'python scripts/ci_tiers.py manifest --collection-report out/full/collection.json --commit "$CI_COMMIT" --report out/full/manifest.json',
@@ -474,9 +485,37 @@ def check_tier_transport(workflow):
             "Every M0 run must retain an efficiency observation without cancelling evidence")
 
 
+def required_gate(args):
+    results = read_json(args.needs_json) if args.needs_json else json.loads(os.environ.get("CI_JOB_RESULTS", "null"))
+    expected = {"tier-plan", "fast", "portable-build", "native-startup", "page-plan", "arm64-page-gaps",
+                "startup-matrix", "full-core", "offline-rebuild"}
+    require(isinstance(results, dict) and set(results) == expected, "Complete actual job results required")
+    require(results["tier-plan"].get("result") == "success", "Tier/scope selection failed; product execution cannot be skipped into success")
+    outputs = results["tier-plan"].get("outputs", {})
+    flags = [outputs.get(key) for key in ("run_fast", "run_cross", "run_full")]
+    require(all(value in ("true", "false") for value in flags) and
+            not (flags[0] == flags[1] == "true") and not (flags[2] == "true" and flags[1] != "true"), "Invalid selected tier outputs")
+    selected = ["fast"] if flags[0] == "true" else []
+    if flags[1] == "true": selected += ["portable-build", "native-startup", "startup-matrix"]
+    if flags[2] == "true":
+        selected += ["page-plan", "offline-rebuild", "full-core"]
+        needs_guest = results["page-plan"].get("outputs", {}).get("needs_guest")
+        require(needs_guest in ("true", "false"), "Actual Full page-gap selection required")
+        if needs_guest == "true":
+            selected.append("arm64-page-gaps")
+    failed = [name for name in selected if results[name].get("result") != "success"]
+    require(not failed, "Required selected jobs failed, cancelled or were skipped: " + ", ".join(failed))
+    return {"status": "pass", "scope": "ci-required-gate", "selected_jobs": selected,
+            "job_results": results, "product_scope": "selected" if selected else "not_applicable",
+            "evidence_verified": False, "release_ready": False,
+            "reason": "Selected job results succeeded; product evidence remains in original reports" if selected else
+                      "Scope only: no product execution selected or claimed"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("plan", "seal-offline", "manifest", "collect-actions"))
+    parser.add_argument("operation", choices=("plan", "gate", "seal-offline", "manifest", "collect-actions"))
+    parser.add_argument("--needs-json", type=Path, help="Retained needs context for local gate replay; Actions uses CI_JOB_RESULTS")
     parser.add_argument("--event-name")
     parser.add_argument("--event-json", type=Path)
     parser.add_argument("--changed-paths", type=Path, help="explicit JSON path list for local replay")
@@ -492,6 +531,8 @@ def main():
         if args.operation == "plan":
             require(args.event_name and args.event_json, "Tier plan requires event name and payload")
             result = plan(args)
+        elif args.operation == "gate":
+            result = required_gate(args)
         else:
             from ci_full import collect_actions, manifest, seal_offline
             if args.operation == "seal-offline":
