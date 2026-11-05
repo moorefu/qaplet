@@ -12,9 +12,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 #include "libc/dce.h"
+#include "libc/nt/runtime.h"
+#include "libc/nt/process.h"
+#include "libc/nt/synchronization.h"
+#include "libc/nt/events.h"
 #define CHECK(c) do { if (!(c)) { fprintf(stderr,"process system boundary line %d: %s errno=%d\n",__LINE__,#c,errno); return 1; } } while (0)
 extern int sys_waitid(int,int,void *,int,void *);
 extern int __real_pthread_create(pthread_t *,const pthread_attr_t *,void *(*)(void *),void *);
@@ -37,6 +42,13 @@ ssize_t __wrap_read(int fd,void *buffer,size_t length) {
   return __real_read(fd,buffer,length);
 }
 static _Atomic int steal_wait,stolen_pid,unsafe_kills;
+static _Atomic int reject_terminate;
+static _Atomic int reject_send;
+extern ssize_t __real_send(int,const void *,size_t,int);
+ssize_t __wrap_send(int fd,const void *data,size_t length,int flags) {
+  if (atomic_exchange(&reject_send,0)) { errno=EIO; return -1; }
+  return __real_send(fd,data,length,flags);
+}
 int __wrap_sys_waitid(int type,int pid,void *info,int options,void *usage) {
   int result=__real_sys_waitid(type,pid,info,options,usage);
   if (!result && atomic_exchange(&steal_wait,0)) {
@@ -47,8 +59,35 @@ int __wrap_sys_waitid(int type,int pid,void *info,int options,void *usage) {
   return result;
 }
 int __wrap_kill(int pid,int signal) {
+  if (atomic_exchange(&reject_terminate,0)) { errno=EPERM; return -1; }
   if (pid==atomic_load(&stolen_pid)) { atomic_fetch_add(&unsafe_kills,1); errno=ESRCH; return -1; }
   return __real_kill(pid,signal);
+}
+extern int __real_TerminateProcess(int64_t,uint32_t);
+static int64_t terminated_handle;
+static int recycle_process_handle;
+static int64_t recycled_events[8192],reused_handle;
+static unsigned recycled_count;
+extern int __real_CloseHandle(int64_t);
+int __wrap_CloseHandle(int64_t handle) {
+  int result=__real_CloseHandle(handle);
+  if (result && recycle_process_handle && handle==terminated_handle) {
+    /* Synchronous OS handoff: reuse before the helper can publish or enter
+     * TLS, whose native condition implementation may allocate its own HANDLE. */
+    recycle_process_handle=0;
+    while (recycled_count<8192 && !reused_handle) {
+      int64_t event=CreateEvent(NULL,0,0,NULL);
+      if (!event) break;
+      recycled_events[recycled_count++]=event;
+      if (event==handle) reused_handle=event;
+    }
+  }
+  return result;
+}
+int __wrap_TerminateProcess(int64_t handle,uint32_t code) {
+  terminated_handle=handle;
+  if (atomic_exchange(&reject_terminate,0)) { SetLastError(5); return 0; }
+  return __real_TerminateProcess(handle,code);
 }
 static qaplet_runtime *fixture_runtime;
 extern size_t __real_mkntcmdline(void *,char *const *,size_t);
@@ -60,6 +99,7 @@ static pthread_key_t key;
 static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t condition=PTHREAD_COND_INITIALIZER;
 static int destructor_entered,destructor_released;
+static int helper_entered,helper_released,hold_helper;
 static void *(*entry)(void *);
 static void *argument;
 static void destructor(void *unused) {
@@ -71,7 +111,83 @@ static void destructor(void *unused) {
 static void *trampoline(void *unused) {
   (void)unused;
   pthread_setspecific(key,(void *)1);
+  pthread_mutex_lock(&mutex);
+  if (hold_helper) {
+    helper_entered=1; pthread_cond_broadcast(&condition);
+    while (!helper_released) pthread_cond_wait(&condition,&mutex);
+  }
+  pthread_mutex_unlock(&mutex);
   return entry(argument);
+}
+static int cancel_fixture(const char *mode,const char *child) {
+  int native_error=!strcmp(mode,"--cancel-error");
+  int wake_error=!strcmp(mode,"--cancel-wake");
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+  m.limits.processes=1; m.limits.helper_threads=1;
+  qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  CHECK(!pthread_key_create(&key,destructor)); hold_helper=1; fault=2;
+  int in[2],out[2],saved_in=dup(0),saved_out=dup(1);
+  CHECK(saved_in>=0 && saved_out>=0 && !pipe2(in,O_CLOEXEC) && !pipe2(out,O_CLOEXEC));
+  CHECK(dup2(in[0],0)==0 && dup2(out[1],1)==1);
+  const char script[]="printf R; read line; exit 37";
+  qaplet_string args[]={ {child,strlen(child)},{"--hang",6} };
+  qaplet_string shell[]={ {"/bin/sh",7},{"-c",2},{script,sizeof(script)-1} };
+  qaplet_process_options o=QAPLET_PROCESS_OPTIONS_INIT;
+  o.path=IsWindows() ? args[0] : shell[0]; o.argv=IsWindows() ? args : shell; o.argc=IsWindows() ? 2 : 3;
+  o.stdio[0]=o.stdio[1]=QAPLET_PROCESS_INHERIT; o.stdio[2]=QAPLET_PROCESS_IGNORE;
+  qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(qaplet_process_spawn(r,&o,&p,&s,NULL)==QAPLET_OK); fault=0;
+  CHECK(dup2(saved_in,0)==0 && dup2(saved_out,1)==1 && !close(saved_in) && !close(saved_out) && !close(in[0]) && !close(out[1]));
+  char byte=0; CHECK(read(out[0],&byte,1)==1 && byte=='R' && !close(out[0]));
+  pthread_mutex_lock(&mutex); while (!helper_entered) pthread_cond_wait(&condition,&mutex); pthread_mutex_unlock(&mutex);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  if (wake_error) { CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT); atomic_store(&reject_send,1); }
+  if (native_error) atomic_store(&reject_terminate,1);
+  if (IsWindows() && !native_error && !wake_error) recycle_process_handle=1;
+  CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_OK && qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_process_status(r,&p,&s,NULL)==QAPLET_OK && s.code==QAPLET_CANCELLED && !s.exited && !s.reaped && s.helper_active && !s.delivered && s.referenced);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_BUSY);
+  if (wake_error) {
+    qaplet_m2_snapshot snapshot=QAPLET_M2_SNAPSHOT_INIT;
+    CHECK(qaplet_get_m2_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_FAILED && snapshot.termination_reason==QAPLET_CONTROL_FAILURE && snapshot.control_error_domain==QAPLET_ERROR_DOMAIN_ERRNO && snapshot.control_error==EIO);
+    CHECK(qaplet_request_stop(r,NULL)==QAPLET_OK);
+  }
+  if (native_error) CHECK(s.error_domain==(IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO) && s.error==(IsWindows() ? 5 : EPERM));
+  CHECK(!close(in[1]));
+  pthread_mutex_lock(&mutex); helper_released=1; pthread_cond_broadcast(&condition);
+  while (!destructor_entered) pthread_cond_wait(&condition,&mutex); pthread_mutex_unlock(&mutex);
+  CHECK(qaplet_process_get_status(r,&p,&s,NULL)==QAPLET_OK && s.code==QAPLET_CANCELLED && s.reaped && s.exited && s.helper_active);
+  if (native_error) CHECK(s.native_exit_code==37 && !s.native_signal && s.error==(IsWindows() ? 5 : EPERM));
+  else CHECK(IsWindows() ? s.native_exit_code==0xD00D && !s.native_signal : s.native_signal==SIGKILL && !s.native_exit_code);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && qaplet_process_cancel(r,&p,NULL)==QAPLET_INVALID_HANDLE);
+  if (IsWindows() && !native_error && !wake_error) {
+    /* The process handle has really closed while its helper is in TLS exit.
+     * Obtain that exact kernel HANDLE for a new event, then exercise the old
+     * public token. No synthetic slot/generation edit stands in for reuse. */
+    if (!reused_handle) fprintf(stderr,"native HANDLE reuse not observed: retired=%lld attempts=%u\n",(long long)terminated_handle,recycled_count);
+    CHECK(reused_handle==terminated_handle && reused_handle && qaplet_process_cancel(r,&p,NULL)==QAPLET_INVALID_HANDLE);
+    CHECK(WaitForSingleObject(reused_handle,0)==258 && SetEvent(reused_handle) && WaitForSingleObject(reused_handle,0)==0);
+    while (recycled_count) CHECK(CloseHandle(recycled_events[--recycled_count]));
+  }
+  qaplet_process extra=QAPLET_PROCESS_INIT;
+  CHECK(qaplet_process_spawn(r,&o,&extra,&s,NULL)==(wake_error ? QAPLET_BAD_STATE : QAPLET_RESOURCE_LIMIT));
+  CHECK(qaplet_close(r,NULL)==(native_error ? QAPLET_PROCESS_ERROR : QAPLET_OK));
+  CHECK(qaplet_quiesce(r,0,&drive,NULL)==(native_error ? QAPLET_PROCESS_ERROR : QAPLET_OK) && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  CHECK(qaplet_quiesce(r,25,&drive,NULL)==(native_error ? QAPLET_PROCESS_ERROR : QAPLET_OK) && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT && qaplet_destroy(r,NULL)==QAPLET_BUSY);
+  pthread_mutex_lock(&mutex); destructor_released=1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex);
+  struct timespec now; CHECK(!clock_gettime(CLOCK_MONOTONIC,&now)); time_t until=now.tv_sec+5;
+  do {
+    CHECK(qaplet_quiesce(r,5000,&drive,NULL)==(native_error ? QAPLET_PROCESS_ERROR : QAPLET_OK));
+    if (drive.reason==QAPLET_DRIVE_QUIESCENT) break;
+    sched_yield(); CHECK(!clock_gettime(CLOCK_MONOTONIC,&now));
+  } while (now.tv_sec<until);
+  CHECK(drive.reason==QAPLET_DRIVE_QUIESCENT);
+  qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT; qaplet_m2_snapshot ns=QAPLET_M2_SNAPSHOT_INIT;
+  CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.processes && !ps.helper_threads && !ps.helper_stack_bytes);
+  CHECK(qaplet_get_m2_snapshot(r,&ns,NULL)==QAPLET_OK && !ns.native_handles && !ns.native_uncertain_handles && !ns.engine_current_bytes);
+  CHECK(qaplet_destroy(r,NULL)==QAPLET_OK && !pthread_key_delete(key));
+  if (wake_error) CHECK(ns.termination_reason==QAPLET_CONTROL_FAILURE && ns.control_error==EIO);
+  puts(wake_error ? "M2 process cancel wake: cancellation remains accepted after real wake failure; CANCELLED and actual reap preserved; first control cause survives stop/close; physical cleanup drains: pass" : native_error ? "M2 process cancel native error: accepted cancellation preserves actual terminate error and natural exit; physical retention and cleanup diagnostic independent: pass" : "M2 process cancel physical: accepted CANCELLED before reap; reap before helper TLS exit; release invalidates token while capacity retained; zero/finite quiesce and BUSY destroy; actual join releases resources: pass"); return 0;
 }
 int __wrap_pthread_create(pthread_t *thread,const pthread_attr_t *attributes,void *(*function)(void *),void *data) {
   if (fault==1) return EAGAIN;
@@ -206,5 +322,6 @@ static int wait_probe(void) {
 }
 int main(int argc,char **argv) {
   if (argc==2 && !strcmp(argv[1],"--waitid")) return wait_probe();
+  if (argc==3 && (!strcmp(argv[1],"--cancel-physical") || !strcmp(argv[1],"--cancel-error") || !strcmp(argv[1],"--cancel-wake"))) return cancel_fixture(argv[1],argv[2]);
   return argc==3 ? fixture(argv[1],argv[2]) : 2;
 }

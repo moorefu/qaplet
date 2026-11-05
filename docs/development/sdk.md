@@ -395,3 +395,18 @@ python3 scripts/sdk.py fault-consume --build-report out/sdk/build.json \
 ```
 
 该增量的本地成绩与未完成矩阵见 [票据 01 实施记录](../../.scratch/qaplet-m2/01-runtime-validation.md)。
+
+M2 直接子进程的 `qaplet_process_cancel` 可在任意线程调用，不进入 JS，也不是
+signal-safe。它与原生退出发布在同一接受锁下排序：取消先接受后，status.code 为
+`CANCELLED`，重复取消为 OK；退出先发布则为 `ALREADY_COMPLETED`。实际
+exit/signal/native error、reap、owner 交付与 helper 物理退出独立保留。取消只强制
+终止并回收直接子进程，不承诺整树或温和信号，也不等于输出管道关闭。
+release 在 reap 前仍为 BUSY；helper 未真实 join 时，已 release 的槽和预算仍保留。
+owner 确认 STOPPED/FAILED 即走相同终止责任，无须先 close；close/quiesce 不执行
+用户 jobs/finally。失去 child identity 后不再向数字 PID 重发信号。
+
+`sdk.py package-consume` 现在实际包外编译并执行全部公开 Process catalog；
+`fault-consume` 以独立配方编译 `process-faults.c`，保留 helper 入场/TLS gate、
+真实 terminate error、取消接受后 wake 故障、创建 rollback 与身份丢失证据。
+Windows 只消费 Ubuntu 供应的同字节 APE/child；其 HANDLE 复用用例在真实 close
+后立即持有 OS 复用事件，再验证旧 token 与迟到 helper 不影响新对象。
