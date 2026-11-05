@@ -76,3 +76,29 @@ Windows用`python -B`运行同两条dev check-fast，输出名分别为windows-a
 QEMU/当前64K、Mac/ARM native、混合资源1小时或Release。Full合同在选择/gate/工作流合同中保留，
 这些本地成绩不将M2父票或跨平台/最终验收提前resolved。发现过期/不匹配或有界候选不可用时会重新执行，
 包括超过候选范围的老原件，避免无界扫描或重试。INDEX只更新票15本地完成，历史性能数仍绑定修复前ce9原source。
+
+
+## 原 Spec 复核新增 P2：同 run 多个同名 provider
+
+root 转交固定 d72 的原 Spec 独立复核：同一成功 run 因重跑可保留多个同名、不同 ID 的有效 artifact。
+原选择要求数量恰好为一，加入第二件有效原件即 miss。独立有限重现位于主工作区
+`out/reviews/efficiency-fixes-f9-d72-20261105/spec-work/duplicate-provider-valid/verified-summary.json`。
+原报告/packet保持不动；本追加修复待原 Spec reviewer 复核，不将作者验证称为独立通过。
+
+最小修复仅改 `ci_evidence.actions_reuse_candidates` 的 provider 选择/拒绝记录：每个已选成功 run
+按原 catalog 顺序尝试最多三个非 expired 的同名 artifact；三个 run 和默认30秒网络预算保持。
+每件单独保存原 provider ID、原 ZIP/摘要、collection/offline verify 和原 CI 身份，命中才停止。
+expired 明确留 ID/拒绝；下载或执行合同拒绝留该 ID 的 `rejected.json` 再继续下一件。
+同名不同 ID 的缓存仍各自保留；不把两件强行视为同一原件。全部失败/缺报告时输出
+`reused=false`，真实 workflow 的原 fresh 获取/编译/行为条件继续成立，原拒绝不会被覆盖。
+
+`duplicate-provider-red.log`：新增5个场景均失败（两件valid、bad+valid、expired+valid、全bad、全缺报告）。
+首次 `duplicate-provider-green.log` 尚有全缺报告场景缺 provider 拒绝标注的1个失败，保留原日志；
+补齐 generator 恢复后的 semantic refusal 标注后，`duplicate-provider-green-2.log` 的4 tests全部通过，
+包含16种 Actions/HTTP 场景及7种本地身份场景。单件valid与两件valid均reuse；bad/expired在前时后件valid
+仍reuse且保留首件拒绝；两件全bad或全缺报告均miss、reused=false、两个 provider ID/拒绝原件齐全。
+
+有限回归：Windows `test_ci_reuse.py` 4 tests通过；`test_workflow_evidence.py` 10 tests通过，覆盖原即时引用下载/
+有限刷新/offline缓存；`build_ape.py check-ci`通过。Ubuntu同一 `test_ci_reuse.py` 4 tests通过，原件
+`duplicate-provider-linux.log`。未再跑完整suite、SDK供应或127项产品合同；`sdk.py`、`local_check.py` 和80件
+产品recipe字节均未变，既有供应身份/实际产品成绩保持原范围。未触发远端CI。

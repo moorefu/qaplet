@@ -108,7 +108,9 @@ class StartupReuseContract(unittest.TestCase):
             self.assertEqual(result['reuse']['attempts'][0]['status'], 'fail')
 
     def test_actions_startup_replays_original_zip_and_provider_before_skipping(self):
-        for mode in ('valid', 'prior-original', 'previous-attempt', 'stale', 'sha', 'recipe', 'contract', 'missing-report', 'bad-bytes', 'provider-digest', 'bad-existing-id'):
+        for mode in ('valid', 'duplicate-valid', 'duplicate-bad-valid', 'duplicate-expired-valid', 'duplicate-all-bad',
+                     'duplicate-all-missing', 'prior-original', 'previous-attempt', 'stale', 'sha', 'recipe', 'contract',
+                     'missing-report', 'bad-bytes', 'provider-digest', 'bad-existing-id'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory(dir=ROOT / 'out') as temp:
                 work = Path(temp)
                 commit = hashlib.sha1(str(work).encode()).hexdigest()
@@ -118,7 +120,7 @@ class StartupReuseContract(unittest.TestCase):
                 if mode == 'recipe': value['current_recipe_sha256'] = 'b' * 64
                 if mode == 'contract': value['contract_sha256'] = 'b' * 64
                 local.write_json(origin, value)
-                if mode == 'missing-report': Path(value['runtime']['report']['path']).unlink()
+                if mode in ('missing-report', 'duplicate-all-missing'): Path(value['runtime']['report']['path']).unlink()
                 if mode == 'bad-bytes': (origin.parent / 'stdout-0').write_bytes(b'bad')
                 data = io.BytesIO()
                 with zipfile.ZipFile(data, 'w', zipfile.ZIP_DEFLATED) as bundle:
@@ -153,9 +155,16 @@ class StartupReuseContract(unittest.TestCase):
                         else:
                             newer = '/runs/24/' in self.path
                             content = latest_payload if newer else payload
-                            body = json.dumps({'total_count': 1, 'artifacts': [{'id': artifact_id + int(newer), 'name': name,
+                            rows = [{'id': artifact_id + int(newer), 'name': name,
                                 'expired': False, 'digest': 'sha256:' + ('b' * 64 if mode == 'provider-digest' else hashlib.sha256(content).hexdigest()),
-                                'size_in_bytes': len(content), 'workflow_run': {'id': 24 if newer else 23, 'head_sha': commit}}]}).encode()
+                                'size_in_bytes': len(content), 'workflow_run': {'id': 24 if newer else 23, 'head_sha': commit}}]
+                            if mode.startswith('duplicate-'):
+                                rows.append({**rows[0], 'id': artifact_id + 1, 'digest': 'sha256:' + hashlib.sha256(latest_payload).hexdigest(),
+                                             'size_in_bytes': len(latest_payload)})
+                                if mode == 'duplicate-expired-valid': rows[0]['expired'] = True
+                                if mode in ('duplicate-bad-valid', 'duplicate-all-bad'): rows[0]['digest'] = 'sha256:' + 'b' * 64
+                                if mode == 'duplicate-all-bad': rows[1]['digest'] = 'sha256:' + 'c' * 64
+                            body = json.dumps({'total_count': len(rows), 'artifacts': rows}).encode()
                         self.send_response(200)
                         self.end_headers()
                         self.wfile.write(body)
@@ -174,16 +183,24 @@ class StartupReuseContract(unittest.TestCase):
                         '--reuse-only', '--reuse-actions', '--reuse-repository', 'owner/repo',
                         '--reuse-api-base', 'http://127.0.0.1:' + str(server.server_port), '--expected-commit', commit,
                         '--expected-os', 'Linux', '--expected-arch', 'x86_64',
-                        '--output-dir', str(work / 'output'), '--report', str(work / 'result.json')],
+                        '--output-dir', str(work / 'output'), '--report', str(work / 'result.json'), '--github-output', str(work / 'github-output')],
                         cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
                     self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                     result = json.loads((work / 'result.json').read_text(encoding='utf-8'))
-                    self.assertEqual(result['execution_status'], 'reused_previous' if mode in ('valid', 'prior-original', 'previous-attempt') else 'not_run', result['reuse'])
+                    passing = ('valid', 'duplicate-valid', 'duplicate-bad-valid', 'duplicate-expired-valid', 'prior-original', 'previous-attempt')
+                    self.assertEqual(result['execution_status'], 'reused_previous' if mode in passing else 'not_run', result['reuse'])
+                    self.assertEqual((work / 'github-output').read_text(encoding='utf-8'), 'reused=' + str(mode in passing).lower() + '\n')
                     self.assertTrue(all(auth is None for _, auth in requests))
-                    if mode in ('valid', 'prior-original', 'previous-attempt'):
+                    if mode in passing:
                         self.assertEqual(result['reuse']['original_ci']['run_id'], '23')
-                        self.assertEqual(result['reuse']['provider']['artifact']['id'], artifact_id)
+                        self.assertEqual(result['reuse']['provider']['artifact']['id'], artifact_id + int(mode in ('duplicate-bad-valid', 'duplicate-expired-valid')))
                         self.assertTrue(list((work / 'output').rglob('original.zip')))
+                    if mode in ('duplicate-bad-valid', 'duplicate-expired-valid'):
+                        self.assertTrue(any(attempt.get('provider_artifact_id') == artifact_id and attempt['status'] == 'fail'
+                                            for attempt in result['reuse']['attempts']))
+                    if mode in ('duplicate-all-bad', 'duplicate-all-missing'):
+                        self.assertEqual({attempt.get('provider_artifact_id') for attempt in result['reuse']['attempts']}, {artifact_id, artifact_id + 1})
+                        self.assertEqual(len(list((work / 'output').rglob('rejected.json'))), 2)
                     if mode == 'prior-original':
                         first = cache / (str(artifact_id) + '-' + name + '.zip')
                         second = cache / (str(artifact_id + 1) + '-' + name + '.zip')

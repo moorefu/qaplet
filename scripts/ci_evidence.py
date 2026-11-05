@@ -583,44 +583,70 @@ def actions_reuse_candidates(args, directory):
             provider = metadata("runs/" + str(run_id) + "/artifacts?per_page=100", catalog_path)
             if provider.get("total_count", 0) > 100:
                 raise ValueError("Actions artifact catalog exceeds bounded first page")
-            rows = [row for row in provider["artifacts"] if row.get("name") == "qaplet-fast-" + args.commit and row.get("expired") is False]
-            if len(rows) != 1:
-                raise ValueError("One original Fast artifact required")
-            row = rows[0]
-            options = SimpleNamespace(operation="fetch-actions", repo=ROOT, manifest=catalog_path, repository=repository,
-                commit=args.commit, run_id=run_id, artifact_id=[row["id"]], api_base=base,
-                output_dir=work / "collected", max_unpacked_bytes=2 * 1024**3, attempts=[], deadline=deadline)
-            try:
-                collection = collect(options)
-            finally:
-                write_json(work / "acquisition-attempts.json", options.attempts)
-            write_json(work / "collection.json", collection)
-            # Repeat the same archive and inventory verification completely offline.
-            write_json(work / "local-manifest.json", collection["local_manifest"])
-            options.operation, options.manifest = "verify", work / "local-manifest.json"
-            write_json(work / "verify.json", collect(options))
-            archive = collection["artifacts"][0]
-            shutil.copyfile(archive["archive"]["path"], work / "original.zip")
-            root = Path(archive["root"])
-            reports = [root / "out/fast/check.json", root / "fast/check.json", root / "check.json"]
-            reports = [path for path in reports if path.is_file()]
-            if len(reports) != 1:
-                raise ValueError("Original actual Fast check report missing or ambiguous")
-            value = read_json(reports[0])
-            ci = value.get("ci") or {}
-            if str(ci.get("run_id")) != str(run_id) or ci.get("commit") != args.commit:
-                raise ValueError("Original execution CI identity differs from selected provider run")
-            original = value["supplier"]["artifacts_directory"].replace("\\", "/")
-            marker = "/.cache/build/local-check/"
-            if marker not in original:
-                raise ValueError("Original Fast artifact has no unambiguous checkout root")
-            original_root = original.split(marker, 1)[0]
-            # Multi-path upload retains the repository common ancestor. Legacy
-            # flattened artifacts cannot prove all references and fall back.
-            if not (root / ".cache/build/local-check").is_dir():
-                raise ValueError("Original Fast artifact omits supplier bytes")
-            yield reports[0], [(original_root, str(root))], {"run": run, "artifact": row,
-                "collection": identity(work / "collection.json"), "archive": identity(work / "original.zip")}
+            matched = [row for row in provider["artifacts"] if row.get("name") == "qaplet-fast-" + args.commit]
+            expired = [row for row in matched if row.get("expired") is not False]
+            if expired:
+                write_json(work / "expired.json", {"status": "fail", "reason": "Provider artifact expired or expiry unknown",
+                    "provider_artifact_ids": [row.get("id") for row in expired]})
+                for row in expired:
+                    args.reuse_attempts.append({"provider_run_id": run_id, "provider_artifact_id": row.get("id"),
+                        "status": "fail", "reason": "Provider artifact expired or expiry unknown", "rejection": identity(work / "expired.json")})
+            rows = [row for row in matched if row.get("expired") is False]
+            if not rows:
+                raise ValueError("No nonexpired original Fast artifact available")
+            # A rerun can upload several same-name artifacts under one run ID.
+            # Each is an independent provider/ZIP candidate, never an alias.
+            for index, row in enumerate(rows[:3]):
+                request_timeout(deadline, 5)
+                candidate = work / ("artifact-" + str(index))
+                candidate.mkdir()
+                try:
+                    options = SimpleNamespace(operation="fetch-actions", repo=ROOT, manifest=catalog_path, repository=repository,
+                        commit=args.commit, run_id=run_id, artifact_id=[row["id"]], api_base=base,
+                        output_dir=candidate / "collected", max_unpacked_bytes=2 * 1024**3, attempts=[], deadline=deadline)
+                    try:
+                        collection = collect(options)
+                    finally:
+                        write_json(candidate / "acquisition-attempts.json", options.attempts)
+                    write_json(candidate / "collection.json", collection)
+                    # Repeat the same archive and inventory verification completely offline.
+                    write_json(candidate / "local-manifest.json", collection["local_manifest"])
+                    options.operation, options.manifest = "verify", candidate / "local-manifest.json"
+                    write_json(candidate / "verify.json", collect(options))
+                    archive = collection["artifacts"][0]
+                    shutil.copyfile(archive["archive"]["path"], candidate / "original.zip")
+                    root = Path(archive["root"])
+                    reports = [root / "out/fast/check.json", root / "fast/check.json", root / "check.json"]
+                    reports = [path for path in reports if path.is_file()]
+                    if len(reports) != 1:
+                        raise ValueError("Original actual Fast check report missing or ambiguous")
+                    value = read_json(reports[0])
+                    ci = value.get("ci") or {}
+                    if str(ci.get("run_id")) != str(run_id) or ci.get("commit") != args.commit:
+                        raise ValueError("Original execution CI identity differs from selected provider run")
+                    original = value["supplier"]["artifacts_directory"].replace("\\", "/")
+                    marker = "/.cache/build/local-check/"
+                    if marker not in original:
+                        raise ValueError("Original Fast artifact has no unambiguous checkout root")
+                    original_root = original.split(marker, 1)[0]
+                    # Multi-path upload retains the repository common ancestor. Legacy
+                    # flattened artifacts cannot prove all references and fall back.
+                    if not (root / ".cache/build/local-check").is_dir():
+                        raise ValueError("Original Fast artifact omits supplier bytes")
+                    checked = len(args.reuse_attempts)
+                    yield reports[0], [(original_root, str(root))], {"run": run, "artifact": row,
+                        "collection": identity(candidate / "collection.json"), "archive": identity(candidate / "original.zip")}
+                    # The caller resumes discovery after rejecting a candidate's
+                    # execution contract. Keep that refusal with this provider ID.
+                    for attempt in args.reuse_attempts[checked:]:
+                        if attempt.get("status") == "fail":
+                            attempt.update(provider_run_id=run_id, provider_artifact_id=row.get("id"))
+                            write_json(candidate / "rejected.json", attempt)
+                            attempt["rejection"] = identity(candidate / "rejected.json")
+                except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+                    write_json(candidate / "rejected.json", {"status": "fail", "reason": str(error)[:500]})
+                    args.reuse_attempts.append({"provider_run_id": run_id, "provider_artifact_id": row.get("id"),
+                        "status": "fail", "reason": str(error)[:500], "rejection": identity(candidate / "rejected.json")})
         except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
             write_json(work / "rejected.json", {"status": "fail", "reason": str(error)[:500]})
             args.reuse_attempts.append({"provider_run_id": run_id, "status": "fail", "reason": str(error)[:500],

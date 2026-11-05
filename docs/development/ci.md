@@ -122,7 +122,7 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 `dev.py check-fast` / `local_check.py` 在真实执行前自动读取主 `.cache/build/local-check-results/` 的一个成功报告指针；key 绑定精确 SHA、产品 recipe、选中测试合同、OS/架构。指针只用于定位，每次仍复用既有 `ci_evidence.reuse` 重核原成功执行、SDK/ZIP、完整所选 catalog 与 raw logs，默认有效期 24 小时。没有指针不扫描历史 out；可用 `--reuse-report FILE` 显式选择原件。命中时 `execution_status=reused_previous`、新产品执行为 0，原执行/producer/CI/平台/时间保留；miss/reject 留在新报告后继续实际执行，不重写原失败或原报告。该复用只适用于原开发合同，不签发新 OS、Cross、Full 或 Release 成绩。
 
-CI Fast 在任何输入获取之前执行同一 CLI 的 `--reuse-only --reuse-actions`：只读查询同精确 SHA 的成功 M0 run（最近列表中至多三个候选，当前重跑可取上一次成功 attempt），沿既有 fetch-actions 检查 provider run/commit/expiry、ZIP digest/长度，再 offline verify 全部解包字节，并复验原 SDK/进程日志。默认网络预算 30 秒，单次 metadata 请求至多 5 秒；超时、无权限、过期、缺件或错身份保留拒绝并回落实际获取/编译/执行。原 artifact 的 SDK、日志、provider 和 ZIP 随新报告保留；路径映射只在内存使用，不改原件。没有有效证明不会跳过所选行为，复用不扩大可信 cache 写权限；命中不 save 输入 cache。token 只发固定 GitHub API，literal loopback 测试不携带 token，签名 URL 不落盘。
+CI Fast 在任何输入获取之前执行同一 CLI 的 `--reuse-only --reuse-actions`：只读查询同精确 SHA 的成功 M0 run（至多三个成功 run；每个 run 按原 catalog 顺序尝试最多三个未过期同名 provider ID，当前重跑可取上一次成功 attempt），沿既有 fetch-actions 检查 provider run/commit/expiry、ZIP digest/长度，再 offline verify 全部解包字节，并复验原 SDK/进程日志。默认网络预算 30 秒，单次 metadata 请求至多 5 秒；超时、无权限、过期、缺件或错身份保留拒绝并回落实际获取/编译/执行。同一 run 重跑产生的同名不同 ID 逐件复验，不因重名拒绝整个 run；过期和失败候选分别保留 ID/拒绝原件，再尝试下一件。原 artifact 的 SDK、日志、provider 和 ZIP 随新报告保留；路径映射只在内存使用，不改原件。没有有效证明不会跳过所选行为，复用不扩大可信 cache 写权限；命中不 save 输入 cache。token 只发固定 GitHub API，literal loopback 测试不携带 token，签名 URL 不落盘。
 
 独立 `ci_evidence.py reuse --input-report FILE --commit SHA --profile engine --expected-os Linux --expected-arch x86_64 --report out/reuse.json` 仍可作只读复验；生产入口已经调用同一验证函数。远端实际调度尚未运行，本地 loopback/API 合同与实际 Linux/Windows 原件复用分别记录。
 

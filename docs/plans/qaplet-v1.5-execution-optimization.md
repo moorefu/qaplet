@@ -45,7 +45,7 @@ Fast 单独生产当前 SDK，不等待 Full。L0 的最小 C 冒烟只用 Ubunt
 
 Fast/Targeted 的同分支、同 job/平台旧运行可被新提交取消。Full/RC 和所有手工 Fast/Cross/Full 使用 run ID 隔离且不自动取消；独立工作流的手工运行也使用独立 ID。效率报告 job 不取消证据运行。
 
-本地 supplier 按当前产品 recipe 选择、逐件校验 distribution/ZIP/统一锁后复用；目录存在不代表通过。普通 L0 启动先从有界成功指针（精确 SHA + recipe + 选中合同 + 平台）定位原件，严格重核原报告/SDK/raw 后可跳过重复编译与所选行为；否则保留拒绝并实际执行。显式 `--reuse-report` 可选择原件，不递归扫描历史证据。CI Fast 在输入获取前走同一入口查询至多三个同 SHA 成功候选（默认 30 秒网络预算），包含重跑的上次成功 attempt；原 ZIP/provider 摘要经 fetch-actions 与 offline verify 后按原身份复验。旧失败、未执行、合同变更、坏字节或陈旧结果均拒绝，不能签发新 OS、Cross、Full 或 Release 成绩。原报告和 ZIP 不改写；原路径仅作内存映射，拒绝原件保留。详细入口与有效期见[CI 文档](../development/ci.md#本地快速入口复用与效率观测)。远端实际 Actions 跳过尚未执行，不能将本地合成 API 成绩外推为远端成绩。
+本地 supplier 按当前产品 recipe 选择、逐件校验 distribution/ZIP/统一锁后复用；目录存在不代表通过。普通 L0 启动先从有界成功指针（精确 SHA + recipe + 选中合同 + 平台）定位原件，严格重核原报告/SDK/raw 后可跳过重复编译与所选行为；否则保留拒绝并实际执行。显式 `--reuse-report` 可选择原件，不递归扫描历史证据。CI Fast 在输入获取前走同一入口查询至多三个同 SHA 成功 run，每 run 最多三个未过期同名 provider 候选（共用默认 30 秒网络预算），包含重跑的上次成功 attempt；原 ZIP/provider 摘要经 fetch-actions 与 offline verify 后按原身份复验。旧失败、未执行、合同变更、坏字节或陈旧结果均拒绝，不能签发新 OS、Cross、Full 或 Release 成绩。原报告和 ZIP 不改写；原路径仅作内存映射，拒绝原件保留。详细入口与有效期见[CI 文档](../development/ci.md#本地快速入口复用与效率观测)。远端实际 Actions 跳过尚未执行，不能将本地合成 API 成绩外推为远端成绩。
 
 Fast原件上传包含supplier的SDK、producer报告和evidence/隐藏ARM archive，排除objects临时目录，避免留下仅指向未保存cache的报告。修复前 `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21` 根组合已实测：Linux默认匹配供应all120项24.826秒，Windows同字节120项19.778秒，均含1000生命周期。首次供应230.663秒、含供件检查255.925秒，单列cold；这是WSL/本机的开发成绩，不是改后Actions耗时或完整Cross。
 
