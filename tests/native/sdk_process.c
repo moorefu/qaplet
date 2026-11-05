@@ -72,6 +72,16 @@ static int finish(qaplet_runtime *runtime) {
   CHECK(qaplet_get_m2_snapshot(runtime,&m,NULL)==QAPLET_OK && !m.native_handles && !m.reactor_registrations && !m.native_uncertain_handles && !m.engine_current_bytes);
   CHECK(qaplet_destroy(runtime,NULL)==QAPLET_OK); return 0;
 }
+static int pipe_defaults(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_process_options o; prepare(&o,"--hang");
+  for (int i=0;i<3;++i) o.stdio[i]=QAPLET_PROCESS_PIPE;
+  qaplet_process p=QAPLET_PROCESS_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(spawn_ok(r,&o,&p,&s,NULL)==QAPLET_OK);
+  CHECK(!finish(r));
+  puts("M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass");return 0;
+}
 static int completed(qaplet_runtime *r,qaplet_process *p,uint32_t expected) {
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
   qaplet_code code=qaplet_run(r,&d,NULL);
@@ -577,6 +587,9 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+  if (!strcmp(argv[1],"--m2-process-pipe-defaults")) {
+    int result=pipe_defaults(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
   int result=!strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
