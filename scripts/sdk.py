@@ -30,6 +30,10 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_cli_signal.c", "cli-signal.c", None, None),
+    ("tests/native/sdk_cli_signal_faults.c", "cli-signal-faults.c", None, None),
+    ("tests/native/sdk_cli_signal_late.c", "cli-signal-late.c", None, None),
+    ("tests/native/sdk_cli_signal_observer.c", "cli-signal-observer.c", None, None),
     ("tests/native/sdk_cli_output_observer.c", "cli-output-observer.c", None, None),
     ("tests/native/sdk_cli.c", "host-cli.c", "cli-host.o", "cli-host-compile"),
     ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
@@ -82,6 +86,8 @@ RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
+RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
+           "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py")
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
 EXAMPLE_CASES = (

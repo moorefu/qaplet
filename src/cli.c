@@ -10,14 +10,17 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 #include <fcntl.h>
 #include <math.h>
 #include <pthread.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include "libc/dce.h"
 #include "libc/nt/console.h"
 #include "libc/nt/events.h"
+#include "libc/nt/dll.h"
 #include "libc/nt/ipc.h"
 #include "libc/nt/runtime.h"
 #include "libc/nt/synchronization.h"
@@ -25,20 +28,195 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 #include "libc/nt/struct/filemodeinformation.h"
 extern uint32_t GetFileType(int64_t);
 extern bool32 GetOverlappedResult(int64_t,struct NtOverlapped *,uint32_t *,bool32);
+extern bool32 CancelIoEx(int64_t,struct NtOverlapped *);
+
+/* Process-owned interrupt facilities deliberately survive until process exit.
+ * Removing a handler cannot join an entry which already copied its fd/HANDLE.
+ * Keeping these two descriptors / two events and static state prevents reuse
+ * by a late entry, including after Runtime destruction and during final output.
+ * Neither asynchronous entry ever reads the Runtime pointer. */
+static int interrupt_pipe[2]={-1,-1};
+static int64_t interrupt_event,relay_event;
+static unsigned interrupted,relay_shutdown,interrupt_error;
+static pthread_t relay_thread;
+static pthread_mutex_t relay_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t relay_condition;
+static int relay_started,relay_done;
+static qaplet_runtime *relay_runtime;
+static uint64_t cleanup_remaining_ns=5000000000ull;
+static int cleanup_clock_failed;
+_Static_assert(__atomic_always_lock_free(4,0),"interrupt publication is lock free");
+
+static int clock_ns(uint64_t *value){
+  struct timespec now;
+  if(clock_gettime(CLOCK_MONOTONIC,&now) || now.tv_sec<0 ||
+      (uint64_t)now.tv_sec>(UINT64_MAX-(uint64_t)now.tv_nsec)/1000000000)return 0;
+  *value=(uint64_t)now.tv_sec*1000000000+now.tv_nsec;return 1;
+}
+static uint64_t begin_native_wait(void){uint64_t now=0;if(!clock_ns(&now))cleanup_clock_failed=1;return now;}
+static void end_native_wait(uint64_t before){
+  uint64_t now;
+  if(!clock_ns(&now) || now<before){cleanup_clock_failed=1;cleanup_remaining_ns=0;return;}
+  uint64_t used=now-before;cleanup_remaining_ns=used>=cleanup_remaining_ns ? 0 : cleanup_remaining_ns-used;
+}
+static uint64_t remaining_ms(void){return cleanup_clock_failed ? 0 : cleanup_remaining_ns/1000000;}
+static void unix_interrupt(int number){
+  int saved=errno;unsigned char hint=1;(void)number;
+  __atomic_store_n(&interrupted,1,__ATOMIC_SEQ_CST);
+  /* The write side is permanently nonblocking. Full means a wake is already
+   * queued. EINTR is retried without allocation, logging or any SDK operation. */
+  ssize_t n;do{n=write(interrupt_pipe[1],&hint,1);}while(n<0 && errno==EINTR);
+  if(n<0 && errno!=EAGAIN && errno!=EWOULDBLOCK)__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);
+  errno=saved;
+}
+#if defined(__x86_64__)
+typedef bool32 (__msabi *ctrl_entry)(uint32_t);
+static bool32 (__msabi *raw_set_event)(int64_t);
+static bool32 (__msabi *raw_set_ctrl)(ctrl_entry,bool32);
+static bool32 (__msabi *cancel_synchronous)(int64_t);
+/* Foreign OS threads have no Cosmopolitan TLS. Only inline lock-free atomics
+ * and pre-resolved raw Win32 MS-ABI calls are allowed on this path. */
+static bool32 __msabi __attribute__((no_instrument_function,no_stack_protector)) windows_interrupt(uint32_t control){
+  if(control!=0)return 0;
+  __atomic_store_n(&interrupted,1,__ATOMIC_SEQ_CST);
+  bool32 output_woken=raw_set_event(interrupt_event),relay_woken=raw_set_event(relay_event);
+  if(!output_woken || !relay_woken)
+    __atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);
+  return 1;
+}
+#endif
+static void *interrupt_relay(void *unused){
+  (void)unused;
+  for(;;){
+    if(IsWindows()){
+      if(WaitForSingleObject(relay_event,0xffffffff)!=0){__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);break;}
+    }else{
+      unsigned char hints[128];ssize_t n;
+      do{n=read(interrupt_pipe[0],hints,sizeof(hints));}while(n<0 && errno==EINTR);
+      if(n<=0){__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);break;}
+    }
+    if(__atomic_load_n(&relay_shutdown,__ATOMIC_SEQ_CST))break;
+    if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){
+      qaplet_runtime *runtime=__atomic_load_n(&relay_runtime,__ATOMIC_SEQ_CST);
+      if(runtime && qaplet_request_stop(runtime,NULL))__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);
+    }
+  }
+  pthread_mutex_lock(&relay_mutex);relay_done=1;
+  pthread_cond_broadcast(&relay_condition);pthread_mutex_unlock(&relay_mutex);return NULL;
+}
+static int install_interrupts(qaplet_runtime *runtime){
+  pthread_condattr_t attr;
+  if(pthread_condattr_init(&attr))return 0;
+  int error=pthread_condattr_setclock(&attr,CLOCK_MONOTONIC);
+  if(!error)error=pthread_cond_init(&relay_condition,&attr);
+  pthread_condattr_destroy(&attr);if(error)return 0;
+  __atomic_store_n(&relay_runtime,runtime,__ATOMIC_SEQ_CST);
+  if(IsWindows()){
+#if defined(__x86_64__)
+    int64_t kernel=LoadLibraryA("kernel32.dll");if(!kernel)return 0;
+    raw_set_event=(__typeof__(raw_set_event))GetProcAddress(kernel,"SetEvent");
+    raw_set_ctrl=(__typeof__(raw_set_ctrl))GetProcAddress(kernel,"SetConsoleCtrlHandler");
+    cancel_synchronous=(__typeof__(cancel_synchronous))GetProcAddress(kernel,"CancelSynchronousIo");
+    interrupt_event=CreateEvent(NULL,1,0,NULL);relay_event=CreateEvent(NULL,0,0,NULL);
+    if(!raw_set_event || !raw_set_ctrl || !cancel_synchronous || !interrupt_event || !relay_event)return 0;
+    /* Register only after every asynchronous target is fully initialized. */
+    if(!raw_set_ctrl(windows_interrupt,1))return 0;
+#else
+    return 0;
+#endif
+  }else{
+    if(pipe(interrupt_pipe))return 0;
+    if(fcntl(interrupt_pipe[1],F_SETFL,O_NONBLOCK)<0 ||
+        fcntl(interrupt_pipe[0],F_SETFD,FD_CLOEXEC)<0 || fcntl(interrupt_pipe[1],F_SETFD,FD_CLOEXEC)<0)return 0;
+    struct sigaction action={0};action.sa_handler=unix_interrupt;
+    sigemptyset(&action.sa_mask);sigaddset(&action.sa_mask,SIGINT);sigaddset(&action.sa_mask,SIGTERM);
+    if(sigaction(SIGINT,&action,NULL) || sigaction(SIGTERM,&action,NULL))return 0;
+  }
+  pthread_attr_t thread_attr;
+  if(pthread_attr_init(&thread_attr))return 0;
+  error=pthread_attr_setstacksize(&thread_attr,1048576);
+  if(!error)error=pthread_create(&relay_thread,&thread_attr,interrupt_relay,NULL);
+  pthread_attr_destroy(&thread_attr);if(error)return 0;
+  relay_started=1;return 1;
+}
+static void stop_relay(void){
+  if(!relay_started)return;
+  __atomic_store_n(&relay_shutdown,1,__ATOMIC_SEQ_CST);
+  if(IsWindows()){if(!SetEvent(relay_event))__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);}
+  else{unsigned char hint=0;ssize_t n;do{n=write(interrupt_pipe[1],&hint,1);}while(n<0 && errno==EINTR);
+    if(n<0 && errno!=EAGAIN && errno!=EWOULDBLOCK)__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);}
+}
+static int retire_relay(void){
+  if(!relay_started)return 1;
+  uint64_t before=begin_native_wait(),deadline_ns;
+  if(cleanup_clock_failed || UINT64_MAX-before<cleanup_remaining_ns)return 0;
+  deadline_ns=before+cleanup_remaining_ns;
+  struct timespec deadline={deadline_ns/1000000000,deadline_ns%1000000000};
+  pthread_mutex_lock(&relay_mutex);
+  int error=0,joined=0;
+  for(;;){
+    if(relay_done){error=pthread_tryjoin_np(relay_thread,NULL);if(!error){joined=1;break;}if(error!=EBUSY)break;}
+    /* A done notification precedes actual pthread/TLS retirement. Never hide
+     * an unbounded join behind it. A rare EBUSY waits the remaining deadline
+     * without polling, then rechecks physical retirement once. */
+    if(!cleanup_remaining_ns)break;
+    error=pthread_cond_timedwait(&relay_condition,&relay_mutex,&deadline);
+    if(error){if(error==ETIMEDOUT && relay_done)joined=!pthread_tryjoin_np(relay_thread,NULL);break;}
+  }
+  pthread_mutex_unlock(&relay_mutex);end_native_wait(before);
+  if(joined){relay_started=0;__atomic_store_n(&relay_runtime,NULL,__ATOMIC_SEQ_CST);}return joined;
+}
 
 typedef struct host_output_record {
   struct NtOverlapped operation;
   struct host_output_record *next;
+  int64_t handle,ready,thread_handle;
+  pthread_t thread;
+  uint32_t size,written,error;
   char data[65536];
 } host_output_record;
 static host_output_record *retained_output;
 static int host_output_incomplete;
+static int interrupt_reported;
+extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
+
+static uint32_t output_wait(int64_t event){
+  if(!interrupt_event)return WaitForSingleObject(event,0xffffffff);
+  int64_t events[]={event,interrupt_event,relay_event};
+  for(;;){
+    if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST))return 1;
+    uint32_t result=WaitForMultipleObjects(3,events,0,0xffffffff);
+    if(result!=1 && result!=2)return result;
+    /* Either independent native hint can wake final output. The auto-reset
+     * relay event can also contain its earlier ordinary shutdown hint. */
+  }
+}
+static uint32_t output_cleanup_wait(int64_t event){
+  uint64_t before=begin_native_wait();uint32_t result=WaitForSingleObject(event,(uint32_t)remaining_ms());
+  end_native_wait(before);return result;
+}
+static void retain_output(host_output_record *owned){
+  owned->next=retained_output;retained_output=owned;host_output_incomplete=1;
+}
+static void *synchronous_output(void *context){
+  host_output_record *owned=context;int64_t native=0;
+  if(!DuplicateHandle(-1,-2,-1,&native,0,0,2))owned->error=GetLastError();
+  __atomic_store_n(&owned->thread_handle,native,__ATOMIC_SEQ_CST);
+  SetEvent(owned->ready);
+  if(!owned->error && !WriteFile(owned->handle,owned->data,owned->size,&owned->written,NULL))owned->error=GetLastError();
+  SetEvent(owned->operation.hEvent);return NULL;
+}
 static qaplet_code write_output(unsigned,const char *,size_t);
 static void report_error(const char *);
 
 static int finish(int status) {
   /* The supplied Cosmopolitan exit path encodes POSIX wait status on PE.
    * CLI status is a raw OS contract. Complete SDK cleanup and stdio first. */
+  stop_relay();
+  if(!retire_relay()){report_error("qaplet: native cleanup incomplete (interrupt relay retained)\n");status=1;}
+  if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){
+    if(!interrupt_reported)report_error("qaplet: EXECUTION_STOPPED (OS interrupt)\n");status=1;
+  }
   if(host_output_incomplete){
     report_error("qaplet: Host output native cleanup incomplete; storage retained until process exit\n");
     if(!status)status=1;
@@ -164,13 +342,18 @@ static qaplet_code render_result(const qaplet_result *result,char **out,size_t *
  * Console gets explicit UTF-16, independent of the console output code page;
  * its UTF-8 text boundary is the same strict scalar subset as the SDK adapter. */
 static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
+  /* Early CLI routes (help/version/argument errors) have no Runtime. Retire
+   * their ordinary relay before the owner consumes final-output wake hints. */
+  if(relay_started && !__atomic_load_n(&relay_runtime,__ATOMIC_SEQ_CST)){
+    stop_relay();if(!retire_relay())host_output_incomplete=1;
+  }
   if(IsWindows()){
     int64_t handle=GetStdHandle(-10-(int)stream);uint32_t mode=0;
     if(!handle || handle==-1)return QAPLET_IO_ERROR;
     int console=GetConsoleMode(handle,&mode);
-    int asynchronous=0;
+    int asynchronous=0;uint32_t type=0;
     if(!console){
-      uint32_t type=GetFileType(handle);if(!type)return QAPLET_IO_ERROR;
+      type=GetFileType(handle);if(!type)return QAPLET_IO_ERROR;
       if(type==1 || type==3){
         struct NtIoStatusBlock status={0};struct NtFileModeInformation file_mode={0};
         if(NtQueryInformationFile(handle,&status,&file_mode,sizeof(file_mode),kNtFileModeInformation)<0)return QAPLET_IO_ERROR;
@@ -195,14 +378,57 @@ static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
           if(!owned->operation.hEvent){free(owned);return QAPLET_IO_ERROR;}
           int accepted=WriteFile(handle,owned->data,chunk,NULL,&owned->operation);
           uint32_t error=accepted ? 0 : GetLastError();
-          if((accepted || error==997) && !GetOverlappedResult(handle,&owned->operation,&written,1)){
-            owned->next=retained_output;retained_output=owned;host_output_incomplete=1;return QAPLET_IO_ERROR;
+          int stopped=0,terminal=1;
+          if(accepted || error==997){
+            uint32_t waited=output_wait(owned->operation.hEvent);
+            if(waited==1){stopped=1;CancelIoEx(handle,&owned->operation);waited=output_cleanup_wait(owned->operation.hEvent);}
+            if(waited!=0)terminal=0;
+            else if(!GetOverlappedResult(handle,&owned->operation,&written,0) && GetLastError()!=995)terminal=0;
+          }
+          if(!terminal){
+            retain_output(owned);return QAPLET_IO_ERROR;
           }
           if(!CloseHandle(owned->operation.hEvent)){
             owned->next=retained_output;retained_output=owned;host_output_incomplete=1;return QAPLET_IO_ERROR;
           }
           free(owned);
+          if(stopped)return QAPLET_EXECUTION_STOPPED;
           if(!accepted && error!=997)return QAPLET_IO_ERROR;
+        }else if(stream==2 && type==1){
+          /* A bounded diagnostic to an actual synchronous regular file has no
+           * retained IRP/Host thread. Do not require another helper retirement
+           * after the shared cleanup wait budget is already exhausted. Like
+           * any native syscall this is not a whole-function hard deadline. */
+          if(!WriteFile(handle,data,chunk,&written,NULL))return QAPLET_IO_ERROR;
+        }else if(interrupt_event){
+          /* Synchronous inherited pipes are still unsupported by the SDK.
+           * Final Host output runs on an owned helper: CancelSynchronousIo can
+           * race the syscall's acceptance, so only actual thread retirement
+           * permits freeing its copied bytes/stack; timeout retains all of it. */
+          host_output_record *owned=calloc(1,sizeof(*owned));if(!owned)return QAPLET_MEMORY_LIMIT;
+          owned->handle=handle;owned->size=chunk;memcpy(owned->data,data,chunk);
+          owned->ready=CreateEvent(NULL,1,0,NULL);owned->operation.hEvent=CreateEvent(NULL,1,0,NULL);
+          if(!owned->ready || !owned->operation.hEvent){retain_output(owned);return QAPLET_IO_ERROR;}
+          pthread_attr_t attr;int error=pthread_attr_init(&attr);
+          if(!error){error=pthread_attr_setstacksize(&attr,1048576);if(!error)error=pthread_create(&owned->thread,&attr,synchronous_output,owned);pthread_attr_destroy(&attr);}
+          if(error){CloseHandle(owned->ready);CloseHandle(owned->operation.hEvent);free(owned);return QAPLET_IO_ERROR;}
+          int stopped=output_wait(owned->ready)==1;
+          if(stopped && output_cleanup_wait(owned->ready)!=0){retain_output(owned);return QAPLET_IO_ERROR;}
+          int64_t thread_handle=__atomic_load_n(&owned->thread_handle,__ATOMIC_SEQ_CST);
+          uint32_t waited=stopped ? 1 : output_wait(owned->operation.hEvent);
+          if(waited==1){
+            stopped=1;
+#if defined(__x86_64__)
+            if(thread_handle)cancel_synchronous(thread_handle);
+#endif
+            waited=output_cleanup_wait(owned->operation.hEvent);
+          }
+          if(waited!=0 || !thread_handle || output_cleanup_wait(thread_handle)!=0 || pthread_tryjoin_np(owned->thread,NULL)){
+            retain_output(owned);return QAPLET_IO_ERROR;
+          }
+          written=owned->written;uint32_t native_error=owned->error;
+          if(!CloseHandle(thread_handle) || !CloseHandle(owned->ready) || !CloseHandle(owned->operation.hEvent)){retain_output(owned);return QAPLET_IO_ERROR;}
+          free(owned);if(stopped)return QAPLET_EXECUTION_STOPPED;if(native_error)return QAPLET_IO_ERROR;
         }else if(!WriteFile(handle,data,chunk,&written,NULL))return QAPLET_IO_ERROR;
         if(!written || written>chunk)return QAPLET_IO_ERROR;
         data+=written;size-=written;
@@ -232,8 +458,25 @@ static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
   sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);
   if(pthread_sigmask(SIG_BLOCK,&blocked,&previous))return QAPLET_IO_ERROR;
   int was_pending=!sigpending(&pending) && sigismember(&pending,SIGPIPE);
-  int failed=0;
-  while(size){ssize_t n=write(stream,data,size);if(n<0 && errno==EINTR)continue;if(n<=0){failed=1;break;}data+=n;size-=n;}
+  int failed=0,flags=fcntl(stream,F_GETFL),changed=0;
+  if(flags<0)failed=1;
+  else if(!(flags&O_NONBLOCK)){if(fcntl(stream,F_SETFL,flags|O_NONBLOCK)<0)failed=1;else changed=1;}
+  while(size && !failed){
+    if(stream==1 && __atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){failed=1;break;}
+    ssize_t n=write(stream,data,size);
+    if(n<0 && errno==EINTR)continue;
+    if(n<0 && (errno==EAGAIN || errno==EWOULDBLOCK)){
+      if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){failed=1;break;}
+      struct pollfd routes[]={{stream,POLLOUT,0},{interrupt_pipe[0],POLLIN,0}};
+      int ready;do{ready=poll(routes,interrupt_pipe[0]>=0 ? 2 : 1,-1);}while(ready<0 && errno==EINTR && !__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST));
+      if(ready<=0){failed=1;break;}
+      /* After relay retirement its explicit shutdown hint may remain. */
+      if(routes[1].revents && !__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){unsigned char hints[128];read(interrupt_pipe[0],hints,sizeof(hints));}
+      continue;
+    }
+    if(n<=0){failed=1;break;}data+=n;size-=n;
+  }
+  if(changed && fcntl(stream,F_SETFL,flags)<0)failed=1;
   if(!was_pending && !sigpending(&pending) && sigismember(&pending,SIGPIPE)){
     struct timespec zero={0};while(sigtimedwait(&blocked,NULL,&zero)<0 && errno==EINTR){}
   }
@@ -248,6 +491,7 @@ static qaplet_code output_result(const qaplet_result *result) {
 static void report_error(const char *message) {write_output(2,message,strlen(message));}
 
 int main(int argc, char **argv) {
+  if(!install_interrupts(NULL)){report_error("qaplet: interrupt setup failed\n");return finish(1);}
   qaplet_config config = QAPLET_CONFIG_INIT;
   int position=1, seen_timeout=0, seen_dispatches=0;
   while (position<argc && (!strcmp(argv[position],"--timeout-ms") || !strcmp(argv[position],"--max-dispatches"))) {
@@ -301,6 +545,10 @@ int main(int argc, char **argv) {
   char message[1024]; diagnostic.message=message; diagnostic.capacity=sizeof(message);
   qaplet_code code=qaplet_create_m2(&config,&m2,&runtime,&diagnostic);
   free(arguments);
+  if(!code){
+    __atomic_store_n(&relay_runtime,runtime,__ATOMIC_SEQ_CST);
+    if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){qaplet_request_stop(runtime,NULL);code=QAPLET_EXECUTION_STOPPED;strcpy(message,"EXECUTION_STOPPED");}
+  }
   if(!code)code=connect_stdio(runtime,&host,&diagnostic);
   if (!code) code=is_run ? qaplet_run_entry(runtime,input,strlen(input),&progress,&diagnostic) :
                           qaplet_eval(runtime,input,strlen(input),&progress,&diagnostic);
@@ -323,11 +571,14 @@ int main(int argc, char **argv) {
     if (!code && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY) unsettled=1;
   }
   qaplet_code execution_code=code,cleanup=QAPLET_OK,restoration=QAPLET_OK;
+  stop_relay();
   if (runtime) {
     cleanup=qaplet_close(runtime,NULL);
-    if (!cleanup) cleanup=qaplet_quiesce(runtime,5000,&drive,NULL);
+    if (!cleanup){uint64_t before=begin_native_wait();cleanup=qaplet_quiesce(runtime,remaining_ms(),&drive,NULL);end_native_wait(before);}
     if (!cleanup && drive.reason!=QAPLET_DRIVE_QUIESCENT) cleanup=QAPLET_BUSY;
     restoration=restore_stdio(runtime,&host,!cleanup);
+    if(!retire_relay() && !cleanup)cleanup=QAPLET_BUSY;
+    if(cleanup_clock_failed && !cleanup)cleanup=QAPLET_CONTROL_FAILURE;
     if (!cleanup) cleanup=qaplet_destroy(runtime,NULL);
   }
   /* SDK byte writes have retired before the Host's final result/diagnostics
@@ -335,13 +586,15 @@ int main(int argc, char **argv) {
    * been restored; a large eval result must not silently truncate on EAGAIN. */
   if (!code && !unsettled && !cleanup && !restoration && !is_run){
     code=output_result(&result);
-    if(code){char text[128];snprintf(text,sizeof(text),"qaplet: code=%u %s (entry result output)\n",code,code==QAPLET_MEMORY_LIMIT ? "MEMORY_LIMIT" : code==QAPLET_INVALID_UTF8 ? "INVALID_UTF8" : code==QAPLET_UNSUPPORTED ? "UNSUPPORTED" : "IO_ERROR");report_error(text);}
+    if(code){char text[128];snprintf(text,sizeof(text),"qaplet: code=%u %s (entry result output)\n",code,code==QAPLET_EXECUTION_STOPPED ? "EXECUTION_STOPPED" : code==QAPLET_MEMORY_LIMIT ? "MEMORY_LIMIT" : code==QAPLET_INVALID_UTF8 ? "INVALID_UTF8" : code==QAPLET_UNSUPPORTED ? "UNSUPPORTED" : "IO_ERROR");report_error(text);}
   }
   free(result.buffer);
-  if (execution_code){char text[1200];snprintf(text,sizeof(text),"qaplet: code=%u %s\n",(unsigned)execution_code,message);report_error(text);}
+  if (execution_code){char text[1200];snprintf(text,sizeof(text),"qaplet: code=%u %s\n",(unsigned)execution_code,message);report_error(text);if(execution_code==QAPLET_EXECUTION_STOPPED)interrupt_reported=1;}
   if (unsettled) report_error("qaplet: UNSETTLED_ENTRY\n");
   if(cleanup){char text[128];snprintf(text,sizeof(text),"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup);report_error(text);}
   if(restoration){char text[128];snprintf(text,sizeof(text),"qaplet: standard stream restoration incomplete code=%u\n",(unsigned)restoration);report_error(text);}
+  if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST) && execution_code!=QAPLET_EXECUTION_STOPPED){report_error("qaplet: EXECUTION_STOPPED (OS interrupt)\n");interrupt_reported=1;code=QAPLET_EXECUTION_STOPPED;}
+  if(__atomic_load_n(&interrupt_error,__ATOMIC_SEQ_CST)){report_error("qaplet: interrupt control failure; native storage retained until process exit\n");code=QAPLET_CONTROL_FAILURE;}
   if(cleanup || restoration)code=cleanup ? cleanup : restoration;
   return finish(code || unsettled ? 1 : 0);
 }

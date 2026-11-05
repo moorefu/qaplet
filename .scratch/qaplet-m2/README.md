@@ -103,3 +103,8 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 
 2026-11-03：01–03 的实现及本地闭环已经独立机械合并，当前均等待统一 Cross/Full；04/05 已开始。父规格只同步执行状态及入口，已确认合同不变。
 
+2026-11-06：22 已从实际 integration 完成本地实现，产品冻结 `1343e6c`；普通 CLI
+Linux67/Windows72、本票16/9通过（含明确未挂起执行态补充2/1），完整原件见[22本地验证](22-cli-signal-validation.md)。
+状态仍 claimed/local_complete/cross_deferred，等待独立接收；23 的 22 前置在独立合入前
+仍未满足。父合同、38边、135 AC、五原生/当前64K/Full/长测/最终Review保持原要求。
+

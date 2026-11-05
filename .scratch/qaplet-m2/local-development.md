@@ -52,7 +52,7 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 19 | 本地完成并独立合入`597020eb`，接收`2b3035f7`；正式Cross/Full待验 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
 | 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 本地完成并独立合入`13abf9ac`，接收`fe8a17d`；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
-| 22 | 21本地完成并独立合入；已领取实施 | 真实中断向owner交接、重复中断、清理预算耗尽/未回收报告、退出码；不把外部timeout记为成功清理 |
+| 22 | 本地完成待独立接收；21独立前置已满足 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
 | 23 | 19本地完成并独立合入；仍等待22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
 | 25 | 等待23本地完成并独立合并 | 实际ARM64 64K的新产品完整合同及至少1000生命周期、100混合异步；旧制品成绩不替代 |
@@ -87,6 +87,12 @@ preflight通过。20正在融合这份真实产品tip并验证自己的最终集
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，
 不降低父规格的产品/安全/ABI/默认额度、五原生、实际64K、Full及最终独立审查合同。
+
+2026-11-06：22 产品冻结 `1343e6c`，从实际 integration `97cc8f1` 完成本地实现。
+当前供应普通 CLI Linux67/Windows72、本票16/9通过（含强执行态2/1）；109输入/95ZIP、实际callback ABI、
+真实OS投递、唯一native reap、两段累计预算、未知/迟到入口保留和原失败均保存于本票
+HANDOFF。状态仍 claimed/local_complete/cross_deferred；独立接收前不放行23，
+正式五原生/当前64K/CI/Full/长测与最终Review不由本地成绩替代。
 
 2026-11-05（19本地完成待独立接收）：19产品冻结1c4a91c，当前供应normal Linux214/
 Windows213+optional1、包外99/99、独立fault25/26及实际环境/TTY组合已验证。完整当前

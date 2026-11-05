@@ -6,7 +6,14 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred
+
+**Local development:** complete
+
+[本地验证](../22-cli-signal-validation.md)与专属 worktree
+`out/m2-22-cli-signal/HANDOFF.md`、`handoff.json` 保存最终供应、真实 OS 中断及未完保留范围。
+产品冻结 `1343e6c`，已融入实际 integration 起点；当前等待独立接收，未独立合入前不放行 23。
+正式 Cross/Full 及父 AC 组保持待验，下列验收项未因本地通过勾为全范围完成。
 
 **Execution prerequisites:** 21已本地完成并独立合入`13abf9ac`（接收`fe8a17d`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -59,4 +66,9 @@
 在途/未来relay生产者保留、终端/child恢复及累计主动原生等待预算。继承21实际Host最终输出
 责任和已测启动模式限制，不改SDK进程handler边界或父产品/安全/正式验收合同。
 本地完成及独立合入才放行23；当前领取不代表任何正式AC组或Cross/Full已完成。
+
+2026-11-06：fresh 实现者完成 Linux/Windows 本地公开行为闭环，最终普通 CLI 回归
+67/72、本票 16/9（含补强执行态 2/1）；完整 109 输入/95 ZIP、MS-ABI 原始 callback、OS 投递、原生 reap、
+累计预算、迟到目标保留与原失败见本地验证及 HANDOFF。保持 claimed/local_complete/
+cross_deferred，等待独立合并，不领取后继，不签发父 M2、Full 或最终两轴审查。
 
