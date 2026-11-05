@@ -55,7 +55,7 @@ void qaplet_stdio_classify(uint32_t stream,qaplet_stdio_info *info,int *fd,int64
   }
 }
 qaplet_code qaplet_stdio_inspect(qaplet_runtime *r,uint32_t stream,qaplet_stdio_info *out,qaplet_diagnostic *d) {
-  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(out,sizeof(*out));
+  qaplet_code code=qaplet_check_diagnostic(d);if(code)return code;if(!code)code=qaplet_check_structure(out,sizeof(*out));
   if(!code && (stream>2 || out->reserved))code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
   if(!r->m2_enabled)return qaplet_report(d,QAPLET_UNSUPPORTED);
   if(qaplet_get_lifecycle(r)!=QAPLET_OPEN)return qaplet_report(d,QAPLET_BAD_STATE);
