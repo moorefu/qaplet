@@ -14,7 +14,7 @@
 - [正式 M1 最终集成与审查](../.scratch/qaplet-m1/final-review-validation.md)：两轴最终零发现、完整原件保存审计和清理后主工作区 98/98 严格回归。
 - [正式 M1 已确认设计](../.scratch/qaplet-m1/design.md)：2026-11-02 完成 Q1–Q32；确定生命周期、模块缓存、默认预算、SDK 数据/错误/关闭与事件队列合同，C 原型和逐票实现由后续规格承接。
 - [正式 M2 实施规格](../.scratch/qaplet-m2/spec.md)：实施中；Q1–Q53 的接口、安全和正式验收合同保持不变。
-- [正式 M2 任务与依赖](../.scratch/qaplet-m2/README.md)：01–10 resolved，11–21 本地完成并独立合入、跨平台欠项保留；22中断交接已领取，23等待22。开发与正式验收轴见[本地执行方式](../.scratch/qaplet-m2/local-development.md)。
+- [正式 M2 任务与依赖](../.scratch/qaplet-m2/README.md)：01–10 resolved，11–22 本地完成并独立合入、跨平台欠项保留；23 SDK交付已领取，24/25/26等待23。开发与正式验收轴见[本地执行方式](../.scratch/qaplet-m2/local-development.md)。
 
 当前构建通过[统一 v3 入口](development/input-lock.md)消费已验目标 QuickJS，旧分锁仅作为摘要绑定的组件清单。正式 M1 已实现 Runtime、静态 SDK、最小 CLI 和纯 C 应用；[SDK 开发入口](development/sdk.md)及[严格证据入口](development/evidence.md#正式-m1-严格入口)记录用法。当前产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的成功 Full `41542426189` 对应五原生宿主、64K 与当前 M0 Full，评估器源码身份独立报告。旧[对齐 04](../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)/[05](../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)成绩保留原范围；后续产品配方变化须重新验收。06 原 ZIP 镜像发布门禁仍暂缓，`release_ready=false`。[选型样例](plans/qaplet-toolchain-lock-selected.json)仍不作为构建输入。
 

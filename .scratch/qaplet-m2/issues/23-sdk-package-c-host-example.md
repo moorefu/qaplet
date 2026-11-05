@@ -4,11 +4,11 @@
 
 **Blocked by:** [19 · 跨资源预算、POD 快照与终止首因](19-aggregate-budgets-metrics-failures.md)、[22 · CLI 中断交接与清理超时报告](22-cli-signal-stop-cleanup-budget.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 19已本地完成并独立合并`597020eb`（接收`2b3035f7`）；仍等待22本地完成及独立合并，当前未满足全部开发前置，未领取。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 19已本地完成并独立合入`597020eb`（接收`2b3035f7`），22亦已独立合入`b8b9f572`（接收`6cca6f9b`）；当前全部开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 1、2、3、4、5、29、35、37、38、50、51、66、74、75、90、91、92、94、95、99、105、108、109。
 
@@ -54,4 +54,11 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-06：19/22均已实际独立接收，root领取23，以当前integration创建专属
+`codex/m2-23-sdk-delivery`分支/worktree，fresh实现者按公开行为TDD完成M2组合示例、
+SDK分发与消费工具收口。先诊断Windows公开SDK启动CLI child的可复现CONTROL_FAILURE：
+旧/新parent与旧/新child组合均已观察到child exit1/reaped、parent exit0，直接无Console
+启动同一供件则正常；原因待定位，不把它改成支持例外。保留22信号/安全合同和实际限制。
+只有23本地完成及独立合入才放行24/25/26本地开发；27仍需其正式全范围验收。
 

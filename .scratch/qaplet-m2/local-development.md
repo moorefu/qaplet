@@ -52,8 +52,8 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 19 | 本地完成并独立合入`597020eb`，接收`2b3035f7`；正式Cross/Full待验 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
 | 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 本地完成并独立合入`13abf9ac`，接收`fe8a17d`；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
-| 22 | 本地完成待独立接收；21独立前置已满足 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
-| 23 | 19本地完成并独立合入；仍等待22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
+| 22 | 本地完成并独立合入`b8b9f572`，接收`6cca6f9b`；正式Cross/Full待验 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
+| 23 | 19/22本地完成并独立合入；已领取实施 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、同字节消费与安全生命周期，正式consumer隔离/身份及已复现SDK child问题诊断 |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
 | 25 | 等待23本地完成并独立合并 | 实际ARM64 64K的新产品完整合同及至少1000生命周期、100混合异步；旧制品成绩不替代 |
 | 26 | 等待23本地完成并独立合并 | Linux/Windows各10000混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
@@ -84,6 +84,13 @@ preflight通过。20正在融合这份真实产品tip并验证自己的最终集
 100recipe/91ZIP、1871raw/8报告独立合前合后重核；供应4完整normal/TTY/mixed保留原身份，
 与6公开头及双库同字节。九个清理未完负向、503→511启动限制和原dirty不改贴为全部完成。
 合后Ubuntu preflight通过；22据此领取，23仍待22本地完成及独立合入。正式欠项不变。
+
+22现已独立合入`b8b9f572`、接收`6cca6f9b`。109输入/95ZIP、普通CLI两端67/72及
+本票专项16/9（合计164行为case），20报告/2283保留文件合前合后独立重核通过；三个
+expected incomplete=false及三个strong的全SDK清理null保留，两个不可回取的/tmp诊断
+中间物不作为最终proof。合后Ubuntu preflight通过；23据19/22真实前置领取。
+SDK公开spawn CLI child的Windows CONTROL_FAILURE仍需诊断，不改为支持例外；24–27
+正式矩阵/64K/Full长测、整体Review及父M2仍待验。
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，
 不降低父规格的产品/安全/ABI/默认额度、五原生、实际64K、Full及最终独立审查合同。

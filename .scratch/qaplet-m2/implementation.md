@@ -482,3 +482,13 @@ pass（54解析/52编码、主物理.cache）。merger产品执行0，无重建/
 22 Local development: complete，保持claimed/local_complete/cross_deferred，可放行23本地开发
 但merger未领取。27/38/135、父spec/原Blocked by/AC及正式Cross/64K/Full/长测/最终两轴
 Review/M2与发布门禁继续待验。
+
+2026-11-06（23真实开发前置满足）：19独立`597020eb`/接收`2b3035f7`与22独立
+`b8b9f572`/接收`6cca6f9b`均已完成。22主收据SHA256为
+`227ecb1afad46fe53427ee647d9e7e2accd0abff7a3b4a705398fcb8f3cd2c8e`，109输入/95ZIP、
+164行为case与20选定报告、合后Ubuntu预检通过，false/null和诊断中间物限制分别保留。
+Root实际领取23，fresh独立worktree先诊断已复现的Windows SDK→CLI child CONTROL_FAILURE，
+再完成真正M2组合C Host、发行物及consumer隔离/接受门/原件身份收口。旧/新parent和child
+四组合均有真实child exit1/reaped与stderr，直接无Console启动两版正常；不预设根因。
+本票尚未本地完成，24/25/26等待实际独立合入；27仍需正式全范围验收。原27/38/135及
+父产品/安全/正式Cross/64K/Full/长测/最终Review/M2合同不变，当前不push/CI/发布。
