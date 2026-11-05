@@ -130,3 +130,63 @@ jobs、unref 等显式 pump、Runtime close 丢弃尚未运行 mark、ordinary e
 保持其原 source 范围，最终审计逐个证明全部 tracked Python 字节与该次冻结一致。
 当前源另执行 preflight，最新 SDK 的完整 native/package/fault/终端边界重新验收。
 只有第四份供应及最终 receipt 被选为本地交接；此前成功和失败均保留各自范围。
+
+## 本地完成与最终选择
+
+最终产品 source 为 `61603f2a006301b60d2575587a906638369db13a`，完整继承
+实际 integration `8212c0551c5981963e9ffd33201e0c8a78338ef1`。最后票状态提交
+只修改本记录和 tracker，不改变任何 SDK 配方输入。Ubuntu 生产原件为
+`out/m2-17-stdio/build-final-4.json` 与 `final-4-artifacts/`：
+
+- recipe：`4c19ec6cbb5d70a15157f1b05b733c81098cba46f185e1cd6c5b6fb165f96639`
+- SDK：`541b17915c251e59ae03760451c3e483c6cc2d4062bc4eb938ffd4dbccaf786a`
+- 原 ZIP：`e065e47ed69e3f4370ae55863280082302b4e7c76e21409c50bc86d55a1cb1c7`
+
+| 公开边界 | Linux x86_64 | Windows x86_64，同一供应字节 |
+|---|---|---|
+| `normal-4` 全部 SDK/CLI/应用 catalog | 195 pass | 194 pass，旧 optional symlink 1 blocked，required gaps 0 |
+| `package-4` 包外 SDK 消费 | 81 pass | 81 pass |
+| `fault-4` 独立系统故障配方 | 23 pass | 24 pass |
+| `terminal-4` 实际 stdin 分类及无副作用拒绝 | 真实 PTY 1 pass | 明确安装的原生 Console 1 pass |
+| 原有 SDK lifecycle | 实际 1000 次 | 实际 1000 次 |
+
+两个实际宿主均为 native、4K 页；完整 OS/kernel/CPU/API 测量保存在各报告。
+Windows 无编译；普通产品和包外应用、受控故障分别消费 Ubuntu 供应的原件。
+终端只验分类与安全拒绝，原 fd/HANDLE/mode 保留；不宣告18的 lease、resize、
+Console UTF-8/文字能力。ConPTY 完整 reaped/closed/readers joined，继承的
+APE libc stdout 与 Console transport 各自保存，报告没有混淆路由。
+
+`devcheck-3` 按指定入口通过411项（210执行、201显式条件skip）及实际 C
+bootstrap；`preflight-4` 在最终产品源通过。审计逐个核验全部 tracked Python
+与 `devcheck-3` 的 before 快照、其原 source `159bd900` Git blob 及当前 raw
+字节一致。它证明未变工具合同；不将旧工具检查重新标为最后 C 改动的产品成绩。
+
+`handoff-audit-pre-doc` 保留审计 helper 缺少 loader_manifest 参数的原始失败，
+没有产品失败或数据改写。修正本地只读审计参数后 `handoff-audit-pre-doc-2`
+通过：85 recipe 文件分别对照生产身份、产品 Git blob、当前 Git blob 及 raw LF；
+原 ZIP 82 项；x86_64/aarch64 archives 各18个真实 ELF64 REL；完整 native
+catalog、命令、必需/可选项与1000次 lifecycle；11个 guarded scopes 的 SDK/
+recipe joins、1608份原始日志。`handoff-audit-final` 增加分支检查时使用了只读
+WSL Git adapter 不支持的 branch 命令，保留原失败；改用现有允许的等价
+rev-parse 后，最终 `handoff-audit-final-2` 在文档提交后生成 `handoff.json`，
+并再次独立绑定产品与交接提交。全部父进程实际 Python 调用、
+静态 Python/helper 前后字节分开记录；子进程动态 imports 保持 unknown。
+非配方 EOL 只分类，不整体正规化。
+
+五项票内 AC 均有当前公开用例：默认/分类由 js-defaults、classify、实际 terminal；
+借用与安全拒绝由 file/pipe/classify；可靠字节、NUL、EOF、BUSY、finish/closed、
+取消与错误由 file/pipe/js-bytes/js-errors/c-close-js 和 fault partial/js-start；
+共享额度与背压由 output-limits/backpressure；helper 物理保留与 stop/close
+由独立 cancel/close/stop/allocation/start 故障配方。正式 AC 的文字和跨平台
+义务保持原样，状态为 `claimed`、`local_complete / cross_deferred`。
+
+18可复用 `src/stdio.c` 的 `qaplet_stdio_classify` 真实分类与 `src/io.c` 中
+`qaplet_io_endpoint` 的所有权事实；当前 attach 只接受已支持类型，没有预先提供
+终端成功 stub。
+与16共享的所有已知 adapter 修复已纳最终配方（包括 read error bytes、closed
+顺序、普通错误 OPEN 保留、finish 方向、精确 start OS 错误和 detach guard）。
+19/20的组合验收不替代本票首次资源预留与真实 close/quiesce/destroy 安全。
+
+其他必需原生平台、当前实际64K产品、CI/Full、最终混合资源长测和 release-ready
+仍 deferred。没有 root 自合、push 或 CI；保留全部 out 原件、旧失败和 worktree
+供独立 merger 核验。
