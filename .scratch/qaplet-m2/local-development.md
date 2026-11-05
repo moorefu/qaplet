@@ -48,7 +48,7 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | --- | --- | --- |
 | 16 | 本地完成并独立合并`015cdb9f`；正式Cross/Full待验 | JS显式spawn、三种stdio、退出/reap与EOF分离、输出保留、双通道/部分写/BUSY/背压、ref/unref/GC、取消及stop/close；轮转与Promise回归 |
 | 17 | 本地完成并独立合并`caa439ae`；正式Cross/Full待验 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
-| 18 | 05已resolved，17本地完成并独立合并；已领取 | 真实PTY/Console独占租约、冲突、模式恢复、resize合并与查询、已验证UTF-8/VT边界；stop/close/错误路径恢复 |
+| 18 | 本地实现/验证完成，待独立合并；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
 | 19 | 09已resolved、16本地完成并已独立合并；等待18 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
 | 20 | 09已resolved、16本地完成并已独立合并；等待18，可与19并行 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 等待20本地完成并独立合并 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
@@ -63,6 +63,11 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 已确认公开边界逐个红绿，并复验受影响回归；日常快速检查选相关profile，只有变更范围
 或失败需要时扩大检查。真实OS事实、受控故障、正常产品分别记录，工具测试不冒充产品成绩。
 共享实现接口只按必要范围协调，不添加虚构依赖，不重复执行无变化的成功长测。
+
+18已冻结供应3产品`958b3e2`，其全部TTY Linux13/Windows20、相关IO/stdio各27和包外各24
+通过；供应2原完整normal209/208+optional1、package94/94、fault24/25保留原身份，
+供应3未重跑这些完整catalog。待独立merger合入18后，19/20的当前开发前置才满足。
+正式跨平台/实际64K/CI/Full与组合长测不由本地selected回归替代，详本票验证记录与原件。
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，
 不降低父规格的产品/安全/ABI/默认额度、五原生、实际64K、Full及最终独立审查合同。

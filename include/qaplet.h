@@ -58,6 +58,7 @@ enum {
   QAPLET_CAP_PROCESS = 1u << 22,
   QAPLET_CAP_PROCESS_IO = 1u << 23,
   QAPLET_CAP_STDIO = 1u << 24,
+  QAPLET_CAP_TTY = 1u << 25,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -583,12 +584,13 @@ qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_
  * original. dup/DuplicateHandle share flags/modes/offset: Host must coordinate
  * replacement, concurrent I/O and mode changes through native quiescence.
  * SDK never changes shared flags. Blocking pipes, unsupported devices and
- * TTY/Console without the later explicit terminal capability are UNSUPPORTED.
+ * TTY/Console require the explicit terminal lease API below.
  * POSIX pipes must already be O_NONBLOCK. Windows pipes require a verified
  * overlapped byte mode (and a queryable write quota). Regular synchronous files use bounded native helpers;
  * logical cancellation cannot preempt a filesystem call. Buffers, duplicated
  * handle, helper and quotas remain retained until actual exit and join.
- * get returns only an explicitly attached stream; JS cannot implicitly attach.
+ * get returns only an explicitly attached stream. JS acquireTerminal is an
+ * explicit lease request, rather than an implicit standard-stream attachment.
  * detach closes the SDK endpoint, invalidates its token, and starts retirement.
  * It returns BUSY without side effects while a JS wrapper still owns its close
  * or jobs handoff: close the endpoint and drive that completion before retry.
@@ -609,6 +611,101 @@ qaplet_code qaplet_stdio_inspect(qaplet_runtime *,uint32_t,qaplet_stdio_info *,q
 qaplet_code qaplet_stdio_attach(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
 qaplet_code qaplet_stdio_get(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
 qaplet_code qaplet_stdio_detach(qaplet_runtime *,uint32_t,qaplet_diagnostic *);
+
+/* Explicit exclusive terminal lease, M2 only. stream is the real current
+ * standard endpoint (0/1/2), never a private CONIN$ fallback. The SDK borrows
+ * the Host terminal and owns only a non-inheritable duplicate. Acquisition
+ * saves every mode field and POSIX file status flag before changing either;
+ * duplicate descriptors share this state. Host must coordinate all access and
+ * changes made outside the SDK. Aliases of a leased terminal conflict across
+ * SDK Runtimes. Other processes and separately loaded SDK copies require Host
+ * coordination; the SDK does not claim OS-wide terminal exclusion.
+ * RAW requests raw input; VT enables the verified output VT subset. Zero flags
+ * still grants an exclusive lease. Terminal byte IO is nonblocking on POSIX;
+ * Windows Console IO is UTF-8 text, never arbitrary binary. Ordinary pipes
+ * continue to preserve arbitrary bytes. release ends IO and restores modes
+ * with full native readback, as do IO error, owner-observed stop and close.
+ * A failed restoration retains the duplicate and restoration responsibility;
+ * it returns IO_ERROR, remains visible in status/cleanup diagnostics and may
+ * be retried. Physical IO must finish before restoration and retirement.
+ * The Host original is never closed. Forced process termination cannot restore.
+ * First Console acquisition starts one per-Runtime join control helper. It
+ * consumes one existing helper slot, one native handle and a reported requested
+ * stack until Runtime close/quiesce. Each physical Console IO uses another
+ * helper (input also needs a cancel event). Small quotas refuse before mutation
+ * or IO acceptance. The control helper's own physical exit is a native barrier;
+ * close is not an immediate destroy guarantee. POSIX TTY IO needs no helpers.
+ * Mutations and native queries are owner-only; version/size/zero-tail rules
+ * match the other SDK structures. No PTY creation or signal handler is exposed.
+ */
+enum { QAPLET_TTY_RAW=1u, QAPLET_TTY_VT=2u };
+typedef struct { uint32_t struct_size,abi_version,flags,reserved; } qaplet_tty_options;
+typedef struct {
+  uint32_t struct_size,abi_version,active,restored,error_domain;
+  int32_t error;
+  uint32_t columns,rows;
+  uint64_t revision;
+} qaplet_tty_status;
+#define QAPLET_TTY_OPTIONS_INIT {sizeof(qaplet_tty_options),QAPLET_ABI_VERSION,0,0}
+#define QAPLET_TTY_STATUS_INIT {sizeof(qaplet_tty_status),QAPLET_ABI_VERSION,0,0,0,0,0,0,0}
+qaplet_code qaplet_tty_acquire(qaplet_runtime *,uint32_t,const qaplet_tty_options *,qaplet_io_endpoint *,qaplet_tty_status *,qaplet_diagnostic *);
+/* Join an explicitly selected standard route of the same native terminal to
+ * an existing exclusive lease. No implicit CONIN$/CONOUT$ route is opened.
+ * Members share one restoration owner; each native duplicate and registration
+ * is reserved before joining. POSIX termios is captured once. Shared file
+ * status flags and Console modes restore in reverse join order, then the
+ * original owner's state, so aliases never restore an already-modified state
+ * as the Host baseline. Independent endpoint close stops only that direction;
+ * its closed barrier waits for complete group restoration. release on any
+ * member cancels all members and restores only after all physical IO/helpers
+ * exit and join. IO failure, stop and Runtime close also end the entire group.
+ * After an explicit Console output joins, input get_size/watch use that route.
+ */
+qaplet_code qaplet_tty_join(qaplet_runtime *,const qaplet_io_endpoint *,uint32_t,const qaplet_tty_options *,qaplet_io_endpoint *,qaplet_tty_status *,qaplet_diagnostic *);
+qaplet_code qaplet_tty_release(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_tty_status *,qaplet_diagnostic *);
+qaplet_code qaplet_get_tty_status(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_tty_status *,qaplet_diagnostic *);
+/* Host owns OS resize integration: e.g. its SIGWINCH self-pipe or Console
+ * WINDOW_BUFFER_SIZE_EVENT. The SDK installs no process signal handler.
+ * watch(1) retains a referenced observation until unwatch/release; set_ref on
+ * the endpoint also controls this observation. notify is any-thread POD
+ * publication, NOT async-signal-safe: call it after leaving a signal handler.
+ * Repeated notifications occupy one preallocated slot. Owner completion queries
+ * the current native size after publication and advances one saturating
+ * revision. Notification count is not a business count. get_size queries now;
+ * get_status is an any-thread copy of the last owner observation. Unwatch drops
+ * a pending observation and late notifications return BAD_STATE. Tokens still
+ * enforce Runtime identity/generation; release and close stop observation.
+ */
+qaplet_code qaplet_tty_get_size(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_tty_status *,qaplet_diagnostic *);
+qaplet_code qaplet_tty_watch_resize(qaplet_runtime *,const qaplet_io_endpoint *,uint32_t,qaplet_diagnostic *);
+qaplet_code qaplet_tty_notify_resize(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
+typedef struct {
+  uint32_t struct_size,abi_version;
+  qaplet_stdio_kind kind;
+  uint32_t lease,raw,vt,resize,utf8_text,binary,supplementary_input,raw_invalid_utf8_input;
+} qaplet_tty_support;
+#define QAPLET_TTY_SUPPORT_INIT {sizeof(qaplet_tty_support),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0}
+/* Read-only classification/support for the real current standard route.
+ * POSIX TTY is a byte endpoint; Console text supports BMP input, Unicode output
+ * and the verified SGR31/reset VT subset. Raw invalid UTF-8 detection and
+ * supplementary input through ConPTY remain unsupported. Console size queries
+ * require a leased output route; there is no implicit CONOUT$ fallback. */
+qaplet_code qaplet_tty_inspect(qaplet_runtime *,uint32_t,qaplet_tty_support *,qaplet_diagnostic *);
+typedef struct {
+  uint32_t struct_size,abi_version;
+  uint64_t complete_utf8_bytes,native_utf16_units;
+  uint32_t partial_scalar,physical_pending;
+} qaplet_tty_write_status;
+#define QAPLET_TTY_WRITE_STATUS_INIT {sizeof(qaplet_tty_write_status),QAPLET_ABI_VERSION,0,0,0,0}
+/* Any-thread POD query of a retained Console write. Every public write requires
+ * complete strict UTF-8, including its final scalar. Native chunks may split
+ * scalars across pump boundaries. IO length / JS bytesWritten counts the
+ * original UTF-8 prefix whose complete scalars reached the native Console.
+ * An error/cancel can occur after only one UTF-16 surrogate was accepted:
+ * partial_scalar and native_utf16_units preserve that actual side effect.
+ * Such a prefix is NOT a safe retry offset. Ordinary byte endpoints retain
+ * their existing exact-byte result contract and return UNSUPPORTED here. */
+qaplet_code qaplet_get_tty_write_status(qaplet_runtime *,const qaplet_io_operation *,qaplet_tty_write_status *,qaplet_diagnostic *);
 
 /* Named native work, M2 only. Declarations and names are copied atomically.
  * Zero byte/concurrency fields inherit the finite instance defaults. No

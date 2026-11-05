@@ -550,3 +550,55 @@ Windows helper 启动拒绝和 TLS 析构 gate。Linux/Windows 本地成绩与 d
 再经 HostNotify 唤醒外部 owner。该恢复不依赖 owner 周期轮询；event、OVERLAPPED、
 buffer 在完成证明与 helper join 前继续保留。无法维持清理等待时保留不确定责任，
 不把 helper 退出冒充内核已停止使用数据。
+
+## TTY / Console 显式租约
+
+能力 `QAPLET_CAP_TTY` 使用 `qaplet_tty_inspect/acquire/join/release`，端点沿用公开 IO
+token、共享 operation/data、native handle/registration 和 helper 限额。真实当前
+标准路由必须是相同终端；`join` 明确将另一个 stream 加入已有独占组，不打开隐藏
+CONIN$/CONOUT$。第二个独立租约（含另一个 SDK Runtime）拒绝终端别名冲突；跨进程、
+分别加载的 SDK 副本及 SDK 外原生修改仍由 Host 协调。原标准句柄始终借用不关闭。
+POSIX 除真实 fstat dev/ino/rdev，还使用针对该端点的正值 `tcgetsid(fd)` 作为控制终端
+别名佐证；不是普通 `getsid(0)` 或“同一进程即同一终端”。`/dev/tty` 与控制 pts 的
+不同 fstat、相同终端查询有独立红绿；同进程/session 的无关 PTY 仍可同时租用。
+
+JS 扩展既有 `qaplet:stdio`：`acquireTerminal(stream,{raw,vt})` 返回 IO facade，
+`joinTerminal` 加入输出，`getSize/watchResize/unwatchResize/releaseTerminal` 提供
+租约操作。初始化导出的 stdin/stdout/stderr 仍只反映已显式接入的端点，不因 import
+接管。独立 `close` 只停该方向；其 `.closed` 等整组原生安全恢复。任一成员 release、
+终端 IO 错误、owner 确认 stop 或 Runtime close 都结束整组。C release 在物理 IO/
+join 尚未完成时可为 BUSY；JS release 返回该成员的 closed Promise。
+
+POSIX 整份 termios 仅保存一次；共享 OFD flags、Windows 各 Console mode 按 join
+逆序恢复并真实读回，最后恢复原 owner 状态。组内所有必要 IO/helper 实际退出和 join
+之前不恢复。恢复失败返回原生 IO_ERROR，保留句柄、注册、租约和冲突责任，可原生重试；
+cleanup 首错保留。普通 IO/JS 错误不自动使整个 Runtime 终止，stop/close/quiesce 不靠
+执行用户 JS 收尾。不可捕获强杀不承诺终端恢复。
+
+Host 的 SIGWINCH self-pipe 或 Console WINDOW_BUFFER_SIZE_EVENT 调用 any-thread
+`qaplet_tty_notify_resize`；该函数不是 signal-safe，SDK 不安装进程 signal handler。
+固定 pending 状态合并 latest，owner 交付时才查询最终尺寸；revision 不当业务计数。
+Console input-only 的 size/watch 明确 UNSUPPORTED，显式 join output 后可用。ref/unref
+控制观察保活；unref 不取消，显式 pump 仍可交付。关闭/取消后的旧代次通知不复活新端点。
+
+Console 每次 write 要求完整且严格合法 UTF-8；非法或截断输入接受前拒绝，不跨独立
+write 缓存半 scalar。单 write 的原生 chunk/pump 可切断多字节 scalar；完整 Unicode
+文本块可连续写。BMP 输入、补充平面输出及 SGR31/reset 分开验收，ConPTY 补充平面
+输入与原始非法 UTF-8 检测保持 UNSUPPORTED。POSIX raw TTY 与 pipe 任意 bytes/NUL
+独立验收。Console `length/bytesWritten` 是 OS 已接受完整 scalar 对应的原 UTF-8 前缀；
+独立版本化 `qaplet_get_tty_write_status` 与 JS `nativeUtf16Units/partialScalar` 保存
+真实半 surrogate 副作用，前缀不能盲作重试 offset；旧 byte IO 结构/语义不变。
+
+首次 Console lease 按需启动一个实例 join 控制线程，占共享 helper4 中的一个、一个
+native handle 和独立计量的请求栈；存活到 Runtime close/quiesce。每个 Console IO
+另用一个 helper，input 另预留 cancel event。该线程只在真实 pthread_join 后发布
+可靠 wake，不恢复终端或进入 JS；owner 随后恢复整组。closed 的固定控制记录保持 ref
+到安全交付。控制线程自身 TLS/物理退出未证实仍阻止 quiescence/destroy，不再生 reaper
+或用周期短轮询掩盖。close 后须有限/可重试 quiesce，不能假定可立即 destroy。
+
+`python3 scripts/sdk.py tty-consume --build-report FILE --artifact FILE --output-dir DIR
+--loader-dir DIR --report FILE` 在 Ubuntu 从原 SDK ZIP 包外编译并运行正常与独立故障
+TTY consumer。`python scripts/sdk_tty.py run --producer FILE --build-report FILE
+--artifact-dir DIR --report FILE` 在 Windows 消费相同 APE 字节。报告保存完整模式原件、
+原生 Console/controller 操作、真正 join/取消/关闭事实及故障配方；真实 PTY/ConPTY
+仅是 Host 验证设施。当前本地与 deferred Cross/Full 范围见票 18 实施记录。
