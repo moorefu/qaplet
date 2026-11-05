@@ -14,6 +14,8 @@ unsigned qaplet_io_pump(qaplet_runtime *,uint64_t *);
 int qaplet_io_ready_locked(qaplet_runtime *);
 int qaplet_io_referenced_locked(qaplet_runtime *);
 unsigned qaplet_io_handoff(qaplet_runtime *,uint64_t);
+/* Release JS handoffs after the complete Promise jobs checkpoint. No JS. */
+void qaplet_io_js_checkpoint(qaplet_runtime *);
 /* Acceptance mutex held. Stable scratch belongs to the owner drive. */
 struct pollfd *qaplet_io_poll_locked(qaplet_runtime *,nfds_t *);
 #endif

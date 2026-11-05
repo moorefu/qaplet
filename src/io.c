@@ -263,7 +263,7 @@ static qaplet_code submit(qaplet_runtime *r,const qaplet_io_endpoint *token,cons
   if(!code)code=qaplet_check_structure(token,sizeof(*token));
   if(!code)code=qaplet_check_structure(output,sizeof(*output));
   if(!code && ((!input && n && writing) || !n))code=QAPLET_INVALID_ARGUMENT;
-  if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   if(!r->m2_enabled)return qaplet_report(d,QAPLET_UNSUPPORTED);
   if(n>r->m2_limits.io_block_bytes)return qaplet_report(d,QAPLET_VALUE_TOO_LARGE);
   qaplet_io_collect(r);
@@ -344,18 +344,34 @@ int qaplet_io_ready_locked(qaplet_runtime *r) {
 }
 int qaplet_io_referenced_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
-  if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i){io_endpoint *e=&p->endpoints[i];if(e->active && e->referenced && e->handoffs)return 1;}
+  if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
+    if(o->active && o->handoff && o->endpoint->referenced && (o->state==QAPLET_IO_PENDING || !o->physical))return 1;}
   return 0;
 }
 unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
   unsigned count=0;pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations && count<max;++i){io_operation *o=&p->operations[i];
-    if(!o->active || !o->handoff || o->state==QAPLET_IO_PENDING || o->physical)continue;
+    if(!o->active || o->handoff!=1 || o->state==QAPLET_IO_PENDING || o->physical)continue;
+    if(r->io_js_deliver){
+      qaplet_io_operation token={sizeof(token),QAPLET_ABI_VERSION,r->runtime_id,i,o->generation};
+      pthread_mutex_unlock(&r->mutex);int js=r->io_js_deliver(r,&token);pthread_mutex_lock(&r->mutex);
+      if(js<0)break;
+      if(js){o->handoff=2;++count;continue;}
+    }
     if(r->execution_active && qaplet_execution_dispatch_locked(r))break;
     o->handoff=0;--p->snapshot.pending_handoffs;--o->endpoint->handoffs;o->endpoint=NULL;++count;
     if(o->released && !o->helper)retire_operation_locked(r,o);
   }
   pthread_mutex_unlock(&r->mutex);return count;
+}
+void qaplet_io_js_checkpoint(qaplet_runtime *r) {
+  pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
+  if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
+    if(!o->active || o->handoff!=2)continue;
+    o->handoff=0;--p->snapshot.pending_handoffs;--o->endpoint->handoffs;o->endpoint=NULL;
+    if(o->released && !o->helper)retire_operation_locked(r,o);
+  }
+  pthread_mutex_unlock(&r->mutex);
 }
 void qaplet_io_collect(qaplet_runtime *r) {
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
@@ -401,7 +417,7 @@ void qaplet_io_shutdown(qaplet_runtime *r,int closing) {
   pthread_mutex_unlock(&r->mutex);qaplet_io_collect(r);
 }
 static qaplet_code endpoint_control(qaplet_runtime *r,const qaplet_io_endpoint *t,int finish,qaplet_diagnostic *d) {
-  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,t);
   if(r->snapshot.lifecycle==QAPLET_CLOSED)code=QAPLET_INVALID_HANDLE;else if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e)code=QAPLET_INVALID_HANDLE;
   else if(finish && !e->writing)code=QAPLET_BAD_STATE;
@@ -412,7 +428,7 @@ qaplet_code qaplet_io_finish(qaplet_runtime *r,const qaplet_io_endpoint *e,qaple
 qaplet_code qaplet_io_close(qaplet_runtime *r,const qaplet_io_endpoint *e,qaplet_diagnostic *d){return endpoint_control(r,e,0,d);}
 qaplet_code qaplet_io_set_ref(qaplet_runtime *r,const qaplet_io_endpoint *t,uint32_t referenced,qaplet_diagnostic *d) {
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));
-  if(!code && referenced>1)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  if(!code && referenced>1)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(r->snapshot.lifecycle!=QAPLET_OPEN)code=QAPLET_BAD_STATE;else if(!e)code=QAPLET_INVALID_HANDLE;else e->referenced=referenced;
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
@@ -439,7 +455,7 @@ qaplet_code qaplet_get_io_status(qaplet_runtime *r,const qaplet_io_operation *t,
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
 qaplet_code qaplet_io_copy_result(qaplet_runtime *r,const qaplet_io_operation *t,qaplet_io_result *out,qaplet_diagnostic *d) {
-  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && ((!out->buffer && out->capacity) || out->reserved))code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && ((!out->buffer && out->capacity) || out->reserved))code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_operation *o=operation_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!o)code=QAPLET_INVALID_HANDLE;else if(o->state==QAPLET_IO_PENDING)code=QAPLET_BAD_STATE;else if(o->physical)code=QAPLET_BUSY;
   else {out->state=o->state;out->code=o->code;out->error_domain=o->error_domain;out->error=o->error;out->length=o->length;out->eof=o->eof;
@@ -447,7 +463,7 @@ qaplet_code qaplet_io_copy_result(qaplet_runtime *r,const qaplet_io_operation *t
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
 qaplet_code qaplet_io_release(qaplet_runtime *r,const qaplet_io_operation *t,qaplet_diagnostic *d) {
-  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_operation *o=operation_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!o)code=QAPLET_INVALID_HANDLE;else if(o->state==QAPLET_IO_PENDING)code=QAPLET_BAD_STATE;else {o->released=1;if(!o->physical && !o->helper && !o->handoff)retire_operation_locked(r,o);}
   pthread_mutex_unlock(&r->mutex);qaplet_io_collect(r);return qaplet_report(d,code);
