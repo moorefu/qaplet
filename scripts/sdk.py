@@ -117,9 +117,9 @@ M2_EXAMPLE_CASES = sdk_m2_example.CASES
 HOST_CASES = (
     ("m2-process-cli-child", ["--m2-process-cli-child", "{cli}", "{launcher}"], "M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass\n"),
     ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
-    ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
-    ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
-    ("m2-mixed-nonreturning", ["--m2-mixed-nonreturning", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed nonreturning: work remains physically held at process exit; CLOSED engine zero; repeated zero/finite quiesce pending and destroy BUSY; child reaped, stdio/TTY restored and other IO retired; no native cleanup success claimed: pass\n"),
+    ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{child}"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{child}"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-nonreturning", ["--m2-mixed-nonreturning", "{self}", "{launcher}", "{child}"], "M2 mixed nonreturning: work remains physically held at process exit; CLOSED engine zero; repeated zero/finite quiesce pending and destroy BUSY; child reaped, stdio/TTY restored and other IO retired; no native cleanup success claimed: pass\n"),
 
     ("m2-aggregate-diagnostics", ["--m2-aggregate-diagnostics"], "M2 aggregate diagnostics: public short-prefix POD/canary and HostNotify refusals preserve caller diagnostics; no resource acceptance: pass\n"),
     ("m2-aggregate-pod", ["--m2-aggregate-pod"], "M2 aggregate POD: versioned short/zero-tail/nonzero-tail canaries; foreign thread 1000 OPEN and 1000 CLOSED samples of nine pure POD queries; JS state preserved; old instance unsupported: pass\n"),
@@ -1122,6 +1122,7 @@ def consume(args, report, directory):
     # directory. Fixed-name mixed markers must never share a report/host cwd.
     host_path = args.artifact.resolve()
     modules_path = host_path.parent / "sdk/modules"
+    child_path = (host_path.parent / 'sdk/process-child.exe').resolve()
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
         cli_path.chmod(cli_path.stat().st_mode | 0o111)
@@ -1132,7 +1133,7 @@ def consume(args, report, directory):
         cwd = directory / case_id if mixed else ROOT
         if mixed:
             cwd.mkdir()
-        arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
+        arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{child}", str(child_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
                                       [*loader, host_path, *arguments], args.timeout, cwd, expected=None)
         if suffix == "facts":
@@ -1145,6 +1146,7 @@ def consume(args, report, directory):
             records = [json.loads(line) for line in waits.read_text(encoding="utf-8").splitlines()] if waits.is_file() else []
             passed = passed and marker.is_file() and marker.read_bytes() == expected.encode("utf-8") and [row["requested_active_wait_ms"] for row in records] == [0, 5, 5]
             mixed_evidence = {"marker": identity(marker) if marker.is_file() else None,
+                "process_child": identity(child_path),
                 "wait_trace": identity(waits) if waits.is_file() else None, "wait_observations": records,
                 "native_cleanup_complete": suffix != "m2-mixed-nonreturning" if passed else False}
         required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")

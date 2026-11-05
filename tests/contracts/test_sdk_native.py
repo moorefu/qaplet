@@ -29,6 +29,11 @@ class SDKNativeContract(unittest.TestCase):
             self.assertTrue(Path(command["argv"][0]).is_absolute())
             artifact_index = 0 if report["host"]["os"] == "Windows" else 1
             self.assertTrue(Path(command["argv"][artifact_index]).is_absolute())
+            child = Path(command['argv'][-1])
+            self.assertTrue(child.is_absolute())
+            self.assertNotIn('..', child.parts, 'Resolve the supplied child before entering the case cwd')
+            self.assertEqual(Path(case['process_child']['path']), child)
+            self.assertEqual(hashlib.sha256(child.read_bytes()).hexdigest(), case['process_child']['sha256'])
             self.assertEqual(Path(case["marker"]["path"]), root / "mixed-result.txt")
             self.assertEqual(Path(case["wait_trace"]["path"]), root / "mixed-waits.ndjson")
             self.assertEqual(Path(case["marker"]["path"]).read_bytes(), case["expected"]["stdout"].encode())

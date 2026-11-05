@@ -577,7 +577,10 @@ identities remain separate. The successful current closure uses product commit
 `21bd317f4246571f0048789ca97167632c09f924` / Full `41489263809`; see the
 [integration record](../../.scratch/qaplet-m1/16-evidence-validation.md).
 
-## M2 显式空实例增量
+## 历史：M2 显式空实例增量
+
+本节的105项供应描述保留当时范围；完整M2分发、组合例和当前入口见本页开头，
+不能用早期空实例成绩替代完整M2验收。
 
 `qaplet_create` 保持 M1 布局、reserved 和旧模式。新增的
 `qaplet_create_m2(base, m2, output, diagnostic)` 使用独立 `qaplet_m2_config`

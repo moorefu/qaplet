@@ -129,12 +129,13 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                 "Native argv/cwd required")
         artifact_path = original_path(artifacts[name]["path"], command["cwd"])
         modules = posixpath.dirname(artifact_path) + "/sdk/modules"
-        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{cli}", "{launcher}", "{input}"))}
+        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{cli}", "{launcher}", "{input}", "{child}"))}
         cli_path = original_path(artifacts["qaplet"]["path"], command["cwd"])
         work = normalized(incoming['evidence_directory']) + '/' + case_id
         suffix = case_id.split('.', 1)[1]
         input_path = work + ('/missing.bin' if suffix == 'file-error' else '/input.bin')
-        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{cli}", cli_path).replace("{input}", input_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
+        child_path = posixpath.dirname(artifact_path) + '/sdk/process-child.exe'
+        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{cli}", cli_path).replace("{child}", child_path).replace("{input}", input_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
         wanted = ([] if host["os"] == "Windows" else [normalized(loader["path"])]) + [artifact_path, *arguments]
         actual_argv = list(command["argv"])
         prefix = 1 if host["os"] == "Windows" else 2
@@ -152,6 +153,10 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
             else:
                 require(case['input'] is None, 'M2 example declares an unexpected file input')
         if case_id in ("qaplet-host.m2-mixed-stop", "qaplet-host.m2-mixed-races", "qaplet-host.m2-mixed-nonreturning"):
+            supplied_child = next(row for row in producer['sdk']['components'] if row['file'] == 'sdk/process-child.exe')
+            require(normalized(case['process_child']['path']) == child_path and same(case['process_child'], supplied_child),
+                    'Mixed child must be the canonical supplied artifact')
+            evidence.read(case['process_child'])
             work = normalized(incoming["evidence_directory"]) + "/" + case_id
             require(normalized(command["cwd"]) == work, "Mixed smoke requires its own report/case working directory")
             require(all(normalized(value).startswith("/") or
