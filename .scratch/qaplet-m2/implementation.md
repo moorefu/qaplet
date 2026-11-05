@@ -455,3 +455,12 @@ child动态imports unknown限制不变。主收据`out/qaplet-m2/merge-21-cli/HA
 保存完整身份与命令。21 Local development: complete，claimed/local_complete/cross_deferred，
 可放行22本地开发但merger未领取。产品执行0，无重建/重复suite/push/CI；27/38/135、父spec、
 正式Cross/64K/Full/长测/整体Review/M2及发布门禁继续待验。
+
+2026-11-05（22真实开发前置满足）：21独立no-ff`13abf9ac`和接收`fe8a17d`已完成，
+主收据`out/qaplet-m2/merge-21-cli/handoff.json` SHA256为
+`f077708962c1691433cd9535cb317c1bd400cb0ef9cc634cc919c7eb99b17ab6`。
+供应6 CLI两端67/72、100recipe/91ZIP及8报告/1871raw已独立重放，合后Ubuntu预检通过。
+Root实际领取22，fresh实现者独立worktree TDD；真实OS中断、在途relay/未来生产者、
+Host最终输出与累计5秒主动等待按原合同实施，不从原有0x03 raw输入或SDK stop成绩外推。
+21启动模式差异、九个保留负向和旧供应范围继续保留；22尚未本地验收，不提前放行23。
+19的23前置已满足；原27票/38边/135AC、父spec及正式Cross/Full/64K/长测/Review不变。

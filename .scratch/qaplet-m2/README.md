@@ -37,7 +37,7 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 | 19 | [跨资源预算、POD 快照与终止首因](issues/19-aggregate-budgets-metrics-failures.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | claimed |
 | 20 | [组合资源的停止与两阶段清理](issues/20-mixed-stop-close-quiesce.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | claimed |
 | 21 | [CLI 异步运行与入口结果保存](issues/21-cli-async-run-results.md) | [20](issues/20-mixed-stop-close-quiesce.md) | claimed |
-| 22 | [CLI 中断交接与清理超时报告](issues/22-cli-signal-stop-cleanup-budget.md) | [21](issues/21-cli-async-run-results.md) | ready-for-agent |
+| 22 | [CLI 中断交接与清理超时报告](issues/22-cli-signal-stop-cleanup-budget.md) | [21](issues/21-cli-async-run-results.md) | claimed |
 | 23 | [完整 SDK 分发与包外 C Host 示例](issues/23-sdk-package-c-host-example.md) | [19](issues/19-aggregate-budgets-metrics-failures.md)、[22](issues/22-cli-signal-stop-cleanup-budget.md) | ready-for-agent |
 | 24 | [五原生目标的合同矩阵与生命周期](issues/24-native-cross-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | ready-for-agent |
 | 25 | [实际 ARM64 64K 的新合同与清理验收](issues/25-arm64-64k-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | ready-for-agent |
@@ -49,8 +49,8 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 2026-11-05：16、17、18均已本地完成并独立合并，实际合并点分别为 `015cdb9f`、
 `caa439ae`、`3e85a272`（接收收据 `71a5db50`、`5bc82e1c`、`64624ddd`）。
 19、20随后均已本地完成并独立合入`597020eb`、`943c1962`，接收分别为`2b3035f7`、
-`776e50cb`；21据此领取实施，22仍等待21本地完成及独立合入。19/20正式Cross/Full仍待验。
-23的19前置已满足，仍等待22。完整开发前置和各票验证范围见
+`776e50cb`；21随后独立合入`13abf9ac`、接收`fe8a17d`，22据此领取实施。
+19–21正式Cross/Full仍待验；23的19前置已满足，仍等待22本地完成及独立合入。完整开发前置和各票验证范围见
 [本地开发方式](local-development.md#2026-11-05剩余开发前置与验证范围)，原阻塞边不变。
 
 ## 初始 frontier（历史记录）

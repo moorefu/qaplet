@@ -4,11 +4,11 @@
 
 **Blocked by:** [21 · CLI 异步运行与入口结果保存](21-cli-async-run-results.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 等待21本地完成并独立合并，当前未满足开发前置。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 21已本地完成并独立合入`13abf9ac`（接收`fe8a17d`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 64、66、69、70、84、85、86、87、88、93、96、97、98、100。
 
@@ -53,4 +53,10 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-05：21独立接收后由root实际领取；fresh实现者从实际集成tip创建专属
+`codex/m2-22-cli-signal`分支/worktree，按公开行为TDD推进真实SIGINT/SIGTERM/Ctrl+C、
+在途/未来relay生产者保留、终端/child恢复及累计主动原生等待预算。继承21实际Host最终输出
+责任和已测启动模式限制，不改SDK进程handler边界或父产品/安全/正式验收合同。
+本地完成及独立合入才放行23；当前领取不代表任何正式AC组或Cross/Full已完成。
 
