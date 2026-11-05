@@ -60,3 +60,5 @@
 
 2026-11-05：本地公开取消、终止即回收、确定性 helper/TLS 物理保留、真实 native error/wake 故障与 Windows HANDLE 复用均通过。正常供应 Linux 172pass、Windows 171pass+既有可选 symlink 限制1；包外两端各58pass；独立故障 Linux12/Windows9pass；devcheck380=180pass+200条件skip，C bootstrap通过。详见[本票验证记录](../14-process-cancel-validation.md)。保持 claimed，不提前关闭 full ticket/父M2，不 push/触发 CI；待独立 merger 合入后登记本地依赖放行。
 
+2026-11-05（融合12）：已融合实际integration 3d03f85，保留JS Work7项及Process cancel/terminal/包外路径。15真实IO gate发现的Windows child已exit/helper未pub竞争由14唯一提交5724f4e修复；旧供应cancel/close两序实际red，新组合正式fault均green，活child真实native5仍保留。新normal Linux179pass/Win178pass+optional1，package两端65pass，fault Linux12/Win10pass，相关SDKNative三项pass/0skip；不重复380。旧sourceout冻结，新原件独占主out/qaplet-m2/14-fusion-js12，见[融合验证](../14-fusion-js12-validation.md)。继续待独立merger放行本地开发，不改变claimed/fullCross deferred。
+
