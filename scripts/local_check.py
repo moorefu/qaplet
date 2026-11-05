@@ -69,12 +69,7 @@ def select_cases(profile):
 
 
 def current_recipe():
-    value = {'version': 1, 'files': sdk.recipe(),
-             'input_id': InputLock().identity()['input_id'],
-             'compile_flags': ['-Os', '-fwrapv', '-D_GNU_SOURCE', 'CONFIG_VERSION=locked'],
-             'link_flags': ['-Os', '-Wl,-z,max-page-size=65536', '-lm', '-lpthread'],
-             'archive_flags': 'rcsD'}
-    return {**value, 'sha256': sdk.digest(value)}
+    return sdk.recipe_identity(sdk.recipe(), InputLock().identity()['input_id'])
 
 
 def contract_identity(profile):
@@ -310,6 +305,68 @@ def run_ci(args, report, directory):
     report.update(status='pass', execution_status='executed', product_execution=False)
 
 
+def result_pointer(cache, report):
+    key = sdk.digest({key: report[key] for key in ('commit', 'profile', 'current_recipe_sha256', 'contract_sha256')}
+                     | {key: report['host'][key] for key in ('os', 'execution_arch')})
+    return cache / 'build/local-check-results' / (key + '.json')
+
+
+def try_reuse(args, report, cache):
+    from ci_evidence import reuse, actions_reuse_candidates
+    attempts = []
+    options = SimpleNamespace(commit=report['commit'], profile=args.profile,
+        expected_os=args.expected_os or report['host']['os'],
+        expected_arch=args.expected_arch or report['host']['execution_arch'],
+        max_age_hours=args.max_age_hours, supplier_dir=None)
+    if args.supplier_report:
+        try:
+            validate_supplier(args.supplier_report, args.supplier_dir.resolve(), current_recipe())
+        except (sdk.BuildError, OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+            return {'status': 'miss', 'attempts': [{'supplier': str(args.supplier_report), 'status': 'fail', 'reason': str(error)[:500]}],
+                    'new_product_executions': 0, 'reason': 'Explicit supplied bytes must be valid before result reuse'}
+
+    def verify(path, mappings=(), provider=None):
+        options.input_report, options.path_mappings = path, mappings
+        try:
+            result = reuse(options)
+            result['provider'] = provider
+            if provider:
+                result['network_requests'] = None  # Discovery/acquisition happened; not a zero-network claim.
+            attempts.append({'input_report': str(path), 'status': 'pass'})
+            result['attempts'] = attempts
+            return result
+        except (sdk.BuildError, OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+            attempts.append({'input_report': str(path), 'status': 'fail', 'reason': str(error)[:500]})
+            return None
+
+    candidates = list(args.reuse_report)
+    pointer = result_pointer(cache, report)
+    if pointer.exists():
+        try:
+            reference = read_json(pointer)['original_execution']
+            if identity(reference['path']) != reference:
+                raise ValueError('Indexed original report bytes changed')
+            candidates.append(Path(reference['path']))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            attempts.append({'index': str(pointer), 'status': 'fail', 'reason': str(error)[:500]})
+    for path in dict.fromkeys(candidates):
+        result = verify(path)
+        if result:
+            return result
+    if args.reuse_actions:
+        args.commit = report['commit']
+        args.reuse_attempts = attempts
+        try:
+            for path, mappings, provider in actions_reuse_candidates(args, args.output_dir / 'reuse-actions'):
+                result = verify(path, mappings, provider)
+                if result:
+                    return result
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            attempts.append({'provider': 'Actions', 'status': 'fail', 'reason': str(error)[:500]})
+    return {'status': 'miss', 'attempts': attempts, 'new_product_executions': 0,
+            'reason': 'No strictly verified matching successful original; execute the selected contract'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', choices=PROFILES, default='all')
@@ -319,9 +376,22 @@ def main():
     parser.add_argument('--supplier-dir', type=Path)
     parser.add_argument('--loader-dir', type=Path)
     parser.add_argument('--plan', action='store_true')
+    parser.add_argument('--reuse-report', type=Path, action='append', default=[])
+    parser.add_argument('--reuse-only', action='store_true', help='Discover and verify only; a miss permits actual execution by the caller')
+    parser.add_argument('--reuse-actions', action='store_true', help='Read same-SHA successful M0 Fast artifacts before execution')
+    parser.add_argument('--reuse-repository')
+    parser.add_argument('--reuse-api-base', default='https://api.github.com')
+    parser.add_argument('--reuse-timeout-seconds', type=int, choices=range(5, 121), default=30)
+    parser.add_argument('--max-age-hours', type=int, choices=range(1, 169), default=24)
+    parser.add_argument('--expected-commit', help='Explicit original identity for read-only reuse-only verification')
+    parser.add_argument('--expected-os', choices=('Linux', 'Windows', 'Darwin'))
+    parser.add_argument('--expected-arch', choices=('x86_64', 'aarch64'))
+    parser.add_argument('--github-output', type=Path)
     parser.add_argument('--timeout', type=int, default=30)
     parser.add_argument('--compile-timeout', type=int, default=300)
     args = parser.parse_args()
+    if (args.expected_commit or args.expected_os or args.expected_arch) and not args.reuse_only:
+        parser.error('Explicit original identities are only valid for read-only --reuse-only')
     if not 1 <= args.timeout <= 300 or not 1 <= args.compile_timeout <= 900:
         parser.error('Invalid bounded timeout')
     if bool(args.supplier_report) != bool(args.supplier_dir):
@@ -333,7 +403,7 @@ def main():
         if args.output_dir == ROOT:
             raise ValueError('Output directory must not be the checkout root')
         cache_inputs = [cache / name for name in ('downloads', 'quickjs', 'toolchains', 'sources', 'build', 'guests', 'tools')]
-        guard_evidence_outputs([args.output_dir, args.report], [args.supplier_report],
+        guard_evidence_outputs([args.output_dir, args.report, args.github_output], [args.supplier_report, *args.reuse_report],
             [*cache_inputs, *protected, *([args.supplier_dir] if args.supplier_dir else [])],
             [ROOT / 'Makefile', ROOT / 'AGENTS.md'])
         if args.report.exists() or (args.output_dir / 'selected-sdk.json').exists() or (args.output_dir / 'public-c.json').exists():
@@ -346,6 +416,8 @@ def main():
         'release_ready': False, 'started_at': now(), 'supplier': None,
         'commit': git_read(ROOT, 'rev-parse', 'HEAD').decode().strip(), 'host': sdk.host_facts(), 'ci': sdk.ci_facts(),
         'contract_limits': 'Selected current SDK contracts only; no M0 probe, QEMU, network acquisition, native matrix or release gate.'}
+    if args.expected_commit:
+        report['commit'] = args.expected_commit
     args.output_dir.mkdir(parents=True, exist_ok=True)
     directory = args.output_dir / 'evidence' / uuid.uuid4().hex
     directory.mkdir(parents=True)
@@ -363,13 +435,33 @@ def main():
         elif args.profile == 'ci':
             run_ci(args, report, directory)
         else:
-            run_product(args, report, cache, catalog, expected, directory)
+            report['reuse'] = try_reuse(args, report, cache)
+            if report['reuse']['status'] == 'pass':
+                report.update(status='pass', execution_status='reused_previous')
+            elif args.reuse_only:
+                report.update(status='pass', reason='Reuse miss; selected contract still requires actual execution')
+            else:
+                run_product(args, report, cache, catalog, expected, directory)
         if contract_identity(args.profile) != report['test_contract']:
             raise ValueError('Selected test contract/helpers changed during local checks')
+        if current_recipe() != expected:
+            raise ValueError('Current product recipe changed during local checks')
     except (sdk.BuildError, OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         report.update(status=error.status if isinstance(error, sdk.BuildError) else 'fail', reason=str(error))
     report['finished_at'] = now()
     write_json(args.report, report)
+    if report['status'] == 'pass' and report['execution_status'] == 'executed' and args.profile not in ('ci', 'tty'):
+        pointer = result_pointer(cache, report)
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        temporary = pointer.with_name('.' + uuid.uuid4().hex + '.tmp')
+        try:
+            write_json(temporary, {'original_execution': identity(args.report)})
+            temporary.replace(pointer)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if args.github_output:
+        with args.github_output.open('a', encoding='utf-8', newline='\n') as output:
+            output.write('reused=' + str(report['execution_status'] == 'reused_previous').lower() + '\n')
     print(json.dumps({'status': report['status'], 'profile': args.profile,
                       'execution_status': report['execution_status'], 'report': str(args.report)}))
     return 0 if report['status'] in ('pass', 'planned') else 1

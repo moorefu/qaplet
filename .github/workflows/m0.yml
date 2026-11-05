@@ -248,8 +248,8 @@
       "needs": "tier-plan",
       "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}",
       "concurrency": {
-        "group": "m0-build-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-build-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "native-startup": {
@@ -400,8 +400,8 @@
       ],
       "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}",
       "concurrency": {
-        "group": "m0-native-startup-${{ matrix.runner }}-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-native-startup-${{ matrix.runner }}-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "page-plan": {
@@ -456,8 +456,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-page-plan-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-page-plan-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "arm64-page-gaps": {
@@ -669,8 +669,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-arm64-page-gaps-${{ matrix.page_size }}-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-arm64-page-gaps-${{ matrix.page_size }}-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "startup-matrix": {
@@ -777,8 +777,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-startup-matrix-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-startup-matrix-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "full-core": {
@@ -838,8 +838,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-full-core-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-full-core-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "fast": {
@@ -862,40 +862,54 @@
           }
         },
         {
+          "name": "Verify same-SHA successful originals before acquisition or execution",
+          "id": "reuse",
+          "env": {
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python scripts/local_check.py --profile all --reuse-only --reuse-actions --output-dir out/fast --report out/fast/reuse-check.json --github-output \"$GITHUB_OUTPUT\""
+        },
+        {
           "name": "Restore immutable inputs (verification remains mandatory)",
           "id": "cache",
           "uses": "actions/cache/restore@v4",
           "with": {
             "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
             "key": "${{ needs.tier-plan.outputs.cache_key }}"
-          }
+          },
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Explicitly acquire exact locked upstream artifact",
           "env": {
             "GH_TOKEN": "${{ github.token }}"
           },
-          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json"
+          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json",
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Populate locked input caches explicitly",
-          "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
+          "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs",
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Explicitly acquire locked loader and packer sources",
-          "run": "python scripts/ape_helpers.py fetch --report out/m0/inputs/ape-helpers.json"
+          "run": "python scripts/ape_helpers.py fetch --report out/m0/inputs/ape-helpers.json",
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Explicitly acquire locked Ubuntu helper compiler",
-          "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"
+          "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json",
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Compile and execute current Runtime/ESM/Promise/SDK smoke",
-          "run": "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json"
+          "run": "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json",
+          "if": "${{ steps.reuse.outputs.reused != 'true' }}"
         },
         {
           "name": "Save only verified trusted default-branch inputs",
-          "if": "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}",
+          "if": "${{ steps.reuse.outputs.reused != 'true' && success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}",
           "uses": "actions/cache/save@v4",
           "with": {
             "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
@@ -915,8 +929,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-fast-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-fast-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "offline-rebuild": {
@@ -993,8 +1007,8 @@
         }
       ],
       "concurrency": {
-        "group": "m0-offline-rebuild-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-offline-rebuild-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       }
     },
     "build": {
@@ -1013,8 +1027,8 @@
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 5,
       "concurrency": {
-        "group": "m0-required-build-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
-        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+        "group": "m0-required-build-${{ (github.event_name == 'workflow_dispatch' || needs.tier-plan.outputs.run_full == 'true') && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' && needs.tier-plan.outputs.run_full != 'true' }}"
       },
       "steps": [
         {

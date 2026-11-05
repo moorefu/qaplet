@@ -17,6 +17,21 @@ import local_check as local
 
 
 class LocalCheckTests(unittest.TestCase):
+    def test_shared_recipe_identity_is_pure_and_binds_inputs_and_flags(self):
+        files = [{'path': 'example.c', 'sha256': 'a' * 64, 'size_bytes': 7}]
+        original = copy.deepcopy(files)
+        value = local.sdk.recipe_identity(files, 'locked-input')
+        self.assertEqual(value['compile_flags'], ['-Os', '-fwrapv', '-D_GNU_SOURCE', 'CONFIG_VERSION=locked'])
+        self.assertEqual(value['link_flags'], ['-Os', '-Wl,-z,max-page-size=65536', '-lm', '-lpthread'])
+        self.assertEqual(value['archive_flags'], 'rcsD')
+        self.assertNotIn('git_commit', value)
+        self.assertEqual(files, original)
+        for changed in (local.sdk.recipe_identity(files, 'different-input'),
+                        local.sdk.recipe_identity(files, 'locked-input', ['-DTEST=1']),
+                        local.sdk.recipe_identity([{**files[0], 'sha256': 'b' * 64}], 'locked-input')):
+            self.assertNotEqual(value['sha256'], changed['sha256'])
+        self.assertEqual(local.current_recipe(), local.sdk.recipe_identity(local.sdk.recipe(), local.InputLock().identity()['input_id']))
+
     def cli(self, *arguments):
         return subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/local_check.py'), *map(str, arguments)],
                               cwd=ROOT, capture_output=True, text=True, timeout=30)

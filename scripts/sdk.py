@@ -280,6 +280,15 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def recipe_identity(files, input_id, cflags=()):
+    """Pure portable SDK identity; execution/Git metadata is attached separately."""
+    value = {"version": 1, "files": [dict(row) for row in files], "input_id": input_id,
+             "compile_flags": ["-Os", "-fwrapv", "-D_GNU_SOURCE", "CONFIG_VERSION=locked", *cflags],
+             "link_flags": ["-Os", "-Wl,-z,max-page-size=65536", "-lm", "-lpthread"],
+             "archive_flags": "rcsD"}
+    return {**value, "sha256": digest(value)}
+
+
 def package_consume(args, report, directory):
     if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
         raise BuildError("SDK package compilation runs on Ubuntu only", "blocked")
@@ -709,14 +718,9 @@ def build(args, report, directory):
     report["build_directory"] = str(work)
     _, revision, _ = run(report, directory, "git-revision", ["git", "rev-parse", "HEAD"], 10)
     _, dirty, _ = run(report, directory, "git-status", ["git", "status", "--porcelain"], 10)
-    report["sdk_recipe"] = {"version": 1, "files": files, "input_id": report["input_lock"]["input_id"],
-                            "compile_flags": ["-Os", "-fwrapv", "-D_GNU_SOURCE", "CONFIG_VERSION=locked", *args.cflag],
-                            "link_flags": ["-Os", "-Wl,-z,max-page-size=65536", "-lm", "-lpthread"],
-                            "archive_flags": "rcsD", "git_commit": revision.strip(),
+    report["sdk_recipe"] = {**recipe_identity(files, report["input_lock"]["input_id"], args.cflag), "git_commit": revision.strip(),
                             "working_tree_dirty": bool(dirty.strip())}
     # The SDK recipe is additive. It does not mutate or extend the frozen M0 lock.
-    report["sdk_recipe"]["sha256"] = digest({key: value for key, value in report["sdk_recipe"].items()
-                                              if key not in ("git_commit", "working_tree_dirty")})
     report["build"] = {"flags": flags, "recipe_files": files, "sdk_recipe_id": report["sdk_recipe"]["sha256"],
                        "quickjs_sources": list(SOURCES), "portable_helpers_sha256": helpers["sha256"],
                        "native_helpers_sha256": report["native_toolchain"]["helper_set_sha256"],

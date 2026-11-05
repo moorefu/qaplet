@@ -12,8 +12,8 @@
 |---|---|---|
 | L0 Local | `make check-fast`；`make test-engine/test-loop/test-work/test-process/test-tty/test-ci`；`dev.py check-fast --profile …` | 预检、选中公开 SDK/CLI 行为、ESM/Promise、生命周期、Ubuntu 最小公开头 C 编译；只从已验固定缓存构建，不 fetch/QEMU/全项目历史 probe。TTY 尚未实现时明确 blocked |
 | L1 Fast | 普通 Engine/JS/应用变更 push，包括 M2 integration；`m0.yml` 的 `fast` | Ubuntu 真实编译当前 SDK、运行选中 Runtime/SDK 行为。移出历史 M0/四类 M2 probe、包外故障总回归和 offline pair；不是仅语法检查 |
-| L2 Targeted Cross | 原生 OS/资源改动、公开 SDK 头、集成 PR | 一个 Ubuntu portable producer；选定真实 native runner 消费相同 APE/SDK；现有完整目标内合同与日志保留。公共 ABI/共享原生代码仍选五个声明目标 |
-| L3 Full | 每日 03:17 UTC、RC tag、显式 full、工具链/构建/验证关键路径或未知风险 | 五原生、实际 ARM64 页补缺/64K、完整 SDK/M0、断网 pair/refusal、原 ZIP/Core consumer。未来 Node/soak/network 合同保持未实现状态 |
+| L2 Targeted Cross | 一般原生 OS/资源改动、集成 PR | 一个 Ubuntu portable producer；选定真实 native runner 消费相同 APE/SDK；现有完整目标内合同与日志保留。共享原生代码仍选五个声明目标；公共 ABI 关键变更另走 Full |
+| L3 Full | 每日 03:17 UTC、RC tag、显式 full、公共 SDK 头/ABI 切换、工具链/构建/验证关键路径或未知风险 | 五原生、实际 ARM64 页补缺/64K、完整 SDK/M0、断网 pair/refusal、原 ZIP/Core consumer。未来 Node/soak/network 合同保持未实现状态 |
 | Release | 正式 RC 的独立发布判定 | Full 加声明 API/平台、长测、供应链、原件长期保存及发布合同；未完成 06 镜像与后续产品门禁前 `release_ready=false` |
 
 L0 争取 30–90 秒、L1 争取 2–4 分钟是测量目标。首次物化当前 SDK 与热供应检查分开计时；冷构建不保证落在 90 秒内。`--plan` 永远不运行产品。旧 `make check`/完整合同入口保留，CI 分层变化需完整本地回归，普通功能票只运行受影响合同。
@@ -28,7 +28,8 @@ L0 争取 30–90 秒、L1 争取 2–4 分钟是测量目标。首次物化当�
 |---|---|---|
 | `docs/`、`.scratch/`、已知根说明 | scope only，无产品执行 | 仅记录选择，各原检查 job 仍创建 |
 | `src/values.c`、execution、模块应用 fixture | push Fast；集成 PR Cross | 不重跑 SCM/Job/Foundation |
-| `include/qaplet.h`、共享 Process/Loop/Work 原生代码 | Cross，五 native | 公共头合同不能只验 Linux |
+| `include/qaplet.h` 等公开 SDK 头 | Full，五 native + 64K/offline/Core | 不通过声明或手工 Cross 降低 ABI 风险 |
+| 共享 Process/Loop/Work 原生代码 | Cross，五 native | 一般原生 OS 风险与公共 ABI 关键变更区分 |
 | `sdk_process_winchild.c`、`m2_process_pe.py` | Cross，真实 Windows x64 | 不拿 Linux 结果替代 Windows ABI |
 | SCM 或 Job 私有应用 | 对应独立 producer/Windows consumer | 不因应用变更重跑整个 Runtime |
 | 共享构建/输入锁/原件辅助依赖 | Full，并传递选择依赖它的服务应用 | 不仅看文件名是否包含服务名 |
@@ -42,11 +43,11 @@ M0 原 `build` 检查保留为始终运行的最终门禁，portable producer �
 
 Fast 单独生产当前 SDK，不等待 Full。L0 的最小 C 冒烟只用 Ubuntu PATH `cc` 编译公开头调用者为普通 ELF 对象，核对实际 source/header/compiler 闭包前后字节；它不构建 Runtime/portable SDK，不签发包外链接成绩。Full 的 `offline-rebuild` 在独立 Ubuntu job 中运行，和 native consumer 并行，原件使用独立 `out/full-offline/` 命名空间，经 `m0-offline-SHA` 交给同一 Core consumer，避免与 portable producer 的原路径映射冲突。Full Core 仍等待 offline 成功，不删除其 pair、供应拒绝或 recipe receipt。其他 consumer 不编译产品。
 
-Fast/Targeted 的同分支、同 job/平台旧运行可被新提交取消。Full/RC 使用 run ID 隔离且不自动取消；独立工作流的手工运行也使用独立 ID。效率报告 job 不取消证据运行。
+Fast/Targeted 的同分支、同 job/平台旧运行可被新提交取消。Full/RC 和所有手工 Fast/Cross/Full 使用 run ID 隔离且不自动取消；独立工作流的手工运行也使用独立 ID。效率报告 job 不取消证据运行。
 
-本地 supplier 按当前产品 recipe 选择、逐件校验 distribution/ZIP/统一锁后复用；目录存在不代表通过。每次普通 L0 仍实际执行所选行为。`ci_evidence.py reuse` 另提供显式成功结果复用：同 SHA、当前 recipe、当前选中测试合同、明确平台、未过期成功执行，重核原报告、SDK 和原始进程日志。它引用原 producer/report/CI/时间，不签发新 OS、Cross 或 Full 成绩；旧失败、未执行、合同变更、坏字节或陈旧结果拒绝。现有成功 Actions run 则先用 `runs` 收据核对 SHA，原 ZIP 使用既有 `verify` 重放；没有有效证据时不能跳过必需作业。本次不宣称已验证跨 run 自动远端跳过。
+本地 supplier 按当前产品 recipe 选择、逐件校验 distribution/ZIP/统一锁后复用；目录存在不代表通过。普通 L0 启动先从有界成功指针（精确 SHA + recipe + 选中合同 + 平台）定位原件，严格重核原报告/SDK/raw 后可跳过重复编译与所选行为；否则保留拒绝并实际执行。显式 `--reuse-report` 可选择原件，不递归扫描历史证据。CI Fast 在输入获取前走同一入口查询至多三个同 SHA 成功 run，每 run 最多三个未过期同名 provider 候选（共用默认 30 秒网络预算），包含重跑的上次成功 attempt；原 ZIP/provider 摘要经 fetch-actions 与 offline verify 后按原身份复验。旧失败、未执行、合同变更、坏字节或陈旧结果均拒绝，不能签发新 OS、Cross、Full 或 Release 成绩。原报告和 ZIP 不改写；原路径仅作内存映射，拒绝原件保留。详细入口与有效期见[CI 文档](../development/ci.md#本地快速入口复用与效率观测)。远端实际 Actions 跳过尚未执行，不能将本地合成 API 成绩外推为远端成绩。
 
-Fast原件上传包含supplier的SDK、producer报告和evidence/隐藏ARM archive，排除objects临时目录，避免留下仅指向未保存cache的报告。当前根组合已实测：Linux默认匹配供应all120项24.826秒，Windows同字节120项19.778秒，均含1000生命周期。首次供应230.663秒、含供件检查255.925秒，单列cold；这是WSL/本机的开发成绩，不是改后Actions耗时或完整Cross。
+Fast原件上传包含supplier的SDK、producer报告和evidence/隐藏ARM archive，排除objects临时目录，避免留下仅指向未保存cache的报告。修复前 `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21` 根组合已实测：Linux默认匹配供应all120项24.826秒，Windows同字节120项19.778秒，均含1000生命周期。首次供应230.663秒、含供件检查255.925秒，单列cold；这是WSL/本机的开发成绩，不是改后Actions耗时或完整Cross。
 
 ## 效率测量与改造前后
 
