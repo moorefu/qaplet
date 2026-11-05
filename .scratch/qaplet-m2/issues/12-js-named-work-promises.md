@@ -4,11 +4,11 @@
 
 **Blocked by:** [08 · 重复 timer、immediate 与检查点轮转](08-interval-immediate-fair-checkpoints.md)、[11 · 任务取消竞争、结果 release 与容量保留](11-work-cancel-result-retention.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress；本地Linux/Windows阶段，完整Cross deferred。
 
-**Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
+**Execution prerequisites:** 08已完成、11的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
 **Spec stories:** 17、18、19、20、35、37、39、40、43、44、45、46、49、50、81、83、91、107。
 

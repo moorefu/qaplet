@@ -4,11 +4,11 @@
 
 **Blocked by:** [13 · 纯 C Host 的显式 spawn 与退出观察](13-c-host-process-spawn-exit.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** in_progress；本地Linux/Windows阶段，完整Cross deferred。
 
-**Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
+**Execution prerequisites:** 13的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
 **Spec stories:** 33、34、56、57、58、64、65、84、85、86、88、89。
 

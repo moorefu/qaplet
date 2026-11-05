@@ -5,9 +5,14 @@
 **Parent:** [正式 M2 规格](spec.md)，Q1–Q53、110 条用户故事和 28 组验收合同；发布子票不修改或关闭父规格。
 **Coverage:** 27 票、38 条直接阻塞边、135 条逐票验收条件。主要责任及完整追踪见[已确认拆票方案](ticket-proposal.md#覆盖映射)。
 
+**Current development mode:** 用户于2026-11-05明确要求先在本地开发、主要推进Linux/Windows；
+本阶段以本地实现验收完成作为开发依赖，跨平台/CI欠项保留最终收口。详[本地开发方式](local-development.md)。
+
 ## 任务与直接阻塞
 
-ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 blocker 已完成。编号按 blocker 在前排列，独立任务可并行，不按编号强行串行。
+ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满足当前阶段的本地开发前置。
+`Local development: complete`可放行本地开发，跨平台未验收仍保留claimed/cross_deferred。
+编号按blocker在前排列，独立任务可并行，不按编号强行串行。
 
 | 票号 | 独立任务 | 直接 blocker | Status |
 |---|---|---|---|
@@ -22,10 +27,10 @@ ready-for-agent 表示本票需求可实施；领取前必须确认全部直接 
 | 09 | [宿主自有事件循环的原生通知接入](issues/09-host-notify-loop-integration.md) | [06](issues/06-wait-events-keepalive-stop.md) | resolved |
 | 10 | [纯 C Host 的有界原生工作闭环](issues/10-c-host-bounded-work.md) | [06](issues/06-wait-events-keepalive-stop.md) | resolved |
 | 11 | [任务取消竞争、结果 release 与容量保留](issues/11-work-cancel-result-retention.md) | [10](issues/10-c-host-bounded-work.md) | claimed |
-| 12 | [JS 命名工作、Promise 与取消闭环](issues/12-js-named-work-promises.md) | [08](issues/08-interval-immediate-fair-checkpoints.md)、[11](issues/11-work-cancel-result-retention.md) | ready-for-agent |
+| 12 | [JS 命名工作、Promise 与取消闭环](issues/12-js-named-work-promises.md) | [08](issues/08-interval-immediate-fair-checkpoints.md)、[11](issues/11-work-cancel-result-retention.md) | claimed |
 | 13 | [纯 C Host 的显式 spawn 与退出观察](issues/13-c-host-process-spawn-exit.md) | [04](issues/04-process-inheritance-os-probes.md)、[06](issues/06-wait-events-keepalive-stop.md) | claimed |
-| 14 | [直接子进程取消、回收与关闭竞争](issues/14-process-cancel-reap.md) | [13](issues/13-c-host-process-spawn-exit.md) | ready-for-agent |
-| 15 | [子进程三路有界字节 I/O 与 EOF](issues/15-c-host-process-pipe-io.md) | [03](issues/03-pipe-stdio-cancel-os-probes.md)、[11](issues/11-work-cancel-result-retention.md)、[13](issues/13-c-host-process-spawn-exit.md) | ready-for-agent |
+| 14 | [直接子进程取消、回收与关闭竞争](issues/14-process-cancel-reap.md) | [13](issues/13-c-host-process-spawn-exit.md) | claimed |
+| 15 | [子进程三路有界字节 I/O 与 EOF](issues/15-c-host-process-pipe-io.md) | [03](issues/03-pipe-stdio-cancel-os-probes.md)、[11](issues/11-work-cancel-result-retention.md)、[13](issues/13-c-host-process-spawn-exit.md) | claimed |
 | 16 | [JS Process 与 stdio 的完整异步闭环](issues/16-js-process-stdio-liveness.md) | [12](issues/12-js-named-work-promises.md)、[14](issues/14-process-cancel-reap.md)、[15](issues/15-c-host-process-pipe-io.md) | ready-for-agent |
 | 17 | [标准 stdio 的显式安全接入](issues/17-standard-stdio-opt-in.md) | [12](issues/12-js-named-work-promises.md)、[15](issues/15-c-host-process-pipe-io.md) | ready-for-agent |
 | 18 | [TTY 租约、resize 与 Console UTF-8](issues/18-tty-console-leases.md) | [05](issues/05-tty-console-os-probes.md)、[17](issues/17-standard-stdio-opt-in.md) | ready-for-agent |

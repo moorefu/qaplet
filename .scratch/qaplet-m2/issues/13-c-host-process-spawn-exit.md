@@ -10,6 +10,8 @@
 
 **External blocker:** GitHub 账号付款或支出限额拦截 job 启动，用户已提供页面原文；见[CI账单阻塞](../ci-billing-blocker.md)。当前平台缺口保持未验收。
 
+**Local development:** complete；按用户2026-11-05的[本地开发指示](../local-development.md)，实现、Linux/Windows与本地实际64K已支持后续开发。完整Cross仍deferred，Status不提前resolved。
+
 **Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
 
 **Spec stories:** 51、52、53、54、55、56、57、58、65、77、81、83。

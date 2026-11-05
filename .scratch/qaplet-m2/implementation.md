@@ -257,3 +257,11 @@ skipped，20继承provider/0新上传，未冒称A2取消或新执行。18原报
 11/13保持awaiting_cross，后续直接blocker不提前放行；可独立消费现有本地034 SDK
 执行新fixture的实际ARM64/64K，单列ci=null与真实journal/seal/清理，不能冒充CI或
 完整Core。没有代用户修改付款或预算，当前记录仅本地保存以避免重复触发已知受阻CI。
+
+2026-11-05（用户调整当前开发阶段）：用户明确“我们先在本地开发，主要推进Linux跟Windows”。
+按[本地开发方式](local-development.md)，11/13的本地实现验收支持后续开发，跨平台与CI
+缺口保留最终24–27收口；正式Status不冒称resolved。领取12/14/15，各fresh实现者与
+独立worktree并行TDD，Ubuntu供应/Linux与Windows消费，当前不push或重跑CI。
+新fixture的本地实际64K SDK170/170、Process10/Work20/取消7、27payload/1081journal
+与seal、QEMU0无timeout及原件不变性已经核验，明确ci=null；详主
+`out/qaplet-m2/local64k-nofile-034/HANDOFF.md`、`handoff.json`。不将本地实测替代CI或完整Core。
