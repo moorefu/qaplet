@@ -329,3 +329,18 @@ quiesce error/pending、destroy BUSY不被冒称清理成功。84 tracked Python
 详主`out/qaplet-m2/merge-16-js-process/HANDOFF.md`及`handoff.json`。16保持claimed、
 local_complete/cross_deferred；19/20仍等待18本地完成并独立合入。原38边/135AC、父spec、
 其他原生/当前64K/CI/Full/混合长测及最终整体Review未完成，不push或签发release-ready。
+
+2026-11-05（18本地实现与验收）：独立分支已融合actual root `516ddd4`，最终产品
+`958b3e26`的供应3实现TTY25、同终端跨Runtime/别名冲突、同lease双向join、完整模式
+保存/恢复/readback、显式Host resize桥和Console完整合法UTF8调用边界。Console真正
+join控制helper计入既有限额，取消/stop/close等待physical/TLS/join；恢复失败保留责任，
+partial scalar的实际UTF16单位/完整UTF8前缀及不可盲重试语义C/JS可见。新公开诊断与
+HostNotify canary真实red后仅修TTY前置，旧非TTY写法作为19待公开证伪风险保留。
+供应3全部TTY Linux13/Windows20、相关IO/stdio各27和包外公开消费各24通过；供应2
+完整normal209/208+optional1、package94/94、普通fault24/25保留原执行身份，未机械
+重复或重贴为供应3成绩。90 recipe与双archive各19，源/recipe/SDK/原ZIP/三APE/loader、
+raw日志、实际清理及静态/父actual imports分别在[本票记录](18-tty-validation.md)和
+worktree `out/m2-18-tty/HANDOFF.md`、`handoff.json`交接。SIGHUP设施失败、控制终端
+alias真实产品红、event/TLS屏障红与非recipe Windows路径错误等原件均保留。
+18保持claimed/local_complete/cross_deferred，待独立合入后放行19/20；不自合root。
+其他原生、当前实际64K、CI/Full、组合长测和最终整体Review仍未完成，不push或release。

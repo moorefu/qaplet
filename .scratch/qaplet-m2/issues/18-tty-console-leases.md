@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local；独立分支 `codex/m2-18-tty`。
+**Execution state:** local_complete / cross_deferred；独立分支 `codex/m2-18-tty`，待独立merger接收。
+
+**Local development:** complete；[本地验证记录](../18-tty-validation.md)及worktree `out/m2-18-tty/HANDOFF.md`、`handoff.json`保存最终供应3与供应2原执行的不同范围。正式Cross/Full及最终矩阵仍deferred。
 
 **Execution prerequisites:** 05已resolved；17已本地完成并独立合并 `caa439ae`，接收收据 `5bc82e1c` 已核，真实开发前置满足。17仍保留claimed/cross_deferred，18不新增对16的阻塞边。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -52,6 +54,8 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-05：公开SDK/JS/包外C的TTY增量已本地完成。最终产品958b3e2已融合实际root516ddd4；供应3完整TTY Linux13/Windows20、相关IO/stdio各27及包外各24通过，供应2完整normal209/208+optional1、package94/94、fault24/25保留原身份、供应3未重跑。完整模式恢复/错误保留、跨Runtime别名排他、双向join、Host resize桥、严格Console文本和真实join屏障见本票验证记录；原AC/Blocked by与父spec不改，正式claimed/cross_deferred保留。等待独立合入后才放行19/20，不自合根。
 
 2026-11-05：在17独立接收后领取。来源为实际集成点 `5bc82e1c`，17原件和重放收据见主 `out/qaplet-m2/merge-17-stdio/`；终端探针材料只作实施事实，不冒充本票产品验收。16继续独立最终供应，19/20仍等待16和18本地完成及独立合并。
 
