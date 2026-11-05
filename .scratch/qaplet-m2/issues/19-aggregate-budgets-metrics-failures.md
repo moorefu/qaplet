@@ -4,11 +4,11 @@
 
 **Blocked by:** [09 · 宿主自有事件循环的原生通知接入](09-host-notify-loop-integration.md)、[16 · JS Process 与 stdio 的完整异步闭环](16-js-process-stdio-liveness.md)、[18 · TTY 租约、resize 与 Console UTF-8](18-tty-console-leases.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 09已resolved，16已本地完成并独立合并`015cdb9f`（接收`71a5db50`）；等待18本地完成及独立合并，当前未满足全部开发前置。就绪后可与20并行。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 09已resolved，16本地完成并独立合并`015cdb9f`（接收`71a5db50`），18本地完成并独立合并`3e85a272`（接收`64624ddd`）；全部当前开发前置已满足，已领取，与20并行。正式Cross/Full欠项不替代也不取消，验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 2、3、5、20、31、32、42、47、74、75、76、77、78、79、80、81、82、83、93、106、107、110。
 
@@ -55,4 +55,9 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-05：18独立接收后由root实际领取；分支`codex/m2-19-aggregate`、worktree
+`.cache/worktrees/m2-19-aggregate`从当前实际integration起步，fresh实现者TDD。
+旧普通IO诊断拒绝样式仅为待公开证伪风险，先核公开POD/canary再决定修复；不改原AC。
+完成本地验收及独立合入后才标local_complete，正式Cross/Full仍单列待验。
 

@@ -48,9 +48,9 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | --- | --- | --- |
 | 16 | 本地完成并独立合并`015cdb9f`；正式Cross/Full待验 | JS显式spawn、三种stdio、退出/reap与EOF分离、输出保留、双通道/部分写/BUSY/背压、ref/unref/GC、取消及stop/close；轮转与Promise回归 |
 | 17 | 本地完成并独立合并`caa439ae`；正式Cross/Full待验 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
-| 18 | 本地实现/验证完成，待独立合并；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
-| 19 | 09已resolved、16本地完成并已独立合并；等待18 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
-| 20 | 09已resolved、16本地完成并已独立合并；等待18，可与19并行 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
+| 18 | 本地完成并独立合并`3e85a272`，接收`64624ddd`；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
+| 19 | 09已resolved、16/18本地完成并独立合入；已领取，与20并行 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
+| 20 | 09已resolved、16/18本地完成并独立合入；已领取，与19并行 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 等待20本地完成并独立合并 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
 | 22 | 等待21本地完成并独立合并 | 真实中断向owner交接、重复中断、清理预算耗尽/未回收报告、退出码；不把外部timeout记为成功清理 |
 | 23 | 等待19、22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
@@ -66,7 +66,8 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 
 18已冻结供应3产品`958b3e2`，其全部TTY Linux13/Windows20、相关IO/stdio各27和包外各24
 通过；供应2原完整normal209/208+optional1、package94/94、fault24/25保留原身份，
-供应3未重跑这些完整catalog。待独立merger合入18后，19/20的当前开发前置才满足。
+供应3未重跑这些完整catalog。18现已独立合入`3e85a272`，接收`64624ddd`重核21scope/
+2536raw及合后Ubuntu preflight；19/20当前开发前置已满足并已领取，未提前完成本地验收。
 正式跨平台/实际64K/CI/Full与组合长测不由本地selected回归替代，详本票验证记录与原件。
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，

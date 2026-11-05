@@ -34,8 +34,8 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 | 16 | [JS Process 与 stdio 的完整异步闭环](issues/16-js-process-stdio-liveness.md) | [12](issues/12-js-named-work-promises.md)、[14](issues/14-process-cancel-reap.md)、[15](issues/15-c-host-process-pipe-io.md) | claimed |
 | 17 | [标准 stdio 的显式安全接入](issues/17-standard-stdio-opt-in.md) | [12](issues/12-js-named-work-promises.md)、[15](issues/15-c-host-process-pipe-io.md) | claimed |
 | 18 | [TTY 租约、resize 与 Console UTF-8](issues/18-tty-console-leases.md) | [05](issues/05-tty-console-os-probes.md)、[17](issues/17-standard-stdio-opt-in.md) | claimed |
-| 19 | [跨资源预算、POD 快照与终止首因](issues/19-aggregate-budgets-metrics-failures.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | ready-for-agent |
-| 20 | [组合资源的停止与两阶段清理](issues/20-mixed-stop-close-quiesce.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | ready-for-agent |
+| 19 | [跨资源预算、POD 快照与终止首因](issues/19-aggregate-budgets-metrics-failures.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | claimed |
+| 20 | [组合资源的停止与两阶段清理](issues/20-mixed-stop-close-quiesce.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | claimed |
 | 21 | [CLI 异步运行与入口结果保存](issues/21-cli-async-run-results.md) | [20](issues/20-mixed-stop-close-quiesce.md) | ready-for-agent |
 | 22 | [CLI 中断交接与清理超时报告](issues/22-cli-signal-stop-cleanup-budget.md) | [21](issues/21-cli-async-run-results.md) | ready-for-agent |
 | 23 | [完整 SDK 分发与包外 C Host 示例](issues/23-sdk-package-c-host-example.md) | [19](issues/19-aggregate-budgets-metrics-failures.md)、[22](issues/22-cli-signal-stop-cleanup-budget.md) | ready-for-agent |
@@ -46,9 +46,9 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 
 ## 当前可领取项
 
-2026-11-05：16、17均已本地完成并独立合并，实际合并点分别为 `015cdb9f`、
-`caa439ae`（接收收据 `71a5db50`、`5bc82e1c`）；18已领取并已融合当前实际产品。
-19/20的16前置已满足，仍等待18本地完成并独立合入，
+2026-11-05：16、17、18均已本地完成并独立合并，实际合并点分别为 `015cdb9f`、
+`caa439ae`、`3e85a272`（接收收据 `71a5db50`、`5bc82e1c`、`64624ddd`）。
+19/20的09、16、18当前开发前置已满足，现已分别领取并行实施；正式Cross/Full仍待验。
 随后20→21→22、19/22→23。完整开发前置和各票验证范围见
 [本地开发方式](local-development.md#2026-11-05剩余开发前置与验证范围)，原阻塞边不变。
 
