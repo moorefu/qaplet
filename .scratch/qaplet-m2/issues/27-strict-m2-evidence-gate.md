@@ -8,7 +8,7 @@
 
 **Execution state:** not_started
 
-**Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
+**Execution prerequisites:** 等待24、25、26实际全范围验收；本地完成标记不能满足最终判定前置。工具准备不得提前签发M2完成或release-ready。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 1、74、75、76、99、100、101、102、103、104、105、106、110。
 

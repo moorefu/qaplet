@@ -12,7 +12,7 @@
 - 每票使用独立分支与 worktree，完成后先合并集成分支，再由独立合并代理集成。
 - 构建仅在 Ubuntu；本机通过已安装的 `C:/Program Files/WSL/wsl.exe`、`Ubuntu-22.04` 进入。受限进程报告发行版不存在，提升执行上下文后实际可用；不据前者推断系统未安装。
 - 共享可复用缓存为主工作区 `.cache/`。报告及制品使用各票独立输出路径，不以计划、旧 M1 或探针结果替代当前产品验收。
-- 逐票保留红绿测试、当前源码/配方/制品及宿主身份、原始日志、失败历史和真实缺口。必需证据不足时不关闭该票或放行依赖。
+- 逐票保留红绿测试、当前源码/配方/制品及宿主身份、原始日志、失败历史和真实缺口。正式必需证据不足时不关闭该票；当前本地开发依赖按用户[本地开发指示](local-development.md)放行，正式欠项保留。
 - 所有票集成后才执行一次整体 Standards/Spec 独立审查；先生成并核验分轴材料。
 
 ## 当前分派
@@ -29,10 +29,14 @@
 | 08 | `codex/m2-08-scheduling` | 原件见 `tickets/08` | completed（`e742c76` 五原生765+实际64K153/package39/fault2严格通过） |
 | 09 | `codex/m2-09-host-notify` | 原件见 `tickets/09` | completed（`563ff33` 五原生 575 + 实际 64K 115 本票严格验收通过） |
 | 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原件见 `tickets/10` / `10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
-| 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | awaiting_cross（`d8a9ba9` 已合取消/结果release与物理保留） |
-| 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；新 `.cache/worktrees/m2-13-cross-fix` | in_progress（Full两Mac16必需失败；B02纯POD跨线程查询真实缺口） |
+| 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | local_complete / cross_deferred（已合取消/结果release与物理保留；正式跨平台欠项见后续记录） |
+| 12 | `codex/m2-12-js-work` | 原件见 `12-js-work-validation.md` | local_complete / cross_deferred（独立合并`3d03f855`） |
+| 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；`.cache/worktrees/m2-13-cross-fix` | local_complete / cross_deferred（后续修复已合；历史Full失败与当前本地证据分别保留） |
+| 14 | `codex/m2-14-process-cancel` | 原件见后续记录 | local_complete / cross_deferred（独立合并`25d3eb12`） |
 | 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
-| 12、14、16–27 | 待分派或见后续记录 | 见后续记录 | 按各自 blocker 与槽位分派 |
+| 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | implementing_local；12/14/15已独立合并 |
+| 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | implementing_local；12/15已独立合并；与16并行 |
+| 18–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
 
 ## 环境事实
 

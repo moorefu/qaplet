@@ -4,11 +4,11 @@
 
 **Blocked by:** [12 · JS 命名工作、Promise 与取消闭环](12-js-named-work-promises.md)、[15 · 子进程三路有界字节 I/O 与 EOF](15-c-host-process-pipe-io.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local；独立分支 `codex/m2-17-standard-stdio`。
 
-**Execution prerequisites:** 已满足本票直接 blocker；Ubuntu 构建环境及固定输入可用，复用仓库约定的输入、缓存和证据方式。ready-for-agent 表示需求已就绪，不绕过 blocker。
+**Execution prerequisites:** 12、15本地完成并已独立合并（`3d03f855`、`65de84e2`），实际集成祖先已核验；可与16并行，不新增对16的阻塞边。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 6、39、59、61、62、63、66、67、68、73、79、81、83、109。
 
@@ -52,6 +52,8 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-05：按用户指示领取本地实现；保留全部产品、安全和正式验收合同。本地验收并独立合并后放行开发，正式跨平台验收仍保留最终收口。
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 

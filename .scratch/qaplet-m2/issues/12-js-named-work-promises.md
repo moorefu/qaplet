@@ -6,9 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** local_complete；本地Linux/Windows实现与验收已完成，待独立合并；完整Cross `cross_deferred`。
+**Execution state:** local_complete；本地Linux/Windows实现、验收及独立合并完成（`3d03f855`）；完整Cross `cross_deferred`。
 
-**Local development:** complete（本分支）；[实现、红绿与供应验收](../12-js-work-validation.md)。正式 `Status: claimed` 保留，不冒称完整跨平台完成。
+**Local development:** complete（已独立合并）；[实现、红绿与供应验收](../12-js-work-validation.md)。正式 `Status: claimed` 保留，不冒称完整跨平台完成。
 
 **Execution prerequisites:** 08已完成、11的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 

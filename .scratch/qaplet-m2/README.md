@@ -31,8 +31,8 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 | 13 | [纯 C Host 的显式 spawn 与退出观察](issues/13-c-host-process-spawn-exit.md) | [04](issues/04-process-inheritance-os-probes.md)、[06](issues/06-wait-events-keepalive-stop.md) | claimed |
 | 14 | [直接子进程取消、回收与关闭竞争](issues/14-process-cancel-reap.md) | [13](issues/13-c-host-process-spawn-exit.md) | claimed |
 | 15 | [子进程三路有界字节 I/O 与 EOF](issues/15-c-host-process-pipe-io.md) | [03](issues/03-pipe-stdio-cancel-os-probes.md)、[11](issues/11-work-cancel-result-retention.md)、[13](issues/13-c-host-process-spawn-exit.md) | claimed |
-| 16 | [JS Process 与 stdio 的完整异步闭环](issues/16-js-process-stdio-liveness.md) | [12](issues/12-js-named-work-promises.md)、[14](issues/14-process-cancel-reap.md)、[15](issues/15-c-host-process-pipe-io.md) | ready-for-agent |
-| 17 | [标准 stdio 的显式安全接入](issues/17-standard-stdio-opt-in.md) | [12](issues/12-js-named-work-promises.md)、[15](issues/15-c-host-process-pipe-io.md) | ready-for-agent |
+| 16 | [JS Process 与 stdio 的完整异步闭环](issues/16-js-process-stdio-liveness.md) | [12](issues/12-js-named-work-promises.md)、[14](issues/14-process-cancel-reap.md)、[15](issues/15-c-host-process-pipe-io.md) | claimed |
+| 17 | [标准 stdio 的显式安全接入](issues/17-standard-stdio-opt-in.md) | [12](issues/12-js-named-work-promises.md)、[15](issues/15-c-host-process-pipe-io.md) | claimed |
 | 18 | [TTY 租约、resize 与 Console UTF-8](issues/18-tty-console-leases.md) | [05](issues/05-tty-console-os-probes.md)、[17](issues/17-standard-stdio-opt-in.md) | ready-for-agent |
 | 19 | [跨资源预算、POD 快照与终止首因](issues/19-aggregate-budgets-metrics-failures.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | ready-for-agent |
 | 20 | [组合资源的停止与两阶段清理](issues/20-mixed-stop-close-quiesce.md) | [09](issues/09-host-notify-loop-integration.md)、[16](issues/16-js-process-stdio-liveness.md)、[18](issues/18-tty-console-leases.md) | ready-for-agent |
@@ -46,7 +46,13 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 
 ## 当前可领取项
 
-初始 frontier 为 01、02、03、04、05：
+2026-11-05：12、14、15本地完成并已独立合并，实际集成祖先已核验；16、17已领取并行
+实施。18等待17；19/20等待16和18；21→22、19/22→23。完整开发前置和各票验证范围见
+[本地开发方式](local-development.md#2026-11-05剩余开发前置与验证范围)，原阻塞边不变。
+
+## 初始 frontier（历史记录）
+
+初始 frontier 为 01、02、03、04、05（现均已resolved）：
 
 - [01 · M2 Runtime 的可选创建与兼容生命周期](issues/01-runtime-opt-in-compatibility.md)：承接必要重构，以可运行 M2 空实例和旧 M1 兼容性验收。
 - [02 · 唤醒与 Socket 等待的真实 OS 探针](issues/02-waker-reactor-os-probes.md)。
