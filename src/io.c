@@ -10,7 +10,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
 #include "libc/dce.h"
+#include "libc/nt/console.h"
 #include "libc/nt/events.h"
 #include "libc/nt/ipc.h"
 #include "libc/nt/runtime.h"
@@ -25,20 +29,50 @@ extern bool32 GetOverlappedResult(int64_t,struct NtOverlapped *,uint32_t *,bool3
 extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
 
 typedef struct io_operation io_operation;
-typedef struct {
+typedef struct io_endpoint {
   uint64_t generation, handoffs;
   uint32_t write_chunk;
   int active, writing, finishing, ended, detached, fd, referenced, standard, regular;
   int64_t handle;
   io_operation *pending;
   qaplet_stdio_info standard_info;
+  int terminal,lease_active,restored,original_flags,terminal_helpers,resize_watch,resize_pending;
+  struct termios original_mode;
+  uint32_t console_mode;
+  uint64_t terminal_device,terminal_inode,terminal_special;
+  qaplet_tty_status tty_status;
+  struct io_endpoint *lease_next;
+  unsigned char input_utf8[4];
+  unsigned input_length,input_offset,high_surrogate;
 } io_endpoint;
+/* Intrusive records belong to each Runtime's budgeted endpoint table. The
+ * process registry allocates nothing and excludes aliases across SDK Runtimes.
+ * Lock order is Runtime acceptance mutex, then this registry mutex. */
+static pthread_mutex_t terminal_mutex=PTHREAD_MUTEX_INITIALIZER;
+static io_endpoint *terminal_leases;
+static int terminal_claim(io_endpoint *e) {
+  int conflict=0;pthread_mutex_lock(&terminal_mutex);
+  for(io_endpoint *p=terminal_leases;p;p=p->lease_next)
+    if(IsWindows() || (e->terminal_device==p->terminal_device && e->terminal_inode==p->terminal_inode && e->terminal_special==p->terminal_special)){conflict=1;break;}
+  if(!conflict){e->lease_next=terminal_leases;terminal_leases=e;}
+  pthread_mutex_unlock(&terminal_mutex);return !conflict;
+}
+static void terminal_retire(io_endpoint *e) {
+  pthread_mutex_lock(&terminal_mutex);io_endpoint **p=&terminal_leases;
+  while(*p && *p!=e)p=&(*p)->lease_next;
+  if(*p)*p=e->lease_next;e->lease_next=NULL;pthread_mutex_unlock(&terminal_mutex);
+}
 struct io_operation {
   qaplet_runtime *runtime;
   io_endpoint *endpoint;
+  io_endpoint *native_endpoint;
   uint64_t generation;
   unsigned char *data;
   size_t size, length, issued_size;
+  size_t input_consumed;
+  unsigned scalar,scalar_bytes,continuations;
+  uint64_t native_utf16_units;
+  uint32_t partial_scalar,console_write;
   int active, writing, released, handoff, physical, helper, exited, join_attempted;
   pthread_t thread;
   struct NtOverlapped overlapped;
@@ -82,6 +116,45 @@ static void fd_closed_locked(qaplet_runtime *r,int *fd) {
   if(*fd<0)return;int old=*fd;*fd=-1;--r->native_handles;
   if(close(old)){++r->native_uncertain_handles;cleanup_locked(r,errno,QAPLET_ERROR_DOMAIN_ERRNO);}
 }
+static int same_mode(const struct termios *a,const struct termios *b) {
+  return a->c_iflag==b->c_iflag && a->c_oflag==b->c_oflag && a->c_cflag==b->c_cflag && a->c_lflag==b->c_lflag &&
+    !memcmp(a->c_cc,b->c_cc,sizeof(a->c_cc)) && cfgetispeed(a)==cfgetispeed(b) && cfgetospeed(a)==cfgetospeed(b);
+}
+static int restore_terminal_locked(qaplet_runtime *r,io_endpoint *e) {
+  if(!e->lease_active)return 1;
+  int error=0;
+  if(IsWindows()){
+    uint32_t mode=0;
+    if(!SetConsoleMode(e->handle,e->console_mode) || !GetConsoleMode(e->handle,&mode))error=GetLastError();
+    else if(mode!=e->console_mode)error=13;
+  }else{
+    struct termios checked;
+    if(tcsetattr(e->fd,TCSANOW,&e->original_mode) || fcntl(e->fd,F_SETFL,e->original_flags) || tcgetattr(e->fd,&checked))error=errno;
+    else {
+      if(IsXnu() && !(e->original_mode.c_lflag&PENDIN) && (checked.c_lflag&PENDIN)){
+        int available=0;if(ioctl(e->fd,FIONREAD,&available) || tcgetattr(e->fd,&checked))error=errno;
+      }
+      if(!error && (!same_mode(&checked,&e->original_mode) || fcntl(e->fd,F_GETFL)!=e->original_flags))error=EIO;
+    }
+  }
+  e->tty_status.error=error;e->tty_status.error_domain=error ? (IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO) : 0;
+  if(error){cleanup_locked(r,error,e->tty_status.error_domain);return 0;}
+  terminal_retire(e);e->lease_active=0;e->restored=1;e->tty_status.active=0;e->tty_status.restored=1;return 1;
+}
+static int terminal_size_locked(io_endpoint *e) {
+  int error=0;uint32_t columns=0,rows=0;
+  if(IsWindows()){
+    struct NtConsoleScreenBufferInfo info;
+    if(!e->writing){error=6;} /* Size requires the explicitly leased output. */
+    else if(!GetConsoleScreenBufferInfo(e->handle,&info))error=GetLastError();
+    else {columns=info.srWindow.Right-info.srWindow.Left+1;rows=info.srWindow.Bottom-info.srWindow.Top+1;}
+  }else{
+    struct winsize info={0};if(ioctl(e->fd,TIOCGWINSZ,&info))error=errno;else {columns=info.ws_col;rows=info.ws_row;}
+  }
+  e->tty_status.error=error;e->tty_status.error_domain=error ? (IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO) : 0;
+  if(!error){e->tty_status.columns=columns;e->tty_status.rows=rows;}
+  return !error;
+}
 static io_endpoint *endpoint_locked(qaplet_runtime *r,const qaplet_io_endpoint *t) {
   if(!r->io_pool || !t->generation || t->runtime_id!=r->runtime_id || t->slot>=r->m2_limits.native_handles)return NULL;
   io_endpoint *e=&r->io_pool->endpoints[t->slot];
@@ -119,10 +192,16 @@ static qaplet_code storage(qaplet_runtime *r,int operations) {
  * handle. Never close/reuse that number before GetOverlappedResult and join. */
 static void close_endpoint_locked(qaplet_runtime *r,io_endpoint *e) {
   e->ended=1;
+  e->resize_watch=0;e->resize_pending=0;
   if(e->pending && e->pending->physical)return;
+  if(e->terminal && (e->terminal_helpers || !pthread_equal(r->owner,pthread_self())))return;
+  if(!restore_terminal_locked(r,e))return;
   if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);
 }
 static void cancel_native_locked(qaplet_runtime *r,io_operation *o) {
+  if(IsWindows() && o->endpoint->terminal && o->overlapped.hEvent){
+    if(!SetEvent(o->overlapped.hEvent))cleanup_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32);return;
+  }
   if(IsWindows() && !o->endpoint->regular && o->physical && !CancelIoEx(o->endpoint->handle,&o->overlapped)){
     int error=GetLastError();
     if(error!=1168)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_WIN32);
@@ -223,6 +302,73 @@ static void *file_operation(void *opaque) {
   qaplet_notification notification=qaplet_notify_prepare_locked(r);
   pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);return NULL;
 }
+/* Console scalar conversion is off-owner and bounded by the issued source-byte
+ * budget. UTF-8 was validated before acceptance; decoder state crosses native
+ * chunks, and length advances only once the full scalar reached WriteConsoleW.
+ * Input waits on an owned cancellation event before touching shared input. */
+static void *console_operation(void *opaque) {
+  io_operation *o=opaque;qaplet_runtime *r=o->runtime;pthread_mutex_lock(&r->mutex);
+  for(;;){
+    while(!o->physical && o->state==QAPLET_IO_PENDING)pthread_cond_wait(&r->native_condition,&r->mutex);
+    if(!o->physical)break;
+    io_endpoint *e=o->endpoint;size_t size=o->issued_size;int64_t handle=e->handle;
+    pthread_mutex_unlock(&r->mutex);size_t length=0;int error=0;uint64_t native_units=0;uint32_t partial_scalar=0;
+    if(o->writing){
+      for(size_t i=0;i<size && !error;++i){
+        unsigned byte=o->data[o->input_consumed++];
+        if(!o->continuations){o->scalar_bytes=1;if(byte<128)o->scalar=byte;else{o->scalar=byte&(byte<224 ? 31 : byte<240 ? 15 : 7);o->continuations=byte<224 ? 1 : byte<240 ? 2 : 3;}}
+        else {o->scalar=(o->scalar<<6)|(byte&63);--o->continuations;++o->scalar_bytes;}
+        if(!o->continuations){
+          char16_t wide[2];uint32_t count=1,written=0;unsigned scalar=o->scalar;
+          if(scalar>65535){scalar-=65536;wide[0]=0xd800+(scalar>>10);wide[1]=0xdc00+(scalar&1023);count=2;}else wide[0]=scalar;
+          if(!WriteConsole(handle,wide,count,&written,NULL))error=GetLastError();
+          else if(written!=count){
+            /* A successful partial call may finish the same scalar. A real
+             * error or zero advance ends this operation with its side effect. */
+            uint32_t more=0;pthread_mutex_lock(&r->mutex);int cancelled=o->state!=QAPLET_IO_PENDING;pthread_mutex_unlock(&r->mutex);
+            if(cancelled)error=995;
+            else if(!written || written>count || !WriteConsole(handle,wide+written,count-written,&more,NULL))error=written && written<count ? GetLastError() : 29;
+            written+=more;
+            if(!error && written!=count)error=29;
+          }
+          native_units+=written;if(written && written<count)partial_scalar=1;
+          if(written==count)length+=o->scalar_bytes;
+        }
+      }
+    }else{
+      if(e->input_offset<e->input_length){size_t available=e->input_length-e->input_offset;length=available<size ? available : size;memcpy(o->data,e->input_utf8+e->input_offset,length);e->input_offset+=length;}
+      else while(!length && !error){
+        int64_t handles[]={o->overlapped.hEvent,handle};uint32_t waited=WaitForMultipleObjects(2,handles,false,0xffffffffu);
+        if(waited==0)break;
+        if(waited!=1){error=GetLastError();break;}
+        /* Host grants exclusive consumption. A zero event count is a spurious
+         * native readiness and never EOF. Recheck cancellation first. */
+        if(WaitForSingleObject(o->overlapped.hEvent,0)==0)break;
+        uint32_t available=0,got=0;struct NtInputRecord record;
+        if(!GetNumberOfConsoleInputEvents(handle,&available)){error=GetLastError();break;}
+        if(!available)continue;
+        if(!ReadConsoleInput(handle,&record,1,&got)){error=GetLastError();break;}
+        if(!got || record.EventType!=kNtKeyEvent || !record.Event.KeyEvent.bKeyDown || !record.Event.KeyEvent.uChar.UnicodeChar)continue;
+        unsigned scalar=record.Event.KeyEvent.uChar.UnicodeChar;
+        if(scalar>=0xd800 && scalar<=0xdbff){if(e->high_surrogate){error=1113;break;}e->high_surrogate=scalar;continue;}
+        if(scalar>=0xdc00 && scalar<=0xdfff){if(!e->high_surrogate){error=1113;break;}scalar=0x10000+((e->high_surrogate-0xd800)<<10)+(scalar-0xdc00);e->high_surrogate=0;}
+        else if(e->high_surrogate){error=1113;break;}
+        unsigned n=0;
+        if(scalar<128)e->input_utf8[n++]=scalar;
+        else if(scalar<2048){e->input_utf8[n++]=0xc0|(scalar>>6);e->input_utf8[n++]=0x80|(scalar&63);}
+        else if(scalar<65536){e->input_utf8[n++]=0xe0|(scalar>>12);e->input_utf8[n++]=0x80|((scalar>>6)&63);e->input_utf8[n++]=0x80|(scalar&63);}
+        else{e->input_utf8[n++]=0xf0|(scalar>>18);e->input_utf8[n++]=0x80|((scalar>>12)&63);e->input_utf8[n++]=0x80|((scalar>>6)&63);e->input_utf8[n++]=0x80|(scalar&63);}
+        e->input_length=n;length=n<size ? n : size;e->input_offset=length;memcpy(o->data,e->input_utf8,length);
+      }
+    }
+    pthread_mutex_lock(&r->mutex);o->native_utf16_units+=native_units;o->partial_scalar|=partial_scalar;complete_locked(r,o,length,error,QAPLET_ERROR_DOMAIN_WIN32,0);
+    qaplet_notification notification=qaplet_notify_prepare_locked(r);
+    pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);pthread_mutex_lock(&r->mutex);
+    if(o->state!=QAPLET_IO_PENDING)break;
+  }
+  o->exited=1;qaplet_wake_locked(r);pthread_cond_broadcast(&r->native_condition);qaplet_notification notification=qaplet_notify_prepare_locked(r);
+  pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);return NULL;
+}
 qaplet_code qaplet_io_pipe(qaplet_runtime *r,int writing,qaplet_io_endpoint *out,int *child_fd,int64_t *child_handle,qaplet_process_status *failure) {
   qaplet_code code=storage(r,0);if(code)return code;
   qaplet_io_pool *p=r->io_pool;uint64_t index=0;io_endpoint *e=NULL;
@@ -311,6 +457,115 @@ qaplet_code qaplet_stdio_get(qaplet_runtime *r,uint32_t stream,qaplet_io_endpoin
   else memcpy((char *)info+8,(char *)&value+8,sizeof(value)-8);
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
+qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tty_options *options,qaplet_io_endpoint *out,qaplet_tty_status *status,qaplet_diagnostic *d) {
+  qaplet_code code=standard_preflight(r,stream,NULL,out,d);
+  if(!code)code=qaplet_check_structure(options,sizeof(*options));
+  if(!code)code=qaplet_check_structure(status,sizeof(*status));
+  if(!code && (!out || options->reserved || (options->flags&~(QAPLET_TTY_RAW|QAPLET_TTY_VT))))code=QAPLET_INVALID_ARGUMENT;
+  if(code)return qaplet_report(d,code);
+  qaplet_stdio_info info;int source;int64_t source_handle;uint32_t quota;
+  qaplet_stdio_classify(stream,&info,&source,&source_handle,&quota);
+  if(info.kind!=QAPLET_STDIO_TTY && info.kind!=QAPLET_STDIO_CONSOLE)return qaplet_report(d,QAPLET_UNSUPPORTED);
+  struct stat identity={0};
+  if(!IsWindows() && fstat(source,&identity))return qaplet_report(d,QAPLET_IO_ERROR);
+  pthread_mutex_lock(&r->mutex);
+  if(qaplet_io_standard_locked(r,stream,NULL,NULL))code=QAPLET_BUSY;
+  if(r->io_pool)for(uint64_t i=0;!code && i<r->m2_limits.native_handles;++i){io_endpoint *e=&r->io_pool->endpoints[i];
+    if(e->active && e->lease_active && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev)))code=QAPLET_BUSY;
+  }
+  if(!code && (r->native_handles>=r->m2_limits.native_handles || r->reactor_registrations>=r->m2_limits.reactor_registrations))code=QAPLET_RESOURCE_LIMIT;
+  pthread_mutex_unlock(&r->mutex);if(code)return qaplet_report(d,code);
+  code=storage(r,0);if(code){if(qaplet_get_lifecycle(r)==QAPLET_FAILED)qaplet_process_shutdown(r);return qaplet_report(d,code);}
+  pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;io_endpoint *e=NULL;uint64_t index=0;
+  if(r->snapshot.lifecycle!=QAPLET_OPEN)code=QAPLET_BAD_STATE;
+  else for(;index<r->m2_limits.native_handles;++index)if(!p->endpoints[index].active && p->endpoints[index].generation!=UINT64_MAX){e=&p->endpoints[index];break;}
+  if(!code && !e)code=QAPLET_RESOURCE_LIMIT;
+  if(code){pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);}
+  int fd=-1,error=0;int64_t handle=0;uint32_t mode=0;struct termios original={0};int flags=0;
+  if(IsWindows()){
+    if(!DuplicateHandle(GetCurrentProcess(),source_handle,GetCurrentProcess(),&handle,0,false,2))error=GetLastError();
+    else if(!GetConsoleMode(handle,&mode))error=GetLastError();
+  }else{
+    fd=fcntl(source,F_DUPFD_CLOEXEC,3);if(fd<0)error=errno;
+    else if(tcgetattr(fd,&original) || (flags=fcntl(fd,F_GETFL))<0)error=errno;
+  }
+  if(fd>=0 || handle){++r->native_handles;peak(r->native_handles,&r->native_handles_peak);}
+  if(error){if(IsWindows())handle_closed_locked(r,&handle);else fd_closed_locked(r,&fd);}
+  else {
+    uint64_t generation=e->generation+1;info.supported=1;info.attached=1;
+    *e=(io_endpoint){.generation=generation,.active=1,.writing=stream!=0,.fd=fd,.handle=handle,.referenced=1,.standard=stream+1,.standard_info=info,
+      .terminal=1,.regular=IsWindows(),.lease_active=1,.original_flags=flags,.original_mode=original,.console_mode=mode,
+      .terminal_device=identity.st_dev,.terminal_inode=identity.st_ino,.terminal_special=identity.st_rdev,.tty_status=QAPLET_TTY_STATUS_INIT};
+    if(!terminal_claim(e)){
+      e->lease_active=0;e->active=0;if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);
+      pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_BUSY);
+    }
+    if(IsWindows() && (((options->flags&QAPLET_TTY_RAW) && stream!=0) || ((options->flags&QAPLET_TTY_VT) && stream==0))){
+      terminal_retire(e);e->lease_active=0;e->active=0;handle_closed_locked(r,&e->handle);pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_UNSUPPORTED);
+    }
+    e->tty_status.active=1;++p->snapshot.endpoints;++r->reactor_registrations;peak(r->reactor_registrations,&r->reactor_registrations_peak);
+    *out=(qaplet_io_endpoint){sizeof(*out),QAPLET_ABI_VERSION,r->runtime_id,index,generation};
+    if(IsWindows()){
+      uint32_t requested=mode,checked=0;
+      if(options->flags&QAPLET_TTY_RAW)requested=(requested&~7u)|8u;
+      if(options->flags&QAPLET_TTY_VT)requested|=4u;
+      if(!SetConsoleMode(handle,requested) || !GetConsoleMode(handle,&checked))error=GetLastError();
+      else if(checked!=requested)error=13;
+    }else{
+      struct termios requested=original,checked;
+      if(options->flags&QAPLET_TTY_RAW)cfmakeraw(&requested);
+      if(tcsetattr(fd,TCSANOW,&requested) || fcntl(fd,F_SETFL,flags|O_NONBLOCK) || tcgetattr(fd,&checked))error=errno;
+      else if(!same_mode(&requested,&checked) || fcntl(fd,F_GETFL)!=(flags|O_NONBLOCK))error=EIO;
+    }
+    if(error)close_endpoint_locked(r,e);
+    memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);
+  }
+  if(error){status->error=error;status->error_domain=IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO;code=QAPLET_IO_ERROR;}
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_get_tty_status(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_tty_status *status,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;
+  else memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_tty_release(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_tty_status *status,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;
+  else {if(e->pending)cancel_locked(r,e->pending);close_endpoint_locked(r,e);memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);if(e->tty_status.error)code=QAPLET_IO_ERROR;else if(e->lease_active)code=QAPLET_BUSY;qaplet_wake_locked(r);}
+  pthread_mutex_unlock(&r->mutex);qaplet_io_collect(r);return qaplet_report(d,code);
+}
+qaplet_code qaplet_tty_get_size(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_tty_status *status,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;else if(!e->lease_active || e->ended)code=QAPLET_BAD_STATE;
+  else {if(!terminal_size_locked(e))code=QAPLET_IO_ERROR;memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);}
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_tty_watch_resize(qaplet_runtime *r,const qaplet_io_endpoint *token,uint32_t enabled,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code && enabled>1)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;else if(r->snapshot.lifecycle!=QAPLET_OPEN || !e->lease_active || e->ended)code=QAPLET_BAD_STATE;
+  else {e->resize_watch=enabled;if(!enabled)e->resize_pending=0;qaplet_wake_locked(r);}
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_tty_notify_resize(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
+  qaplet_notification notification={0};pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;
+  else if(r->snapshot.lifecycle!=QAPLET_OPEN || r->snapshot.termination_reason || !e->resize_watch || e->ended)code=QAPLET_BAD_STATE;
+  else {e->resize_pending=1;qaplet_wake_locked(r);notification=qaplet_notify_prepare_locked(r);}
+  pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);return qaplet_report(d,code);
+}
+qaplet_code qaplet_tty_inspect(qaplet_runtime *r,uint32_t stream,qaplet_tty_support *out,qaplet_diagnostic *d) {
+  qaplet_code code=standard_preflight(r,stream,NULL,NULL,d);if(!code)code=qaplet_check_structure(out,sizeof(*out));if(code)return qaplet_report(d,code);
+  qaplet_stdio_info info;int fd;int64_t handle;uint32_t quota;qaplet_stdio_classify(stream,&info,&fd,&handle,&quota);
+  qaplet_tty_support value=QAPLET_TTY_SUPPORT_INIT;value.kind=info.kind;value.lease=info.kind==QAPLET_STDIO_TTY || info.kind==QAPLET_STDIO_CONSOLE;
+  if(value.lease){value.raw=!IsWindows() || stream==0;value.vt=stream!=0;value.resize=!IsWindows() || stream!=0;value.utf8_text=IsWindows();value.binary=!IsWindows();value.supplementary_input=!IsWindows();value.raw_invalid_utf8_input=!IsWindows();}
+  memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);return qaplet_report(d,QAPLET_OK);
+}
 qaplet_code qaplet_stdio_attach(qaplet_runtime *r,uint32_t stream,qaplet_io_endpoint *out,qaplet_stdio_info *info,qaplet_diagnostic *d) {
   qaplet_code code=standard_preflight(r,stream,info,out,d);if(!code && (!out || !info))code=QAPLET_INVALID_ARGUMENT;
   if(code)return qaplet_report(d,code);
@@ -378,10 +633,11 @@ static qaplet_code submit(qaplet_runtime *r,const qaplet_io_endpoint *token,cons
   else if(!e)code=QAPLET_INVALID_HANDLE;
   else if(e->writing!=writing || e->ended || e->finishing)code=QAPLET_BAD_STATE;
   else if(e->pending)code=QAPLET_BUSY;
+  else if(IsWindows() && e->terminal && writing && !qaplet_utf8_valid(input,n))code=QAPLET_INVALID_UTF8;
   else if(r->operations_current>=r->m2_limits.operations || n>r->m2_limits.operation_data_bytes-r->operation_data_current)code=QAPLET_RESOURCE_LIMIT;
   size_t metadata=r->io_pool && r->io_pool->operations ? 0 : r->m2_limits.operations>SIZE_MAX/sizeof(io_operation) ? SIZE_MAX : r->m2_limits.operations*sizeof(io_operation);
   if(!code && (metadata>SIZE_MAX-n || !fits(r,metadata+n)))code=QAPLET_RESOURCE_LIMIT;
-  if(!code && (IsWindows() || e->regular) && (r->helper_threads>=r->m2_limits.helper_threads || (IsWindows() && r->native_handles>r->m2_limits.native_handles-(e->regular ? 1 : 2))))code=QAPLET_RESOURCE_LIMIT;
+  if(!code && (IsWindows() || e->regular) && (r->helper_threads>=r->m2_limits.helper_threads || (IsWindows() && r->native_handles>r->m2_limits.native_handles-(e->regular && !(e->terminal && !writing) ? 1 : 2))))code=QAPLET_RESOURCE_LIMIT;
   pthread_mutex_unlock(&r->mutex);if(code)return qaplet_report(d,code);
   code=storage(r,1);if(code){if(qaplet_get_lifecycle(r)==QAPLET_FAILED)qaplet_process_shutdown(r);return qaplet_report(d,code);}
   unsigned char *data=qaplet_native_alloc(r,n);if(!data){qaplet_process_shutdown(r);return qaplet_report(d,QAPLET_MEMORY_LIMIT);}
@@ -393,18 +649,18 @@ static qaplet_code submit(qaplet_runtime *r,const qaplet_io_endpoint *token,cons
   int reserved=0;
   if(!code){code=qaplet_operation_reserve_locked(r,n);reserved=!code;}
   if(!code){
-    uint64_t generation=o->generation+1;*o=(io_operation){.runtime=r,.endpoint=e,.generation=generation,.data=data,.size=n,.writing=writing,.state=QAPLET_IO_PENDING};
+    uint64_t generation=o->generation+1;*o=(io_operation){.runtime=r,.endpoint=e,.native_endpoint=e,.generation=generation,.data=data,.size=n,.writing=writing,.console_write=IsWindows() && e->terminal && writing,.state=QAPLET_IO_PENDING};
     if(IsWindows() || e->regular){
-      if(IsWindows() && !e->regular){
+      if(IsWindows() && (!e->regular || (e->terminal && !writing))){
         o->overlapped.hEvent=CreateEvent(NULL,true,false,NULL);
         if(!o->overlapped.hEvent){code=QAPLET_IO_ERROR;p->snapshot.start_error_domain=QAPLET_ERROR_DOMAIN_WIN32;p->snapshot.start_error=GetLastError();}
         else ++r->native_handles;
       }
       if(!code){
         pthread_attr_t attr;int error=pthread_attr_init(&attr);
-        if(!error){error=pthread_attr_setstacksize(&attr,r->m2_limits.helper_stack_bytes);if(!error)error=pthread_create(&o->thread,&attr,e->regular ? file_operation : wait_operation,o);pthread_attr_destroy(&attr);}
+        if(!error){error=pthread_attr_setstacksize(&attr,r->m2_limits.helper_stack_bytes);if(!error)error=pthread_create(&o->thread,&attr,IsWindows() && e->terminal ? console_operation : e->regular ? file_operation : wait_operation,o);pthread_attr_destroy(&attr);}
         if(error){code=QAPLET_IO_ERROR;p->snapshot.start_error_domain=QAPLET_ERROR_DOMAIN_ERRNO;p->snapshot.start_error=error;handle_closed_locked(r,&o->overlapped.hEvent);}
-        else {o->helper=1;++r->helper_threads;r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;if(IsWindows())r->native_handles++;++r->native_retained;++p->snapshot.helper_threads;p->snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;peak(r->native_handles,&r->native_handles_peak);}
+        else {o->helper=1;if(e->terminal)++e->terminal_helpers;++r->helper_threads;r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;if(IsWindows())r->native_handles++;++r->native_retained;++p->snapshot.helper_threads;p->snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;peak(r->native_handles,&r->native_handles_peak);}
       }
     }
     if(!code){o->active=1;o->handoff=1;e->pending=o;++e->handoffs;++p->snapshot.operations;p->snapshot.data_bytes+=n;++p->snapshot.pending_handoffs;increment(&p->snapshot.accepted);output->runtime_id=r->runtime_id;output->slot=index;output->generation=generation;qaplet_wake_locked(r);notification=qaplet_notify_prepare_locked(r);}
@@ -419,7 +675,7 @@ unsigned qaplet_io_pump(qaplet_runtime *r,uint64_t *budget) {
   if(p && p->operations && r->snapshot.lifecycle==QAPLET_OPEN)for(uint64_t i=0;i<r->m2_limits.operations && *budget;++i){
     io_operation *o=&p->operations[(p->cursor+i)%r->m2_limits.operations];
     if(!o->active || o->state!=QAPLET_IO_PENDING || o->physical)continue;
-    io_endpoint *e=o->endpoint;size_t n=o->size-o->length;if(n>*budget)n=*budget;
+    io_endpoint *e=o->endpoint;size_t n=o->size-(IsWindows() && e->terminal && o->writing ? o->input_consumed : o->length);if(n>*budget)n=*budget;
     if(e->regular){o->issued_size=n;o->physical=1;*budget-=n;progressed=1;pthread_cond_broadcast(&r->native_condition);continue;}
     if(IsWindows() && o->writing && n>e->write_chunk)n=e->write_chunk;
     if(IsWindows()){
@@ -450,7 +706,9 @@ struct pollfd *qaplet_io_poll_locked(qaplet_runtime *r,nfds_t *count) {
   return fds;
 }
 int qaplet_io_ready_locked(qaplet_runtime *r) {
-  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return r->io_js_control_ready!=0;
+  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}
+  if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i)if(p->endpoints[i].active && p->endpoints[i].resize_pending)return 1;
+  return r->io_js_control_ready!=0;
 }
 int qaplet_io_issuable_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
@@ -462,6 +720,7 @@ int qaplet_io_referenced_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
     if(o->active && o->handoff && o->endpoint->referenced && (o->state==QAPLET_IO_PENDING || !o->physical))return 1;}
+  if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i)if(p->endpoints[i].active && p->endpoints[i].resize_watch && p->endpoints[i].referenced)return 1;
   return r->io_js_control_refs!=0;
 }
 unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
@@ -480,6 +739,20 @@ unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
   }
   pthread_mutex_unlock(&r->mutex);
   while(count<max && r->io_js_control_ready && r->io_js_control_deliver){int delivered=r->io_js_control_deliver(r);if(delivered<=0)break;++count;}
+  pthread_mutex_lock(&r->mutex);
+  if(p)for(uint64_t i=0;i<r->m2_limits.native_handles && count<max;++i){io_endpoint *e=&p->endpoints[i];
+    if(!e->active || !e->resize_pending || !e->resize_watch)continue;
+    qaplet_io_endpoint token={sizeof(token),QAPLET_ABI_VERSION,r->runtime_id,i,e->generation};
+    terminal_size_locked(e);qaplet_tty_status status=e->tty_status;
+    if(status.revision!=UINT64_MAX)++status.revision;
+    e->resize_pending=0;e->tty_status.revision=status.revision;
+    int delivered=0;
+    if(r->tty_js_deliver){pthread_mutex_unlock(&r->mutex);delivered=r->tty_js_deliver(r,&token,&status);pthread_mutex_lock(&r->mutex);}
+    if(delivered<0){if(e->resize_watch)e->resize_pending=1;break;}
+    if(!delivered && r->execution_active && qaplet_execution_dispatch_locked(r)){e->resize_pending=1;break;}
+    ++count;
+  }
+  pthread_mutex_unlock(&r->mutex);
   return count;
 }
 void qaplet_io_js_checkpoint(qaplet_runtime *r) {
@@ -494,7 +767,7 @@ void qaplet_io_js_checkpoint(qaplet_runtime *r) {
 void qaplet_io_collect(qaplet_runtime *r) {
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(!o->active)continue;
-    if(IsWindows() && o->physical && o->exited){
+    if(IsWindows() && !o->native_endpoint->terminal && o->physical && o->exited){
       cancel_native_locked(r,o);
       /* Only a signalled native completion proves the kernel stopped using
        * OVERLAPPED/data. A failed or incomplete check retains ownership. */
@@ -507,13 +780,13 @@ void qaplet_io_collect(qaplet_runtime *r) {
       o->join_attempted=1;pthread_mutex_unlock(&r->mutex);int error=pthread_tryjoin_np(o->thread,NULL);pthread_mutex_lock(&r->mutex);
       if(error==EBUSY)o->join_attempted=0;
       else if(error)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);
-      else {o->helper=0;--r->native_retained;if(IsWindows())--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;}
+      else {o->helper=0;if(o->native_endpoint->terminal)--o->native_endpoint->terminal_helpers;--r->native_retained;if(IsWindows())--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;}
     }
     if(!o->helper && !o->physical)handle_closed_locked(r,&o->overlapped.hEvent);
     if((o->released || p->closing) && !o->physical && !o->helper && !o->handoff)retire_operation_locked(r,o);
   }
   if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i){io_endpoint *e=&p->endpoints[i];
-    if(e->active && e->ended && !e->pending){close_endpoint_locked(r,e);if((e->detached || p->closing) && !e->handoffs){e->active=0;--p->snapshot.endpoints;--r->reactor_registrations;}}
+    if(e->active && e->ended && !e->pending){close_endpoint_locked(r,e);if(!e->lease_active && (e->detached || p->closing) && !e->handoffs){e->active=0;--p->snapshot.endpoints;--r->reactor_registrations;}}
   }
   if(p && p->closing && !p->snapshot.endpoints && !p->snapshot.operations && !p->snapshot.helper_threads){
     free_locked(r,p->endpoints,p->endpoint_bytes);free_locked(r,p->operations,p->operation_bytes);free_locked(r,p->pollfds,p->poll_bytes);free_locked(r,p,sizeof(*p));r->io_pool=NULL;--r->native_retained;
@@ -556,7 +829,7 @@ qaplet_code qaplet_get_io_endpoint_status(qaplet_runtime *r,const qaplet_io_endp
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(r->snapshot.lifecycle==QAPLET_CLOSED || !e)code=QAPLET_INVALID_HANDLE;
-  else {qaplet_io_endpoint_status value={sizeof(value),QAPLET_ABI_VERSION,e->writing,e->ended,e->referenced,e->pending ? e->pending->physical : 0,e->handoffs};memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
+  else {qaplet_io_endpoint_status value={sizeof(value),QAPLET_ABI_VERSION,e->writing,e->ended,e->referenced,(e->pending && e->pending->physical) || (e->ended && e->lease_active),e->handoffs};memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
 qaplet_code qaplet_io_cancel(qaplet_runtime *r,const qaplet_io_operation *t,qaplet_diagnostic *d) {
@@ -571,6 +844,13 @@ qaplet_code qaplet_get_io_status(qaplet_runtime *r,const qaplet_io_operation *t,
   pthread_mutex_lock(&r->mutex);io_operation *o=operation_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!o)code=QAPLET_INVALID_HANDLE;
   else {qaplet_io_status value={sizeof(value),QAPLET_ABI_VERSION,o->state,o->code,o->error_domain,o->error,o->length,o->eof,o->physical,o->handoff,o->helper};memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_get_tty_write_status(qaplet_runtime *r,const qaplet_io_operation *token,qaplet_tty_write_status *out,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_operation *o=operation_locked(r,token);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!o)code=QAPLET_INVALID_HANDLE;else if(!o->console_write)code=QAPLET_UNSUPPORTED;
+  else {qaplet_tty_write_status value={sizeof(value),QAPLET_ABI_VERSION,o->length,o->native_utf16_units,o->partial_scalar,o->physical};memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
 qaplet_code qaplet_io_copy_result(qaplet_runtime *r,const qaplet_io_operation *t,qaplet_io_result *out,qaplet_diagnostic *d) {
