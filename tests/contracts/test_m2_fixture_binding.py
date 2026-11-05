@@ -21,9 +21,9 @@ class FixtureBindingTests(unittest.TestCase):
     def test_same_main_c_cannot_hide_an_old_transitive_tty_fixture(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
-            (root/"tty-faults.c").write_text('#include "host-tty.c"\nint main(void){return check();}\n')
-            (root/"host-tty-old.c").write_text('int check(void){return 0;}\n')
-            (root/"host-tty-new.c").write_text('int check(void){return physical_join();}\n')
+            (root/"tty-faults.c").write_text('#include "host-tty.c"\nint main(void){return check();}\n', encoding="utf-8")
+            (root/"host-tty-old.c").write_text('int check(void){return 0;}\n', encoding="utf-8")
+            (root/"host-tty-new.c").write_text('int check(void){return physical_join();}\n', encoding="utf-8")
             actual={"sdk/tty-faults.c":identity(root/"tty-faults.c"),"sdk/host-tty.c":identity(root/"host-tty-old.c")}
             target={"sdk/tty-faults.c":identity(root/"tty-faults.c"),"sdk/host-tty.c":identity(root/"host-tty-new.c")}
             with self.assertRaisesRegex(ValueError,"host-tty.c"):
