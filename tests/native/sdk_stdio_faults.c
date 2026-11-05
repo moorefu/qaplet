@@ -37,6 +37,9 @@ bool32 __wrap_WriteFile(int64_t handle,const void *bytes,uint32_t n,uint32_t *go
 }
 int __wrap_pthread_create(pthread_t *t,const pthread_attr_t *a,void *(*entry)(void *),void *arg){if(atomic_exchange(&fail_start,0))return EAGAIN;return __real_pthread_create(t,a,entry,arg);}
 static double deadline(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+t.tv_nsec/1e9;}
+static qaplet_code arm_js_start(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *args,void *opaque){
+  (void)r;(void)call;(void)argc;(void)args;(void)opaque;atomic_store(&fail_start,1);return QAPLET_OK;
+}
 static int lifecycle(const char *mode){
   unsigned stream=!strcmp(mode,"--partial") ? 1 : 0;file_fixture f;CHECK(!install_file(&f,stream));
   const unsigned char payload[]={0,1,127,128,255,10};
@@ -53,6 +56,22 @@ static int lifecycle(const char *mode){
     puts("controlled stdio allocation: actual SDK attach storage refusal permanently fails; no token/duplicate/operation; Host original survives and native cleanup completes: pass");return 0;
   }
   CHECK(qaplet_stdio_attach(r,stream,&ep,&info,NULL)==QAPLET_OK);
+  if(!strcmp(mode,"--js-start")){
+    qaplet_host_export exports[2]={QAPLET_HOST_EXPORT_INIT,QAPLET_HOST_EXPORT_INIT};
+    exports[0].name="arm";exports[0].name_length=3;exports[0].kind=QAPLET_HOST_FUNCTION;exports[0].function=arm_js_start;
+    exports[1].name="eagain";exports[1].name_length=6;exports[1].kind=QAPLET_HOST_CONSTANT;exports[1].value.type=QAPLET_VALUE_DOUBLE;exports[1].value.number=EAGAIN;
+    qaplet_host_module host=QAPLET_HOST_MODULE_INIT;host.name="host:stdio-fault";host.name_length=strlen(host.name);host.exports=exports;host.export_count=2;CHECK(qaplet_register_host_module(r,&host,NULL)==QAPLET_OK);
+    const char *source="Promise.all([import('qaplet:stdio'),import('host:stdio-fault')]).then(async([s,h])=>{h.arm();"
+      "try{s.stdin.read(8);throw Error('start accepted')}catch(e){if(e.code!==30||e.errorDomain!==1||e.error!==h.eagain)throw Error(JSON.stringify([e.code,e.errorDomain,e.error]))}"
+      "try{s.stdin.read(-1);throw Error('bad argument accepted')}catch(e){if(e.code!==1||e.errorDomain!==0||e.error!==0)throw Error('stale native error')}"
+      "const value=await s.stdin.read(8).promise;return Array.from(value.bytes).join(',')==='0,1,127,128,255,10'?42:0})";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_diagnostic diagnostic=QAPLET_DIAGNOSTIC_INIT;char message[512];diagnostic.message=message;diagnostic.capacity=sizeof(message);
+    CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK);qaplet_code code=qaplet_run(r,&drive,&diagnostic);
+    qaplet_result result=QAPLET_RESULT_INIT;int success=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+    if(!success)fprintf(stderr,"stdio JS start code=%d diagnostic=%.*s\n",code,(int)diagnostic.length,message);
+    CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK && !restore_file(&f));
+    if(success)puts("controlled stdio JS start: real helper EAGAIN retains code/native domain/value; later bad arguments carry no stale OS error; accepted retry returns copied bytes; cleanup: pass");return success ? 0 : 1;
+  }
   qaplet_io_operation op=QAPLET_IO_OPERATION_INIT;unsigned char bytes[8]={0};qaplet_io_result value=QAPLET_IO_RESULT_INIT;value.buffer=bytes;value.capacity=8;
   qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;
   if(!strcmp(mode,"--partial")){

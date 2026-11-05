@@ -689,6 +689,7 @@ def compile_example(args, report, directory, tree, helpers, sdk, work, output):
 
 
 STDIO_FAULT_CASES=(
+    ("js-start",["--js-start"],"controlled stdio JS start: real helper EAGAIN retains code/native domain/value; later bad arguments carry no stale OS error; accepted retry returns copied bytes; cleanup: pass\n"),
     ("allocation",["--allocation"],"controlled stdio allocation: actual SDK attach storage refusal permanently fails; no token/duplicate/operation; Host original survives and native cleanup completes: pass\n"),
     ("cancel",["--cancel"],"controlled stdio cancel: logical cancellation removes keepalive while syscall retains count/data/helper; copy BUSY until stable real bytes; single CANCELLED result then physical cleanup: pass\n"),
     ("close",["--close"],"controlled stdio close: cancelled native file call retains bytes/count/helper through CLOSED; zero quiesce times out; destroy BUSY; actual exit/join returns capacity and preserves Host handle: pass\n"),
