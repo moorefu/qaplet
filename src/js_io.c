@@ -9,7 +9,7 @@ struct js_endpoint {
   js_endpoint *next;
   qaplet_io_endpoint token;
   unsigned refs;
-  int writing, closed, checkpoint;
+  int writing, closed, checkpoint, control, referenced;
   JSValue resolve, reject;
 };
 struct js_io_task {
@@ -56,6 +56,35 @@ static void refresh_closed(qaplet_runtime *r,js_endpoint *e) {
   if(qaplet_get_io_endpoint_status(r,&e->token,&status,NULL) || !status.ended || status.physical_pending || status.pending_handoffs>delivered)return;
   e->closed=1;e->checkpoint=1;settle(r,e->resolve,JS_UNDEFINED);
   if(r->io_js_closed)r->io_js_closed(r,&e->token);
+}
+/* One preallocated control record per wrapped endpoint. Native C close never
+ * calls JS. Owner observation only copies public POD; delivery uses the normal
+ * completion category and retains its reference until the full jobs boundary. */
+static void control_counts(qaplet_runtime *r) {
+  uint64_t ready=0,refs=0;
+  for(js_endpoint *e=r->js_io_endpoints;e;e=e->next){
+    if(e->control==1 && !e->closed)++ready;
+    if(e->control && e->referenced)++refs;
+  }
+  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=ready;r->io_js_control_refs=refs;pthread_mutex_unlock(&r->mutex);
+}
+void qaplet_js_io_poll(qaplet_runtime *r) {
+  for(js_endpoint *e=r->js_io_endpoints;e;e=e->next){
+    if(e->closed)continue;
+    qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;
+    if(qaplet_get_io_endpoint_status(r,&e->token,&status,NULL)){e->control=0;continue;}
+    e->referenced=status.referenced;
+    e->control=status.ended && !status.physical_pending && !status.pending_handoffs ? 1 : 0;
+  }
+  control_counts(r);
+}
+static int deliver_control(qaplet_runtime *r) {
+  js_endpoint *e=r->js_io_endpoints;for(;e;e=e->next)if(e->control==1 && !e->closed)break;
+  if(!e)return 0;
+  qaplet_code code=QAPLET_OK;
+  if(!r->execution_active){qaplet_execution_budget budget;code=qaplet_execution_prepare(r,NULL,&budget);if(!code)code=qaplet_execution_begin(r,&budget);if(!code)r->module_execution=0;}
+  if(code || qaplet_execution_dispatch(r))return -1;
+  e->control=2;refresh_closed(r,e);control_counts(r);return 1;
 }
 static JSValue task_cancel(JSContext *c,JSValueConst self,int argc,JSValueConst *argv) {
   (void)argc;(void)argv;js_io_task *t=JS_GetOpaque(self,task_class);if(!t)return fail(c,QAPLET_INVALID_HANDLE);
@@ -130,12 +159,14 @@ void qaplet_js_io_checkpoint(qaplet_runtime *r) {
   }
   js_endpoint **ep=(js_endpoint **)&r->js_io_endpoints;
   while(*ep){js_endpoint *e=*ep;if(!e->checkpoint){ep=&e->next;continue;}*ep=e->next;JS_FreeValue(r->context,e->resolve);JS_FreeValue(r->context,e->reject);release_endpoint(r->context,e);}
+  control_counts(r);
 }
 void qaplet_js_io_shutdown(qaplet_runtime *r) {
   js_io_task *t=r->js_io_tasks;r->js_io_tasks=NULL;
   while(t){js_io_task *next=t->next;JS_FreeValue(r->context,t->resolve);JS_FreeValue(r->context,t->reject);t->terminal=1;t->code=QAPLET_CANCELLED;release_endpoint(r->context,t->endpoint);if(!--t->refs)js_free(r->context,t);t=next;}
   js_endpoint *e=r->js_io_endpoints;r->js_io_endpoints=NULL;
   while(e){js_endpoint *next=e->next;JS_FreeValue(r->context,e->resolve);JS_FreeValue(r->context,e->reject);e->closed=1;release_endpoint(r->context,e);e=next;}
+  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=r->io_js_control_refs=0;pthread_mutex_unlock(&r->mutex);
 }
 static const JSCFunctionListEntry endpoint_methods[]={JS_CFUNC_MAGIC_DEF("read",1,endpoint_operation,0),JS_CFUNC_MAGIC_DEF("write",1,endpoint_operation,1),JS_CFUNC_MAGIC_DEF("close",0,endpoint_control,0),JS_CFUNC_MAGIC_DEF("finish",0,endpoint_control,1),JS_CFUNC_MAGIC_DEF("ref",0,endpoint_control,2),JS_CFUNC_MAGIC_DEF("unref",0,endpoint_control,3),JS_CFUNC_MAGIC_DEF("hasRef",0,endpoint_control,4)};
 JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,int writing) {
@@ -152,5 +183,5 @@ JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,
   js_endpoint *e=js_mallocz(c,sizeof(*e));if(!e){JS_FreeValue(c,object);return JS_EXCEPTION;}
   e->token=*token;e->writing=writing;e->refs=1;e->resolve=e->reject=JS_UNDEFINED;JS_SetOpaque(object,e);
   if(promise_property(c,object,"closed",&e->resolve,&e->reject)<0){JS_FreeValue(c,e->resolve);JS_FreeValue(c,e->reject);JS_FreeValue(c,object);return JS_EXCEPTION;}
-  ++e->refs;e->next=r->js_io_endpoints;r->js_io_endpoints=e;r->io_js_deliver=deliver_io;return object;
+  ++e->refs;e->next=r->js_io_endpoints;r->js_io_endpoints=e;r->io_js_deliver=deliver_io;r->io_js_control_deliver=deliver_control;return object;
 }
