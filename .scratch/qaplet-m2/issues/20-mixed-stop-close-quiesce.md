@@ -71,3 +71,9 @@ pending/BUSY，其他资源仍安全退出/恢复，不声称最终native清理�
 夹具/环境失败保留原身份，未重贴成绩。当前仍claimed、local_complete/cross_deferred，待独立接收；
 原Blocked by/AC/父spec及正式Cross/Full欠项不变，详本地验证和最终HANDOFF。
 
+2026-11-05（实际集成收口）：已融合19真实no-ff `597020eb`和后续MD-only实际root `a4e5fec1`。
+最终供应3产品`0916ff72`，Core/header与19产品逐文件同源；原ZIP包外mixed两端各12/12、
+当前相关Host/aggregate旧头回归各28/28、独立包外首因双序各2/2通过，完整ConPTY模式与
+实际原生回收/有意保留分别可见。旧供应1/2、所有失败和source/dirty均保留原身份，未重贴为
+新完整矩阵。最终清洁HEAD及原件摘要见HANDOFF，仍待独立接收后放行21；正式Cross/Full未完成。
+

@@ -10,7 +10,17 @@
 19最小公开诊断前置修复`5909b8fa`以`a564aab`纳入本分支；它是已有公开IO诊断拒绝的
 必要共享修复，不是20新增生命周期实现。20组合探针未复现需要另改Runtime的生命周期缺陷。
 
-供应2产品冻结于`e3b4bc476f1529ba74e9e2f80a53b155fddec4a2`：
+最终集成供应3产品冻结于`0916ff72e063f29c5ddf3d85146041499d4ed64f`，已真实融合19独立
+no-ff `597020eb`；随后融合真实MD收据`2b3035f7`及实际frontier `a4e5fec1`。
+后两次只改MD，95项产品配方不变。`src/`、`include/`和`examples/SDK-README.md`逐文件
+与19产品`1c4a91c`同字节，20差异为公开消费者/配方和文档；未重贴任何19或SDK2旧成绩。
+
+- recipe `fdd57244022269bdac216a2887fd2149911d90e18e000b7286b506b06df6cfbb`，95项。
+- SDK `d84c251269ed4c7efdbcc6b18649627dfa841a151935a60df9a6d5b7b8a430e8`。
+- 原ZIP `edcd4b448a51d5cabc20245d91f7fef4c7a6255acf105fcdb0115f643f679556`，17564863字节。
+- 原件为`out/m2-20-mixed/build-3.json`及`supply-3-artifacts/`；最终当前范围见下表SDK3。
+
+历史供应2产品冻结于`e3b4bc476f1529ba74e9e2f80a53b155fddec4a2`：
 
 - recipe `86bfa357258c693f2b3151fcfc463607045c991ac64b13c564b29c98f41ce4b2`，93项。
 - SDK `3dab0f52c6427361e77af134625e63a70aea736c5a2630d0cb77734f413d8706`。
@@ -40,6 +50,9 @@ Windows process/file/Console同时占用共享helper，夹具显式配置有限6
 
 | 供应/报告 | 实际结果与边界 |
 | --- | --- |
+| SDK3 `mixed-package-3.json`、`mixed-windows-3.json` | 当前集成公开头/archive从原ZIP包外编译，正常/故障各自配方，两端12/12 pass；5个ConPTY均完整模式恢复及设施reap/close/reader结束。 |
+| SDK3 `selected-linux-3.json`、`selected-windows-3.json` | 各28/28 pass：SDK2选定22个Host加19的5个公开aggregate合同及metadata；实际1000次普通lifetime，明确不是完整normal矩阵。 |
+| SDK3 `causes-linux-3/report.json`、`causes-windows-3/report.json` | 独立包外C Host各2/2 pass，`causes5.py`冻结源改写/OS-send配方；公开WAIT_TIMEOUT交接、两种首因、实际QUIESCENT；双APE sidecar、工具/loader前后摘要单列。 |
 | SDK2 `mixed-package-2.json` | Ubuntu从原ZIP解至包外临时目录，只用公开头/archive，编译正常及独立故障APE；12/12 pass。 |
 | SDK2 `mixed-windows-2.json` | 同两个Ubuntu APE，12/12 pass；其中5个真实ConPTY用例均实际reap、关闭Console/句柄、结束reader，并完整模式恢复。 |
 | SDK2 `selected-linux-2b.json`、`selected-windows-2b.json` | 各23/23 pass：22个Host混合/关闭/work/process/stdio/旧M1头/owner合同及metadata；包含实际1000次普通lifetime。明确`complete_normal_matrix=false`。 |
@@ -63,7 +76,7 @@ Runtime永久BUSY，replacement由夹具持有并证明不会被SDK迟到close�
 - 首因补证的Windows初版一次run_once只推进就绪IO、没有送出受控wake。原失败和公开facts保留；`causes3.py`改为先观察公开WAIT_TIMEOUT再决定接受顺序，两端通过。
 
 早期首次stop夹具未另存执行当时完整源文本，仅有源摘要/编译物/原日志，不将其作为最终源码闭包。
-最终SDK2、包外公开源、首因补证改写源、实际命令/日志均有独立身份。guard区分静态过近似与
+最终SDK3及历史SDK2、包外公开源、首因补证改写源、实际命令/日志均有独立身份。guard区分静态过近似与
 父进程实际import/call；child动态imports仍unknown。全部原件留在worktree out，不删除或回写旧source/dirty。
 
 ## 交接与欠项

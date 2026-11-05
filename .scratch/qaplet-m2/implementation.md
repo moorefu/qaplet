@@ -395,3 +395,12 @@ pass，46解析/52编码和主物理.cache；产品执行0、无重建/重复sui
 接收与命令见主`out/qaplet-m2/merge-19-aggregate/HANDOFF.md`、`handoff.json`。
 19保持claimed/local_complete/cross_deferred；不提前完成20或领取后继，27票/38边/135AC、
 父M2/正式其他原生/当前64K/CI/Full/长测/整体Review及发布门禁均保持原范围，不push/CI。
+
+2026-11-05（20实际集成收口）：融合19实际no-ff `597020eb`及MD-only root `a4e5fec1`，
+最终SDK3冻结产品`0916ff72`、95recipe。Core/header与19产品`1c4a91c`逐文件同字节，
+新供应独立原ZIP包外mixed两端12/12、相关Host/aggregate/旧头各28/28、包外首因双序各2/2
+通过；ConPTY真清理、native pending/unknown保留和用户JS屏障仍单列。SDK1/2及19旧完整
+范围全部保留原source/SDK/dirty，未重贴或机械重跑全catalog。当前20仍claimed、
+local_complete/cross_deferred，待独立merger接收后才放行21；实际清洁HEAD/原件/回放摘要见
+[本地记录](20-mixed-cleanup-validation.md)及本worktree `out/m2-20-mixed/HANDOFF.md`、`handoff.json`。
+其他原生/当前64K/正式Cross/CI Full/24–27矩阵与组合长测、父M2和最终Review仍未完成。
