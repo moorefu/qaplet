@@ -183,3 +183,58 @@ SKU1在严格重放首次暴露真实`modules/../process-child.exe`路径guard�
 都保留。后者的单场景离线回放12.352秒pass及strace只作诊断，不能改贴为整套CI通过。
 固定Nightly libc源码映射unproven、动态child imports unknown、其它三个native目标/
 guest/CI/Full及最终Standards/Spec两轴Review仍欠缺。父M2保持in_progress，release_ready=false。
+
+## 独立本地接收
+
+2026-11-06，fresh merger从实际integration
+`9117eaae6153ccce642add21fa4f2d9ea26e95d8`独立no-ff接收最终clean source
+`2c856c85223bf8565cbaa040694b940d2260cb33`。合并
+`6ab8b73ca5a12acc6782e3f1e182f12b1d680f2e`的tree
+`2d7ee44f23350c1478ac2b53a44b58fd27606c50`与source完全相等。主接收原件为
+`out/qaplet-m2/merge-23-sdk-delivery/HANDOFF.md`、`handoff.json`；实际命令、失败
+尝试、原始日志及每条读取身份保存在同目录，未改写实现者供件和历史报告。
+
+完整合前`premerge-1.json`与合后`postmerge.json`只读重放均通过。13份最终选择中
+617个实际case记录为616pass及既有Windows optional symlink blocked1；producer、
+两份只读native guard和guest export不增加产品执行。正常Linux229、Windows228+
+optional1，包外两例14、CLI67/72、sender2/1及strong2/1保持各自真实scope。
+本票6696文件/1306747344字节、内部tools983文件及示例491文件均逐raw/hash重核；
+115产品配方、119旧producer快照、18 engine输入、76 SDK成员、104 ZIP成员、四个
+fat APE/sidecar/loader及双archive各19个ELF64对象闭合。119旧snapshot逐字绑定
+Git144，115产品RECIPE与最终源码/原producer不变；d6唯一test文件两处UTF-8修正
+及119当前consumer快照单列绑定Gitd6，不重建SKU4或改producer dirty=false。
+
+包外例与CLI各76输入按明确original→retained→exact ZIP member核验，各两份
+original-packer保留原件和精确published repacked输出可取；包外两例APE与最终
+SKU3两例逐字相等。原两个/tmp已不可达，原因unknown；首个清理安全断言失败
+保留，不声称由当前源码清理、原tmp仍可取、或按hash搜索重构。最终sender/strong
+使用SKU3 CLI；signal fixture仍保留SKU1原供应身份，公开头/双目标库与SKU3直接
+字节相等，独立native arm不以新SDK构建身份重标。CLI两端各17项实际parent
+imports可取；动态child imports继续unknown，不以静态输入inventory替代。
+
+6项typed cleanup=false分别保留正常两端mixed-nonreturning和M2 cleanup-pending、
+包外pending及Windows CLI unknown-overlapped；6项metadata/arguments null属于
+未适用清理判断，3项strong null属于整SDK原生清理未直接证实，不能混为成功。
+Windows strong child实际exit53261、GetExitCodeProcess成功及CLI exit1分别记录；
+Linux保留subreaper ECHILD+/proc消失证据。两native slot只读接受、其余三原生缺失，
+native-guard-local总体blocked；实际64K仅229项payload导出，guest未执行。
+旧--lifetime1000是M1 qaplet_create兼容，不当作M2+quiesce1000或100混合。
+
+真实工具raw另核package2、mixed1、foreign supplier搬移1、retention2+2和两端
+profile各12（各1项适用性skip）；不算新产品case。原工具聚合timeout、早期失败、
+SKU1 guard失败、SKU2未全量normal、旧22丢失中间诊断及503→511限制均保留。
+merger包外输入parser首轮误分已明确记录为helper source-lock编译，失败原件及
+v1脚本保留，修正仅按确切portable source/patched-source记录分类，不泛化放宽guard。
+
+合前/合后Ubuntu独立重核root的103份历史MD：原raw逐字保持，只CRLF→LF才等于
+Git，mode不变；source worktree自身core.autocrlf=false严格clean。root单次命令
+core.autocrlf=input且GIT_OPTIONAL_LOCKS=0的status/diff为空，不把原生Git缓存clean
+误称raw==Git。root原EOL收据SHA12474610保持，未重写历史MD、spec或Git配置。
+合后Ubuntu root preflight pass：57 Python解析、55文本编码/零违规、pinned v3与
+主物理.cache；只对该进程传递GIT_CONFIG_COUNT=1的input语义，完整env/argv已留。
+
+Local development: complete。仍claimed/local_complete/cross_deferred；本地可放行
+24–26，merger未领取。父spec/27票/38边/135AC、原Blocked by/AC、安全与默认额度
+均保持；五原生剩余三个、当前实际64K、M2+quiesce1000/100mixed、Linux/Windows
+各10000mixed+1h、远程CI/Full、最终Standards/Spec两轴Review及父M2仍待验。
+merger新产品执行数0，无SDK重建/重复suite/长测/QEMU；接收仅改本票三份Markdown。

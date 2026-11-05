@@ -41,7 +41,7 @@
 | 20 | `codex/m2-20-mixed-cleanup` | 见20验收记录 | local_complete / cross_deferred（独立合并`943c1962`、接收`776e50cb`） |
 | 21 | `codex/m2-21-cli` | `.cache/worktrees/m2-21-cli` | local_complete / cross_deferred（独立合并`13abf9ac`、接收`fe8a17d`） |
 | 22 | `codex/m2-22-cli-signal` | `.cache/worktrees/m2-22-cli-signal` | local_complete / cross_deferred（独立合并`b8b9f572`、接收`6cca6f9b`） |
-| 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | local_complete / cross_deferred（SKU3本地完成，待独立合并接收；[验证](23-sdk-delivery-validation.md)） |
+| 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | local_complete / cross_deferred（独立合并`6ab8b73c`；主接收`out/qaplet-m2/merge-23-sdk-delivery/handoff.json`；[验证](23-sdk-delivery-validation.md)） |
 | 24–27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 24–26等待23本地完成且独立合入，27等待24–26实际正式全范围；原合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
@@ -497,3 +497,13 @@ Root实际领取23，fresh独立worktree先诊断已复现的Windows SDK→CLI c
 四组合均有真实child exit1/reaped与stderr，直接无Console启动两版正常；不预设根因。
 本票尚未本地完成，24/25/26等待实际独立合入；27仍需正式全范围验收。原27/38/135及
 父产品/安全/正式Cross/64K/Full/长测/最终Review/M2合同不变，当前不push/CI/发布。
+
+## 23 · 独立本地接收
+
+2026-11-06，fresh merger从实际integration `9117eaae`独立no-ff接收最终clean
+source `2c856c85`，合并`6ab8b73c`的tree `2d7ee44f`等于source。完整13报告及
+原件合前/合后只读重放、合后Ubuntu root preflight通过；独立接收原件为主
+`out/qaplet-m2/merge-23-sdk-delivery/HANDOFF.md`和`handoff.json`，详情见
+[23验证](23-sdk-delivery-validation.md#独立本地接收)。23的本地完成及独立合入
+满足24–26本地开发前置；merger未领取后继，27仍等待其原正式前置。状态继续
+claimed/local_complete/cross_deferred，不签发父M2、全原生/64K/Full长测或最终两轴Review。

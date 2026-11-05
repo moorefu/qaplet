@@ -8,13 +8,14 @@
 
 **Execution state:** local_complete / cross_deferred
 
-**Local development:** complete
+Local development: complete
 
 [本地验证](../23-sdk-delivery-validation.md)与专属worktree
 `out/m2-23-sdk-delivery/HANDOFF.md`、`handoff.json`保存最终SKU3、包外纯C组合例、
 Windows公开spawn→CLI修复、两端实际消费及原件/限制。产品配方冻结`144d5e18`，
-其后`d6d1d16`只修两处测试读取编码，未改产品RECIPE。尚待独立合并接收；在实际
-接收前不领取24–26。正式Cross/Full及父AC组仍待验，下列验收项未因本地通过勾选。
+其后`d6d1d16`只修两处测试读取编码，未改产品RECIPE。已独立no-ff合入`6ab8b73c`；主接收原件见
+`out/qaplet-m2/merge-23-sdk-delivery/HANDOFF.md`、`handoff.json`。本地开发可放行24–26，
+merger未领取后继。正式Cross/Full及父AC组仍待验，下列验收项未因本地通过勾选。
 
 **Execution prerequisites:** 19已本地完成并独立合入`597020eb`（接收`2b3035f7`），22亦已独立合入`b8b9f572`（接收`6cca6f9b`）；当前全部开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -78,3 +79,11 @@ explicit replacement/空env/句柄隔离合同保留。所有输入及packing原
 已不可达且原因unknown照实记录。状态claimed/local_complete/cross_deferred；
 父M2、24–27正式矩阵/64K/Full长测及最终两轴Review未完成。
 
+
+2026-11-06：fresh merger独立接收最终clean source `2c856c85`，no-ff `6ab8b73c`
+的tree与source逐字相等。13份最终选定报告、617实际case记录（616pass及既有
+optional symlink blocked1）、6696本票保留文件和两份内部原件inventory合前/合后
+完整只读重放通过；57解析/55编码的合后Ubuntu root preflight通过。6项typed
+cleanup=false、6项metadata/arguments null和3项strong整SDK清理未直接证实的null
+分别保留；原native pair总体blocked、guest仅export、旧M1 lifetime1000不外推。
+Status仍claimed/local_complete/cross_deferred，原Blocked by/AC及正式欠项不变。
