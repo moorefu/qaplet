@@ -1131,8 +1131,16 @@ def consume(args, report, directory):
         case_id = "qaplet-host." + suffix
         mixed = suffix in ("m2-mixed-stop", "m2-mixed-races", "m2-mixed-nonreturning")
         cwd = directory / case_id if mixed else ROOT
+        child_evidence = None
         if mixed:
             cwd.mkdir()
+            member = next(row for row in producer['package']['members'] if row['file'] == 'sdk/process-child.exe')
+            child_copy = cwd / 'process-child.exe'
+            shutil.copyfile(child_path, child_copy)
+            original, retained = identity(child_path), identity(child_copy)
+            if any(item[key] != member[key] for item in (original, retained) for key in ('sha256', 'size_bytes')):
+                raise BuildError('Mixed child input changed before execution')
+            child_evidence = {'package_member': member, 'original': original, 'retained': retained}
         arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{child}", str(child_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
                                       [*loader, host_path, *arguments], args.timeout, cwd, expected=None)
@@ -1146,7 +1154,7 @@ def consume(args, report, directory):
             records = [json.loads(line) for line in waits.read_text(encoding="utf-8").splitlines()] if waits.is_file() else []
             passed = passed and marker.is_file() and marker.read_bytes() == expected.encode("utf-8") and [row["requested_active_wait_ms"] for row in records] == [0, 5, 5]
             mixed_evidence = {"marker": identity(marker) if marker.is_file() else None,
-                "process_child": identity(child_path),
+                "process_child": child_evidence,
                 "wait_trace": identity(waits) if waits.is_file() else None, "wait_observations": records,
                 "native_cleanup_complete": suffix != "m2-mixed-nonreturning" if passed else False}
         required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")

@@ -32,8 +32,12 @@ class SDKNativeContract(unittest.TestCase):
             child = Path(command['argv'][-1])
             self.assertTrue(child.is_absolute())
             self.assertNotIn('..', child.parts, 'Resolve the supplied child before entering the case cwd')
-            self.assertEqual(Path(case['process_child']['path']), child)
-            self.assertEqual(hashlib.sha256(child.read_bytes()).hexdigest(), case['process_child']['sha256'])
+            bound = case['process_child']
+            self.assertEqual(Path(bound['original']['path']), child)
+            self.assertEqual(bound['package_member']['file'], 'sdk/process-child.exe')
+            self.assertEqual(bound['original']['sha256'], bound['package_member']['sha256'])
+            self.assertEqual(Path(bound['retained']['path']), root / 'process-child.exe')
+            self.assertEqual(hashlib.sha256(Path(bound['retained']['path']).read_bytes()).hexdigest(), bound['package_member']['sha256'])
             self.assertEqual(Path(case["marker"]["path"]), root / "mixed-result.txt")
             self.assertEqual(Path(case["wait_trace"]["path"]), root / "mixed-waits.ndjson")
             self.assertEqual(Path(case["marker"]["path"]).read_bytes(), case["expected"]["stdout"].encode())
@@ -41,6 +45,40 @@ class SDKNativeContract(unittest.TestCase):
             self.assertEqual(case["status"], "pass")
             self.assertIs(case["native_cleanup_complete"], suffix != "nonreturning")
         self.assertEqual(len(set(roots)), 3)
+
+    @unittest.skipUnless(os.name == 'posix' and os.environ.get('QAPLET_SDK_BUILD_REPORT') and
+                         os.environ.get('QAPLET_SDK_WINDOWS_REPORT'), 'Actual Windows SDK report replayed from Ubuntu required')
+    def test_foreign_supplier_child_paths_need_only_case_owned_retained_bytes(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from core_gate import Evidence, normalized
+        from sdk_matrix import validate_mixed_child
+        producer = json.loads(Path(os.environ['QAPLET_SDK_BUILD_REPORT']).read_text())
+        selected = Path(os.environ['QAPLET_SDK_WINDOWS_REPORT'])
+        report = json.loads(selected.read_text())
+        self.assertEqual(report['host']['os'], 'Windows')
+        original_root = normalized(report['evidence_directory'])
+        actual_root = selected.parent / 'evidence' / report['report_id']
+        host = next(row for row in report['artifacts'] if row['name'] == 'qaplet-host')
+        with tempfile.TemporaryDirectory(prefix='qaplet-mixed-moved-') as temp:
+            moved = Path(temp)
+            evidence = Evidence({'path_mappings': [{'source': original_root, 'root': str(moved)}]}, moved)
+            for suffix in ('stop', 'races', 'nonreturning'):
+                case_id = 'qaplet-host.m2-mixed-' + suffix
+                case = next(row for row in report['cases'] if row['case_id'] == case_id)
+                child = case['process_child']
+                self.assertFalse(Path(child['original']['path']).is_file(), 'The native Windows supplier path must be unreachable here')
+                relative = normalized(child['retained']['path'])[len(original_root)+1:]
+                destination = moved / relative
+                destination.parent.mkdir(parents=True)
+                shutil.copyfile(actual_root / relative, destination)
+                validate_mixed_child(case, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
+                corrupted = json.loads(json.dumps(case))
+                corrupted['process_child']['original']['path'] += '.wrong'
+                with self.assertRaises(ValueError):
+                    validate_mixed_child(corrupted, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
+                destination.write_bytes(destination.read_bytes() + b'changed')
+                with self.assertRaises(ValueError):
+                    validate_mixed_child(case, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
 
     @unittest.skipUnless(os.name == "posix" and os.environ.get("QAPLET_SDK_BUILD_REPORT") and
                          os.environ.get("QAPLET_SDK_NATIVE_REPORT") and os.environ.get("QAPLET_SDK_LOADER_DIR"),

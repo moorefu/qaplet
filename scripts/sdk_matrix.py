@@ -71,6 +71,19 @@ def validate_loader(args, incoming, evidence):
     evidence.read(reference)
 
 
+def validate_mixed_child(case, producer, artifact_path, work, evidence):
+    """Read the exact case-owned copy; original supplier paths may be foreign."""
+    child_path = posixpath.dirname(artifact_path) + '/sdk/process-child.exe'
+    member = next(row for row in producer['package']['members'] if row['file'] == 'sdk/process-child.exe')
+    child = case['process_child']
+    require(child['package_member'] == member, 'Mixed child must bind one exact supplied ZIP member')
+    require(normalized(child['original']['path']) == child_path and same(child['original'], member),
+            'Mixed child original must be the canonical supplied artifact')
+    require(normalized(child['retained']['path']) == work + '/process-child.exe' and same(child['retained'], member),
+            'Mixed child snapshot must belong to its actual case evidence root')
+    evidence.read(child['retained'])
+
+
 def validate_native(args, incoming, producer, selected, evidence, directory):
     consume_identity(incoming, {})
     check_ci_commit(producer, incoming)
@@ -153,10 +166,7 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
             else:
                 require(case['input'] is None, 'M2 example declares an unexpected file input')
         if case_id in ("qaplet-host.m2-mixed-stop", "qaplet-host.m2-mixed-races", "qaplet-host.m2-mixed-nonreturning"):
-            supplied_child = next(row for row in producer['sdk']['components'] if row['file'] == 'sdk/process-child.exe')
-            require(normalized(case['process_child']['path']) == child_path and same(case['process_child'], supplied_child),
-                    'Mixed child must be the canonical supplied artifact')
-            evidence.read(case['process_child'])
+            validate_mixed_child(case, producer, artifact_path, work, evidence)
             work = normalized(incoming["evidence_directory"]) + "/" + case_id
             require(normalized(command["cwd"]) == work, "Mixed smoke requires its own report/case working directory")
             require(all(normalized(value).startswith("/") or
