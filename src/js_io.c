@@ -9,7 +9,7 @@ struct js_endpoint {
   js_endpoint *next;
   qaplet_io_endpoint token;
   unsigned refs;
-  int writing, closed, checkpoint, control, referenced;
+  int writing, closed, checkpoint, control, referenced,terminal;
   JSValue resolve, reject, resize_callback;
 };
 struct js_io_task {
@@ -75,7 +75,7 @@ void qaplet_js_io_poll(qaplet_runtime *r) {
     qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;
     if(qaplet_get_io_endpoint_status(r,&e->token,&status,NULL)){e->control=0;continue;}
     e->referenced=status.referenced;
-    e->control=status.ended && !status.physical_pending && !status.pending_handoffs ? 1 : 0;
+    e->control=status.ended ? (!status.physical_pending && !status.pending_handoffs ? 1 : e->terminal ? 3 : 0) : 0;
   }
   control_counts(r);
 }
@@ -109,11 +109,13 @@ static int deliver_resize(qaplet_runtime *r,const qaplet_io_endpoint *token,cons
 }
 static JSValue endpoint_terminal(JSContext *c,JSValueConst self,int argc,JSValueConst *argv,int action) {
   qaplet_runtime *r=JS_GetContextOpaque(c);js_endpoint *e=JS_GetOpaque(self,endpoint_class);if(!e)return fail(c,QAPLET_INVALID_HANDLE);
+  if(action==4)return qaplet_js_terminal_acquire(c,&e->token,argc,argv);
   if((action==1 && (argc!=1 || !JS_IsFunction(c,argv[0]))) || (action!=1 && argc))return fail(c,QAPLET_INVALID_ARGUMENT);
   qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;r->bridge_active=1;
-  qaplet_code code=action==0 ? qaplet_tty_get_size(r,&e->token,&status,NULL) : qaplet_tty_watch_resize(r,&e->token,action==1,NULL);
+  qaplet_code code=action==0 ? qaplet_tty_get_size(r,&e->token,&status,NULL) : action==3 ? qaplet_tty_release(r,&e->token,&status,NULL) : qaplet_tty_watch_resize(r,&e->token,action==1,NULL);
   r->bridge_active=0;
-  if(code)return fail(c,code);
+  if(action==3 && (!code || code==QAPLET_BUSY))return JS_GetPropertyStr(c,self,"closed");
+  if(code){JSValue error=error_value(c,code,status.error_domain,status.error,0);return JS_IsException(error) ? error : JS_Throw(c,error);}
   if(action){JS_FreeValue(c,e->resize_callback);e->resize_callback=action==1 ? JS_DupValue(c,argv[0]) : JS_UNDEFINED;return JS_UNDEFINED;}
   return tty_value(c,&status);
 }
@@ -215,7 +217,7 @@ void qaplet_js_io_shutdown(qaplet_runtime *r) {
   while(e){js_endpoint *next=e->next;JS_FreeValue(r->context,e->resolve);JS_FreeValue(r->context,e->reject);JS_FreeValue(r->context,e->resize_callback);e->resize_callback=JS_UNDEFINED;e->closed=1;release_endpoint(r->context,e);e=next;}
   pthread_mutex_lock(&r->mutex);r->io_js_control_ready=r->io_js_control_refs=r->io_js_control_handoffs=0;pthread_mutex_unlock(&r->mutex);
 }
-static const JSCFunctionListEntry endpoint_methods[]={JS_CFUNC_MAGIC_DEF("read",1,endpoint_operation,0),JS_CFUNC_MAGIC_DEF("write",1,endpoint_operation,1),JS_CFUNC_MAGIC_DEF("close",0,endpoint_control,0),JS_CFUNC_MAGIC_DEF("finish",0,endpoint_control,1),JS_CFUNC_MAGIC_DEF("ref",0,endpoint_control,2),JS_CFUNC_MAGIC_DEF("unref",0,endpoint_control,3),JS_CFUNC_MAGIC_DEF("hasRef",0,endpoint_control,4),JS_CFUNC_MAGIC_DEF("getSize",0,endpoint_terminal,0),JS_CFUNC_MAGIC_DEF("watchResize",1,endpoint_terminal,1),JS_CFUNC_MAGIC_DEF("unwatchResize",0,endpoint_terminal,2)};
+static const JSCFunctionListEntry endpoint_methods[]={JS_CFUNC_MAGIC_DEF("read",1,endpoint_operation,0),JS_CFUNC_MAGIC_DEF("write",1,endpoint_operation,1),JS_CFUNC_MAGIC_DEF("close",0,endpoint_control,0),JS_CFUNC_MAGIC_DEF("finish",0,endpoint_control,1),JS_CFUNC_MAGIC_DEF("ref",0,endpoint_control,2),JS_CFUNC_MAGIC_DEF("unref",0,endpoint_control,3),JS_CFUNC_MAGIC_DEF("hasRef",0,endpoint_control,4),JS_CFUNC_MAGIC_DEF("getSize",0,endpoint_terminal,0),JS_CFUNC_MAGIC_DEF("watchResize",1,endpoint_terminal,1),JS_CFUNC_MAGIC_DEF("unwatchResize",0,endpoint_terminal,2),JS_CFUNC_MAGIC_DEF("releaseTerminal",0,endpoint_terminal,3),JS_CFUNC_MAGIC_DEF("joinTerminal",2,endpoint_terminal,4)};
 JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,int writing) {
   JSContext *c=r->context;pthread_once(&once,allocate_classes);
   if(!JS_IsRegisteredClass(r->engine,endpoint_class)){
@@ -229,6 +231,7 @@ JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,
   JSValue object=JS_NewObjectClass(c,endpoint_class);if(JS_IsException(object))return object;
   js_endpoint *e=js_mallocz(c,sizeof(*e));if(!e){JS_FreeValue(c,object);return JS_EXCEPTION;}
   e->token=*token;e->writing=writing;e->refs=1;e->resolve=e->reject=e->resize_callback=JS_UNDEFINED;JS_SetOpaque(object,e);
+  qaplet_tty_status terminal=QAPLET_TTY_STATUS_INIT;e->terminal=qaplet_get_tty_status(r,token,&terminal,NULL)==QAPLET_OK;
   if(promise_property(c,object,"closed",&e->resolve,&e->reject)<0){JS_FreeValue(c,e->resolve);JS_FreeValue(c,e->reject);JS_FreeValue(c,object);return JS_EXCEPTION;}
   ++e->refs;e->next=r->js_io_endpoints;r->js_io_endpoints=e;r->io_js_deliver=deliver_io;r->io_js_control_deliver=deliver_control;r->io_js_endpoint_retained=endpoint_retained;r->tty_js_deliver=deliver_resize;return object;
 }

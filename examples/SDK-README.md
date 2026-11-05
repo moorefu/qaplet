@@ -200,3 +200,75 @@ descriptor/HANDLE reuse, and Windows helper startup/physical-exit gates.
 An ordinary helper I/O-wait error retains its native error and cancels the
 pending request. The helper still signals the external Host when kernel I/O
 actually completes; its event/data remain reserved until that proof and join.
+
+`QAPLET_CAP_TTY` adds explicit terminal leases. `qaplet_tty_inspect` queries the
+actual current standard route and its supported subset. `qaplet_tty_acquire`
+saves the complete terminal mode before mutation and returns a normal IO
+endpoint. Use `qaplet_tty_join` to add another explicitly selected standard
+stream of the same terminal to that lease. Aliases conflict with a second
+independent lease across SDK Runtimes. The SDK owns only non-inheritable
+duplicates; the Host coordinates replacement, concurrent use and changes made
+outside the SDK. Separately loaded SDK copies and other processes require Host
+coordination. No private CONIN$/CONOUT$ fallback is opened.
+
+In JS, `qaplet:stdio` exports `acquireTerminal(stream,{raw,vt})`; the returned
+endpoint provides `joinTerminal`, `getSize`, `watchResize`, `unwatchResize` and
+`releaseTerminal` alongside ordinary byte-task methods. The module's initial
+stdin/stdout/stderr exports still describe only explicit existing attachments.
+
+```js
+const { acquireTerminal } = await import('qaplet:stdio');
+const input = acquireTerminal(0, { raw: true });
+const output = input.joinTerminal(1, { vt: true });
+await output.write(new Uint8Array([65])).promise;
+const chunk = await input.read(64).promise;
+await input.releaseTerminal();
+await output.closed;
+```
+
+An individual endpoint close stops that direction. Its `closed` barrier waits
+for the whole lease group to restore; `releaseTerminal` / `qaplet_tty_release`
+ends all members. C release can report BUSY while physical IO or join remains.
+IO failure ends the group while an ordinary operation error can leave Runtime
+OPEN. Owner-confirmed stop and Runtime close also initiate native group cleanup
+without running user JS. All necessary helpers must physically exit and join
+before the owner restores modes with complete native readback. POSIX termios is
+saved once; file flags and Windows Console modes restore in reverse join order,
+including dup/DuplicateHandle aliases. A failed restore retains its handle and
+lease responsibility, reports the native error and excludes conflicting leases;
+retry native cleanup. Forced process termination cannot guarantee restoration.
+
+The Host supplies native resize notifications through
+`qaplet_tty_notify_resize`, after its SIGWINCH self-pipe or Console window event.
+The SDK installs no process signal handler; notify is not async-signal-safe.
+One preallocated pending state coalesces notifications. Owner delivery queries
+the current size and advances a revision; notification counts are not business
+counts. Watches default to the endpoint's ref state; unref is not cancellation.
+Console input size/watch is unsupported until an explicit output route joins.
+
+POSIX raw TTY and ordinary pipes preserve arbitrary bytes independently of the
+Console text adapter. Each Console write requires complete strict UTF-8;
+invalid/truncated text is rejected before acceptance. Native pump boundaries
+may split scalars. BMP Console input, supplementary Unicode output and the
+SGR31/reset VT subset have distinct contracts. Raw invalid UTF-8 detection and
+supplementary input through ConPTY remain unsupported. Console write results
+count the original UTF-8 prefix of complete scalars accepted by the OS;
+`qaplet_get_tty_write_status` and JS result/error `nativeUtf16Units` and
+`partialScalar` additionally expose an accepted partial UTF-16 surrogate. Such
+a prefix is not a safe retry offset. Ordinary byte IO keeps its existing count.
+
+First Console acquisition starts one Runtime join control helper, charged to
+the existing helper/handle/requested-stack limits until close/quiesce. Physical
+Console IO consumes another helper; input also reserves a cancel event. Default
+helper4 is shared with Process and file IO, including this control helper.
+Actual Console worker join reliably wakes the owner; the control helper itself
+still must physically exit and join before native quiescence. Small quotas
+refuse before mutation/acceptance. Use close, bounded/retryable quiesce, then
+destroy; a closed Runtime can retain native responsibility and return BUSY.
+
+`sdk.py tty-consume` extracts the sealed SDK outside the checkout, compiles
+normal and separately wrapped system-fault terminal consumers on Ubuntu, and
+runs real native terminal fixtures. `sdk_tty.py run` replays those same supplied
+bytes on another host. PTY/ConPTY creation belongs to these private Host
+fixtures, not the public SDK. Other native targets, actual64K, Full and final
+mixed-resource long runs remain separate acceptance scopes.

@@ -42,6 +42,7 @@ typedef struct io_endpoint {
   uint64_t terminal_device,terminal_inode,terminal_special;
   qaplet_tty_status tty_status;
   struct io_endpoint *lease_next;
+  struct io_endpoint *lease_owner,*group_previous,*group_last;
   unsigned char input_utf8[4];
   unsigned input_length,input_offset,high_surrogate;
 } io_endpoint;
@@ -50,6 +51,11 @@ typedef struct io_endpoint {
  * Lock order is Runtime acceptance mutex, then this registry mutex. */
 static pthread_mutex_t terminal_mutex=PTHREAD_MUTEX_INITIALIZER;
 static io_endpoint *terminal_leases;
+static int terminal_conflict(uint64_t device,uint64_t inode,uint64_t special) {
+  int conflict=0;pthread_mutex_lock(&terminal_mutex);
+  for(io_endpoint *p=terminal_leases;p;p=p->lease_next)if(IsWindows() || (p->terminal_device==device && p->terminal_inode==inode && p->terminal_special==special)){conflict=1;break;}
+  pthread_mutex_unlock(&terminal_mutex);return conflict;
+}
 static int terminal_claim(io_endpoint *e) {
   int conflict=0;pthread_mutex_lock(&terminal_mutex);
   for(io_endpoint *p=terminal_leases;p;p=p->lease_next)
@@ -88,6 +94,8 @@ struct qaplet_io_pool {
   size_t endpoint_bytes, operation_bytes, poll_bytes;
   uint64_t cursor, serial;
   int closing;
+  pthread_t terminal_joiner;
+  int terminal_joiner_active,terminal_joiner_exited,terminal_joiner_joining;
   qaplet_io_snapshot snapshot;
 };
 static void peak(uint64_t value,uint64_t *p) { if (value>*p) *p=value; }
@@ -121,32 +129,44 @@ static int same_mode(const struct termios *a,const struct termios *b) {
     !memcmp(a->c_cc,b->c_cc,sizeof(a->c_cc)) && cfgetispeed(a)==cfgetispeed(b) && cfgetospeed(a)==cfgetospeed(b);
 }
 static int restore_terminal_locked(qaplet_runtime *r,io_endpoint *e) {
+  e=e->lease_owner ? e->lease_owner : e;
   if(!e->lease_active)return 1;
   int error=0;
   if(IsWindows()){
-    uint32_t mode=0;
-    if(!SetConsoleMode(e->handle,e->console_mode) || !GetConsoleMode(e->handle,&mode))error=GetLastError();
-    else if(mode!=e->console_mode)error=13;
+    for(io_endpoint *p=e->group_last;p && !error;p=p->group_previous){uint32_t mode=0;
+      if(!SetConsoleMode(p->handle,p->console_mode) || !GetConsoleMode(p->handle,&mode))error=GetLastError();
+      else if(mode!=p->console_mode)error=13;
+    }
   }else{
     struct termios checked;
-    if(tcsetattr(e->fd,TCSANOW,&e->original_mode) || fcntl(e->fd,F_SETFL,e->original_flags) || tcgetattr(e->fd,&checked))error=errno;
+    if(tcsetattr(e->fd,TCSANOW,&e->original_mode) || tcgetattr(e->fd,&checked))error=errno;
     else {
       if(IsXnu() && !(e->original_mode.c_lflag&PENDIN) && (checked.c_lflag&PENDIN)){
         int available=0;if(ioctl(e->fd,FIONREAD,&available) || tcgetattr(e->fd,&checked))error=errno;
       }
-      if(!error && (!same_mode(&checked,&e->original_mode) || fcntl(e->fd,F_GETFL)!=e->original_flags))error=EIO;
+      if(!error && !same_mode(&checked,&e->original_mode))error=EIO;
+    }
+    for(io_endpoint *p=e->group_last;p && !error;p=p->group_previous){
+      if(fcntl(p->fd,F_SETFL,p->original_flags))error=errno;
+      else {int flags=fcntl(p->fd,F_GETFL);if(flags<0)error=errno;else if(flags!=p->original_flags)error=EIO;}
     }
   }
-  e->tty_status.error=error;e->tty_status.error_domain=error ? (IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO) : 0;
+  for(io_endpoint *p=e->group_last;p;p=p->group_previous){p->tty_status.error=error;p->tty_status.error_domain=error ? (IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO) : 0;}
   if(error){cleanup_locked(r,error,e->tty_status.error_domain);return 0;}
-  terminal_retire(e);e->lease_active=0;e->restored=1;e->tty_status.active=0;e->tty_status.restored=1;return 1;
+  terminal_retire(e);for(io_endpoint *p=e->group_last;p;p=p->group_previous){p->lease_active=0;p->restored=1;p->tty_status.active=0;p->tty_status.restored=1;}return 1;
+}
+static io_endpoint *terminal_output(io_endpoint *e) {
+  io_endpoint *root=e->lease_owner ? e->lease_owner : e;
+  for(io_endpoint *p=root->group_last;p;p=p->group_previous)if(p->writing && p->handle)return p;
+  return e->writing && e->handle ? e : NULL;
 }
 static int terminal_size_locked(io_endpoint *e) {
   int error=0;uint32_t columns=0,rows=0;
   if(IsWindows()){
     struct NtConsoleScreenBufferInfo info;
-    if(!e->writing){error=6;} /* Size requires the explicitly leased output. */
-    else if(!GetConsoleScreenBufferInfo(e->handle,&info))error=GetLastError();
+    io_endpoint *output=terminal_output(e);
+    if(!output){error=6;}
+    else if(!GetConsoleScreenBufferInfo(output->handle,&info))error=GetLastError();
     else {columns=info.srWindow.Right-info.srWindow.Left+1;rows=info.srWindow.Bottom-info.srWindow.Top+1;}
   }else{
     struct winsize info={0};if(ioctl(e->fd,TIOCGWINSZ,&info))error=errno;else {columns=info.ws_col;rows=info.ws_row;}
@@ -194,8 +214,17 @@ static void close_endpoint_locked(qaplet_runtime *r,io_endpoint *e) {
   e->ended=1;
   e->resize_watch=0;e->resize_pending=0;
   if(e->pending && e->pending->physical)return;
-  if(e->terminal && (e->terminal_helpers || !pthread_equal(r->owner,pthread_self())))return;
-  if(!restore_terminal_locked(r,e))return;
+  if(e->terminal){
+    if(!pthread_equal(r->owner,pthread_self()))return;
+    io_endpoint *root=e->lease_owner ? e->lease_owner : e;
+    if(root->lease_active){
+      for(io_endpoint *p=root->group_last;p;p=p->group_previous)if(!p->ended || p->terminal_helpers || (p->pending && p->pending->physical))return;
+      if(!restore_terminal_locked(r,root))return;
+      io_endpoint *p=root->group_last;
+      while(p){io_endpoint *previous=p->group_previous;if(IsWindows())handle_closed_locked(r,&p->handle);else fd_closed_locked(r,&p->fd);p->lease_owner=p->group_previous=p->group_last=NULL;p=previous;}
+      return;
+    }
+  }
   if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);
 }
 static void cancel_native_locked(qaplet_runtime *r,io_operation *o) {
@@ -215,6 +244,12 @@ static void cancel_locked(qaplet_runtime *r,io_operation *o) {
   if(!o->physical && o->endpoint->pending==o)o->endpoint->pending=NULL;
   pthread_cond_broadcast(&r->native_condition);
 }
+static void close_terminal_group_locked(qaplet_runtime *r,io_endpoint *e) {
+  io_endpoint *root=e->lease_owner ? e->lease_owner : e;
+  if(!root->lease_active){close_endpoint_locked(r,e);return;}
+  for(io_endpoint *p=root->group_last;p;p=p->group_previous){p->ended=1;p->resize_watch=p->resize_pending=0;if(p->pending)cancel_locked(r,p->pending);}
+  close_endpoint_locked(r,e);
+}
 static void complete_locked(qaplet_runtime *r,io_operation *o,size_t n,int error,uint32_t domain,int eof) {
   qaplet_io_pool *p=r->io_pool;io_endpoint *e=o->endpoint;
   o->physical=0;o->length+=n;
@@ -227,12 +262,15 @@ static void complete_locked(qaplet_runtime *r,io_operation *o,size_t n,int error
   } else if(error && error!=995 && !o->error){o->error=error;o->error_domain=domain;}
   if(o->state!=QAPLET_IO_PENDING){
     if(e->pending==o)e->pending=NULL;
-    if(eof || (error && error!=995) || e->finishing || e->ended)close_endpoint_locked(r,e);
+    if(eof || (error && error!=995) || e->finishing || e->ended){if(e->terminal && error && error!=995)close_terminal_group_locked(r,e);else close_endpoint_locked(r,e);}
   }
   qaplet_wake_locked(r);pthread_cond_broadcast(&r->native_condition);
 }
 static void retire_operation_locked(qaplet_runtime *r,io_operation *o) {
   qaplet_io_pool *p=r->io_pool;
+  /* A Console join may be published between owner collection and the full
+   * Promise checkpoint. Retirement still owns its completion/cancel event. */
+  handle_closed_locked(r,&o->overlapped.hEvent);
   free_locked(r,o->data,o->size);qaplet_operation_retire_locked(r,o->size);
   --p->snapshot.operations;p->snapshot.data_bytes-=o->size;
   if(o->state!=QAPLET_IO_PENDING)--p->snapshot.retained_results;
@@ -369,6 +407,41 @@ static void *console_operation(void *opaque) {
   o->exited=1;qaplet_wake_locked(r);pthread_cond_broadcast(&r->native_condition);qaplet_notification notification=qaplet_notify_prepare_locked(r);
   pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);return NULL;
 }
+/* A Console closed barrier includes actual worker exit, including native TLS
+ * destructors. One budgeted Runtime control helper blocks in pthread_join and
+ * publishes only after that proof. Owner polling or a pre-exit signal cannot
+ * substitute for this completion. This helper never restores modes or runs JS. */
+static void *terminal_joiner(void *opaque) {
+  qaplet_runtime *r=opaque;pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
+  for(;;){
+    io_operation *selected=NULL;int pending=0;
+    if(p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
+      if(!o->active || !o->helper || !o->native_endpoint->terminal)continue;
+      pending=1;if(o->exited && !o->join_attempted){selected=o;break;}
+    }
+    if(!selected){
+      if(p->closing && !pending)break;
+      int error=pthread_cond_wait(&r->native_condition,&r->mutex);
+      if(error){cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);break;}
+      continue;
+    }
+    selected->join_attempted=1;pthread_t thread=selected->thread;pthread_mutex_unlock(&r->mutex);
+    int error=pthread_join(thread,NULL);pthread_mutex_lock(&r->mutex);
+    if(error)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);
+    else {selected->helper=0;--selected->native_endpoint->terminal_helpers;--r->native_retained;--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;}
+    qaplet_wake_locked(r);pthread_cond_broadcast(&r->native_condition);qaplet_notification notification=qaplet_notify_prepare_locked(r);
+    pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);pthread_mutex_lock(&r->mutex);
+  }
+  p->terminal_joiner_exited=1;qaplet_wake_locked(r);pthread_cond_broadcast(&r->native_condition);qaplet_notification notification=qaplet_notify_prepare_locked(r);
+  pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);return NULL;
+}
+static int start_terminal_joiner_locked(qaplet_runtime *r) {
+  qaplet_io_pool *p=r->io_pool;if(p->terminal_joiner_active)return 0;
+  pthread_attr_t attr;int error=pthread_attr_init(&attr);
+  if(!error){error=pthread_attr_setstacksize(&attr,r->m2_limits.helper_stack_bytes);if(!error)error=pthread_create(&p->terminal_joiner,&attr,terminal_joiner,r);pthread_attr_destroy(&attr);}
+  if(!error){p->terminal_joiner_active=1;++r->native_retained;++r->native_handles;peak(r->native_handles,&r->native_handles_peak);++r->helper_threads;r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;++p->snapshot.helper_threads;p->snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;}
+  return error;
+}
 qaplet_code qaplet_io_pipe(qaplet_runtime *r,int writing,qaplet_io_endpoint *out,int *child_fd,int64_t *child_handle,qaplet_process_status *failure) {
   qaplet_code code=storage(r,0);if(code)return code;
   qaplet_io_pool *p=r->io_pool;uint64_t index=0;io_endpoint *e=NULL;
@@ -457,8 +530,9 @@ qaplet_code qaplet_stdio_get(qaplet_runtime *r,uint32_t stream,qaplet_io_endpoin
   else memcpy((char *)info+8,(char *)&value+8,sizeof(value)-8);
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
-qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tty_options *options,qaplet_io_endpoint *out,qaplet_tty_status *status,qaplet_diagnostic *d) {
+static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *joining,uint32_t stream,const qaplet_tty_options *options,qaplet_io_endpoint *out,qaplet_tty_status *status,qaplet_diagnostic *d) {
   qaplet_code code=standard_preflight(r,stream,NULL,out,d);
+  if(!code && joining)code=qaplet_check_structure(joining,sizeof(*joining));
   if(!code)code=qaplet_check_structure(options,sizeof(*options));
   if(!code)code=qaplet_check_structure(status,sizeof(*status));
   if(!code && (!out || options->reserved || (options->flags&~(QAPLET_TTY_RAW|QAPLET_TTY_VT))))code=QAPLET_INVALID_ARGUMENT;
@@ -468,12 +542,21 @@ qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tt
   if(info.kind!=QAPLET_STDIO_TTY && info.kind!=QAPLET_STDIO_CONSOLE)return qaplet_report(d,QAPLET_UNSUPPORTED);
   struct stat identity={0};
   if(!IsWindows() && fstat(source,&identity))return qaplet_report(d,QAPLET_IO_ERROR);
-  pthread_mutex_lock(&r->mutex);
-  if(qaplet_io_standard_locked(r,stream,NULL,NULL))code=QAPLET_BUSY;
-  if(r->io_pool)for(uint64_t i=0;!code && i<r->m2_limits.native_handles;++i){io_endpoint *e=&r->io_pool->endpoints[i];
-    if(e->active && e->lease_active && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev)))code=QAPLET_BUSY;
+  io_endpoint *root=NULL;pthread_mutex_lock(&r->mutex);
+  if(joining){io_endpoint *member=endpoint_locked(r,joining);
+    if(!member || !member->terminal)code=QAPLET_INVALID_HANDLE;
+    else if(!member->lease_active || member->ended)code=QAPLET_BAD_STATE;
+    else {root=member->lease_owner ? member->lease_owner : member;
+      if(!IsWindows() && (root->terminal_device!=(uint64_t)identity.st_dev || root->terminal_inode!=(uint64_t)identity.st_ino || root->terminal_special!=(uint64_t)identity.st_rdev))code=QAPLET_UNSUPPORTED;
+    }
   }
-  if(!code && (r->native_handles>=r->m2_limits.native_handles || r->reactor_registrations>=r->m2_limits.reactor_registrations))code=QAPLET_RESOURCE_LIMIT;
+  if(!code && qaplet_io_standard_locked(r,stream,NULL,NULL))code=QAPLET_BUSY;
+  if(r->io_pool)for(uint64_t i=0;!code && i<r->m2_limits.native_handles;++i){io_endpoint *e=&r->io_pool->endpoints[i];
+    if(e->active && e->lease_active && (!root || e->lease_owner!=root) && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev)))code=QAPLET_BUSY;
+  }
+  if(!code && !root && terminal_conflict(identity.st_dev,identity.st_ino,identity.st_rdev))code=QAPLET_BUSY;
+  unsigned control=IsWindows() && (!r->io_pool || !r->io_pool->terminal_joiner_active);
+  if(!code && (r->native_handles>r->m2_limits.native_handles-1-control || r->reactor_registrations>=r->m2_limits.reactor_registrations || (control && r->helper_threads>=r->m2_limits.helper_threads)))code=QAPLET_RESOURCE_LIMIT;
   pthread_mutex_unlock(&r->mutex);if(code)return qaplet_report(d,code);
   code=storage(r,0);if(code){if(qaplet_get_lifecycle(r)==QAPLET_FAILED)qaplet_process_shutdown(r);return qaplet_report(d,code);}
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;io_endpoint *e=NULL;uint64_t index=0;
@@ -496,15 +579,23 @@ qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tt
     *e=(io_endpoint){.generation=generation,.active=1,.writing=stream!=0,.fd=fd,.handle=handle,.referenced=1,.standard=stream+1,.standard_info=info,
       .terminal=1,.regular=IsWindows(),.lease_active=1,.original_flags=flags,.original_mode=original,.console_mode=mode,
       .terminal_device=identity.st_dev,.terminal_inode=identity.st_ino,.terminal_special=identity.st_rdev,.tty_status=QAPLET_TTY_STATUS_INIT};
-    if(!terminal_claim(e)){
+    e->lease_owner=root ? root : e;e->group_previous=root ? root->group_last : NULL;e->group_last=root ? NULL : e;
+    if(!root && !terminal_claim(e)){
       e->lease_active=0;e->active=0;if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);
       pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_BUSY);
     }
     if(IsWindows() && (((options->flags&QAPLET_TTY_RAW) && stream!=0) || ((options->flags&QAPLET_TTY_VT) && stream==0))){
-      terminal_retire(e);e->lease_active=0;e->active=0;handle_closed_locked(r,&e->handle);pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_UNSUPPORTED);
+      if(!root)terminal_retire(e);e->lease_active=0;e->active=0;handle_closed_locked(r,&e->handle);pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_UNSUPPORTED);
     }
+    if(IsWindows()){
+      uint32_t available=0;struct NtConsoleScreenBufferInfo screen;
+      int direction=stream ? GetConsoleScreenBufferInfo(handle,&screen) : GetNumberOfConsoleInputEvents(handle,&available);
+      if(!direction){if(!root)terminal_retire(e);e->lease_active=0;e->active=0;handle_closed_locked(r,&e->handle);pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_UNSUPPORTED);}
+      int start=start_terminal_joiner_locked(r);
+      if(start){if(!root)terminal_retire(e);e->lease_active=0;e->active=0;handle_closed_locked(r,&e->handle);status->error_domain=QAPLET_ERROR_DOMAIN_ERRNO;status->error=start;pthread_mutex_unlock(&r->mutex);return qaplet_report(d,QAPLET_IO_ERROR);}
+    }
+    if(root)root->group_last=e;
     e->tty_status.active=1;++p->snapshot.endpoints;++r->reactor_registrations;peak(r->reactor_registrations,&r->reactor_registrations_peak);
-    *out=(qaplet_io_endpoint){sizeof(*out),QAPLET_ABI_VERSION,r->runtime_id,index,generation};
     if(IsWindows()){
       uint32_t requested=mode,checked=0;
       if(options->flags&QAPLET_TTY_RAW)requested=(requested&~7u)|8u;
@@ -517,12 +608,18 @@ qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tt
       if(tcsetattr(fd,TCSANOW,&requested) || fcntl(fd,F_SETFL,flags|O_NONBLOCK) || tcgetattr(fd,&checked))error=errno;
       else if(!same_mode(&requested,&checked) || fcntl(fd,F_GETFL)!=(flags|O_NONBLOCK))error=EIO;
     }
-    if(error)close_endpoint_locked(r,e);
+    if(error){
+      close_terminal_group_locked(r,e);
+      if(!e->lease_active){e->active=0;e->standard=0;--p->snapshot.endpoints;--r->reactor_registrations;}
+    }
+    if(e->active)*out=(qaplet_io_endpoint){sizeof(*out),QAPLET_ABI_VERSION,r->runtime_id,index,generation};
     memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);
   }
   if(error){status->error=error;status->error_domain=IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO;code=QAPLET_IO_ERROR;}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
+qaplet_code qaplet_tty_acquire(qaplet_runtime *r,uint32_t stream,const qaplet_tty_options *options,qaplet_io_endpoint *out,qaplet_tty_status *status,qaplet_diagnostic *d){return acquire_terminal(r,NULL,stream,options,out,status,d);}
+qaplet_code qaplet_tty_join(qaplet_runtime *r,const qaplet_io_endpoint *joining,uint32_t stream,const qaplet_tty_options *options,qaplet_io_endpoint *out,qaplet_tty_status *status,qaplet_diagnostic *d){if(!joining)return qaplet_report(d,QAPLET_INVALID_ARGUMENT);return acquire_terminal(r,joining,stream,options,out,status,d);}
 qaplet_code qaplet_get_tty_status(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_tty_status *status,qaplet_diagnostic *d) {
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
@@ -534,13 +631,14 @@ qaplet_code qaplet_tty_release(qaplet_runtime *r,const qaplet_io_endpoint *token
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;
-  else {if(e->pending)cancel_locked(r,e->pending);close_endpoint_locked(r,e);memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);if(e->tty_status.error)code=QAPLET_IO_ERROR;else if(e->lease_active)code=QAPLET_BUSY;qaplet_wake_locked(r);}
+  else {close_terminal_group_locked(r,e);memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);if(e->tty_status.error)code=QAPLET_IO_ERROR;else if(e->lease_active)code=QAPLET_BUSY;qaplet_wake_locked(r);}
   pthread_mutex_unlock(&r->mutex);qaplet_io_collect(r);return qaplet_report(d,code);
 }
 qaplet_code qaplet_tty_get_size(qaplet_runtime *r,const qaplet_io_endpoint *token,qaplet_tty_status *status,qaplet_diagnostic *d) {
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code)code=qaplet_check_structure(status,sizeof(*status));if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;else if(!e->lease_active || e->ended)code=QAPLET_BAD_STATE;
+  else if(IsWindows() && !terminal_output(e))code=QAPLET_UNSUPPORTED;
   else {if(!terminal_size_locked(e))code=QAPLET_IO_ERROR;memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
@@ -548,6 +646,7 @@ qaplet_code qaplet_tty_watch_resize(qaplet_runtime *r,const qaplet_io_endpoint *
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(token,sizeof(*token));if(!code && enabled>1)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_resource_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,token);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!e || !e->terminal)code=QAPLET_INVALID_HANDLE;else if(r->snapshot.lifecycle!=QAPLET_OPEN || !e->lease_active || e->ended)code=QAPLET_BAD_STATE;
+  else if(IsWindows() && !terminal_output(e))code=QAPLET_UNSUPPORTED;
   else {e->resize_watch=enabled;if(!enabled)e->resize_pending=0;qaplet_wake_locked(r);}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }
@@ -563,6 +662,7 @@ qaplet_code qaplet_tty_inspect(qaplet_runtime *r,uint32_t stream,qaplet_tty_supp
   qaplet_code code=standard_preflight(r,stream,NULL,NULL,d);if(!code)code=qaplet_check_structure(out,sizeof(*out));if(code)return qaplet_report(d,code);
   qaplet_stdio_info info;int fd;int64_t handle;uint32_t quota;qaplet_stdio_classify(stream,&info,&fd,&handle,&quota);
   qaplet_tty_support value=QAPLET_TTY_SUPPORT_INIT;value.kind=info.kind;value.lease=info.kind==QAPLET_STDIO_TTY || info.kind==QAPLET_STDIO_CONSOLE;
+  if(value.lease && IsWindows()){uint32_t available=0;struct NtConsoleScreenBufferInfo screen;value.lease=stream ? GetConsoleScreenBufferInfo(handle,&screen) : GetNumberOfConsoleInputEvents(handle,&available);}
   if(value.lease){value.raw=!IsWindows() || stream==0;value.vt=stream!=0;value.resize=!IsWindows() || stream!=0;value.utf8_text=IsWindows();value.binary=!IsWindows();value.supplementary_input=!IsWindows();value.raw_invalid_utf8_input=!IsWindows();}
   memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);return qaplet_report(d,QAPLET_OK);
 }
@@ -776,7 +876,7 @@ void qaplet_io_collect(qaplet_runtime *r) {
         if(ok || error!=996)complete_locked(r,o,n,error==109 && !o->writing ? 0 : error,QAPLET_ERROR_DOMAIN_WIN32,error==109 && !o->writing);
       }else if(waited!=258)cleanup_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32);
     }
-    if(o->helper && o->exited && !o->join_attempted){
+    if(o->helper && !o->native_endpoint->terminal && o->exited && !o->join_attempted){
       o->join_attempted=1;pthread_mutex_unlock(&r->mutex);int error=pthread_tryjoin_np(o->thread,NULL);pthread_mutex_lock(&r->mutex);
       if(error==EBUSY)o->join_attempted=0;
       else if(error)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);
@@ -787,6 +887,12 @@ void qaplet_io_collect(qaplet_runtime *r) {
   }
   if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i){io_endpoint *e=&p->endpoints[i];
     if(e->active && e->ended && !e->pending){close_endpoint_locked(r,e);if(!e->lease_active && (e->detached || p->closing) && !e->handoffs){e->active=0;--p->snapshot.endpoints;--r->reactor_registrations;}}
+  }
+  if(p && p->terminal_joiner_active && p->terminal_joiner_exited && !p->terminal_joiner_joining){
+    p->terminal_joiner_joining=1;pthread_mutex_unlock(&r->mutex);int error=pthread_tryjoin_np(p->terminal_joiner,NULL);pthread_mutex_lock(&r->mutex);
+    if(error==EBUSY)p->terminal_joiner_joining=0;
+    else if(error)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);
+    else {p->terminal_joiner_active=0;--r->native_retained;--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;}
   }
   if(p && p->closing && !p->snapshot.endpoints && !p->snapshot.operations && !p->snapshot.helper_threads){
     free_locked(r,p->endpoints,p->endpoint_bytes);free_locked(r,p->operations,p->operation_bytes);free_locked(r,p->pollfds,p->poll_bytes);free_locked(r,p,sizeof(*p));r->io_pool=NULL;--r->native_retained;

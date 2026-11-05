@@ -64,8 +64,8 @@ qaplet_code qaplet_stdio_inspect(qaplet_runtime *r,uint32_t stream,qaplet_stdio_
   pthread_mutex_lock(&r->mutex);info.attached=qaplet_io_standard_locked(r,stream,NULL,NULL);pthread_mutex_unlock(&r->mutex);
   memcpy((char *)out+8,(char *)&info+8,sizeof(info)-8);return qaplet_report(d,QAPLET_OK);
 }
-static JSValue acquire_terminal(JSContext *c,JSValueConst self,int argc,JSValueConst *argv) {
-  (void)self;qaplet_runtime *r=JS_GetContextOpaque(c);double stream=0;qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;qaplet_code code=QAPLET_OK;
+JSValue qaplet_js_terminal_acquire(JSContext *c,const qaplet_io_endpoint *joining,int argc,JSValueConst *argv) {
+  qaplet_runtime *r=JS_GetContextOpaque(c);double stream=0;qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;qaplet_code code=QAPLET_OK;
   if(argc<1 || argc>2 || !JS_IsNumber(argv[0]) || JS_ToFloat64(c,&stream,argv[0]) || !isfinite(stream) || stream<0 || stream>2 || floor(stream)!=stream)code=QAPLET_INVALID_ARGUMENT;
   if(!code && argc==2){
     if(!JS_IsObject(argv[1]) || JS_IsArray(c,argv[1]))code=QAPLET_INVALID_ARGUMENT;
@@ -73,12 +73,13 @@ static JSValue acquire_terminal(JSContext *c,JSValueConst self,int argc,JSValueC
       if(!JS_IsUndefined(value)){if(!JS_IsBool(value))code=QAPLET_INVALID_ARGUMENT;else if(JS_ToBool(c,value))options.flags|=i ? QAPLET_TTY_VT : QAPLET_TTY_RAW;}JS_FreeValue(c,value);}
   }
   qaplet_io_endpoint endpoint=QAPLET_IO_ENDPOINT_INIT;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;
-  if(!code){r->bridge_active=1;code=qaplet_tty_acquire(r,(uint32_t)stream,&options,&endpoint,&status,NULL);r->bridge_active=0;}
+  if(!code){r->bridge_active=1;code=joining ? qaplet_tty_join(r,joining,(uint32_t)stream,&options,&endpoint,&status,NULL) : qaplet_tty_acquire(r,(uint32_t)stream,&options,&endpoint,&status,NULL);r->bridge_active=0;}
   if(code){JSValue error=JS_NewError(c);if(JS_IsException(error))return error;JS_DefinePropertyValueStr(c,error,"code",JS_NewInt32(c,code),JS_PROP_C_W_E);JS_DefinePropertyValueStr(c,error,"errorDomain",JS_NewUint32(c,status.error_domain),JS_PROP_C_W_E);JS_DefinePropertyValueStr(c,error,"error",JS_NewInt32(c,status.error),JS_PROP_C_W_E);return JS_Throw(c,error);}
   JSValue value=qaplet_js_io_endpoint(r,&endpoint,stream!=0);
   if(JS_IsException(value)){r->bridge_active=1;qaplet_io_close(r,&endpoint,NULL);r->bridge_active=0;}
   return value;
 }
+static JSValue acquire_terminal(JSContext *c,JSValueConst self,int argc,JSValueConst *argv){(void)self;return qaplet_js_terminal_acquire(c,NULL,argc,argv);}
 static int initialize_stdio(JSContext *context,JSModuleDef *module) {
   qaplet_runtime *r=JS_GetContextOpaque(context);
   static const char *names[]={"stdin","stdout","stderr"};
