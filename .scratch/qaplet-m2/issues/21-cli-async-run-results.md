@@ -6,7 +6,11 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred；等待独立接收。
+
+**Local development:** complete；[本地验证](../21-cli-validation.md)及源 worktree
+`out/m2-21-cli/HANDOFF.md`、`handoff.json`保存供应6及供应4回归、真实原件与范围。正式Cross/Full仍待验；
+本地结果不表示已独立合入，也不提前领取22。
 
 **Execution prerequisites:** 20已本地完成并独立合入`943c1962`（接收`776e50cb`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -58,4 +62,15 @@
 `.cache/worktrees/m2-21-cli`从当前actual integration起步，fresh实现者按公开行为TDD。
 沿既有统一驱动/入口结果副本收口CLI、真实标准路由及0/1/2；22信号专属闭环仍在后继。
 本地完成及独立合入才放行22；当前领取不代表正式AC组、Cross/Full或父M2已验收。
+
+2026-11-05（本地完成待接收）：产品冻结4892a897，供应6包外CLI Linux67/Windows72通过，
+100输入/91ZIP/双archive19+19独立静态预核。真实overlapped Host输出观察pending→终态，
+完成未知负向exit1且原生记录保留，不能记为native清理成功。供应4普通Linux222、Windows
+221+既有optional1、TTY13/20、mixed各12保留原身份；公开头/双archive与6同字节，八个
+mixed保留负向继续native清理未完。统一drive/入口副本、真实标准路由、独立raw/VT facade
+与旧exports快照、最终Host输出错误0/1/2已公开核验。固定CRT在main前503→511与租约
+511→raw504→511分开，
+不宣称恢复503；真实信号/5秒清理预算专项仍22。普通三mixed用例经ticket-local adapter
+按host/case隔离，非默认L0/CI缓存契约。供应4原dirty、供应1–3/5范围、旧失败与相对路径
+loader ENOENT保留；不resolved、不自合root、不push/CI。详本地验证与HANDOFF。
 

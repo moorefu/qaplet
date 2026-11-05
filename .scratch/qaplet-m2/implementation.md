@@ -427,3 +427,18 @@ merger预核2拒绝和四轮解析helper原失败/v1–v4快照保留，修正�
 worktree TDD，复用统一驱动、入口副本及标准流/终端公开边界，当前未完成本地验收。
 22等21本地完成与独立合入；23的19已满足、22仍待。原38边/135AC及父spec不变，
 正式Cross/Full/当前64K/长测/整体Review/M2仍未验收；当前不push/CI或release-ready。
+
+2026-11-05（21本地完成待独立接收）：产品4892a897、选定供应6的100输入/91ZIP/
+双archive19+19已由独立静态预核匹配raw/Git/producer，原dirty=true不改。供应6包外CLI
+Linux67/Windows72通过；真实overlapped Host输出有pending→终态协议观察，未知完成负向
+exit1并保留原生记录，native_cleanup_complete=false。供应4普通catalog Linux222、Windows
+221+既有optional1、TTY13/20、mixed各12按原身份保留；公开头/双archive与6同字节，八个
+typed mixed负向仍native_cleanup_complete=false。CLI复用统一drive/入口副本，实际0/1/2、
+pipe/file/Console路由、旧closed exports与新raw/VT facade、最终输出错误已验。
+503→511固定CRT启动差异保留，租约只签actual-entry511→raw504→511；独立preinit/ctor
+观察没有更早公开读取点。普通三个固定名mixed调用由out adapter按host/case隔离，真实
+argv/cwd/父imports/hash另存，不注册默认L0/CI复用。旧并跑归属unknown、初次相对路径
+loader ENOENT、供应1–3与额外build-only5及所有旧失败保持原scope。完整报告、SDK/APE/
+loader/原ZIP/源闭包见[21记录](21-cli-validation.md)与worktree `out/m2-21-cli/HANDOFF.md`。
+21保持claimed/local_complete/cross_deferred，待独立merger；22未领取，23仍等待22。
+27票/38边/135AC、正式其他原生/当前64K/CI Full/长测/整体Review及发布门禁仍待验，不push/CI。
