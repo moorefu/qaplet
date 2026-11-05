@@ -1,6 +1,6 @@
 # 19：跨资源预算、POD与首因本地验证
 
-票据保持claimed；本地实现完成、Cross/Full递延，独立接收仍由root另派merger完成。
+票据保持claimed；本地实现及独立接收完成，Cross/Full递延。
 父M2、原Blocked by/AC及24–27不因本记录完成。产品与SDK只在Ubuntu构建；Windows
 消费相同字节。工作树`.cache/worktrees/m2-19-aggregate`，分支`codex/m2-19-aggregate`。
 实际起点与领取`b49f487fd1cd252695ee633e6eea2f5df9c50579`，含18 no-ff `3e85a272`
@@ -73,3 +73,31 @@ Linux实测Ubuntu22.04/WSL 6.6.87.2/x86_64/4096页；Windows11 10.0.22000/AMD64/
 lost-reap、17的detach/full-jobs与18的lease/真实join恢复责任保留。其他原生目标、当前实际
 64K、正式CI/Cross/Full、10000混合/1小时、24–27矩阵、整体Standards/Spec Review及发布
 门禁仍deferred，release_ready=false。未push/CI/main/tags/release、未自合root、未删除原件。
+
+## 独立本地接收
+
+2026-11-05：fresh merger从clean root `b49f487fd1cd252695ee633e6eea2f5df9c50579`
+实际no-ff合入最终source `5aa284d26c7609bb84b9ed0dc4cfa8e7c1daf019`，merge为
+`597020eb1d22ad607ee530223ab9f748f4ce0b52`，tree与source完全相同。冻结产品仍为
+`1c4a91cba35f47a1b36d0a8d6bd8a71f56479041`，其后四份MD不改变92项配方。
+
+复用独立preaudit-1原件并重核producer/ZIP/成员/原始配方LF与Git身份；公开新POD之外
+旧头字节、M1 fixture、86ZIP成员、三fat APE/sidecars及按当前ar命令导出的双archive
+各19个ELF64 REL均保真。合前/合后以冻结19权威catalog只读重放当前normal214/213+
+既有optional1、package99/99、fault25/26、TTY13/20；2430份raw日志、8个产品scope、
+各guard实际父依赖与静态过近似分开核验，child动态imports继续unknown。
+原ZIP额外两端各2例同APE已核；Windows原wrapper fail及原exit0/全ConPTY清理true
+保留，成功输出确在恢复Host句柄后的原driver stdout，未再跑产品。
+
+历史fault的无关静态helper漂移、旧fixture/fault/timeout与对应v1等字节快照继续原地
+保留，不改变原source/dirty字段或旧报告。merger首轮helper只兼容size_bytes、未兼容
+额外夹具bytes字段而失败，失败helper快照replay-v1和原日志均保留；只改独立helper后
+重放通过，未改供应。合后受限进程WSL不可见发行版的失败原日志也保留；按既有环境
+文档在可访问用户上下文执行同入口Ubuntu preflight通过，主物理.cache、46解析/
+52编码文件、零违规。merger产品执行0、未重建SDK或重复成功suite/长测/QEMU。
+
+本次额外接收提交仅本验证、票19及implementation三份Markdown；27票/38边/135AC及
+父spec不变。接收原件、实际命令和最终Git收据见主
+`out/qaplet-m2/merge-19-aggregate/HANDOFF.md`、`handoff.json`。
+本地开发前置按既有依赖可供后续使用，未由merger领取后继；正式状态继续
+claimed/local_complete/cross_deferred，整体M2/Review/发布门禁不变。

@@ -373,3 +373,16 @@ child/stdio、8MiB子额与原生总额/环境、cancel/C保留/physical容量�
 package99/99、fault25/26通过，完整当前TTY及工具/原件/失败见[19验证记录](19-aggregate-validation.md)。
 保持claimed/local_complete/cross_deferred，交独立merger，不自合root；正式矩阵/实际64K/
 CI/Full/长测、父M2及整体Review继续待验，原Blocked by/AC和父spec不改。
+
+2026-11-05（19独立本地接收）：fresh merger实际no-ff `597020eb`，从clean root b49f487
+合入最终source5aa284d，tree同源；冻结产品1c4a91c、92recipe/86ZIP成员/双archive19+19
+保真。当前完整normal Linux214/Windows213+既有optional1、package99/99、fault25/26、
+TTY13/20和原ZIP额外环境/终端组合各2例，2430raw/8scope合前合后独立只读重放通过；
+原Console退出/清理和恢复Host stdout后的成功通道已核，旧wrapper fail不改。
+保留原source/dirty、旧fixture/fault静态helper漂移和等字节v1快照，实际父依赖与静态
+过近似/child imports unknown分开。merger首轮bytes字段兼容错误及受限WSL失败均保留，
+修独立helper/按既有可访问用户上下文重核后通过，供应不变。合后Ubuntu root preflight
+pass，46解析/52编码和主物理.cache；产品执行0、无重建/重复suite/长测/QEMU。
+接收与命令见主`out/qaplet-m2/merge-19-aggregate/HANDOFF.md`、`handoff.json`。
+19保持claimed/local_complete/cross_deferred；不提前完成20或领取后继，27票/38边/135AC、
+父M2/正式其他原生/当前64K/CI/Full/长测/整体Review及发布门禁均保持原范围，不push/CI。
