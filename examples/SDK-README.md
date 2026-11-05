@@ -27,6 +27,52 @@ The hidden `lib/.aarch64/libqaplet.a` is required by cosmocc; preserve it when
 copying or archiving. `manifest.json` records the finite defaults, capabilities,
 target components, selected inputs, recipe and the supplied executable identities.
 
+`application-m2.c` is the M2 composition example. In one Runtime it registers a
+bounded named file reader, receives a copied producer event through a Host-owned
+notification channel and external loop, and sends the file bytes through a
+direct child's asynchronous stdin/stdout with independent stderr and EOF. It
+queries lifecycle and aggregate PODs before close and after native quiescence.
+The old `application.c` and frozen `m1-qaplet.h` consumers retain M1 creation.
+
+Build the M2 Host outside the checkout on Ubuntu with the same verified
+toolchain. Keep both archive slices together. For example:
+
+```sh
+"$TOOLCHAIN/bin/cosmocc" -Os -D_GNU_SOURCE -I sdk/include \
+  sdk/application-m2.c sdk/lib/libqaplet.a -lm -lpthread -o application-m2.com
+printf '\111\000\377\116\012' > input.bin
+"$TOOLCHAIN/bin/ape-x86_64.elf" ./application-m2.com --normal \
+  "$PWD/application-m2.com" "$TOOLCHAIN/bin/ape-x86_64.elf" "$PWD/input.bin"
+"$TOOLCHAIN/bin/ape-x86_64.elf" ./application-m2.com --metadata
+```
+
+The producer's published `qaplet-m2-example.com` includes audited portable
+sidecars and maps. On Windows run these same supplied APE bytes directly and
+pass `-` as the child launcher, with explicit absolute SELF and FILE paths.
+No shell or PATH search launches the child. Build/publication uses the existing
+SDK producer; the package consumer extracts the sealed ZIP into a fresh
+application directory, compiles only delivered public materials, and retains
+the actual inputs, commands and packing diagnostics.
+`sdk.py example-consume` runs the two creation examples through that same
+external compile boundary; `package-consume` additionally runs the larger
+public SDK consumer catalog. These reports have distinct execution scopes.
+
+`--file-error`, `--cancel` and `--cleanup-pending` show distinct error and
+cancellation outcomes. Acceptance and logical cancellation do not establish
+physical retirement. The bounded cleanup example reports retained ownership
+when a worker has not returned; it does not free its code/data, close the Host
+notification channel, or claim destroy succeeded. Close releases JS. Work data
+survives through native quiescence; notification code/data and the control
+handle additionally survive until future external calls are withdrawn and all
+producers have joined. The notification callback only posts a nonblocking Host
+hint and never calls the SDK. The default helper limit remains four.
+
+The M2 `--metadata` reads library and instance capability bits and all effective
+M1/M2 limits from the live public SDK. Its values must match `manifest.json`.
+Capability bits describe implemented interfaces; the local Linux/Windows
+checks do not replace the deferred five-native, actual 64K, Full or long-run
+acceptance matrix.
+
 On Ubuntu, with the pinned cosmocc toolchain available, extract this package to
 an application directory outside the Qaplet checkout, then run:
 
@@ -46,7 +92,7 @@ for distribution. The `package-consume` operation extracts this exact ZIP outsid
 the source checkout, compiles the application and its public ABI workload using only its
 header/library materials, audits the resulting APE, and executes its catalog.
 
-The complete example registers copied Host constants/functions, imports source
+The retained M1 example registers copied Host constants/functions, imports source
 ESM statically and dynamically, waits at top-level await, receives copied events
 from a real worker, pumps on the owner and retrieves results. The worker requests
 stop; the owner confirms it and closes. The worker then uses the retained CLOSED
@@ -69,7 +115,8 @@ diagnostics from a real worker thread. `--metadata` prints live SDK defaults.
 Success exits 0; the reproducible rejection, queue-full, deadline and missing
 module paths exit 1 after cleanup. Invalid arguments exit 2. Host resources,
 worker storage and native calls are Host-owned and outside SDK memory budgets.
-Pumping has no OS waker or I/O cancellation; the Host synchronizes its worker.
+This M1 creation mode has no OS waker or I/O cancellation; the Host synchronizes
+its worker. It remains an old-mode compatibility example.
 
 M2 is explicit: call `qaplet_create_m2` with the unchanged M1 base config plus
 `qaplet_m2_config`. `qaplet_query_abi` reports library capabilities;
@@ -163,6 +210,31 @@ managed output streams, or release a still-running helper's storage.
 confirmation starts the same termination path before close. After close,
 retry bounded `qaplet_quiesce`; destroy remains BUSY until physical cleanup.
 The Host must never reap SDK children itself.
+
+Spawn uses the factory's copied environment unless `REPLACE_ENV` requests a
+complete mapping, including an empty one. On Windows the factory restores an
+existing `SYSTEMROOT` in the fixed CRT's `/C/...` form to native drive form.
+Other values remain exact, including application data that resembles a path.
+Explicit replacement values are verbatim and receive no additional variables;
+the Host owns the native child's environment requirements. Later `setenv`
+changes do not alter an existing Runtime's snapshot.
+
+The minimal CLI handles actual SIGINT/SIGTERM on the validated Linux host and
+native Ctrl+C on the validated Windows Console route. Its safe native relay
+requests SDK stop; owner driving initiates direct-child cancellation and
+terminal restoration without running user cleanup jobs. Final Host output,
+relay retirement and SDK native cleanup share one five-second cumulative
+active-wait budget. This is not a hard wall-time limit for arbitrary native
+calls or destructors. Exhaustion reports incomplete cleanup and retains the
+remaining storage through process exit. A supervisor timeout is an unfinished
+execution. The Embed SDK itself installs no process signal handler.
+
+Windows synchronous inherited pipes remain outside SDK byte attachment;
+managed process pipes use their actual overlapped parent ends. Console checks
+restore the mode observed at native entry. The fixed CRT's previously measured
+503-to-511 startup mode change has no proven source mapping, and restoration
+to a pre-CRT mode is not claimed. Complete Unicode/VT terminal emulation,
+whole-process-tree termination and Node compatibility remain outside M2.
 
 `package-consume` also builds and runs `host-process.c` using only the sealed
 SDK outside the checkout. `fault-consume` separately builds `process-faults.c`

@@ -34,10 +34,15 @@
 | 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；`.cache/worktrees/m2-13-cross-fix` | local_complete / cross_deferred（后续修复已合；历史Full失败与当前本地证据分别保留） |
 | 14 | `codex/m2-14-process-cancel` | 原件见后续记录 | local_complete / cross_deferred（独立合并`25d3eb12`） |
 | 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
-| 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | local_complete / cross_deferred（待独立合并；Linux208、Windows207+optional1、两端package94、fault24/25；claimed保留，见16验收记录） |
+| 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | local_complete / cross_deferred（独立合并`015cdb9f`、接收`71a5db50`；claimed保留，见16验收记录） |
 | 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | local_complete / cross_deferred（独立合并`caa439ae`；Linux195、Windows194+optional1、两端package81、fault23/24；claimed保留） |
-| 18 | `codex/m2-18-tty` | `.cache/worktrees/m2-18-tty` | implementing_local；05已resolved、17已本地完成并独立合并 |
-| 19–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
+| 18 | `codex/m2-18-tty` | `.cache/worktrees/m2-18-tty` | local_complete / cross_deferred（独立合并`3e85a272`、接收`64624ddd`） |
+| 19 | `codex/m2-19-aggregate` | 见19验收记录 | local_complete / cross_deferred（独立合并`597020eb`、接收`2b3035f7`） |
+| 20 | `codex/m2-20-mixed` | 见20验收记录 | local_complete / cross_deferred（独立合并`943c1962`、接收`776e50cb`） |
+| 21 | `codex/m2-21-cli` | `.cache/worktrees/m2-21-cli` | local_complete / cross_deferred（独立合并`13abf9ac`、接收`fe8a17d`） |
+| 22 | `codex/m2-22-cli-signal` | `.cache/worktrees/m2-22-cli-signal` | local_complete / cross_deferred（独立合并`b8b9f572`、接收`6cca6f9b`） |
+| 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | implementing_local（19/22开发前置已独立接收；最终供件与包外组合验收收口中） |
+| 24–27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 24–26等待23本地完成且独立合入，27等待24–26实际正式全范围；原合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
 全部保持原文；父规格原字节未变，当前SHA-256为

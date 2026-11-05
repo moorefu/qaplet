@@ -16,6 +16,7 @@ from foundation import ROOT, now
 from input_lock import consume_identity, check_portable_helper
 from nightly_toolchain import write_json
 import sdk
+import sdk_m2_example
 from startup import ci_facts, check_ci_commit
 from workflow_support import guard_evidence_outputs, write_evidence_report
 
@@ -36,6 +37,14 @@ def catalog(page):
                 "argv": [loader, "/payload/" + name + ".com", *[value.replace("{modules}", modules).replace("{self}", "/payload/qaplet-host.com").replace("{launcher}", loader) for value in arguments]],
                 "expected_exit_code": code, "expected_stdout": stdout,
                 **({"stderr_contains": stderr} if stderr else {"expected_stderr": ""})})
+    for suffix in sdk_m2_example.CASES:
+        argv = sdk_m2_example.arguments(suffix, '/payload/qaplet-m2-example.com', loader, Path('/payload/sdk'))
+        if suffix not in ('metadata', 'arguments', 'file-error'):
+            argv[-1] = '/payload/sdk/m2-example-input.bin'
+        result.append({'case_id': 'qaplet-m2-example.' + suffix,
+            'argv': [loader, '/payload/qaplet-m2-example.com', *argv],
+            'expected_exit_code': sdk_m2_example.expected(suffix)['exit_code'],
+            **({'stderr_contains': 'usage: application-m2 MODE SELF LAUNCHER FILE\n'} if suffix == 'arguments' else {'expected_stderr': ''})})
     return result
 
 
@@ -49,8 +58,8 @@ def producer(evidence, reference, distribution, report, expected_commit=None):
     if expected_commit:
         require(revision == expected_commit, "SDK producer Qaplet source commit differs from required commit")
     artifacts = unique(item["artifacts"], "name")
-    require(set(artifacts) == {"qaplet-host", "qaplet", "qaplet-example"} and
-            all(row["audit"]["status"] == "pass" for row in artifacts.values()), "Three audited SDK executables required")
+    require(set(artifacts) == {"qaplet-host", "qaplet", "qaplet-example", "qaplet-m2-example"} and
+            all(row["audit"]["status"] == "pass" for row in artifacts.values()), "Four audited SDK executables required")
     components = unique(item["distribution"], "file")
     require(components, "Complete SDK distribution required")
     for name, entry in components.items():
@@ -69,7 +78,7 @@ def producer(evidence, reference, distribution, report, expected_commit=None):
 
 
 def payload(item, distribution, page):
-    names = ["ape-aarch64.elf", "qaplet-host.com", "qaplet.com", "qaplet-example.com"]
+    names = ["ape-aarch64.elf", "qaplet-host.com", "qaplet.com", "qaplet-example.com", "qaplet-m2-example.com", "sdk/m2-example-input.bin"]
     names += [entry["file"] for entry in item["sdk"]["components"] if entry["file"].startswith("sdk/modules/")]
     delivered = unique(item["distribution"], "file")
     return {"schema_version": 1, "page_size": page, "files": [
@@ -153,7 +162,7 @@ def consume(manifest, base, report, expected_commit=None, evidence=None, verifie
             require(name in files and same(files[name], entry), "SDK guest lacks selected SDK/loader/module bytes")
             evidence.read(files[name])
         required_cases = unique(catalog(page))
-        require({name for name in cases if name.startswith(("qaplet-host.", "qaplet.", "qaplet-example."))} == set(required_cases),
+        require({name for name in cases if name.startswith(("qaplet-host.", "qaplet.", "qaplet-example.", "qaplet-m2-example."))} == set(required_cases),
                 "SDK guest required case catalog is incomplete or has unknown SDK cases")
         selected_cases = []
         for name, expected in required_cases.items():
@@ -165,9 +174,15 @@ def consume(manifest, base, report, expected_commit=None, evidence=None, verifie
             require(case["exit_code"] == expected["expected_exit_code"] and case["exit_code"] != 137,
                     "SDK guest process exit failed public contract: " + name)
             stdout, stderr = (evidence.read(case[field + "_log"]) for field in ("stdout", "stderr"))
-            require(stdout == expected["expected_stdout"].encode("utf-8") and
-                    (expected["stderr_contains"].encode("utf-8") in stderr if "stderr_contains" in expected else stderr == expected["expected_stderr"].encode("utf-8")),
-                    "SDK guest raw output failed public contract: " + name)
+            if name.startswith('qaplet-m2-example.'):
+                try:
+                    sdk_m2_example.inspect(name.split('.', 1)[1], stdout, stderr, case['exit_code'], sdk.M2_RUNTIME_METADATA)
+                except (ValueError, KeyError, TypeError) as error:
+                    raise BuildError(str(error)) from error
+            else:
+                require(stdout == expected["expected_stdout"].encode("utf-8") and
+                        (expected["stderr_contains"].encode("utf-8") in stderr if "stderr_contains" in expected else stderr == expected["expected_stderr"].encode("utf-8")),
+                        "SDK guest raw output failed public contract: " + name)
             start, end = interval(case)
             require((end - start).total_seconds() <= case["timeout_seconds"], "SDK guest command exceeded deadline: " + name)
             if name in ("qaplet.eval-unsettled", "qaplet.run-unsettled"):
@@ -183,7 +198,7 @@ def consume(manifest, base, report, expected_commit=None, evidence=None, verifie
             scope_notes="ARM64 kernel supplementation only; native Cross, full M1/Core/offline and release gates remain independent")
     finally:
         report["evidence_index"] = list(evidence.index.values())
-        report["evaluator_sources"] = [identity(ROOT / "scripts" / name) for name in ("sdk_guest.py", "core_gate.py", "arm64_guest.py", "sdk.py")]
+        report["evaluator_sources"] = [identity(ROOT / "scripts" / name) for name in ("sdk_guest.py", "core_gate.py", "arm64_guest.py", "sdk.py", "sdk_m2_example.py")]
 
 
 def main():

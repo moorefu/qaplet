@@ -11,6 +11,7 @@ from core_gate import Evidence, interval, normalized, require, same, unique
 from input_lock import component, consume_identity
 from startup import check_ci_commit, loader_bundle
 import sdk
+import sdk_m2_example
 
 TARGETS = (("linux-x86_64", "Linux", "x86_64"), ("windows-x86_64", "Windows", "x86_64"),
            ("macos-x86_64", "Darwin", "x86_64"), ("macos-aarch64", "Darwin", "aarch64"),
@@ -28,6 +29,10 @@ def catalog(host):
     for name, cases in (("qaplet", sdk.CLI_CASES), ("qaplet-example", sdk.EXAMPLE_CASES)):
         result.extend((name + "." + suffix, name, arguments, code, output, error, True)
                       for suffix, arguments, code, output, error in cases)
+    for suffix in sdk.M2_EXAMPLE_CASES:
+        arguments = ['--metadata'] if suffix == 'metadata' else [] if suffix == 'arguments' else ['--' + suffix, '{self}', '{launcher}', '{input}']
+        result.append(('qaplet-m2-example.' + suffix, 'qaplet-m2-example', arguments,
+                       sdk_m2_example.expected(suffix)['exit_code'], None, '', False))
     return result
 
 
@@ -93,7 +98,7 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
     validate_loader(args, incoming, evidence)
     artifacts = unique(incoming["artifacts"], "name")
     supplied = unique(producer["artifacts"], "name")
-    require(set(artifacts) == set(supplied), "All three supplied SDK APE identities required")
+    require(set(artifacts) == set(supplied), "All supplied SDK APE identities required")
     for name, artifact in artifacts.items():
         require(same(artifact, supplied[name]) and artifact.get("sha256_after") == artifact["sha256"],
                 "Native APE bytes changed/differ from supplied producer: " + name)
@@ -124,9 +129,12 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                 "Native argv/cwd required")
         artifact_path = original_path(artifacts[name]["path"], command["cwd"])
         modules = posixpath.dirname(artifact_path) + "/sdk/modules"
-        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{cli}", "{launcher}"))}
+        module_arguments = {i for i, value in enumerate(arguments) if any(token in value for token in ("{modules}", "{self}", "{cli}", "{launcher}", "{input}"))}
         cli_path = original_path(artifacts["qaplet"]["path"], command["cwd"])
-        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{cli}", cli_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
+        work = normalized(incoming['evidence_directory']) + '/' + case_id
+        suffix = case_id.split('.', 1)[1]
+        input_path = work + ('/missing.bin' if suffix == 'file-error' else '/input.bin')
+        arguments = [value.replace("{modules}", modules).replace("{self}", artifact_path).replace("{cli}", cli_path).replace("{input}", input_path).replace("{launcher}", "-" if host["os"] == "Windows" else normalized(loader["path"])) for value in arguments]
         wanted = ([] if host["os"] == "Windows" else [normalized(loader["path"])]) + [artifact_path, *arguments]
         actual_argv = list(command["argv"])
         prefix = 1 if host["os"] == "Windows" else 2
@@ -136,6 +144,13 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
             if i - prefix in module_arguments:
                 actual_argv[i] = normalized(actual_argv[i])
         require(actual_argv == wanted, "Actual invocation contradicts SDK catalog: " + case_id)
+        if name == 'qaplet-m2-example':
+            require(normalized(command['cwd']) == work, 'M2 example requires its own report/case cwd')
+            if suffix in ('normal', 'cancel', 'cleanup-pending'):
+                require(normalized(case['input']['path']) == input_path and
+                        evidence.read(case['input']) == sdk_m2_example.FILE_BYTES, 'M2 example file input identity differs')
+            else:
+                require(case['input'] is None, 'M2 example declares an unexpected file input')
         if case_id in ("qaplet-host.m2-mixed-stop", "qaplet-host.m2-mixed-races", "qaplet-host.m2-mixed-nonreturning"):
             work = normalized(incoming["evidence_directory"]) + "/" + case_id
             require(normalized(command["cwd"]) == work, "Mixed smoke requires its own report/case working directory")
@@ -159,6 +174,8 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
         require(command["exit_code"] == case["actual"]["exit_code"] and case["actual"]["timed_out"] is False,
                 "Native actual exit/timeout differs from command")
         expected_fields = {"exit_code": code, "stdout": output, "stderr_contains" if contains else "stderr": error}
+        if name == 'qaplet-m2-example':
+            expected_fields = sdk_m2_example.expected(suffix)
         immediate = case_id in ("qaplet.eval-unsettled", "qaplet.run-unsettled")
         if name == "qaplet": expected_fields["maximum_elapsed_seconds"] = 2 if immediate else None
         require(case["expected"] == expected_fields, "Declared expected output contradicts authoritative contract: " + case_id)
@@ -167,9 +184,19 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                     "Optional symlink limitation lacks actual fixture refusal")
             unavailable.append(case_id)
         else:
-            require(case["status"] == "pass" and command["exit_code"] == code and raw[0] == output.encode("utf-8") and
-                    (error.encode("utf-8") in raw[1] if contains and error else raw[1] == error.encode("utf-8")),
-                    "Required native case did not satisfy public contract: " + case_id)
+            if name == 'qaplet-m2-example':
+                try:
+                    observed = sdk_m2_example.inspect(suffix, raw[0], raw[1], command['exit_code'], sdk.M2_RUNTIME_METADATA)
+                except (ValueError, KeyError, TypeError) as error:
+                    raise BuildError(str(error)) from error
+                require(case['observations'] == observed and case['native_cleanup_complete'] is
+                        (None if suffix in ('metadata', 'arguments') else suffix != 'cleanup-pending'),
+                        'M2 example copied observations/cleanup scope differs')
+                require(case['status'] == 'pass', 'Required M2 example did not pass')
+            else:
+                require(case["status"] == "pass" and command["exit_code"] == code and raw[0] == output.encode("utf-8") and
+                        (error.encode("utf-8") in raw[1] if contains and error else raw[1] == error.encode("utf-8")),
+                        "Required native case did not satisfy public contract: " + case_id)
         elapsed = (datetime.fromisoformat(command["finished_at"]) - datetime.fromisoformat(command["started_at"])).total_seconds()
         require(elapsed <= command["timeout_seconds"], "Native command exceeded its recorded deadline: " + case_id)
         require(not immediate or elapsed < 2, "CLI unsettled entry did not fail immediately")
@@ -192,7 +219,7 @@ def matrix(args, report, directory):
         targets = tuple(row for row in TARGETS if (row[1], row[2]) in selected_targets)
         report["target_plan"] = identity(args.target_plan)
     report.update(report_kind="qaplet-sdk-matrix", profile=args.profile, release_ready=False,
-                  evaluator_sources=[identity(sdk.ROOT / "scripts" / name) for name in ("sdk_matrix.py", "core_gate.py")],
+                  evaluator_sources=[identity(sdk.ROOT / "scripts" / name) for name in ("sdk_matrix.py", "core_gate.py", "sdk_m2_example.py")],
                   coverage=[{"target": name, "status": "blocked", "reason": "No actual native SDK report", "reports": []}
                             for name, _, _ in targets],
                   inputs=[], path_mappings=[], evidence_index=[])

@@ -12,6 +12,7 @@ import shutil
 import sys
 import struct
 import m2_process_pe
+import sdk_m2_example
 import tempfile
 import uuid
 import zipfile
@@ -83,7 +84,8 @@ RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "sr
 RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
                 if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
 RECIPE += ("src/cli.c", "tests/native/sdk_process_winchild.c", "scripts/m2_process_pe.py", "scripts/sdk_matrix.py", "scripts/sdk_guest.py")
-RECIPE += ("examples/application.c", "examples/SDK-README.md")
+RECIPE += ("examples/application.c", "examples/application-m2.c", "examples/SDK-README.md", "scripts/sdk_m2_example.py")
+RECIPE += ("tests/fixtures/sdk/m2-example-input.bin",)
 RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
@@ -108,6 +110,10 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
     "event_queue_slots": 256, "event_payload_bytes": 1024, "bridge_value_bytes": 1048576,
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
+M2_RUNTIME_METADATA = {"abi_version": RUNTIME_METADATA["abi_version"],
+    "capabilities": RUNTIME_METADATA["capabilities"], "instance_capabilities": RUNTIME_METADATA["capabilities"],
+    "defaults": RUNTIME_METADATA["defaults"], "m2_defaults": sdk_m2_example.M2_DEFAULTS}
+M2_EXAMPLE_CASES = sdk_m2_example.CASES
 HOST_CASES = (
     ("m2-process-cli-child", ["--m2-process-cli-child", "{cli}", "{launcher}"], "M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass\n"),
     ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
@@ -343,11 +349,11 @@ def digest(value):
 
 def consumer_contract():
     names = (*RECIPE, "tests/contracts/test_sdk_native.py", "tests/contracts/test_sdk_retention.py",
-             "tests/contracts/test_m2_cli_signal_tools.py")
+             "tests/contracts/test_m2_cli_signal_tools.py", "tests/contracts/test_sdk_m2_package.py")
     files = [{"file": name, "sha256": sha256(ROOT / name), "size_bytes": (ROOT / name).stat().st_size}
              for name in dict.fromkeys(names)]
     value = {"version": 1, "files": files, "host_cases": HOST_CASES,
-             "cli_cases": CLI_CASES, "example_cases": EXAMPLE_CASES}
+             "cli_cases": CLI_CASES, "example_cases": EXAMPLE_CASES, "m2_example_cases": M2_EXAMPLE_CASES}
     value = json.loads(json.dumps(value))
     return {"sha256": digest(value), **value}
 
@@ -431,6 +437,19 @@ def package_consume(args, report, directory):
     helpers = prepare_portable_helpers(args, report, directory, tree)
     report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
                   package=producer["package"])
+    if args.operation == 'example-consume':
+        compile_example(args, report, directory, tree, helpers, external / 'sdk', external / 'm1-example-build', output)
+        compile_example(args, report, directory, tree, helpers, external / 'sdk', external / 'm2-example-build', output, m2=True)
+        measured_host(args, report, directory)
+        loader = select_loader(args, report)
+        example_cases(args, report, directory, output / 'qaplet-example.com', external / 'sdk/modules', loader)
+        sdk_m2_example.run_cases(args, report, directory, output / 'qaplet-m2-example.com', loader, M2_RUNTIME_METADATA)
+        check_package(producer, external, check_archive=False)
+        verify_inputs(args, report, directory, stage='after')
+        recheck(report['native_toolchain'], original, component('cosmocc', purpose=consumption_purpose('build', args.controlled_probe)))
+        report.update(status='pass' if all(case['status'] == 'pass' for case in report['cases']) else 'fail',
+                      reason='Both sealed SDK C creation examples compiled outside the checkout and executed; full package/native catalogs remain separate')
+        return
     if args.operation in ("tty-consume", "mixed-consume", "cli-consume"):
         if args.operation == "cli-consume":
             from sdk_cli import compile_consumers, run_supplied
@@ -459,6 +478,7 @@ def package_consume(args, report, directory):
         compile_aggregate_consumer(args, report, directory, tree, helpers, external / "sdk", external / "aggregate-build", output, faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_example(args, report, directory, tree, helpers, external / "sdk", external / "m2-example-build", output, m2=True)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output)
@@ -493,6 +513,7 @@ def package_consume(args, report, directory):
             "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
     else:
         example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+        sdk_m2_example.run_cases(args, report, directory, output / "qaplet-m2-example.com", loader, M2_RUNTIME_METADATA, M2_EXAMPLE_CASES)
         artifact = output / "qaplet-work-host.com"
         for suffix, arguments, expected in HOST_CASES:
             if not suffix.startswith("m2-work-"):
@@ -593,7 +614,7 @@ def relative_identity(path, root):
 
 def seal_package(report, output):
     distribution = output / "sdk"
-    manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
+    manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **M2_RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
             "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io", "stdio", "tty"],
@@ -654,6 +675,8 @@ def check_package(producer, supplied, check_archive=True):
     manifest = read_json(supplied / "sdk/manifest.json")
     if {key: manifest[key] for key in RUNTIME_METADATA} != RUNTIME_METADATA or manifest["sdk_recipe_id"] != producer["sdk_recipe"]["sha256"]:
         raise BuildError("SDK manifest ABI/capabilities/defaults/recipe mismatch")
+    if {key: manifest[key] for key in M2_RUNTIME_METADATA} != M2_RUNTIME_METADATA:
+        raise BuildError("SDK manifest M2 instance capabilities/effective finite defaults mismatch")
     if manifest["input_id"] != producer["input_lock"]["input_id"] or manifest["source_commit"] != producer["sdk_recipe"]["git_commit"] or manifest["engine"] != producer["source"] or manifest["toolchain_archive"] != producer["toolchain"]["archive"]:
         raise BuildError("SDK manifest source/toolchain identity mismatch")
     if manifest["components"] != [item for name, item in expected.items() if name.startswith("sdk/") and name != "sdk/manifest.json"]:
@@ -812,20 +835,21 @@ def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, 
     report["process_child"] = identity(output / "sdk/process-child.exe")
 
 
-def compile_example(args, report, directory, tree, helpers, sdk, work, output):
+def compile_example(args, report, directory, tree, helpers, sdk, work, output, m2=False):
+    name = "qaplet-m2-example" if m2 else "qaplet-example"
+    source = "application-m2.c" if m2 else "application.c"
     (work / "tmp").mkdir(parents=True)
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
-                       BUILDLOG=str(output / "qaplet-example.build-commands.log"))
-    run(report, directory, "example-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
         "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
-        "-c", sdk / "application.c", "-o", work / "application.o"], args.compile_timeout, work, environment)
-    link_portable(args, report, directory, tree, helpers, "qaplet-example", [work / "application.o", sdk / "lib/libqaplet.a"],
-                  work / "qaplet-example.com", work, environment)
-    shutil.copyfile(work / "qaplet-example.original-packer.com", directory / "qaplet-example.original-packer.com")
-    publish_ape(work, output, "qaplet-example", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+        "-c", sdk / source, "-o", work / "application.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "application.o", sdk / "lib/libqaplet.a"],
+                  work / (name + ".com"), work, environment)
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build", args.controlled_probe)))
-    artifact = audit(args, report, directory, tree, "qaplet-example", output)
-    artifact["build_commands"] = identity(output / "qaplet-example.build-commands.log")
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log"))
     report["artifacts"].append(artifact)
 
 
@@ -914,10 +938,21 @@ def example_cases(args, report, directory, artifact, modules, loader):
 def build(args, report, directory):
     if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
         raise BuildError("SDK distributions are built on Ubuntu only", "blocked")
+    capture_consumer_inputs(report, directory)
+    report['build_input_snapshot'] = report.pop('consumer_identity')
     original = verify_inputs(args, report, directory)
     tree = native_toolchain(args, report, directory, original)
     helpers = prepare_portable_helpers(args, report, directory, tree)
     source = Path(report["source"]["path"])
+    engine_inputs = []
+    for path in sorted({*(source / name for name in SOURCES), *source.glob('*.h'), source / 'VERSION'}):
+        retained = directory / 'engine-inputs' / path.name
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, retained)
+        if sha256(path) != sha256(retained):
+            raise BuildError('Engine compiler input changed while preserving it: ' + path.name)
+        engine_inputs.append({'original': identity(path), 'retained': identity(retained)})
+    report['engine_input_snapshot'] = engine_inputs
     output = args.output_dir.resolve()
     if output.exists() and any(output.iterdir()):
         raise BuildError("Output directory must be new or empty")
@@ -931,6 +966,8 @@ def build(args, report, directory):
     shutil.copyfile(ROOT / "include/qaplet.h", distribution / "include/qaplet.h")
     shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
     shutil.copyfile(ROOT / "examples/application.c", distribution / "application.c")
+    shutil.copyfile(ROOT / "examples/application-m2.c", distribution / "application-m2.c")
+    shutil.copyfile(ROOT / "tests/fixtures/sdk/m2-example-input.bin", distribution / "m2-example-input.bin")
     shutil.copyfile(ROOT / "examples/SDK-README.md", distribution / "README.md")
     for source_name, delivered, _, _ in HOST_UNITS:
         shutil.copyfile(ROOT / source_name, distribution / delivered)
@@ -999,6 +1036,7 @@ def build(args, report, directory):
     cli_artifact["build_commands"] = identity(output / "qaplet.build-commands.log")
     report["artifacts"].append(cli_artifact)
     compile_example(args, report, directory, tree, helpers, distribution, work / "example", output)
+    compile_example(args, report, directory, tree, helpers, distribution, work / "m2-example", output, m2=True)
     seal_package(report, output)
     report["sdk"] = {"abi_version": 1, "recipe_id": report["sdk_recipe"]["sha256"],
         "components": [{"file": path.relative_to(output).as_posix(), **identity(path)}
@@ -1025,8 +1063,8 @@ def consume(args, report, directory):
     if producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build" or producer.get("status") != "pass":
         raise BuildError("Successful qaplet-sdk producer required")
     selected = producer["artifacts"]
-    if len(selected) != 3 or {item["name"] for item in selected} != {"qaplet-host", "qaplet", "qaplet-example"} or any(item["audit"]["status"] != "pass" for item in selected):
-        raise BuildError("Exactly one audited public C Host, CLI and complete example artifact required")
+    if len(selected) != 4 or {item["name"] for item in selected} != {"qaplet-host", "qaplet", "qaplet-example", "qaplet-m2-example"} or any(item["audit"]["status"] != "pass" for item in selected):
+        raise BuildError("Audited public C Host, CLI, M1 and M2 example artifacts required")
     artifact = {**next(item for item in selected if item["name"] == "qaplet-host"), "path": str(args.artifact.resolve())}
     cli_path = args.cli_artifact.resolve() if args.cli_artifact else args.artifact.resolve().parent / "qaplet.com"
     cli_artifact = {**next(item for item in selected if item["name"] == "qaplet"), "path": str(cli_path)}
@@ -1053,6 +1091,10 @@ def consume(args, report, directory):
     example_artifact = {**next(item for item in selected if item["name"] == "qaplet-example"), "path": str(example_path)}
     if sha256(example_path) != example_artifact["sha256"] or example_path.stat().st_size != example_artifact["size_bytes"]:
         raise BuildError("Supplied example bytes differ from producer")
+    m2_example_path = args.artifact.resolve().parent / "qaplet-m2-example.com"
+    m2_example_artifact = {**next(item for item in selected if item["name"] == "qaplet-m2-example"), "path": str(m2_example_path)}
+    if sha256(m2_example_path) != m2_example_artifact["sha256"] or m2_example_path.stat().st_size != m2_example_artifact["size_bytes"]:
+        raise BuildError("Supplied M2 example bytes differ from producer")
     # Validate supplied SDK bytes independently, even on hosts which do not compile.
     for item in producer["sdk"]["components"]:
         name = Path(item["file"])
@@ -1071,8 +1113,9 @@ def consume(args, report, directory):
     headers(args.artifact, [args.artifact.with_suffix(".com.dbg"), args.artifact.with_suffix(".aarch64.elf")])
     headers(cli_path, [cli_path.with_suffix(".com.dbg"), cli_path.with_suffix(".aarch64.elf")])
     headers(example_path, [example_path.with_suffix(".com.dbg"), example_path.with_suffix(".aarch64.elf")])
+    headers(m2_example_path, [m2_example_path.with_suffix(".com.dbg"), m2_example_path.with_suffix(".aarch64.elf")])
     report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
-                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], package=producer["package"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact, example_artifact])
+                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], package=producer["package"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact, example_artifact, m2_example_artifact])
     measured_host(args, report, directory)
     loader = [str(Path(path).resolve()) for path in select_loader(args, report)]
     # Resolve against the caller's original context before entering a per-case
@@ -1082,6 +1125,7 @@ def consume(args, report, directory):
     if os.name != "nt":
         args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
         cli_path.chmod(cli_path.stat().st_mode | 0o111)
+        m2_example_path.chmod(m2_example_path.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
         case_id = "qaplet-host." + suffix
         mixed = suffix in ("m2-mixed-stop", "m2-mixed-races", "m2-mixed-nonreturning")
@@ -1134,6 +1178,10 @@ def consume(args, report, directory):
             "commands": [executed], "artifact": identity(cli_path), "sdk_sha256": producer["sdk"]["sha256"],
             "timeout_seconds": args.timeout, "reason": "Actual CLI process uses supplied public SDK, raw OS exit and raw UTF-8 logs"})
     example_cases(args, report, directory, example_path, args.artifact.parent.resolve() / "sdk/modules", loader)
+    sdk_m2_example.run_cases(args, report, directory, m2_example_path, loader, M2_RUNTIME_METADATA, M2_EXAMPLE_CASES)
+    report["artifacts"][3]["sha256_after"] = sha256(m2_example_path)
+    if report["artifacts"][3]["sha256_after"] != m2_example_artifact["sha256"]:
+        raise BuildError("M2 example artifact changed during execution")
     report["artifacts"][2]["sha256_after"] = sha256(example_path)
     if report["artifacts"][2]["sha256_after"] != example_artifact["sha256"]:
         raise BuildError("Example artifact changed during execution")
@@ -1165,7 +1213,7 @@ def consume(args, report, directory):
 def main():
     cache = Path(workspace(ROOT)["cache_root"])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume", "matrix"))
+    parser.add_argument("operation", choices=("build", "run", "package-consume", "example-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume", "matrix"))
     parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
     parser.add_argument("--target-plan", type=Path, help="Explicit CI native target plan; never narrows Full")
     parser.add_argument("--input-report", type=Path, action="append", default=[])
@@ -1195,7 +1243,7 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     if args.operation != "build":
         try:
-            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume") else [])],
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "example-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume") else [])],
                 [args.build_report, args.loader_manifest, *args.input_report],
                 [*([args.artifact.resolve().parent] if args.artifact else []),
                  *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
@@ -1213,7 +1261,7 @@ def main():
             from sdk_matrix import matrix
             matrix(args, report, directory)
         else:
-            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume,"cli-consume":package_consume}[args.operation](args, report, directory)
+            {"build": build, "run": consume, "package-consume": package_consume, "example-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume,"cli-consume":package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
