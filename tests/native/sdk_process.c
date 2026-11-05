@@ -205,7 +205,7 @@ static void *io_foreign(void *opaque){
   qaplet_io_status status=QAPLET_IO_STATUS_INIT;
   struct {qaplet_io_status value;uint64_t tail;} extended={QAPLET_IO_STATUS_INIT,0};extended.value.struct_size=sizeof(extended);
   if(qaplet_get_io_status(o->runtime,&o->operation,&extended.value,NULL)!=QAPLET_OK || extended.value.struct_size!=sizeof(extended) || extended.tail)atomic_store(&o->error,1);
-  extended.tail=1;if(qaplet_get_io_status(o->runtime,&o->operation,&extended.value,NULL)!=QAPLET_INVALID_ARGUMENT)atomic_store(&o->error,1);
+  extended.tail=1;if(qaplet_get_io_status(o->runtime,&o->operation,&extended.value,NULL)!=QAPLET_ABI_MISMATCH)atomic_store(&o->error,1);
   qaplet_io_operation wrong=o->operation;++wrong.runtime_id;
   if(qaplet_get_io_status(o->runtime,&wrong,&status,NULL)!=QAPLET_INVALID_HANDLE)atomic_store(&o->error,1);
   if(qaplet_io_read(o->runtime,&o->endpoint,1,&token,NULL)!=QAPLET_WRONG_THREAD ||
