@@ -168,6 +168,9 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
   mixed_stdio fixture;CHECK(!prepare_stdio(&fixture,terminal));
   qaplet_config b=QAPLET_CONFIG_INIT;b.limits.event_queue_slots=1;
   qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.worker_threads=1;
+  /* Real Windows process/file/Console helpers share one finite quota. This
+   * deliberate combination needs more than the default four helpers. */
+  m.limits.helper_threads=6;
   qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && !register_mixed(r,&g,binding));
   qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=MIXED_NOTIFY;hook.userdata=&notices;
   CHECK(qaplet_set_host_notify(r,&hook,NULL)==QAPLET_OK);
