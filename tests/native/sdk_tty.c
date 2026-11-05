@@ -128,6 +128,20 @@ static int js(void){
   CHECK(dup2(saved,0)==0 && !close(saved) && !close(slave) && !close(master));
   puts("M2 TTY JS: explicit stdio terminal lease; size query; unref is not cancel; latest resize via explicit pump; callback and closed Promise jobs; full mode restoration: pass");return 0;
 }
+/* A copied logical result does not prove that its Console helper has exited
+ * and joined. Positive output checks retire that public native responsibility
+ * before releasing the token and asking for immediate mode restoration. */
+static int release_completed_output(qaplet_runtime *r,const qaplet_io_operation *op){
+  struct timespec t;CHECK(!clock_gettime(CLOCK_MONOTONIC,&t));
+  double until=t.tv_sec*1000.0+t.tv_nsec/1000000.0+5000;
+  for(;;){
+    qaplet_io_status status=QAPLET_IO_STATUS_INIT;CHECK(qaplet_get_io_status(r,op,&status,NULL)==QAPLET_OK);
+    if(!status.physical_pending && !status.pending_handoff && !status.helper_active)break;
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run_once(r,100,&drive,NULL)==QAPLET_OK);
+    CHECK(!clock_gettime(CLOCK_MONOTONIC,&t) && t.tv_sec*1000.0+t.tv_nsec/1000000.0<until);
+  }
+  CHECK(qaplet_io_release(r,op,NULL)==QAPLET_OK);return 0;
+}
 static int output(void){
   CHECK(IsWindows());int64_t original=GetStdHandle(-11),console=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);uint32_t mode,restored;
   CHECK(console!=-1 && GetConsoleMode(console,&mode) && SetStdHandle(-11,console));
@@ -141,12 +155,12 @@ static int output(void){
   CHECK(qaplet_io_write(r,&e,text,sizeof(text)-1,&op,NULL)==QAPLET_OK);
   qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK);
   qaplet_io_result result=QAPLET_IO_RESULT_INIT;CHECK(qaplet_io_copy_result(r,&op,&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==sizeof(text)-1);
-  CHECK(qaplet_io_release(r,&op,NULL)==QAPLET_OK);
+  CHECK(!release_completed_output(r,&op));
   const char *chunks[]={"\xe4\xb8\xad","\xf0\x9f\x99\x82"};
-  for(unsigned i=0;i<2;++i){qaplet_tty_write_status written=QAPLET_TTY_WRITE_STATUS_INIT;size_t n=strlen(chunks[i]);CHECK(qaplet_io_write(r,&e,chunks[i],n,&op,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && qaplet_io_copy_result(r,&op,&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==n && qaplet_get_tty_write_status(r,&op,&written,NULL)==QAPLET_OK && written.native_utf16_units==i+1 && !written.partial_scalar && qaplet_io_release(r,&op,NULL)==QAPLET_OK);}
+  for(unsigned i=0;i<2;++i){qaplet_tty_write_status written=QAPLET_TTY_WRITE_STATUS_INIT;size_t n=strlen(chunks[i]);CHECK(qaplet_io_write(r,&e,chunks[i],n,&op,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && qaplet_io_copy_result(r,&op,&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==n && qaplet_get_tty_write_status(r,&op,&written,NULL)==QAPLET_OK && written.native_utf16_units==i+1 && !written.partial_scalar && !release_completed_output(r,&op));}
   struct NtConsoleScreenBufferInfo position;CHECK(GetConsoleScreenBufferInfo(console,&position));
   const char vt[]="\033[31mX\033[0m";CHECK(qaplet_io_write(r,&e,vt,sizeof(vt)-1,&op,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK);
-  CHECK(qaplet_io_copy_result(r,&op,&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==sizeof(vt)-1 && qaplet_io_release(r,&op,NULL)==QAPLET_OK);
+  CHECK(qaplet_io_copy_result(r,&op,&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==sizeof(vt)-1 && !release_completed_output(r,&op));
   struct NtCharInfo cell={0};struct NtSmallRect region={position.dwCursorPosition.X,position.dwCursorPosition.Y,position.dwCursorPosition.X,position.dwCursorPosition.Y};
   CHECK(ReadConsoleOutput(console,&cell,(struct NtCoord){1,1},(struct NtCoord){0,0},&region) && cell.Char.UnicodeChar==88 && (cell.Attributes&7)==4);
   CHECK(qaplet_tty_release(r,&e,&status,NULL)==QAPLET_OK && status.restored);
