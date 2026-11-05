@@ -257,6 +257,8 @@ def windows(args, report, directory):
 
 def check_ci(args, report):
     workflow = read_json(args.workflow)
+    from ci_tiers import check_scoped_job
+    check_scoped_job(workflow, "build", "svc_job")
     jobs = workflow["jobs"]
     if set(jobs) != {"build", "windows-job"} or not jobs["build"]["runs-on"].startswith("ubuntu-"):
         raise BuildError("Job workflow requires isolated Ubuntu producer and Windows consumer")

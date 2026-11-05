@@ -243,6 +243,8 @@ def cleanup(args, report, directory):
 
 def check_ci(args, report):
     workflow = read_json(args.workflow)
+    from ci_tiers import check_scoped_job
+    check_scoped_job(workflow, "build", "svc_scm")
     jobs = workflow["jobs"]
     if set(jobs) != {"build", "windows-scm"} or not jobs["build"]["runs-on"].startswith("ubuntu-"):
         raise BuildError("SCM workflow must isolate an Ubuntu producer and Windows consumer")

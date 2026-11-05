@@ -46,7 +46,9 @@
         "run_full": "${{ steps.plan.outputs.run_full }}",
         "write_cache": "${{ steps.plan.outputs.write_cache }}",
         "native_matrix": "${{ steps.plan.outputs.native_matrix }}",
-        "cache_key": "${{ steps.plan.outputs.cache_key }}"
+        "cache_key": "${{ steps.plan.outputs.cache_key }}",
+        "run_fast": "${{ steps.plan.outputs.run_fast }}",
+        "workflow_scope": "${{ steps.plan.outputs.workflow_scope }}"
       },
       "steps": [
         {
@@ -200,21 +202,6 @@
           "run": "python scripts/m2_tty.py run --build-report out/m2-probes/tty/build-info.json --artifact out/m2-probes/tty/artifacts/m2-tty.com --loader-dir out/m0/loaders --expected-os Linux --expected-arch x86_64 --runner-label ubuntu-24.04 --report out/m2-probes/fast/tty.json"
         },
         {
-          "name": "Install tracing for actual disconnected Full rebuild",
-          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
-          "run": "sudo apt-get update\nsudo apt-get install -y --no-install-recommends strace"
-        },
-        {
-          "name": "Execute disconnected pair and supplier refusals",
-          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
-          "run": "mkdir -p out/m0/offline\nsudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/m0/offline/offline-integrity.json"
-        },
-        {
-          "name": "Seal current offline recipe and helper bytes for transport",
-          "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
-          "run": "python scripts/ci_tiers.py seal-offline --offline-report out/m0/offline/offline-integrity.json --report out/m0/offline/transport-receipt.json"
-        },
-        {
           "name": "Save only verified trusted default-branch inputs",
           "if": "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}",
           "uses": "actions/cache/save@v4",
@@ -258,7 +245,12 @@
           }
         }
       ],
-      "needs": "tier-plan"
+      "needs": "tier-plan",
+      "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}",
+      "concurrency": {
+        "group": "m0-build-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
     },
     "native-startup": {
       "needs": [
@@ -269,35 +261,7 @@
       "timeout-minutes": 10,
       "strategy": {
         "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "runner": "ubuntu-24.04",
-              "os": "Linux",
-              "arch": "x86_64"
-            },
-            {
-              "runner": "windows-2022",
-              "os": "Windows",
-              "arch": "x86_64"
-            },
-            {
-              "runner": "macos-15-intel",
-              "os": "Darwin",
-              "arch": "x86_64"
-            },
-            {
-              "runner": "macos-15",
-              "os": "Darwin",
-              "arch": "aarch64"
-            },
-            {
-              "runner": "ubuntu-24.04-arm",
-              "os": "Linux",
-              "arch": "aarch64"
-            }
-          ]
-        }
+        "matrix": "${{ fromJSON(needs.tier-plan.outputs.native_matrix) }}"
       },
       "steps": [
         {
@@ -434,7 +398,11 @@
           }
         }
       ],
-      "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}"
+      "if": "${{ needs.tier-plan.outputs.run_cross == 'true' }}",
+      "concurrency": {
+        "group": "m0-native-startup-${{ matrix.runner }}-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
     },
     "page-plan": {
       "needs": [
@@ -486,7 +454,11 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "concurrency": {
+        "group": "m0-page-plan-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
     },
     "arm64-page-gaps": {
       "needs": [
@@ -529,7 +501,10 @@
           "name": "Download the identical SDK producer for missing 64K validation",
           "if": "${{ matrix.page_size == 65536 }}",
           "uses": "actions/download-artifact@v8",
-          "with": {"name": "m1-sdk-build-${{ github.sha }}", "path": "out/sdk"}
+          "with": {
+            "name": "m1-sdk-build-${{ github.sha }}",
+            "path": "out/sdk"
+          }
         },
         {
           "name": "Select the fixed same-repository guest input supply",
@@ -552,7 +527,9 @@
         {
           "name": "Verify and explicitly import the complete locked guest profile",
           "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
-          "env": {"CI_GUEST_INPUT_COMMIT": "${{ steps.guest-input-plan.outputs.source_commit }}"},
+          "env": {
+            "CI_GUEST_INPUT_COMMIT": "${{ steps.guest-input-plan.outputs.source_commit }}"
+          },
           "run": "python scripts/guest_inputs.py import --source-dir .cache/guests/supplied --source-commit \"$CI_GUEST_INPUT_COMMIT\" --cache .cache/guests --page-size 65536 --report out/page-gaps/${{ matrix.page_size }}/supply-import.json"
         },
         {
@@ -624,7 +601,10 @@
           "name": "Download identical M2 probe bytes for the missing 64K target",
           "if": "${{ !cancelled() && matrix.page_size == 65536 }}",
           "uses": "actions/download-artifact@v8",
-          "with": {"name": "m2-probes-build-${{ github.sha }}", "path": "out/m2-probes"}
+          "with": {
+            "name": "m2-probes-build-${{ github.sha }}",
+            "path": "out/m2-probes"
+          }
         },
         {
           "name": "Export M2 waker probes to the actual 64K kernel",
@@ -687,7 +667,11 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "concurrency": {
+        "group": "m0-arm64-page-gaps-${{ matrix.page_size }}-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
     },
     "startup-matrix": {
       "needs": [
@@ -715,6 +699,13 @@
         {
           "uses": "actions/download-artifact@v8",
           "with": {
+            "name": "m0-tier-${{ github.sha }}",
+            "path": "out/tier"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
             "name": "m0-build-${{ github.sha }}",
             "path": "out/m0"
           }
@@ -737,7 +728,7 @@
         },
         {
           "name": "Require all six measured targets on the new producer identities",
-          "run": "python scripts/startup.py matrix --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --input-dir out/startup-results --profile \"$CI_TIER\" --report out/startup-matrix/matrix.json",
+          "run": "python scripts/startup.py matrix --build-report out/m0/build-info.json --artifact-dir out/m0/artifacts --input-dir out/startup-results --profile \"$CI_TIER\" --report out/startup-matrix/matrix.json --target-plan out/tier/plan.json",
           "env": {
             "CI_TIER": "${{ needs.tier-plan.outputs.tier }}"
           }
@@ -745,25 +736,33 @@
         {
           "uses": "actions/download-artifact@v8",
           "if": "${{ !cancelled() }}",
-          "with": {"name": "m1-sdk-build-${{ github.sha }}", "path": "out/sdk"}
+          "with": {
+            "name": "m1-sdk-build-${{ github.sha }}",
+            "path": "out/sdk"
+          }
         },
         {
           "uses": "actions/download-artifact@v8",
           "if": "${{ !cancelled() }}",
           "continue-on-error": true,
-          "with": {"pattern": "m1-sdk-native-*-${{ github.sha }}", "path": "out/sdk-native"}
+          "with": {
+            "pattern": "m1-sdk-native-*-${{ github.sha }}",
+            "path": "out/sdk-native"
+          }
         },
         {
           "name": "Require complete same-byte SDK contracts and lifecycle on all five native hosts",
           "if": "${{ !cancelled() }}",
-          "run": "python scripts/sdk.py matrix --profile cross --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-dir out/sdk-native --report out/sdk-matrix/matrix.json"
+          "run": "python scripts/sdk.py matrix --profile cross --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-dir out/sdk-native --report out/sdk-matrix/matrix.json --target-plan out/tier/plan.json"
         },
         {
           "if": "${{ always() }}",
           "uses": "actions/upload-artifact@v7",
           "with": {
-            "name": "m1-sdk-matrix-${{ github.sha }}", "path": "out/sdk-matrix/",
-            "if-no-files-found": "error", "retention-days": 7
+            "name": "m1-sdk-matrix-${{ github.sha }}",
+            "path": "out/sdk-matrix/",
+            "if-no-files-found": "error",
+            "retention-days": 7
           }
         },
         {
@@ -776,7 +775,11 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "concurrency": {
+        "group": "m0-startup-matrix-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
     },
     "full-core": {
       "needs": [
@@ -784,7 +787,8 @@
         "build",
         "native-startup",
         "arm64-page-gaps",
-        "startup-matrix"
+        "startup-matrix",
+        "offline-rebuild"
       ],
       "if": "${{ always() && needs.tier-plan.outputs.run_full == 'true' && needs.build.result == 'success' }}",
       "runs-on": "ubuntu-24.04",
@@ -832,7 +836,219 @@
             "retention-days": 7
           }
         }
-      ]
+      ],
+      "concurrency": {
+        "group": "m0-full-core-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
+    },
+    "fast": {
+      "name": "Fast / Linux x64 runtime",
+      "needs": "tier-plan",
+      "if": "${{ needs.tier-plan.outputs.run_fast == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Restore immutable inputs (verification remains mandatory)",
+          "id": "cache",
+          "uses": "actions/cache/restore@v4",
+          "with": {
+            "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
+            "key": "${{ needs.tier-plan.outputs.cache_key }}"
+          }
+        },
+        {
+          "name": "Explicitly acquire exact locked upstream artifact",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/m0/acquisition.json"
+        },
+        {
+          "name": "Populate locked input caches explicitly",
+          "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/m0/inputs"
+        },
+        {
+          "name": "Explicitly acquire locked loader and packer sources",
+          "run": "python scripts/ape_helpers.py fetch --report out/m0/inputs/ape-helpers.json"
+        },
+        {
+          "name": "Explicitly acquire locked Ubuntu helper compiler",
+          "run": "python scripts/startup_loaders.py fetch --report out/m0/inputs/startup-loaders.json"
+        },
+        {
+          "name": "Compile and execute current Runtime/ESM/Promise/SDK smoke",
+          "run": "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json"
+        },
+        {
+          "name": "Save only verified trusted default-branch inputs",
+          "if": "${{ success() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.tier-plan.outputs.write_cache == 'true' }}",
+          "uses": "actions/cache/save@v4",
+          "with": {
+            "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
+            "key": "${{ needs.tier-plan.outputs.cache_key }}"
+          }
+        },
+        {
+          "name": "Retain actual Fast evidence including failures",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "qaplet-fast-${{ github.sha }}",
+            "path": "out/fast/",
+            "if-no-files-found": "error"
+          }
+        }
+      ],
+      "concurrency": {
+        "group": "m0-fast-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
+    },
+    "offline-rebuild": {
+      "name": "Full / disconnected rebuild and supplier refusals",
+      "needs": [
+        "tier-plan",
+        "build"
+      ],
+      "if": "${{ needs.tier-plan.outputs.run_full == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Restore immutable inputs (verification remains mandatory)",
+          "id": "cache",
+          "uses": "actions/cache/restore@v4",
+          "with": {
+            "path": ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2",
+            "key": "${{ needs.tier-plan.outputs.cache_key }}"
+          }
+        },
+        {
+          "name": "Explicitly acquire exact locked upstream artifact",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/full-offline/acquisition.json"
+        },
+        {
+          "name": "Populate locked input caches explicitly",
+          "run": "make quickjs-fetch toolchain-fetch TOOLCHAIN_ARCHIVE=.cache/downloads/cosmocc.zip OUT=out/full-offline/inputs"
+        },
+        {
+          "name": "Explicitly acquire locked loader and packer sources",
+          "run": "python scripts/ape_helpers.py fetch --report out/full-offline/inputs/ape-helpers.json"
+        },
+        {
+          "name": "Explicitly acquire locked Ubuntu helper compiler",
+          "run": "python scripts/startup_loaders.py fetch --report out/full-offline/inputs/startup-loaders.json"
+        },
+        {
+          "name": "Install tracing for actual disconnected Full rebuild",
+          "run": "sudo apt-get update\nsudo apt-get install -y --no-install-recommends strace"
+        },
+        {
+          "name": "Execute disconnected pair and supplier refusals",
+          "run": "mkdir -p out/full-offline/offline\nsudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_WORKFLOW,GITHUB_SHA,RUNNER_OS,RUNNER_ARCH,RUNNER_NAME,ImageOS,ImageVersion python scripts/offline_integrity.py run --cache-root \"$PWD/.cache\" --uid \"$(id -u)\" --gid \"$(id -g)\" --report out/full-offline/offline/offline-integrity.json"
+        },
+        {
+          "name": "Seal current offline recipe and helper bytes for transport",
+          "run": "python scripts/ci_tiers.py seal-offline --offline-report out/full-offline/offline/offline-integrity.json --report out/full-offline/offline/transport-receipt.json"
+        },
+        {
+          "name": "Retain original offline pair and transport receipt",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-offline-${{ github.sha }}",
+            "path": "out/full-offline/",
+            "if-no-files-found": "error"
+          }
+        }
+      ],
+      "concurrency": {
+        "group": "m0-offline-rebuild-${{ needs.tier-plan.outputs.run_full == 'true' && github.run_id || github.ref }}",
+        "cancel-in-progress": "${{ needs.tier-plan.outputs.run_full != 'true' }}"
+      }
+    },
+    "ci-efficiency": {
+      "name": "CI efficiency observation (not a product gate)",
+      "needs": [
+        "tier-plan",
+        "build",
+        "native-startup",
+        "page-plan",
+        "arm64-page-gaps",
+        "startup-matrix",
+        "full-core",
+        "fast",
+        "offline-rebuild"
+      ],
+      "if": "${{ always() }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "concurrency": {
+        "group": "m0-ci-efficiency-${{ github.run_id }}",
+        "cancel-in-progress": false
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Measure actual retained Actions metadata",
+          "env": {
+            "GITHUB_TOKEN": "${{ github.token }}",
+            "CI_TIER": "${{ needs.tier-plan.outputs.tier || 'unknown' }}"
+          },
+          "run": "python scripts/ci_evidence.py efficiency-actions --tier \"$CI_TIER\" --output-dir out/ci-efficiency/api --report out/ci-efficiency/report.json"
+        },
+        {
+          "name": "Retain metadata and timing including unknowns",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "ci-efficiency-${{ github.sha }}",
+            "path": "out/ci-efficiency/",
+            "if-no-files-found": "error"
+          }
+        }
+      ],
+      "continue-on-error": true
     }
   }
 }

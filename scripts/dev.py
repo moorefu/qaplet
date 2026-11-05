@@ -56,10 +56,13 @@ def preflight(repo, receipt=None):
         jobs = value.get("jobs", {})
         if set(jobs) != {"workflow"} or not str(jobs["workflow"].get("runs-on", "")).startswith("ubuntu-"):
             raise ValueError("Tooling checks must run on Ubuntu")
+        from ci_tiers import check_scopes
+        result["scope_ci"] = check_scopes(repo)
         steps = jobs["workflow"].get("steps", [])
         required = ["python scripts/dev.py preflight --report out/workflow/preflight.json",
                     "python -B -m unittest discover -s tests/contracts -p 'test_workflow*.py' -v"]
-        if [step["run"] for step in steps if "run" in step] != required or any(step.get("continue-on-error") for step in steps):
+        from ci_tiers import check_scoped_job
+        if check_scoped_job(value, "workflow", "workflow_tools") != required or any(step.get("continue-on-error") for step in steps):
             raise ValueError("Tooling CI must run preflight before required CLI contracts")
         if not any(step.get("if") == "${{ always() }}" and step.get("uses", "").startswith("actions/upload-artifact@")
                    and step.get("with", {}).get("if-no-files-found") == "error" for step in steps):
@@ -87,6 +90,11 @@ def planned(args, ctx, output):
     import sys
     repo, cache = Path(ctx["checkout"]), Path(ctx["cache_root"])
     python = sys.executable
+    if args.operation == "check-fast":
+        return [[python, "-B", str(repo / "scripts/local_check.py"), "--profile", args.profile,
+                 "--output-dir", str(output), "--report", str(output / "local-check.json"),
+                 *(["--supplier-report", str(args.supplier_report.resolve()), "--supplier-dir", str(args.supplier_dir.resolve())]
+                   if args.supplier_report and args.supplier_dir else [])]]
     if args.operation == "check":
         return [["make", "check", "OUT=" + str(output), "QUICKJS_CACHE=" + str(cache / "quickjs"),
                  "TOOLCHAIN_CACHE=" + str(cache / "toolchains/cosmocc"), "APE_BUILD_DIR=" + str(cache / "build"),
@@ -114,7 +122,10 @@ def planned(args, ctx, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("context", "preflight", "check", "build-ape", "offline", "check-evidence"))
+    parser.add_argument("operation", choices=("context", "preflight", "check", "check-fast", "build-ape", "offline", "check-evidence"))
+    parser.add_argument("--profile", choices=("all", "engine", "loop", "work", "process", "tty", "ci"), default="all")
+    parser.add_argument("--supplier-report", type=Path)
+    parser.add_argument("--supplier-dir", type=Path)
     parser.add_argument("--repo", type=Path, default=ROOT)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--output-dir", type=Path)
@@ -135,6 +146,8 @@ def main():
             raise ValueError("timeout must be 1–7200 seconds")
         if args.uid <= 0 or args.gid <= 0:
             raise ValueError("Offline worker UID/GID must both be nonzero")
+        if bool(args.supplier_report) != bool(args.supplier_dir):
+            raise ValueError("Supplier report and directory must be supplied together")
         ctx = context(args.repo)
         report["context"] = ctx
         repo = Path(ctx["checkout"])
