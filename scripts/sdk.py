@@ -85,6 +85,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
     ("m2-process-query", ["--m2-process-query", "{self}", "{launcher}"], "M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass\n"),
     ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass\n"),
     ("m2-process-liveness", ["--m2-process-liveness", "{self}", "{launcher}"], "M2 process liveness: referenced child permits ready unref timer/immediate; unref child returns naturally; explicit pump delivers; physical cleanup: pass\n"),

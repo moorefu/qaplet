@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -454,6 +455,41 @@ typedef struct {
   qaplet_process process,stale;
   _Atomic int ready,error,notifications,notify_error;
 } process_observer;
+typedef struct { qaplet_runtime *runtime; qaplet_process process; qaplet_code code; } process_canceller;
+static void *cancel_running(void *opaque) {
+  process_canceller *c=opaque;
+  c->code=qaplet_process_cancel(c->runtime,&c->process,NULL);
+  return NULL;
+}
+static int cancellation(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT; m.limits.processes=1;
+  qaplet_runtime *r=NULL,*other=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT; CHECK(qaplet_eval(r,"42",2,&progress,NULL)==QAPLET_OK);
+  qaplet_process p=QAPLET_PROCESS_INIT; int gate=hanging(r,&p); CHECK(gate>=0);
+  qaplet_process stale=p; ++stale.generation;
+  CHECK(qaplet_process_cancel(other,&p,NULL)==QAPLET_INVALID_HANDLE && qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  process_canceller c={r,p,QAPLET_BAD_STATE}; pthread_t thread;
+  CHECK(!pthread_create(&thread,NULL,cancel_running,&c) && !pthread_join(thread,NULL) && c.code==QAPLET_OK);
+  CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(qaplet_process_get_status(r,&p,&status,NULL)==QAPLET_OK && status.code==QAPLET_CANCELLED && status.exited && status.reaped && status.delivered && !status.referenced);
+  CHECK(IsWindows() ? status.native_exit_code==0xD00D && !status.native_signal : !status.native_exit_code && status.native_signal==SIGKILL);
+  CHECK(!status.error_domain && !status.error && qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+  CHECK(!close(gate)); stale=p;
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  gate=hanging(r,&p); CHECK(gate>=0);
+  CHECK(qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_get_process_status(r,&p,&status,NULL)==QAPLET_OK && !status.exited && !status.code);
+  CHECK(!close(gate) && !observed_exit(r,&p,&status));
+  CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_ALREADY_COMPLETED);
+  CHECK(!completed(r,&p,37));
+  qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
+  CHECK(!finish(r) && !finish(other));
+  puts("M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass"); return 0;
+}
 static void query_notify(void *opaque) {
   process_observer *o=opaque;
   qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
@@ -590,7 +626,7 @@ int sdk_process(int argc,char **argv) {
   if (!strcmp(argv[1],"--m2-process-pipe-defaults")) {
     int result=pipe_defaults(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
   }
-  int result=!strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-cancel") ? cancellation() : !strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

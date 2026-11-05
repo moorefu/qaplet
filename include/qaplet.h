@@ -405,7 +405,8 @@ qaplet_code qaplet_wake(qaplet_runtime *, qaplet_diagnostic *);
 qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
                           qaplet_drive_result *, qaplet_diagnostic *);
 
-/* Direct-child process subset. Mutations and get_status belong to the owner;
+/* Direct-child process subset. Mutations and get_status belong to the owner,
+ * except any-thread cancel; cancellation never enters JS.
  * qaplet_get_process_status and qaplet_get_process_snapshot are POD queries.
  * argv includes argv[0]; path never searches PATH/PATHEXT or invokes a shell.
  * REPLACE_ENV makes env a complete KEY=VALUE mapping, including an empty one;
@@ -468,6 +469,14 @@ qaplet_code qaplet_process_get_status(qaplet_runtime *, const qaplet_process *, 
  * checked under the copy lock. Close invalidates results, so CLOSED queries
  * return INVALID_HANDLE; the Host must join all callers before destroy. */
 qaplet_code qaplet_get_process_status(qaplet_runtime *, const qaplet_process *, qaplet_process_status *, qaplet_diagnostic *);
+/* Any thread, not signal-safe. The acceptance mutex orders cancel against
+ * native completion publication. Accepted cancellation sets status.code to
+ * CANCELLED and initiates direct-child force termination; repeated cancel is
+ * OK, completion published first returns ALREADY_COMPLETED. Actual exit,
+ * signal, native error, reap and helper exit remain independent facts.
+ * Cancellation does not make release succeed before actual reap. Close and
+ * release invalidate the token; HostNotify reentry returns BUSY. */
+qaplet_code qaplet_process_cancel(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
 qaplet_code qaplet_process_set_ref(qaplet_runtime *, const qaplet_process *, uint32_t, qaplet_diagnostic *);
 qaplet_code qaplet_process_release(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
 /* Thread-safe POD query, including CLOSED. */
