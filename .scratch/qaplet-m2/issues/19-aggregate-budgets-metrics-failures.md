@@ -8,6 +8,8 @@
 
 **Execution state:** local_complete / cross_deferred（已独立本地接收并合入）
 
+**Local development:** complete；已独立no-ff合入`597020eb`，接收`2b3035f7`。[本票验证](../19-aggregate-validation.md)与主`out/qaplet-m2/merge-19-aggregate/`保留完整范围；正式跨平台/Full仍待验。
+
 **Execution prerequisites:** 09已resolved，16本地完成并独立合并`015cdb9f`（接收`71a5db50`），18本地完成并独立合并`3e85a272`（接收`64624ddd`）；全部当前开发前置已满足，已领取，与20并行。正式Cross/Full欠项不替代也不取消，验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 2、3、5、20、31、32、42、47、74、75、76、77、78、79、80、81、82、83、93、106、107、110。
