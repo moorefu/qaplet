@@ -51,7 +51,7 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 18 | 本地完成并独立合并`3e85a272`，接收`64624ddd`；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
 | 19 | 本地完成并独立合入`597020eb`，接收`2b3035f7`；正式Cross/Full待验 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
 | 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
-| 21 | 20本地完成并独立合入；已领取实施 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
+| 21 | 本地完成待独立接收；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
 | 22 | 等待21本地完成并独立合并 | 真实中断向owner交接、重复中断、清理预算耗尽/未回收报告、退出码；不把外部timeout记为成功清理 |
 | 23 | 19本地完成并独立合入；仍等待22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |

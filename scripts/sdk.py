@@ -30,6 +30,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_cli_output_observer.c", "cli-output-observer.c", None, None),
+    ("tests/native/sdk_cli.c", "host-cli.c", "cli-host.o", "cli-host-compile"),
     ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
     ("tests/native/sdk_mixed_faults.c", "mixed-faults.c", None, None),
 
@@ -78,6 +80,8 @@ RECIPE += ("src/cli.c", "tests/native/sdk_process_winchild.c", "scripts/m2_proce
 RECIPE += ("examples/application.c", "examples/SDK-README.md")
 RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
+RECIPE += ("scripts/sdk_cli.py",)
+RECIPE += ("scripts/m2_cli_output.py",)
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
 EXAMPLE_CASES = (
@@ -97,6 +101,7 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
     ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
     ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
     ("m2-mixed-nonreturning", ["--m2-mixed-nonreturning", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed nonreturning: work remains physically held at process exit; CLOSED engine zero; repeated zero/finite quiesce pending and destroy BUSY; child reaped, stdio/TTY restored and other IO retired; no native cleanup success claimed: pass\n"),
@@ -262,6 +267,10 @@ HOST_CASES = (
 
 
 CLI_CASES = (
+    ("eval-background-error", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{Promise.resolve().then(()=>{});throw Error('background')});return 'ENTRY'})"], 1, "", "qaplet: code=7 "),
+    ("eval-background-budget", ["--max-dispatches", "600", "eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{function again(){Promise.resolve().then(again)}again()});return 'ENTRY'})"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("eval-unref-done", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setTimeout(()=>{throw Error('unref ran')},60000).unref();return 42})"], 0, "42\n", ""),
+    ("eval-stdio-api", ["eval", "--source", "import('qaplet:stdio').then(s=>typeof s.acquireTerminal==='function'&&(s.stdout===null||['pipe','file','tty','console'].includes(s.stdout.kind)))"], 0, "true\n", ""),
     ("eval-interval-entry", ["eval", "--source", "import('qaplet:timers').then(({setInterval})=>new Promise(resolve=>{let n=0;let t=setInterval(()=>{if(++n===3){t.cancel();resolve(42)}return new Promise(()=>{})},1)}))"], 0, "42\n", ""),
     ("eval-immediate-result", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>{setImmediate(()=>{setImmediate(()=>{})});return 42})"], 0, "42\n", ""),
     ("eval-immediate-unref", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>new Promise(resolve=>setImmediate(()=>resolve(42)).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
@@ -363,15 +372,19 @@ def package_consume(args, report, directory):
     helpers = prepare_portable_helpers(args, report, directory, tree)
     report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
                   package=producer["package"])
-    if args.operation in ("tty-consume", "mixed-consume"):
-        if args.operation == "mixed-consume":
+    if args.operation in ("tty-consume", "mixed-consume", "cli-consume"):
+        if args.operation == "cli-consume":
+            from sdk_cli import compile_consumers, run_supplied
+        elif args.operation == "mixed-consume":
             from sdk_mixed import compile_consumers, run_supplied
         else:
             from sdk_tty import compile_consumers, run_supplied
         compile_consumers(args,report,directory,tree,helpers,external / "sdk",external / args.operation,output)
         measured_host(args,report,directory)
         loader=select_loader(args,report)
-        run_supplied(args,report,directory,output,loader)
+        if args.operation == "cli-consume":
+            run_supplied(args,report,directory,output,loader,supplied / "qaplet.com",external / "sdk/modules")
+        else:run_supplied(args,report,directory,output,loader)
         check_package(producer,external,check_archive=False)
         verify_inputs(args,report,directory,stage="after")
         recheck(report["native_toolchain"],original,component("cosmocc",purpose=consumption_purpose("build",args.controlled_probe)))
@@ -1075,7 +1088,7 @@ def consume(args, report, directory):
 def main():
     cache = Path(workspace(ROOT)["cache_root"])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "tty-consume", "mixed-consume", "matrix"))
+    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume", "matrix"))
     parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
     parser.add_argument("--target-plan", type=Path, help="Explicit CI native target plan; never narrows Full")
     parser.add_argument("--input-report", type=Path, action="append", default=[])
@@ -1105,7 +1118,7 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     if args.operation != "build":
         try:
-            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume", "tty-consume", "mixed-consume") else [])],
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume") else [])],
                 [args.build_report, args.loader_manifest, *args.input_report],
                 [*([args.artifact.resolve().parent] if args.artifact else []),
                  *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
@@ -1123,7 +1136,7 @@ def main():
             from sdk_matrix import matrix
             matrix(args, report, directory)
         else:
-            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume}[args.operation](args, report, directory)
+            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume,"cli-consume":package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
