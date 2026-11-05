@@ -265,7 +265,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   code = qaplet_pump_ready(runtime, progress, diagnostic, 0);
-  if (code && runtime->m2_enabled) qaplet_process_shutdown(runtime);
+  if (code && runtime->m2_enabled && qaplet_get_lifecycle(runtime)!=QAPLET_OPEN) qaplet_process_shutdown(runtime);
   qaplet_driver_set(runtime, 0);
   return code;
 }
