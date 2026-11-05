@@ -948,6 +948,7 @@ static int js_file_contract(void) {
   puts("M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass");
   return 0;
 }
+static int js_true(qaplet_runtime *,const char *);
 static int js_liveness_contract(void) {
   qaplet_config base=QAPLET_CONFIG_INIT;base.limits.engine_heap_bytes=2097152;
   qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;config.limits.operations=1;
@@ -956,7 +957,7 @@ static int js_liveness_contract(void) {
   qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
   h.name="held";h.name_length=4;h.function=held;h.userdata=&g;h.output_bytes=1;
   CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
-  const char *source="import('qaplet:work').then(({submit})=>{globalThis.submit=submit;globalThis.trace='';"
+  const char *source="Promise.all([import('qaplet:work'),import('qaplet:timers')]).then(([{submit},t])=>{globalThis.submit=submit;globalThis.setTimeout=t.setTimeout;globalThis.setInterval=t.setInterval;globalThis.trace='';"
     "globalThis.task=submit('held',new Uint8Array([17]));"
     "task.promise.then(b=>{trace+=b[0];});task.unref();if(task.hasRef())throw Error('ref');})";
   qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
@@ -981,6 +982,18 @@ static int js_liveness_contract(void) {
   CHECK(qaplet_eval(runtime,"trace==='17:42'",strlen("trace==='17:42'"),&progress,NULL)==QAPLET_OK);
   CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.boolean);
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.pending_handoffs);
+  source="globalThis.workDone=false;globalThis.timerDone=false;globalThis.background=submit('held',new Uint8Array([17]));"
+    "globalThis.alive=setInterval(()=>{},1);background.unref();background.promise.then(b=>{workDone=b[0]===17;alive.cancel()});setTimeout(()=>timerDone=true,0);42";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.completed<3);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(!js_true(runtime,"workDone && timerDone"));
+  source="globalThis.background=submit('held',new Uint8Array([42]));background.unref();background.promise.then(b=>b[0])";
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY);
+  do {CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK);sched_yield();}while(stats.completed<4);
+  CHECK(qaplet_run_once(runtime,0,&drive,NULL)==QAPLET_OK && drive.progressed);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
   CHECK(!finish(runtime) && !destroy_gate(&g));
   puts("M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass");
   return 0;
