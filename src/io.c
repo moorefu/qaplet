@@ -548,7 +548,7 @@ static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *
    * but name one controlling terminal. A noncontrolling PTY has no such ID and
    * retains its full device/inode identity, allowing unrelated PTYs to coexist. */
   pid_t queried_session=IsWindows() ? -1 : tcgetsid(source);uint64_t terminal_session=queried_session>0 ? queried_session : 0;
-  io_endpoint *root=NULL;pthread_mutex_lock(&r->mutex);
+  io_endpoint *root=NULL,*previous=NULL;pthread_mutex_lock(&r->mutex);
   if(joining){io_endpoint *member=endpoint_locked(r,joining);
     if(!member || !member->terminal)code=QAPLET_INVALID_HANDLE;
     else if(!member->lease_active || member->ended)code=QAPLET_BAD_STATE;
@@ -556,7 +556,16 @@ static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *
       if(!IsWindows() && !(root->terminal_device==(uint64_t)identity.st_dev && root->terminal_inode==(uint64_t)identity.st_ino && root->terminal_special==(uint64_t)identity.st_rdev) && !(terminal_session && root->terminal_session==terminal_session))code=QAPLET_UNSUPPORTED;
     }
   }
-  if(!code && qaplet_io_standard_locked(r,stream,NULL,NULL))code=QAPLET_BUSY;
+  qaplet_io_endpoint current=QAPLET_IO_ENDPOINT_INIT;
+  if(!code && qaplet_io_standard_locked(r,stream,&current,NULL)){
+    previous=endpoint_locked(r,&current);
+    /* A restored terminal may be leased again with new raw/VT options. Keep
+     * its old token, JS closed/jobs control record and capacity intact. Only
+     * a successfully acquired replacement takes over the standard route;
+     * quota refusal or an unfinished physical restore changes nothing. */
+    if(!previous->terminal || !previous->ended || previous->lease_active ||
+       (previous->pending && previous->pending->physical) || previous->handoffs)code=QAPLET_BUSY;
+  }
   if(r->io_pool)for(uint64_t i=0;!code && i<r->m2_limits.native_handles;++i){io_endpoint *e=&r->io_pool->endpoints[i];
     if(e->active && e->lease_active && (!root || e->lease_owner!=root) && (IsWindows() || (e->terminal_device==(uint64_t)identity.st_dev && e->terminal_inode==(uint64_t)identity.st_ino && e->terminal_special==(uint64_t)identity.st_rdev) || (terminal_session && terminal_session==e->terminal_session)))code=QAPLET_BUSY;
   }
@@ -618,6 +627,7 @@ static qaplet_code acquire_terminal(qaplet_runtime *r,const qaplet_io_endpoint *
       close_terminal_group_locked(r,e);
       if(!e->lease_active){e->active=0;e->standard=0;--p->snapshot.endpoints;--r->reactor_registrations;}
     }
+    if(!error && previous)previous->standard=0;
     if(e->active)*out=(qaplet_io_endpoint){sizeof(*out),QAPLET_ABI_VERSION,r->runtime_id,index,generation};
     memcpy((char *)status+8,(char *)&e->tty_status+8,sizeof(*status)-8);
   }

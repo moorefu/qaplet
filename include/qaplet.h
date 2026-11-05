@@ -645,6 +645,10 @@ qaplet_code qaplet_stdio_detach(qaplet_runtime *,uint32_t,qaplet_diagnostic *);
  * it returns IO_ERROR, remains visible in status/cleanup diagnostics and may
  * be retried. Physical IO must finish before restoration and retirement.
  * The Host original is never closed. Forced process termination cannot restore.
+ * After full restoration, acquire/join may replace the same standard route.
+ * Only successful acquisition changes that route; old endpoint tokens and JS
+ * closed facades retain their own identity/control capacity until retirement.
+ * The first JS stdio exports remain a snapshot, never rebound to a new lease.
  * First Console acquisition starts one per-Runtime join control helper. It
  * consumes one existing helper slot, one native handle and a reported requested
  * stack until Runtime close/quiesce. Each physical Console IO uses another

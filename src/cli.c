@@ -6,10 +6,13 @@
  * can replace the completed entry result that the CLI must copy. */
 qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_diagnostic *);
 #include <inttypes.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "libc/dce.h"
 #include "libc/nt/runtime.h"
 
@@ -35,6 +38,74 @@ static int parse_budget(const char *text, uint64_t *output) {
   }
   *output=value;
   return 1;
+}
+
+typedef struct {
+  int changed[3], flags[3];
+  qaplet_io_endpoint pipes[3];
+} cli_stdio;
+
+/* The CLI is the Host of these inherited routes. It authorizes temporary
+ * O_NONBLOCK on POSIX pipes, including the shared open file description; no
+ * other participant may change flags or perform concurrent IO during this
+ * ownership interval. The SDK itself continues to be a non-mutating borrower.
+ * Unsupported/invalid routes remain absent from the first JS stdio snapshot.
+ * In particular a synchronous Windows pipe is never treated as overlapped. */
+static qaplet_code connect_stdio(qaplet_runtime *runtime,cli_stdio *host,qaplet_diagnostic *diagnostic) {
+  qaplet_io_endpoint terminals[3];unsigned count=0;
+  for(uint32_t stream=0;stream<3;++stream){
+    qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;
+    qaplet_io_endpoint endpoint=QAPLET_IO_ENDPOINT_INIT;
+    qaplet_code code=qaplet_stdio_inspect(runtime,stream,&info,diagnostic);
+    if(code)return code;
+    if(info.kind==QAPLET_STDIO_TTY || info.kind==QAPLET_STDIO_CONSOLE){
+      qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;
+      qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;
+      /* Join only the actual selected route. An unrelated terminal gets its
+       * own explicit lease; no alternate device is opened. Zero flags preserve
+       * terminal modes. JS may release this group, await closed, then acquire
+       * raw/VT facades; exports are deliberately the first-import snapshot. */
+      code=QAPLET_UNSUPPORTED;
+      for(unsigned i=0;i<count && code==QAPLET_UNSUPPORTED;++i)
+        code=qaplet_tty_join(runtime,&terminals[i],stream,&options,&endpoint,&status,diagnostic);
+      if(code==QAPLET_UNSUPPORTED){
+        code=qaplet_tty_acquire(runtime,stream,&options,&endpoint,&status,diagnostic);
+        if(!code)terminals[count++]=endpoint;
+      }
+      if(code==QAPLET_UNSUPPORTED)continue;
+      if(code)return code;
+    }else{
+      if(!IsWindows() && info.kind==QAPLET_STDIO_PIPE && !info.supported){
+        int flags=fcntl(stream,F_GETFL);
+        if(flags<0)return QAPLET_IO_ERROR;
+        host->flags[stream]=flags;
+        if(fcntl(stream,F_SETFL,flags|O_NONBLOCK)<0)return QAPLET_IO_ERROR;
+        host->changed[stream]=1;info.supported=1;
+      }
+      if(!info.supported)continue;
+      code=qaplet_stdio_attach(runtime,stream,&endpoint,&info,diagnostic);
+      if(code)return code;
+      host->pipes[stream]=endpoint;
+    }
+  }
+  return QAPLET_OK;
+}
+
+static qaplet_code restore_stdio(qaplet_runtime *runtime,cli_stdio *host,int quiescent) {
+  qaplet_code result=QAPLET_OK;
+  for(int stream=2;stream>=0;--stream)if(host->changed[stream]){
+    int retired=quiescent || !host->pipes[stream].generation;
+    if(!retired){
+      qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;
+      qaplet_code code=qaplet_get_io_endpoint_status(runtime,&host->pipes[stream],&status,NULL);
+      retired=code==QAPLET_INVALID_HANDLE || (!code && status.ended && !status.physical_pending);
+    }
+    /* An unrelated retained file/helper must not prevent restoring an already
+     * retired pipe. Conversely a live operation keeps its flags until exit. */
+    if(!retired || fcntl(stream,F_SETFL,host->flags[stream])<0)result=QAPLET_IO_ERROR;
+    else host->changed[stream]=0;
+  }
+  return result;
 }
 
 static void print_result(const qaplet_result *result) {
@@ -110,9 +181,11 @@ int main(int argc, char **argv) {
   qaplet_diagnostic diagnostic = QAPLET_DIAGNOSTIC_INIT;
   qaplet_m2_config m2 = QAPLET_M2_CONFIG_INIT;
   qaplet_drive_result drive = QAPLET_DRIVE_RESULT_INIT;
+  cli_stdio host={0};
   char message[1024]; diagnostic.message=message; diagnostic.capacity=sizeof(message);
   qaplet_code code=qaplet_create_m2(&config,&m2,&runtime,&diagnostic);
   free(arguments);
+  if(!code)code=connect_stdio(runtime,&host,&diagnostic);
   if (!code) code=is_run ? qaplet_run_entry(runtime,input,strlen(input),&progress,&diagnostic) :
                           qaplet_eval(runtime,input,strlen(input),&progress,&diagnostic);
   int unsettled=0;
@@ -133,16 +206,23 @@ int main(int argc, char **argv) {
     code=qaplet_run(runtime,&drive,&diagnostic);
     if (!code && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY) unsettled=1;
   }
-  if (!code && !unsettled && !is_run) print_result(&result);
-  free(result.buffer);
-  if (code) fprintf(stderr,"qaplet: code=%u %s\n",(unsigned)code,message);
-  if (unsettled) fputs("qaplet: UNSETTLED_ENTRY\n",stderr);
+  qaplet_code execution_code=code,cleanup=QAPLET_OK,restoration=QAPLET_OK;
   if (runtime) {
-    qaplet_code cleanup=qaplet_close(runtime,NULL);
+    cleanup=qaplet_close(runtime,NULL);
     if (!cleanup) cleanup=qaplet_quiesce(runtime,5000,&drive,NULL);
     if (!cleanup && drive.reason!=QAPLET_DRIVE_QUIESCENT) cleanup=QAPLET_BUSY;
+    restoration=restore_stdio(runtime,&host,!cleanup);
     if (!cleanup) cleanup=qaplet_destroy(runtime,NULL);
-    if (cleanup) { fprintf(stderr,"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup); code=cleanup; }
   }
+  /* SDK byte writes have retired before the Host's buffered result/diagnostics
+   * use these same routes. Blocking flags and complete terminal modes have
+   * been restored; a large eval result must not silently truncate on EAGAIN. */
+  if (!code && !unsettled && !cleanup && !restoration && !is_run) print_result(&result);
+  free(result.buffer);
+  if (execution_code) fprintf(stderr,"qaplet: code=%u %s\n",(unsigned)execution_code,message);
+  if (unsettled) fputs("qaplet: UNSETTLED_ENTRY\n",stderr);
+  if(cleanup)fprintf(stderr,"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup);
+  if(restoration)fprintf(stderr,"qaplet: standard stream restoration incomplete code=%u\n",(unsigned)restoration);
+  if(cleanup || restoration)code=cleanup ? cleanup : restoration;
   return finish(code || unsettled ? 1 : 0);
 }

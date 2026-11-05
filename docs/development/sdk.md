@@ -406,14 +406,43 @@ namespace. Eval uses Script and prints only the copied SDK value: scalar text,
 raw UTF-8 string bytes, or `0x`-prefixed lowercase hex bytes, then a newline.
 It never converts an arbitrary JS object for display or diagnostics.
 
-The CLI owns no external event producers. PENDING with a no-progress pump
-therefore immediately prints `UNSETTLED_ENTRY` and closes the Runtime. SDK Hosts
-keep the original PENDING/no-progress contract and may later supply an event.
+The M2 CLI copies the entry result before driving background ref resources with
+the same SDK loop. Eval prints that copy once after normal loop completion and
+safe native cleanup. An otherwise unsupported pending Promise reports
+`UNSETTLED_ENTRY`; unref-only resources allow natural return. The SDK result slot
+continues to hold the most recently completed independent execution. SDK Hosts
+may retain a pending entry and later supply an event or explicit keepalive.
 Raw OS exits are 0 for success, 1 for execution/budget/unsettled failure, and 2
 for CLI arguments. On Windows the CLI performs SDK close/destroy and flushes
 stdio before an explicit native `ExitProcess`, avoiding the supplied libc's
 shifted POSIX-wait-status exit path. CLI evidence compares raw UTF-8 log bytes,
 including NUL, and preserves the actual OS exit without normalization.
+
+Before entry execution the CLI explicitly attaches supported current standard
+routes. Regular files and verified overlapped Windows byte pipes use the SDK
+backends. Synchronous Windows pipes remain unsupported (`null` JS exports).
+The CLI authorizes temporary shared `O_NONBLOCK` on POSIX pipes, saves the full
+flags, coordinates exclusive IO while running, and restores flags only after
+those native operations retire. Hosts sharing inherited open file descriptions
+must coordinate with this interval. Unsupported devices/invalid handles stay
+absent; the CLI never opens an alternate terminal route.
+
+TTY/Console routes start with explicit zero-flags leases, joining actual routes
+of the same terminal. To request raw input/verified VT output, release the
+initial group and await all initial `closed` promises, then use
+`acquireTerminal(0,{raw:true})` and `input.joinTerminal(1,{vt:true})`. Those calls
+return independent facades. First-import stdio exports remain the old closed
+snapshot. A restored route is replaced only on successful lease acquisition;
+quota refusal preserves its previous route, and old tokens/control capacity
+remain retained. Unfinished physical restoration still conflicts. Native mode
+restoration belongs to release/stop/close, without requiring user JS cleanup.
+Ticket 22 separately closes the real signal/Ctrl+C and cleanup-budget matrix.
+
+`sdk.py cli-consume` extracts the selected SDK ZIP outside both checkouts,
+compiles its public CLI contrast/launcher, and executes raw-byte CLI contracts,
+actual file/pipe routes, direct-child dual-channel draining and PTY/ConPTY native
+readback. `sdk_cli.py` replays that audited consumer on another host using the
+same supplied CLI bytes. These local checks do not certify the full M2 matrix.
 
 The existing v3 lock continues to identify the unchanged supplier/M0 recipes.
 Each SDK producer additionally binds all SDK and shared recipe files, effective
