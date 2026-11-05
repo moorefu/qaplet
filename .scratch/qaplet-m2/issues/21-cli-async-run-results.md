@@ -6,11 +6,13 @@
 
 **Status:** claimed
 
-**Execution state:** local_complete / cross_deferred；等待独立接收。
+**Execution state:** local_complete / cross_deferred
 
-**Local development:** complete；[本地验证](../21-cli-validation.md)及源 worktree
-`out/m2-21-cli/HANDOFF.md`、`handoff.json`保存供应6及供应4回归、真实原件与范围。正式Cross/Full仍待验；
-本地结果不表示已独立合入，也不提前领取22。
+**Local development:** complete
+
+[本地验证](../21-cli-validation.md)及主 `out/qaplet-m2/merge-21-cli/HANDOFF.md`、`handoff.json`
+保存独立接收、供应6及供应4回归的真实原件与范围。已独立合入`13abf9ac`；本地开发前置可放行22，
+本接收者未领取后继。正式Cross/Full仍待验。
 
 **Execution prerequisites:** 20已本地完成并独立合入`943c1962`（接收`776e50cb`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -73,4 +75,15 @@ mixed保留负向继续native清理未完。统一drive/入口副本、真实标
 不宣称恢复503；真实信号/5秒清理预算专项仍22。普通三mixed用例经ticket-local adapter
 按host/case隔离，非默认L0/CI缓存契约。供应4原dirty、供应1–3/5范围、旧失败与相对路径
 loader ENOENT保留；不resolved、不自合root、不push/CI。详本地验证与HANDOFF。
+
+2026-11-05（独立本地接收）：fresh merger从clean root`a3e1a628`实际no-ff合入clean源
+`9f2019f1`，合并`13abf9ac`的tree与source同为`2ced24bb`。固定产品4892、供应6的100recipe/
+91ZIP/双archive19+19/三fat APE及头文件保持同字节；合前合后独立重放8报告、1871raw、
+613索引引用及2613实际证据文件通过。CLI6 Linux67/Windows72，供应4普通222/221+optional1、
+TTY13/20、mixed各12均按原身份核验；九个明确负向仍native_cleanup_complete=false。
+Windows三项隔离mixed的relative executable仅按实际parent ROOT与官方Popen规则精确绑定，
+child cwd/原argv/marker/waits不改；原guard失败及解析helper版本保留。合后Ubuntu preflight
+pass（49脚本/52编码、主物理.cache）。父503→main511、租约511→raw504→511、历史源重建、
+producer dirty=true和动态child imports unknown限制保留。Merger产品执行0，无重建/重复suite；
+本地可放行22，正式Cross/64K/Full/长测/整体Review/M2和发布仍待验，原AC/Blocked by不改。
 

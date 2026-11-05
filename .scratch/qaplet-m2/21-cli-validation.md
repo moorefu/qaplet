@@ -1,6 +1,6 @@
 # 21：CLI 异步运行与入口结果保存，本地验证
 
-2026-11-05，**Local development: complete**，等待独立接收。票21保持
+2026-11-05，**Local development: complete**，已独立接收并合入`13abf9ac`。票21保持
 `claimed / local_complete / cross_deferred`；不签发父 AC 组、正式 Cross/Full、M2 完成或发布。
 入口来自实际 root `a3e1a62`，产品/配方冻结 `4892a8976f4ae45692f9f5b5887908fe089ab663`。
 源 worktree 为 `.cache/worktrees/m2-21-cli`、分支 `codex/m2-21-cli`。
@@ -155,3 +155,26 @@ SHA精确匹配原 compiler 输入；供应1的95 recipe源也逐项恢复并匹
 release-ready 仍待验。22专门负责真实 SIGINT/SIGTERM/Ctrl+C、重复中断、5秒主动清理预算
 耗尽；本票没有安装 SDK/CLI handler，也没有把该专项签成已验。22需撤下/join外部 bridge
 后再 destroy；最终 Host 输出在 SDK清理之后，阻塞输出与真实中断的组合也留给其专门闭环。
+
+## 独立本地接收
+
+Fresh merger从clean root`a3e1a628e28b0fcde1a927d37f3aba83cf4a4db4`以实际no-ff合入最终clean
+source`9f2019f18a475b6c16572bbf5d423cf10ba0e4e3`，合并`13abf9ac81188334042f362f41e52af2035047e4`
+的tree与source同为`2ced24bb358b58d05eac73df5d29c4c203c96495`。产品4892之后仅四份非recipe
+MD，独立重核100项raw/Git/producer、91ZIP/公开/M1头/三APE及双archive保持原字节。
+
+主`out/qaplet-m2/merge-21-cli/`的`premerge-9.json`与`postmerge.json`独立核验8报告、
+1871raw、613索引引用和2613实际文件；完整normal/CLI/TTY/mixed catalogs、实际argv/cwd、
+字节/退出、Console读回、CP437、overlapped五scope和24项历史依赖快照均按原身份核对。
+供应6 CLI67/72与供应4 normal222/221+optional1、TTY13/20、mixed12/12分开，九个保留负向
+未改为清理成功。ConPTY设施收尾不替代SDK/Host原生物理退休；普通lifetime不外推混合长测。
+
+Windows normal4的三项隔离mixed保留相对executable token。独立guard按实际parent source ROOT
+与Windows Popen解析语义精确绑定该供应binary；child cwd仍是各自UUID/host/case目录，原argv和
+marker/waits保留，未泛化路径放行。详主`path-interpretation.md`；merger解析失败1–7及helper
+v1–v7保留，pass8旧helper由保存v7及记录patch重建并核原hash，不冒称原时点快照。
+
+合后Ubuntu root preflight pass，49Python解析、52编码和主物理.cache。Merger产品执行0、无SDK
+重建/重复suite/长测；仅三份必要MD记录接收。最终`handoff.json`、`HANDOFF.md`与全部命令在主
+接收目录，源worktree与原件保留。票21本地开发前置可放行22，本接收者未领取；27票/38边/135AC、
+父spec、启动503→511限制、历史源重建语义、producer dirty和所有正式欠项保持原合同。

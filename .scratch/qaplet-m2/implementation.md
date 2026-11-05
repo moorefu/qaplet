@@ -442,3 +442,16 @@ loader ENOENT、供应1–3与额外build-only5及所有旧失败保持原scope�
 loader/原ZIP/源闭包见[21记录](21-cli-validation.md)与worktree `out/m2-21-cli/HANDOFF.md`。
 21保持claimed/local_complete/cross_deferred，待独立merger；22未领取，23仍等待22。
 27票/38边/135AC、正式其他原生/当前64K/CI Full/长测/整体Review及发布门禁仍待验，不push/CI。
+
+2026-11-05（21独立本地接收）：fresh merger从clean root`a3e1a628`实际no-ff合入clean source
+`9f2019f1`，合并`13abf9ac`的tree与源同为`2ced24bb`。固定产品4892、供应6的100recipe/91ZIP、
+双archive19+19、三fat APE与头文件重核稳定；合前合后独立重放8报告/1871raw/613索引引用/
+2613证据文件通过。CLI6 Linux67/Windows72按当前供件；供应4 normal222/221+optional1、
+TTY13/20和mixed各12保留原身份，同头/双库字节相等，九个明确保留负向不签发native清理成功。
+Windows三项mixed relative executable仅按实际parent ROOT/Popen语义精确解析，原child cwd、
+argv/marker/waits不改；解析helper失败和旧源码版本保留。合后Ubuntu preflight pass（49解析/
+52编码、主物理.cache）。父503→main511与lease511→504→511、历史源重建、producer dirty和
+child动态imports unknown限制不变。主收据`out/qaplet-m2/merge-21-cli/HANDOFF.md`、`handoff.json`
+保存完整身份与命令。21 Local development: complete，claimed/local_complete/cross_deferred，
+可放行22本地开发但merger未领取。产品执行0，无重建/重复suite/push/CI；27/38/135、父spec、
+正式Cross/64K/Full/长测/整体Review/M2及发布门禁继续待验。
