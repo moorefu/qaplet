@@ -414,6 +414,9 @@ qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
  * argv includes argv[0]; path never searches PATH/PATHEXT or invokes a shell.
  * REPLACE_ENV makes env a complete KEY=VALUE mapping, including an empty one;
  * otherwise the M2 factory's environment snapshot is used. Strings reject NUL.
+ * On Windows that snapshot restores an existing SYSTEMROOT in the fixed CRT's
+ * /C/... form to native drive form; no key is added. Replacement values and
+ * other variables stay verbatim, including path-looking application data.
  * Relative path/cwd resolve against the immutable Runtime cwd.
  * PIPE (the default) creates an owned endpoint exposed by PROCESS_IO.
  * INHERIT borrows Host C descriptors 0/1/2; IGNORE uses a null endpoint.

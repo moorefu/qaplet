@@ -1190,8 +1190,72 @@ static int child(int argc,char **argv) {
   char actual[PATH_MAX]; char byte;
   return n==2 && getenv("QAPLET_ONLY") && !strcmp(getenv("QAPLET_ONLY"),"完整 值") && getenv("QAPLET_CWD") && getcwd(actual,sizeof(actual)) && !strcmp(actual,getenv("QAPLET_CWD")) && read(0,&byte,1)==0 ? 37 : 98;
 }
+static int cli_io_result(qaplet_runtime *runtime,qaplet_io_operation *operation,qaplet_io_result *result) {
+  /* A failing supplied CLI may use its complete five-second cleanup wait.
+   * This outer ten-second bound only detects an unfinished test execution. */
+  double until=milliseconds()+10000;
+  qaplet_io_status status=QAPLET_IO_STATUS_INIT;
+  do{
+    CHECK(qaplet_get_io_status(runtime,operation,&status,NULL)==QAPLET_OK);
+    if(status.state!=QAPLET_IO_PENDING && !status.physical_pending && !status.pending_handoff)
+      return qaplet_io_copy_result(runtime,operation,result,NULL)!=QAPLET_OK;
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_run_once(runtime,1000,&drive,NULL)==QAPLET_OK);
+  }while(milliseconds()<until);
+  return 1;
+}
+static int cli_child(int argc,char **argv) {
+  CHECK(argc==4);
+  qaplet_config base=QAPLET_CONFIG_INIT;
+  qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  qaplet_runtime *runtime=NULL;
+  CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  qaplet_process_options options=QAPLET_PROCESS_OPTIONS_INIT;
+  qaplet_string args[6];size_t count=0;
+  const char *path=IsWindows()?argv[2]:argv[3];
+  args[count++]=(qaplet_string){path,strlen(path)};
+  if(!IsWindows())args[count++]=(qaplet_string){argv[2],strlen(argv[2])};
+  args[count++]=(qaplet_string){"eval",4};
+  args[count++]=(qaplet_string){"--source",8};
+  args[count++]=(qaplet_string){"'READY'",7};
+  options.path=(qaplet_string){path,strlen(path)};
+  options.argv=args;options.argc=count;
+  options.stdio[0]=QAPLET_PROCESS_IGNORE;
+  options.stdio[1]=QAPLET_PROCESS_PIPE;
+  options.stdio[2]=QAPLET_PROCESS_PIPE;
+  qaplet_process process=QAPLET_PROCESS_INIT;
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  qaplet_code code=qaplet_process_spawn(runtime,&options,&process,&status,NULL);
+  qaplet_io_endpoint output=QAPLET_IO_ENDPOINT_INIT;
+  unsigned char bytes[2][128]={{0}};size_t lengths[2]={0};int eofs[2]={0};
+  for(unsigned stream=0;stream<2 && !code;stream++){
+   code=qaplet_process_get_stdio(runtime,&process,stream+1,&output,NULL);
+   while(!code && !eofs[stream]){
+    qaplet_io_operation operation=QAPLET_IO_OPERATION_INIT;
+    qaplet_io_result result=QAPLET_IO_RESULT_INIT;
+    result.buffer=bytes[stream]+lengths[stream];result.capacity=sizeof(bytes[stream])-lengths[stream];
+    if(!result.capacity){code=QAPLET_VALUE_TOO_LARGE;break;}
+    code=qaplet_io_read(runtime,&output,result.capacity,&operation,NULL);
+    if(!code && cli_io_result(runtime,&operation,&result))code=QAPLET_HOST_ERROR;
+    if(!code){lengths[stream]+=result.length;eofs[stream]=result.eof;code=result.code;}
+    if(operation.runtime_id){qaplet_code release=qaplet_io_release(runtime,&operation,NULL);if(!code)code=release;}
+   }
+  }
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  if(!code)code=qaplet_run(runtime,&drive,NULL);
+  if(!code)code=qaplet_process_get_status(runtime,&process,&status,NULL);
+  int passed=!code && eofs[0] && eofs[1] && lengths[0]==6 && !lengths[1] && !memcmp(bytes[0],"READY\n",6) && drive.reason==QAPLET_DRIVE_IDLE && status.exited && status.reaped &&
+    status.delivered && !status.referenced && !status.code && !status.native_exit_code && !status.native_signal;
+  if(!passed){if(lengths[1])fwrite(bytes[1],1,lengths[1],stderr);status_failure("public CLI child",code,&status,&drive);}
+  if(passed)passed=qaplet_process_release(runtime,&process,NULL)==QAPLET_OK;
+  int cleanup=finish(runtime);
+  CHECK(passed && !cleanup);
+  puts("M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass");
+  return 0;
+}
 int sdk_process(int argc,char **argv) {
   if (argc>1 && !strcmp(argv[1],"--m2-process-child")) return child(argc,argv);
+  if (argc>1 && !strcmp(argv[1],"--m2-process-cli-child")) return cli_child(argc,argv);
   CHECK(argc==4); self=argv[2]; launcher=argv[3];
   char original[PATH_MAX]; CHECK(getcwd(original,sizeof(original)));
   const char *temporary=getenv("TMPDIR"); if (!temporary) temporary=getenv("TEMP"); if (!temporary) temporary="/tmp";
