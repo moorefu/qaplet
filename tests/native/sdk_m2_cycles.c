@@ -19,6 +19,8 @@ typedef struct {
   double phase_elapsed_ms[3], idle_wait_elapsed_ms, start;
   uint64_t baseline_handles, baseline_helpers;
   uint64_t baseline_workers;
+  uint64_t baseline_keepalive_tokens;
+  uint64_t quiescent_helpers,quiescent_workers,quiescent_keepalive_tokens;
   int baseline_frozen;
   uint64_t os_handles_before,os_threads_before,os_handles_after,os_threads_after;
   uint64_t os_initial_handles,os_initial_threads,warmup_instances;
@@ -27,24 +29,48 @@ typedef struct {
   FILE *progress;
 } cycles;
 static cycles totals;
-static unsigned native_pid(void) {
-  unsigned pid=getpid();
+#if defined(__x86_64__)
+static struct {
+  unsigned pid,tid;
+  int32_t (__msabi *get_handles)(int64_t,uint32_t *);
+  int64_t (__msabi *snapshot_threads)(uint32_t,uint32_t);
+  int32_t (__msabi *first)(int64_t,void *);
+  int32_t (__msabi *next)(int64_t,void *);
+  uint32_t (__msabi *last_error)(void);
+  void (__msabi *set_error)(uint32_t);
+} windows_observer;
+#endif
+static int initialize_observer(void) {
 #if defined(__x86_64__)
   if(IsWindows()) {
-    int64_t kernel=LoadLibraryA("kernel32.dll");
-    uint32_t (__msabi *query)(void)=(void *)GetProcAddress(kernel,"GetCurrentProcessId");
-    if(query)pid=query();
+    /* Borrow the already-loaded module once: no LoadLibrary references and
+     * no FreeLibrary on this borrowed handle. All observation APIs are cached. */
+    int64_t kernel=GetModuleHandleW(u"kernel32.dll");CYCLE(kernel);
+    uint32_t (__msabi *pid)(void)=(void *)GetProcAddress(kernel,"GetCurrentProcessId");
+    uint32_t (__msabi *tid)(void)=(void *)GetProcAddress(kernel,"GetCurrentThreadId");
+    windows_observer.get_handles=(void *)GetProcAddress(kernel,"GetProcessHandleCount");
+    windows_observer.snapshot_threads=(void *)GetProcAddress(kernel,"CreateToolhelp32Snapshot");
+    windows_observer.first=(void *)GetProcAddress(kernel,"Thread32First");
+    windows_observer.next=(void *)GetProcAddress(kernel,"Thread32Next");
+    windows_observer.last_error=(void *)GetProcAddress(kernel,"GetLastError");
+    windows_observer.set_error=(void *)GetProcAddress(kernel,"SetLastError");
+    CYCLE(pid && tid && windows_observer.get_handles && windows_observer.snapshot_threads && windows_observer.first &&
+          windows_observer.next && windows_observer.last_error && windows_observer.set_error);
+    windows_observer.pid=pid();windows_observer.tid=tid();CYCLE(windows_observer.pid && windows_observer.tid);
+    return 0;
   }
 #endif
-  return pid;
+  CYCLE(!IsWindows());return 0;
+}
+static unsigned native_pid(void) {
+#if defined(__x86_64__)
+  if(IsWindows())return windows_observer.pid;
+#endif
+  return getpid();
 }
 static unsigned native_tid(void) {
 #if defined(__x86_64__)
-  if(IsWindows()) {
-    int64_t kernel=LoadLibraryA("kernel32.dll");
-    uint32_t (__msabi *query)(void)=(void *)GetProcAddress(kernel,"GetCurrentThreadId");
-    if(query)return query();
-  }
+  if(IsWindows())return windows_observer.tid;
 #endif
   return getpid(); /* The fixture owner is the process main thread. */
 }
@@ -52,26 +78,31 @@ static int os_resources(uint64_t *handles,uint64_t *threads) {
   *handles=*threads=0;
 #if defined(__x86_64__)
   if(IsWindows()) {
-    int64_t kernel=LoadLibraryA("kernel32.dll");
-    int32_t (__msabi *get_handles)(int64_t,uint32_t *)=(void *)GetProcAddress(kernel,"GetProcessHandleCount");
-    int64_t (__msabi *snapshot_threads)(uint32_t,uint32_t)=(void *)GetProcAddress(kernel,"CreateToolhelp32Snapshot");
-    int32_t (__msabi *first)(int64_t,void *)=(void *)GetProcAddress(kernel,"Thread32First");
-    int32_t (__msabi *next)(int64_t,void *)=(void *)GetProcAddress(kernel,"Thread32Next");
-    CYCLE(get_handles && snapshot_threads && first && next);
     struct { uint32_t size,usage,id,owner;int32_t base,delta;uint32_t flags; } entry={0};
-    entry.size=sizeof(entry);int64_t snap=snapshot_threads(4,0);CYCLE(snap!=-1);
-    int more=first(snap,&entry);CYCLE(more);
-    while(more) { if(entry.owner==native_pid())++*threads;entry.size=sizeof(entry);more=next(snap,&entry); }
-    CYCLE(CloseHandle(snap));uint32_t count=0;CYCLE(get_handles(GetCurrentProcess(),&count));*handles=count;
+    entry.size=sizeof(entry);int64_t snap=windows_observer.snapshot_threads(4,0);CYCLE(snap!=-1);
+    int more=windows_observer.first(snap,&entry);
+    if(!more) { uint32_t error=windows_observer.last_error();(void)CloseHandle(snap);fprintf(stderr,"cycles observer: Thread32First failed native_error=%u\n",error);return 1; }
+    do {
+      if(entry.owner==windows_observer.pid)++*threads;
+      entry.size=sizeof(entry);windows_observer.set_error(0);more=windows_observer.next(snap,&entry);
+    } while(more);
+    uint32_t error=windows_observer.last_error();int closed=CloseHandle(snap);
+    if(error!=18) { fprintf(stderr,"cycles observer: Thread32Next incomplete native_error=%u\n",error);return 1; }
+    CYCLE(closed && *threads);uint32_t count=0;CYCLE(windows_observer.get_handles(GetCurrentProcess(),&count));*handles=count;
     return 0;
   }
 #endif
   if(IsLinux()) {
     const char *paths[]={"/proc/self/fd","/proc/self/task"};uint64_t *counts[]={handles,threads};
     for(unsigned i=0;i<2;++i) {
-      DIR *dir=opendir(paths[i]);CYCLE(dir);struct dirent *entry;
-      while((entry=readdir(dir)))if(strcmp(entry->d_name,".") && strcmp(entry->d_name,".."))++*counts[i];
-      CYCLE(!closedir(dir));
+      DIR *dir=opendir(paths[i]);CYCLE(dir);struct dirent *entry;int error=0;
+      for(;;) {
+        errno=0;entry=readdir(dir);if(!entry){error=errno;break;}
+        if(strcmp(entry->d_name,".") && strcmp(entry->d_name,".."))++*counts[i];
+      }
+      int closed=closedir(dir);
+      if(error) { fprintf(stderr,"cycles observer: readdir incomplete path=%s errno=%d\n",paths[i],error);return 1; }
+      CYCLE(!closed && *counts[i]);
     }
     return 0;
   }
@@ -79,6 +110,7 @@ static int os_resources(uint64_t *handles,uint64_t *threads) {
 }
 
 static int record(const char *type) {
+  CYCLE(native_pid() && native_tid());
   char line[4096];
   int n=snprintf(line,sizeof(line),
     "{\"type\":\"%s\",\"mode\":\"%s\",\"phase\":\"%s\",\"process_id\":%u,\"owner_thread_id\":%u,"
@@ -91,7 +123,9 @@ static int record(const char *type) {
     "\"phase_cycles\":{\"idle\":%" PRIu64 ",\"load\":%" PRIu64 ",\"cancel\":%" PRIu64 "},"
     "\"idle_wait_calls\":%" PRIu64 ",\"idle_wait_requested_ms\":%" PRIu64 ",\"idle_wait_elapsed_ms\":%.6f,"
     "\"baseline_operations\":0,\"baseline_data_bytes\":0,\"baseline_timers\":0,\"baseline_processes\":0,\"baseline_io_endpoints\":0,"
-    "\"baseline_handles\":%" PRIu64 ",\"baseline_helpers\":%" PRIu64 ",\"baseline_workers\":%" PRIu64 ",\"baseline_frozen\":%s,\"helper_limit\":4,"
+    "\"baseline_handles\":%" PRIu64 ",\"baseline_helpers\":%" PRIu64 ",\"baseline_workers\":%" PRIu64 ",\"baseline_keepalive_tokens\":%" PRIu64 ",\"baseline_frozen\":%s,\"helper_limit\":4,"
+    "\"fixture_protocol_version\":9,\"observer_identity_verified\":true,\"observer_resolutions\":%u,"
+    "\"quiescent_helpers\":%" PRIu64 ",\"quiescent_workers\":%" PRIu64 ",\"quiescent_keepalive_tokens\":%" PRIu64 ","
     "\"os_resource_source\":\"%s\",\"os_handles_before\":%" PRIu64 ",\"os_threads_before\":%" PRIu64 ",\"os_handles_after\":%" PRIu64 ",\"os_threads_after\":%" PRIu64 ","
     "\"os_initial_handles\":%" PRIu64 ",\"os_initial_threads\":%" PRIu64 ",\"warmup_instances\":%" PRIu64 "}\n",
     type,totals.mode,totals.phase,native_pid(),native_tid(),totals.requested,totals.completed,totals.failed,milliseconds()-totals.start,
@@ -101,7 +135,8 @@ static int record(const char *type) {
     totals.phase_elapsed_ms[0],totals.phase_elapsed_ms[1],totals.phase_elapsed_ms[2],
     totals.phase_cycles[0],totals.phase_cycles[1],totals.phase_cycles[2],
     totals.idle_wait_calls,totals.idle_wait_requested_ms,totals.idle_wait_elapsed_ms,totals.baseline_handles,totals.baseline_helpers,
-    totals.baseline_workers,totals.baseline_frozen ? "true":"false",
+    totals.baseline_workers,totals.baseline_keepalive_tokens,totals.baseline_frozen ? "true":"false",IsWindows() ? 1:0,
+    totals.quiescent_helpers,totals.quiescent_workers,totals.quiescent_keepalive_tokens,
     IsWindows() ? "GetProcessHandleCount+Toolhelp32Threads":IsLinux() ? "/proc/self/fd+/proc/self/task":"not_measured",
     totals.os_handles_before,totals.os_threads_before,totals.os_handles_after,totals.os_threads_after,
     totals.os_initial_handles,totals.os_initial_threads,totals.warmup_instances);
@@ -134,17 +169,20 @@ static int baseline(application *app,int closed) {
         qaplet_get_process_snapshot(app->runtime,&p,NULL)==QAPLET_OK &&
         qaplet_get_m2_diagnostic(app->runtime,&d,NULL)==QAPLET_OK &&
         qaplet_get_work_snapshot(app->runtime,&w,NULL)==QAPLET_OK);
+  if(closed) { totals.quiescent_helpers=r.helper_threads;totals.quiescent_workers=w.worker_threads;totals.quiescent_keepalive_tokens=m.keepalive_tokens; }
   CYCLE(!r.operations && !r.operation_data_bytes && !r.io_endpoints && !t.current && !p.processes);
-  CYCLE(!m.native_uncertain_handles && !d.cleanup_reason && !d.control_error && !m.termination_reason);
+  CYCLE(!m.native_uncertain_handles && !d.cleanup_reason && !d.control_error && !m.termination_reason && !m.keepalive_tokens);
   CYCLE(m.m2_limits.helper_threads==4 && r.helper_threads<=4);
   if(closed) CYCLE(m.lifecycle==QAPLET_CLOSED && m.native_state==QAPLET_NATIVE_QUIESCENT &&
-                   !m.native_handles && !m.reactor_registrations && !r.helper_threads && !r.helper_stack_bytes);
+                   !m.native_handles && !m.reactor_registrations && !r.helper_threads && !r.helper_stack_bytes &&
+                   !w.worker_threads && !w.worker_stack_bytes);
   else CYCLE(m.lifecycle==QAPLET_OPEN);
   if(!closed && totals.baseline_frozen) CYCLE(totals.baseline_handles==m.native_handles &&
     totals.baseline_helpers==r.helper_threads && totals.baseline_workers==w.worker_threads);
   if(!closed && !totals.baseline_frozen) {
     totals.baseline_handles=m.native_handles;totals.baseline_helpers=r.helper_threads;totals.baseline_workers=w.worker_threads;
   }
+  totals.baseline_keepalive_tokens=m.keepalive_tokens;
   ++totals.baseline_checks;
   return 0;
 }
@@ -354,12 +392,14 @@ static int idle_phase(application *app) {
   double until=milliseconds()+5000;
   qaplet_timer_snapshot timer=QAPLET_TIMER_SNAPSHOT_INIT;
   do {
+    CYCLE(qaplet_get_timer_snapshot(app->runtime,&timer,NULL)==QAPLET_OK && timer.current && timer.referenced);
+    uint64_t before_current=timer.current,before_referenced=timer.referenced;
     double start=milliseconds();
     CYCLE(qaplet_run_once(app->runtime,2000,&d,NULL)==QAPLET_OK);
     double elapsed=milliseconds()-start;
     totals.idle_wait_elapsed_ms+=elapsed;++totals.idle_wait_calls;totals.idle_wait_requested_ms+=2000;
     FILE *waits=fopen("cycles-waits.ndjson","ab");CYCLE(waits);
-    CYCLE(fprintf(waits,"{\"phase\":\"idle\",\"index\":%" PRIu64 ",\"requested_ms\":2000,\"actual_monotonic_elapsed_ms\":%.6f,\"measurement\":\"whole qaplet_run_once call; not timer lateness\"}\n",totals.idle_wait_calls,elapsed)>0 && !fclose(waits));
+    CYCLE(fprintf(waits,"{\"phase\":\"idle\",\"index\":%" PRIu64 ",\"requested_ms\":2000,\"actual_monotonic_elapsed_ms\":%.6f,\"timer_current_before\":%" PRIu64 ",\"timer_referenced_before\":%" PRIu64 ",\"drive_reason\":%u,\"measurement\":\"whole qaplet_run_once call; not timer lateness\"}\n",totals.idle_wait_calls,elapsed,before_current,before_referenced,d.reason)>0 && !fclose(waits));
     CYCLE(qaplet_get_timer_snapshot(app->runtime,&timer,NULL)==QAPLET_OK && milliseconds()<until);
   } while(timer.current);
   CYCLE(!evaluate_cycles(app->runtime,"idleDone"));qaplet_result r=QAPLET_RESULT_INIT;
@@ -377,7 +417,9 @@ int main(int argc,char **argv) {
   if(errno || *end || !requested || argv[2][0]=='-')return finish(2);
   totals.mode=lifecycle ? "lifecycle":soak ? "soak":"mixed";totals.phase="initializing";totals.requested=requested;
   totals.start=milliseconds();totals.progress=fopen("cycles-progress.ndjson","wb");if(!totals.progress)return finish(1);
-  int code=os_resources(&totals.os_handles_before,&totals.os_threads_before);
+  int code=initialize_observer();
+  if(code) { fputs("cycles observer: initialization failed; native identity unverified\n",stderr);fclose(totals.progress);return finish(1); }
+  code=os_resources(&totals.os_handles_before,&totals.os_threads_before);
   if(!code)code=record("ready");double last_progress=totals.start;
   application app;
   /* Three separate, fully destroyed warmup instances expose one-time CRT/OS
