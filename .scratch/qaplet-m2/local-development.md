@@ -39,11 +39,15 @@ Ubuntu继续统一构建产品和SDK，Linux与Windows消费同一份供应字�
 `65de84e2`；它们是当前集成点的祖先。11–15的本地完成可放行开发，正式状态仍为
 claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实施；17不依赖16。
 
+随后17已独立合入 `caa439ae`，接收收据 `5bc82e1c` 重核源码、供应4和全部本地原件。
+18据此领取实施；16已经融合这个实际产品合入点，正在最终组合供应。17正式Cross/Full
+仍为deferred，原件和收据在主 `out/qaplet-m2/merge-17-stdio/`，本地合入不改变正式验收。
+
 | 票号 | 当前开发前置 | 本票本地验证范围 |
 | --- | --- | --- |
 | 16 | 12、14、15本地完成且已独立合并；现在可实施 | JS显式spawn、三种stdio、退出/reap与EOF分离、输出保留、双通道/部分写/BUSY/背压、ref/unref/GC、取消及stop/close；轮转与Promise回归 |
-| 17 | 12、15本地完成且已独立合并；现在可实施 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
-| 18 | 05已resolved；等待17本地完成并独立合并 | 真实PTY/Console独占租约、冲突、模式恢复、resize合并与查询、已验证UTF-8/VT边界；stop/close/错误路径恢复 |
+| 17 | 本地完成并独立合并`caa439ae`；正式Cross/Full待验 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
+| 18 | 05已resolved，17本地完成并独立合并；已领取 | 真实PTY/Console独占租约、冲突、模式恢复、resize合并与查询、已验证UTF-8/VT边界；stop/close/错误路径恢复 |
 | 19 | 09已resolved；等待16、18本地完成并独立合并 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
 | 20 | 09已resolved；等待16、18本地完成并独立合并；可与19并行 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 等待20本地完成并独立合并 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |

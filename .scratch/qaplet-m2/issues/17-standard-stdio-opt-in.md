@@ -61,3 +61,11 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+
+2026-11-05（独立本地接收）：最终 source `8b9e389c` 以 no-ff `caa439ae` 合入实际
+integration `8212c055`；合并树同源。独立只读重放供应4的85配方/Git blob/raw LF、
+82原ZIP成员、双archive各18对象、完整normal/package/fault/terminal及1608原日志；
+合后再次核对并完成Ubuntu preflight。`devcheck-3`保持159bd900原范围，84个tracked
+Python字节相同；未重标旧工具或产品失败。详主`out/qaplet-m2/merge-17-stdio/HANDOFF.md`
+及`handoff.json`。本地开发前置可放行18，Status仍claimed、local_complete/cross_deferred；
+其他原生/当前actual64K/CI/Full/最终混合长测及release-ready待验，不签发父M2完成。
