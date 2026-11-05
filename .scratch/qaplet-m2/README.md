@@ -39,9 +39,9 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 | 21 | [CLI 异步运行与入口结果保存](issues/21-cli-async-run-results.md) | [20](issues/20-mixed-stop-close-quiesce.md) | claimed |
 | 22 | [CLI 中断交接与清理超时报告](issues/22-cli-signal-stop-cleanup-budget.md) | [21](issues/21-cli-async-run-results.md) | claimed |
 | 23 | [完整 SDK 分发与包外 C Host 示例](issues/23-sdk-package-c-host-example.md) | [19](issues/19-aggregate-budgets-metrics-failures.md)、[22](issues/22-cli-signal-stop-cleanup-budget.md) | claimed |
-| 24 | [五原生目标的合同矩阵与生命周期](issues/24-native-cross-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | ready-for-agent |
-| 25 | [实际 ARM64 64K 的新合同与清理验收](issues/25-arm64-64k-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | ready-for-agent |
-| 26 | [Linux/Windows Full 长测与资源稳定性](issues/26-full-soak-lifecycle.md) | [23](issues/23-sdk-package-c-host-example.md) | ready-for-agent |
+| 24 | [五原生目标的合同矩阵与生命周期](issues/24-native-cross-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | claimed |
+| 25 | [实际 ARM64 64K 的新合同与清理验收](issues/25-arm64-64k-contract-matrix.md) | [23](issues/23-sdk-package-c-host-example.md) | claimed |
+| 26 | [Linux/Windows Full 长测与资源稳定性](issues/26-full-soak-lifecycle.md) | [23](issues/23-sdk-package-c-host-example.md) | claimed |
 | 27 | [M2 严格证据入口与最终集成判定](issues/27-strict-m2-evidence-gate.md) | [24](issues/24-native-cross-contract-matrix.md)、[25](issues/25-arm64-64k-contract-matrix.md)、[26](issues/26-full-soak-lifecycle.md) | ready-for-agent |
 
 ## 当前可领取项
@@ -50,9 +50,10 @@ ready-for-agent 表示本票需求可实施；领取前确认直接blocker已满
 `caa439ae`、`3e85a272`（接收收据 `71a5db50`、`5bc82e1c`、`64624ddd`）。
 19、20随后均已本地完成并独立合入`597020eb`、`943c1962`，接收分别为`2b3035f7`、
 `776e50cb`；21随后独立合入`13abf9ac`、接收`fe8a17d`，22亦于2026-11-06独立合入
-`b8b9f572`、接收`6cca6f9b`。23已本地完成，SKU3及包外纯C组合例、两端消费和
-Windows SDK child修复见[本票验证](23-sdk-delivery-validation.md)，尚待独立合并接收。
-19–23正式Cross/Full仍待验；24/25/26等待23实际独立合入。完整开发前置和各票验证范围见
+`b8b9f572`、接收`6cca6f9b`。23已独立合入`6ab8b73c`、接收`a5439c9d`；SKU3及
+包外纯C组合例、两端消费和Windows SDK child修复见[本票验证](23-sdk-delivery-validation.md)。
+19–23正式Cross/Full仍待验；24/25/26真实开发前置现已满足，已各自领取并行推进。
+27仍等待24–26实际正式全范围验收。完整开发前置和各票验证范围见
 [本地开发方式](local-development.md#2026-11-05剩余开发前置与验证范围)，原阻塞边不变。
 
 ## 初始 frontier（历史记录）

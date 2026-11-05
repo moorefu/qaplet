@@ -42,7 +42,10 @@
 | 21 | `codex/m2-21-cli` | `.cache/worktrees/m2-21-cli` | local_complete / cross_deferred（独立合并`13abf9ac`、接收`fe8a17d`） |
 | 22 | `codex/m2-22-cli-signal` | `.cache/worktrees/m2-22-cli-signal` | local_complete / cross_deferred（独立合并`b8b9f572`、接收`6cca6f9b`） |
 | 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | local_complete / cross_deferred（独立合并`6ab8b73c`；主接收`out/qaplet-m2/merge-23-sdk-delivery/handoff.json`；[验证](23-sdk-delivery-validation.md)） |
-| 24–27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 24–26等待23本地完成且独立合入，27等待24–26实际正式全范围；原合同保留 |
+| 24 | `codex/m2-24-native-matrix` | `.cache/worktrees/m2-24-native-matrix` | implementing_local；23已本地完成并独立接收，正式五原生合同保留 |
+| 25 | `codex/m2-25-64k-matrix` | `.cache/worktrees/m2-25-64k-matrix` | implementing_local；当前SKU3真实64K合同与循环待执行，旧产品成绩不替代 |
+| 26 | `codex/m2-26-full-soak` | `.cache/worktrees/m2-26-full-soak` | implementing_local；Linux/Windows各10000混合与1小时仍待实际执行 |
+| 27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 等待24–26实际正式全范围，本地完成标记不替代；原合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
 全部保持原文；父规格原字节未变，当前SHA-256为
@@ -507,3 +510,13 @@ source `2c856c85`，合并`6ab8b73c`的tree `2d7ee44f`等于source。完整13报
 [23验证](23-sdk-delivery-validation.md#独立本地接收)。23的本地完成及独立合入
 满足24–26本地开发前置；merger未领取后继，27仍等待其原正式前置。状态继续
 claimed/local_complete/cross_deferred，不签发父M2、全原生/64K/Full长测或最终两轴Review。
+
+2026-11-06（24–26真实开发前置满足）：23接收提交`a5439c9d`及主收据SHA256
+`14e3ba4cb74bc08a1a4ca28297c975764fc12785ad3df52fca56345240f2825a`已封存；
+13报告617行为记录（616pass+既有optional1）、6696主原件、双内部inventory、SKU3
+完整输入与包外保留闭包合前/合后通过，Ubuntu预检57解析/55编码通过。Root领取24、
+25、26，各fresh实现者和独立worktree并行推进。当前SKU3为产品`144d5e18`，三缺失
+原生槽位、guest仅export、M2专属1000/100和两端10000/一小时均不因本次接收转为通过。
+公共验证fixture按接口协调，不新增依赖；产品与评估器身份分别绑定，避免无变化重复
+构建或长测。原父spec、27/38/135和全部产品/安全/正式验收合同不变，27继续等待
+24–26实际正式全范围，不push/CI/发布。

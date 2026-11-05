@@ -53,10 +53,10 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 本地完成并独立合入`13abf9ac`，接收`fe8a17d`；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
 | 22 | 本地完成并独立合入`b8b9f572`，接收`6cca6f9b`；正式Cross/Full待验 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
-| 23 | 本地完成，待独立合并接收；正式Cross/Full待验 | Ubuntu完整SDK分发、包外纯C组合Host、双目标archive/旧新头/依赖、两端同字节消费、安全生命周期、Windows SDK child修复及consumer隔离/身份/保留闭包；[本票验证](23-sdk-delivery-validation.md) |
-| 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
-| 25 | 等待23本地完成并独立合并 | 实际ARM64 64K的新产品完整合同及至少1000生命周期、100混合异步；旧制品成绩不替代 |
-| 26 | 等待23本地完成并独立合并 | Linux/Windows各10000混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
+| 23 | 本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；正式Cross/Full待验 | Ubuntu完整SDK分发、包外纯C组合Host、双目标archive/旧新头/依赖、两端同字节消费、安全生命周期、Windows SDK child修复及consumer隔离/身份/保留闭包；[本票验证](23-sdk-delivery-validation.md) |
+| 24 | 23真实前置已满足，已领取并行实施 | 五原生完整合同及每目标至少1000次M2 create/close/quiesce/destroy、100混合异步；缺失宿主保留not_run |
+| 25 | 23真实前置已满足，已领取并行实施 | 实际ARM64 64K的新产品完整合同及至少1000次M2生命周期、100混合异步；旧制品成绩与export不替代执行 |
+| 26 | 23真实前置已满足，已领取并行实施 | Linux/Windows各10000真实混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
 | 27 | 等待24、25、26实际全范围验收 | 严格原件、身份、失败/缺项及最终矩阵判定；本地完成标记不能替代正式前置 |
 
 所有产品和SDK继续只在Ubuntu构建，Linux与Windows使用同一供应制品。本票新增行为按
@@ -106,3 +106,10 @@ Windows213+optional1、包外99/99、独立fault25/26及实际环境/TTY组合�
 TTY/工具/原件与失败边界见[19验证记录](19-aggregate-validation.md)及worktree HANDOFF。
 19保持claimed/local_complete/cross_deferred，独立合入前不放行依赖其开发的23；与20
 无新增依赖。父spec/原边/AC、其他原生/当前64K/CI/Full/组合长测/整体Review保持待验。
+
+2026-11-06：23独立no-ff`6ab8b73c`、接收`a5439c9d`已完成，主接收收据在
+`out/qaplet-m2/merge-23-sdk-delivery/`。当前SKU3普通Linux229、Windows228+optional1，
+包外示例14、CLI67/72、sender2/1、strong2/1保留各自真实输入和结果；只读跨OS矩阵
+两槽位通过、其余三槽位缺失。6个显式false、6个metadata/arguments适用性null和3个
+strong全SDK清理未直接证实的null分别保留。既有M1的1000生命周期不当作M2循环，
+guest export不当实际64K。24/25/26现并行领取，正式原合同及27前置均不降低。

@@ -22,6 +22,18 @@ Windows 默认优先使用已安装的 `%ProgramFiles%\WSL\wsl.exe`，再回退 
 
 Linux 下可直接在仓库根目录运行相同 make 入口。Windows 工作目录 `D:\Workspace\dairn\qaplet` 在此次 WSL 中映射为 `/mnt/d/Workspace/dairn/qaplet`，不假定其他机器盘符相同。ARM64 4K/64K 与此 WSL x64 4K 分开计数。
 
+### 既有 Markdown 换行与跨 OS Git 审计
+
+2026-11-06 的 M2-23 独立接收发现：主工作区103份历史Markdown保留CRLF，Ubuntu以
+`core.autocrlf=false`检查时标记修改，Windows缓存状态显示clean。逐文件原始字节核验
+证明这103份仅CRLF转LF后与HEAD blob逐字相等，合前/合后/接收后的原始字节均未改变；
+父M2规格和产品配方保持原字节。原件与失败观测见主`out/qaplet-m2/root-eol-23/`及
+`out/qaplet-m2/merge-23-sdk-delivery/`，不能把Windows缓存clean解释为原始字节相等。
+确认上述精确差异后，可用单次`git --no-optional-locks -c core.autocrlf=input status`
+检查文本语义状态；Python入口的子Git可用该次进程的`GIT_CONFIG_COUNT/KEY_0/VALUE_0`
+传入同值并记录实际命令。不写全局或仓库配置、不重写历史文档，也不将该处理泛化为
+忽略其它内容变化。专属worktree以LF检出，产品输入仍须raw/Git/供应快照逐字核验。
+
 ## ENV-01 环境验收与目录
 
 复用现有 Ubuntu-22.04；不需要再次安装 WSL。以普通 Linux 用户在上述源码目录运行：

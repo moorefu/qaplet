@@ -4,11 +4,11 @@
 
 **Blocked by:** [23 · 完整 SDK 分发与包外 C Host 示例](23-sdk-package-c-host-example.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 等待23本地完成并独立合并才可展开当前产品矩阵；正式验收仍要求五原生实际合同与规定生命周期，缺失宿主不能以本地完成替代。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。当前SKU3仅Linux/Windows普通槽位通过，正式验收仍要求五原生完整适用合同及每目标M2生命周期1000次、混合异步100次，缺失宿主保留not_run。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 1、99、100、101、102、103、104、105、106、107、108、109、110。
 
@@ -53,4 +53,9 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-06：23独立接收后领取本票，使用fresh实现者、独立分支/worktree推进当前产品
+的mandatory inventory和Linux/Windows本地矩阵。优先复用同SKU3已封存原件，补足当前
+特殊合同及真正M2 create/close/quiesce/destroy和混合循环；M1的1000循环不改贴为M2。
+与25/26只协调公共验证fixture，不增加依赖边。正式其余原生、CI及全范围验收仍待实测。
 

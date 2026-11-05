@@ -4,11 +4,11 @@
 
 **Blocked by:** [23 · 完整 SDK 分发与包外 C Host 示例](23-sdk-package-c-host-example.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 等待23本地完成并独立合并才可展开当前产品Full；Linux/Windows各10000混合生命周期与1小时交替长测仍需实际执行。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。Linux/Windows各10000真实混合生命周期与1小时交替长测仍需实际执行，23的普通目录及M1兼容循环不能替代。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 5、15、42、47、49、58、63、64、70、76、77、79、80、84、85、86、87、88、89、90、91、92、93、100、101、102、110。
 
@@ -53,4 +53,9 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-06：23独立接收后领取本票，fresh实现者以独立分支/worktree实现并执行两端
+Full。先协调公共fixture及固定SDK/APE身份，再开始昂贵验证；实际资源覆盖、进度、
+次数、时长、OS/POD基线与安全清理均保留原件。与24/25并行开发，不新增依赖边；
+不以空实例、outer timeout、进程退出或强制设施清理冒充SDK原生quiescent。
 
