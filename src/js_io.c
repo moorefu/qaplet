@@ -87,6 +87,13 @@ static int deliver_control(qaplet_runtime *r) {
   if(code || qaplet_execution_dispatch(r))return -1;
   e->control=2;refresh_closed(r,e);control_counts(r);return 1;
 }
+static int endpoint_retained(qaplet_runtime *r,const qaplet_io_endpoint *token) {
+  /* Owner-only C metadata query. A wrapper remains here through its complete
+   * close/jobs handoff, including when its JS object was garbage collected. */
+  for(js_endpoint *e=r->js_io_endpoints;e;e=e->next)
+    if(e->token.runtime_id==token->runtime_id && e->token.slot==token->slot && e->token.generation==token->generation)return 1;
+  return 0;
+}
 static JSValue task_cancel(JSContext *c,JSValueConst self,int argc,JSValueConst *argv) {
   (void)argc;(void)argv;js_io_task *t=JS_GetOpaque(self,task_class);if(!t)return fail(c,QAPLET_INVALID_HANDLE);
   qaplet_runtime *r=JS_GetContextOpaque(c);qaplet_code code=t->terminal ? (t->code==QAPLET_CANCELLED ? QAPLET_OK : QAPLET_ALREADY_COMPLETED) : qaplet_io_cancel(r,&t->token,NULL);
@@ -188,5 +195,5 @@ JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,
   js_endpoint *e=js_mallocz(c,sizeof(*e));if(!e){JS_FreeValue(c,object);return JS_EXCEPTION;}
   e->token=*token;e->writing=writing;e->refs=1;e->resolve=e->reject=JS_UNDEFINED;JS_SetOpaque(object,e);
   if(promise_property(c,object,"closed",&e->resolve,&e->reject)<0){JS_FreeValue(c,e->resolve);JS_FreeValue(c,e->reject);JS_FreeValue(c,object);return JS_EXCEPTION;}
-  ++e->refs;e->next=r->js_io_endpoints;r->js_io_endpoints=e;r->io_js_deliver=deliver_io;r->io_js_control_deliver=deliver_control;return object;
+  ++e->refs;e->next=r->js_io_endpoints;r->js_io_endpoints=e;r->io_js_deliver=deliver_io;r->io_js_control_deliver=deliver_control;r->io_js_endpoint_retained=endpoint_retained;return object;
 }

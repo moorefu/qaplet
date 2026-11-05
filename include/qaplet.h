@@ -590,6 +590,8 @@ qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_
  * handle, helper and quotas remain retained until actual exit and join.
  * get returns only an explicitly attached stream; JS cannot implicitly attach.
  * detach closes the SDK endpoint, invalidates its token, and starts retirement.
+ * It returns BUSY without side effects while a JS wrapper still owns its close
+ * or jobs handoff: close the endpoint and drive that completion before retry.
  * All mutations are owner-only outside drives/callbacks; inspect is owner-only.
  * No native handle is exposed. info errors describe classification/start errors.
  */

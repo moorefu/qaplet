@@ -233,23 +233,27 @@ static int close_scenario(int mode){
   const char *source="Promise.all([import('qaplet:stdio'),import('host:stdio-close')]).then(([m,h])=>m.stdout.closed.then(()=>41).then(v=>{h.mark();return v+1}))";
   qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY && !trace.calls);
   qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.operations && !io.accepted && !io.data_bytes);
+  qaplet_io_endpoint_status endpoint_status=QAPLET_IO_ENDPOINT_STATUS_INIT;
+  if(mode==3)CHECK(qaplet_stdio_detach(r,1,NULL)==QAPLET_BUSY && qaplet_get_io_endpoint_status(r,&ep,&endpoint_status,NULL)==QAPLET_OK && !endpoint_status.ended && !trace.calls);
   CHECK(qaplet_io_close(r,&ep,NULL)==QAPLET_OK && !trace.calls);
   if(!unref){
     CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING && !trace.calls);
     CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.pending_handoffs==1 && !io.operations && !io.data_bytes);
+    if(mode==3)CHECK(qaplet_stdio_detach(r,1,NULL)==QAPLET_BUSY);
   }
   if(!barrier){
     if(unref)CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY && !trace.calls && qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
     else CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE);
     qaplet_result result=QAPLET_RESULT_INIT;CHECK(trace.calls==1 && !trace.wrong_owner && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
     CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs);
+    if(mode==3)CHECK(qaplet_stdio_detach(r,1,NULL)==QAPLET_OK && qaplet_get_io_endpoint_status(r,&ep,&endpoint_status,NULL)==QAPLET_INVALID_HANDLE);
   }
   CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
   CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.operations && !io.data_bytes && !io.endpoints && !io.pending_handoffs && qaplet_destroy(r,NULL)==QAPLET_OK);
   CHECK((!barrier || !trace.calls) && !restore_file(&fixture));return 0;
 }
 static int c_close_js(void){
-  for(int mode=0;mode<3;++mode)CHECK(!close_scenario(mode));
+  for(int mode=0;mode<4;++mode)CHECK(!close_scenario(mode));
   puts("M2 stdio C-close JS observation: no IO task; bounded completion/ref through full jobs; unref explicit pump; Runtime close suppresses pending user jobs; original handles and cleanup preserved: pass");return 0;
 }
 static int js_errors(void){

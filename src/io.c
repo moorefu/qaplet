@@ -352,7 +352,10 @@ qaplet_code qaplet_stdio_attach(qaplet_runtime *r,uint32_t stream,qaplet_io_endp
 qaplet_code qaplet_stdio_detach(qaplet_runtime *r,uint32_t stream,qaplet_diagnostic *d) {
   qaplet_code code=standard_preflight(r,stream,NULL,NULL,d);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);qaplet_io_endpoint token=QAPLET_IO_ENDPOINT_INIT;
-  if(qaplet_io_standard_locked(r,stream,&token,NULL)){
+  int attached=qaplet_io_standard_locked(r,stream,&token,NULL);pthread_mutex_unlock(&r->mutex);
+  if(attached && r->io_js_endpoint_retained && r->io_js_endpoint_retained(r,&token))return qaplet_report(d,QAPLET_BUSY);
+  pthread_mutex_lock(&r->mutex);
+  if(attached){
     io_endpoint *e=endpoint_locked(r,&token);if(e->pending)cancel_locked(r,e->pending);
     close_endpoint_locked(r,e);e->detached=1;e->standard=0;qaplet_wake_locked(r);
   }
