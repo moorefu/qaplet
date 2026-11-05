@@ -57,6 +57,7 @@ enum {
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_PROCESS = 1u << 22,
   QAPLET_CAP_PROCESS_IO = 1u << 23,
+  QAPLET_CAP_STDIO = 1u << 24,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -508,6 +509,12 @@ typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t runtime_id, slot, generation;
 } qaplet_io_operation;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint32_t writing, ended, referenced, physical_pending;
+  uint64_t pending_handoffs;
+} qaplet_io_endpoint_status;
+#define QAPLET_IO_ENDPOINT_STATUS_INIT {sizeof(qaplet_io_endpoint_status),QAPLET_ABI_VERSION,0,0,0,0,0}
 typedef enum { QAPLET_IO_PENDING, QAPLET_IO_SUCCEEDED, QAPLET_IO_FAILED, QAPLET_IO_CANCELLED } qaplet_io_state;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -546,6 +553,12 @@ qaplet_code qaplet_io_read(qaplet_runtime *,const qaplet_io_endpoint *,size_t,qa
 qaplet_code qaplet_io_write(qaplet_runtime *,const qaplet_io_endpoint *,const void *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_io_finish(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
 qaplet_code qaplet_io_close(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
+/* Idle endpoints do not keep the loop alive. A referenced endpoint retains
+ * accepted operations until the owner completion/jobs checkpoint. Process
+ * endpoints initially rely on their process reference; stdio defaults to ref. */
+qaplet_code qaplet_io_set_ref(qaplet_runtime *,const qaplet_io_endpoint *,uint32_t,qaplet_diagnostic *);
+/* Any-thread POD query; ended tokens stay queryable until resource detach. */
+qaplet_code qaplet_get_io_endpoint_status(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_io_endpoint_status *,qaplet_diagnostic *);
 /* Any thread, no JS. Cancellation wins once under the native publication lock;
  * repeated retained cancellation is OK, a published result ALREADY_COMPLETED.
  * Queries copy POD only. Like every SDK entry, HostNotify reentry is BUSY.

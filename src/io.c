@@ -26,7 +26,7 @@ typedef struct io_operation io_operation;
 typedef struct {
   uint64_t generation, handoffs;
   uint32_t write_chunk;
-  int active, writing, finishing, ended, detached, fd;
+  int active, writing, finishing, ended, detached, fd, referenced;
   int64_t handle;
   io_operation *pending;
 } io_endpoint;
@@ -342,6 +342,11 @@ struct pollfd *qaplet_io_poll_locked(qaplet_runtime *r,nfds_t *count) {
 int qaplet_io_ready_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return 0;
 }
+int qaplet_io_referenced_locked(qaplet_runtime *r) {
+  qaplet_io_pool *p=r->io_pool;
+  if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i){io_endpoint *e=&p->endpoints[i];if(e->active && e->referenced && e->handoffs)return 1;}
+  return 0;
+}
 unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
   unsigned count=0;pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations && count<max;++i){io_operation *o=&p->operations[i];
@@ -405,6 +410,20 @@ static qaplet_code endpoint_control(qaplet_runtime *r,const qaplet_io_endpoint *
 }
 qaplet_code qaplet_io_finish(qaplet_runtime *r,const qaplet_io_endpoint *e,qaplet_diagnostic *d){return endpoint_control(r,e,1,d);}
 qaplet_code qaplet_io_close(qaplet_runtime *r,const qaplet_io_endpoint *e,qaplet_diagnostic *d){return endpoint_control(r,e,0,d);}
+qaplet_code qaplet_io_set_ref(qaplet_runtime *r,const qaplet_io_endpoint *t,uint32_t referenced,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));
+  if(!code && referenced>1)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,t);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(r->snapshot.lifecycle!=QAPLET_OPEN)code=QAPLET_BAD_STATE;else if(!e)code=QAPLET_INVALID_HANDLE;else e->referenced=referenced;
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
+qaplet_code qaplet_get_io_endpoint_status(qaplet_runtime *r,const qaplet_io_endpoint *t,qaplet_io_endpoint_status *out,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
+  pthread_mutex_lock(&r->mutex);io_endpoint *e=endpoint_locked(r,t);
+  if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(r->snapshot.lifecycle==QAPLET_CLOSED || !e)code=QAPLET_INVALID_HANDLE;
+  else {qaplet_io_endpoint_status value={sizeof(value),QAPLET_ABI_VERSION,e->writing,e->ended,e->referenced,e->pending ? e->pending->physical : 0,e->handoffs};memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
+  pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
+}
 qaplet_code qaplet_io_cancel(qaplet_runtime *r,const qaplet_io_operation *t,qaplet_diagnostic *d) {
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(t,sizeof(*t));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
   qaplet_notification notification={0};pthread_mutex_lock(&r->mutex);io_operation *o=operation_locked(r,t);
