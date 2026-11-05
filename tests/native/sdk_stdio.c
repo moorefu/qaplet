@@ -195,7 +195,7 @@ static int js_bytes(void){
     "let invalid=0;for(const n of [-1,0,NaN,Infinity,1.5,'3']){try{m.stdin.read(n)}catch(e){if(e.code===1)invalid++}}if(invalid!==6)throw Error('strict read');"
     "try{m.stdout.write('bytes');throw Error('accepted text')}catch(e){if(e.code!==8)throw e}"
     "let cancelled=m.stdin.read(32);cancelled.cancel();cancelled.cancel();"
-    "await cancelled.promise.then(()=>{throw Error('cancel success')},e=>{if(e.code!==28||e.bytesWritten!==0)throw e});"
+    "await cancelled.promise.then(()=>{throw Error('cancel success')},e=>{if(e.code!==28||e.bytesWritten!==0||!(e.bytes instanceof Uint8Array)||e.bytes.length!==0)throw e});"
     "const task=m.stdin.read(32);let busy=false;try{m.stdin.read(1)}catch(e){busy=e.code===4}if(!busy)throw Error('busy');"
     "const first=await task.promise;if(first.eof||Array.from(first.bytes).join(',')!=='0,1,127,128,255,10')throw Error('bytes');"
     "let input=new Uint8Array([0,255,1]);const write=m.stdout.write(input);input.fill(4);"

@@ -77,7 +77,10 @@ Attached `stdin`, `stdout` and `stderr` expose `kind`, `read(n)` or
 `write(Uint8Array)` returning `{promise, cancel}`, plus `closed`, `finish`,
 `close`, `ref`, `unref`, and `hasRef`. Read resolves `{bytes, eof}` and write
 resolves `{bytesWritten}`; errors carry `code`, `errorDomain`, `error`, and
-`bytesWritten`. Streams retain their explicit attachment snapshot at first import.
+`bytesWritten`, plus a copied `bytes` array for consumed read data. Streams retain
+their explicit attachment snapshot at first import. Close/finish and await `closed`
+before the Host detaches a stream represented in JS; detach invalidates old JS
+handles and does not rebind cached module exports.
 
 POSIX pipes must already have Host-authorized `O_NONBLOCK`. Windows pipes must
 be real overlapped byte pipes, with a queryable quota for writes. Synchronous
