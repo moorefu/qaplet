@@ -446,6 +446,12 @@ struct pollfd *qaplet_io_poll_locked(qaplet_runtime *r,nfds_t *count) {
 int qaplet_io_ready_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return 0;
 }
+int qaplet_io_issuable_locked(qaplet_runtime *r) {
+  qaplet_io_pool *p=r->io_pool;
+  if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
+    if(o->active && o->helper && o->state==QAPLET_IO_PENDING && !o->physical)return 1;
+  }return 0;
+}
 int qaplet_io_referenced_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
