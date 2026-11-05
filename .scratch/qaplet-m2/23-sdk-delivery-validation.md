@@ -1,6 +1,7 @@
 # 23 · SDK 分发与包外 M2 C Host：本地验证
 
-当前仍在实施。专属 `codex/m2-23-sdk-delivery` 从实际 integration
+本票本地完成，状态为 `local_complete / cross_deferred`，待独立合并接收。
+专属 `codex/m2-23-sdk-delivery` 从实际 integration
 `9117eaae6153ccce642add21fa4f2d9ea26e95d8` 开始；19/22均已独立合入。
 本记录不签发 M2、正式 Cross/Full、五原生、实际64K、长测或 release-ready。
 父 spec、27票38边135AC、默认额度和旧 M1 ABI/创建模式保持不变。
@@ -69,6 +70,116 @@ Linux与Windows各8项均通过：
 
 ## 分发与正式工具收口
 
-独立内部实现分支分别负责consumer隔离/输入packing保留/sender与强门，及新增
-M2 C组合例。最终融合后的供件、完整包外消费、身份和结论在本节后续补录，
-此处不提前宣告本票本地完成。
+内部独立分支 `codex/m2-23-consumer-tools` 的 `0bcc9918` 通过 `04b68e3`
+融合；包外示例 `5e8cfb3` 通过 `7ced44c` 融合。最终产品配方冻结
+`144d5e18b2b8041c9b0b05aaf49302fcd0e8eef9`。随后 `d6d1d16` 只为
+`tests/contracts/test_sdk_native.py` 两处read_text补显式UTF-8，不属于115项
+产品RECIPE；最终consumer保存实际更新的测试字节，不修改producer的119项旧快照。
+最终消费者身份不是声称动态追踪所有child import；该部分仍unknown。
+
+最终原件根为本worktree的 `out/m2-23-sdk-delivery/`；准确路径、摘要、raw清单和
+接收步骤见其中 `HANDOFF.md`、`handoff.json`。以下所有最终运行均消费SKU3，
+没有以SKU1/2成绩改贴当前身份。所有编译/打包/fixture在Ubuntu；Windows消费同字节。
+
+### 冻结供应
+
+`build-3.json`（671259字节，SHA-256
+`785cb3c7617c9947d1932a663e5bf9d034662c586862b9d997941abd55b9a604`）
+为成功且working_tree_dirty=false的producer。SDK recipe为
+`e9c533fa65ad75e6b592399e6d3a24efbcbc916d44ac62ee463930b0a0608eff`，
+SDK身份为`2891f740b55e386ea53d51baf3e21c99d207605a64b9d059b1c23b2833670501`，
+原ZIP为`aafff422f0328c421587de6f664f22e8b9a33124e7fe6059ceb008ba02a5d96e`。
+包含115项recipe、119项提前保存的build输入、18项engine输入、76项SDK成员、
+104项ZIP成员、4个fat APE、x86_64/aarch64各19对象的archive，以及4份original-packer。
+
+| 最终APE | SHA-256 | 字节数 |
+|---|---|---|
+| qaplet-host.com | 1f6fda6076ce6475c1485819a51cedd7f142e43a2d35095a01c9d7c55a9bb9aa | 6183414 |
+| qaplet.com | 20fdd5ab0ef0e5c6573b21b375ea91521fa483ea7aff21aace847311a4a21da2 | 2746430 |
+| qaplet-example.com | c4645d6fc72331180b1cc30a027edbbb286287fb15d2e87702cecf9d7a1e9593 | 2817275 |
+| qaplet-m2-example.com | eaa8867ce295175d44172f65370d83820766564e0ae778717e2e28569a21a40c | 2750675 |
+
+`supply-1-2-3-byte-comparison.json`保存三个真实供应及最终包外重编译的逐字比较。
+公开头、旧M1头、双archive、两份示例源码、loader、CLI及两例相等；Host不同，
+两个CPU slice的`__FILE__`嵌入供应目录，产生30B字面值及派生APE字段差异。
+不归一化、不声称四个APE跨供应均相等。SKU3本身的四个APE逐一绑定两端真实消费。
+最终ZIP在checkout外独立编译的两例与SKU3两例也各自逐字相等。
+
+### 同一M2 Runtime的包外纯C组合例
+
+新增 `examples/application-m2.c` / `sdk/application-m2.c` 与5字节真实输入文件。
+示例只依赖公开头/目标archive，注册显式命名文件work，使用自己的外部producer线程、
+复制event、keepalive和非阻塞HostNotify提示接入外部loop；同一Runtime继续spawn
+child、复制stdin/finish、独立并发拉取stdout/stderr、观察exit/reap/delivery及POD。
+不添加SDK内置handler、默认额度或第二executor。旧 `application.c`、`m1-qaplet.h`
+及旧创建方式保留。实例能力/公开能力均67076095；manifest含14项旧默认和19项M2
+默认，worker2/helper4，与CLI帮助和运行实例metadata一起验收。
+
+六种实际模式为normal、file-error、cancel、cleanup-pending、metadata、arguments。
+正常文件work返回原始5字节；错误返回稳定code19/domain1/error2；取消返回code28，
+先确认接受取消及physical_pending，再释放gate并等待helper真实退出。child退出37，
+stdin/stdout复制字节、stderr及两个EOF独立验证。正常/错误/取消完成真实
+close/quiesce/destroy并join producer。cleanup-pending保留未退役work、字节、代码和
+userdata，CLOSED后短quiesce超时，destroy返回BUSY，不谎称已清理；该负向由进程退出
+收回OS资源。metadata/arguments的summary清理字段为null，分别代表未纳入该行为
+模式的清理判定，不与strong下整实例清理未知混同。示例实现过程中的Windows
+9472退出值和helper暂未退休错误24原件保留，没有重标旧失败。
+
+### 最终实际消费与只读重放
+
+| 报告 | 真实结果与范围 |
+|---|---|
+| normal-linux-3.json | 229/229；162 Host、53 CLI、8 M1例、6 M2例 |
+| normal-windows-3.json | 228 pass + 1既有可选symlink blocked；无required skip |
+| examples-linux-3.json | ZIP包外独立编译两例，14/14；不是完整package-consume目录成绩 |
+| cli-linux-3.json / cli-windows-3.json | 67/67及72/72，真实输出/结果/退出/未知overlapped保留 |
+| sender-linux-3.json / sender-windows-3.json | 2/2 SIGINT/SIGTERM及1/1 Ctrl+C；保存senderPID、API返回值和实际OS事实 |
+| strong-linux-3.json / strong-windows-3.json | 2/2及1/1；独立native arm确认实际child身份后发布READY，公开spawn无await后同栈for(;;) |
+| native-guard-linux-3.json | 只读Fast语义重放pass，不另执行产品 |
+| native-guard-local-3.json | 两份真实normal均接受：Linux/Windows两个native slot pass；其余三个缺失blocked，总体blocked/exit2 |
+| guest-export-3.json | 仅导出229合同和第四APE的实际64K payload；guest未执行 |
+
+Linux宿主为Ubuntu22.04/WSL2 `6.6.87.2-microsoft-standard-WSL2`、x86_64、4096页；
+Windows为10.0.22000、x86_64、4096页，普通用户实际PE执行；CPU为13th Gen Intel
+Core i9-13900K。每份报告保留自身OS/执行方式和真实命令时长；没有supervisor timeout
+被计为通过。旧Host的`--lifetime`输出1000是M1 qaplet_create兼容循环，不外推成
+M2+quiesce1000；五原生/M2完整循环、实际64K、100混合、10000混合和1小时仍归24–26。
+
+三个mixed固定文件smoke各在UUID/case独立cwd执行，argv使用canonical供应child，
+执行前把小child逐字保留到该case内。`process_child`同时绑定精确original/retained/
+package_member。strict只读UUID evidence根内retained快照并核路径/hash/size，不访问
+原supplier、不扩大guard、不用hash搜索或隐式路径映射。`moved-and-mixed-contracts-3`
+真实运行foreign_supplier回归1项：Ubuntu移出真实Windows报告的三个child快照即可接受，
+错original路径和改变快照字节均拒绝；`mixed-contract-linux-3`另验固定文件及三cwd。
+
+两份normal的mixed-nonreturning和cleanup-pending分别保持cleanup=false；包外例的
+pending也false；Windows CLI overlapped-unknown-completion为false。strong三个
+case的整SDK清理均null：Linux独立subreaper核ECHILD及/proc消失，Windows持有确切
+child HANDLE核wait0/GetExitCodeProcess成功及53261，CLI退出1；这些实际退出事实
+不冒充整实例quiescence。`selected-summary-3.json`列全部false/null的准确case与范围。
+22旧三个false、三个strong null、两个已消失pre-repack中间物、503→511启动限制
+仍保留原身份与范围，未作支持扩张。
+
+### 输入保留、失败历史与工具验证
+
+外部consumer在第一个compiler/helper前保存全部76个SDK member；每条记录以
+`package_member/original/retained`绑定原命令路径和精确ZIP成员。每次portable link
+立即保留original-packer，受控repack失败也有原件。最终两份外部报告各有76输入及
+2个packing。两个原/tmp目录在清理前已不可达，原因unknown，没有执行rmtree或重建；
+`commands/cleanup-temporary-3`的首个安全断言失败、第二次实际缺失观察及
+`temporary-consumers-retention-3.json`逐字核验全部保留输入/ZIP/packer均保存。
+最终两份retention合同各2项通过，原目录缺失不破坏审计。
+
+`signal-build-1.json`保留独立arm及其他fixture的真实早期供应身份，其公开头/双库
+与SKU3相等；arm没有链接SDK archive。后续只消费SKU3 CLI及这些确切fixture字节，
+没有重标成SKU3构建。工具子分支保存Win/Linux local_check各12项（1项适用性skip）、
+受控packing失败及旧22 sender/strong红绿；本分支最终相同profile合同和preflight
+再次核验当前源。`package-contract-linux-3`2项验证封包/能力及拒绝伪造reap/cleanup。
+
+SKU1在严格重放首次暴露真实`modules/../process-child.exe`路径guard失败；保留
+`native-guard-linux-1`和`red-canonical-child`原件，随后RECIPE修改产生SKU2。
+新增跨OSchild引用的可搬移闭包再次修改RECIPE产生SKU3，SKU2未启动完整normal。
+旧SDK控制错误、受限执行上下文失败、示例早期失败和30秒test_ci_reuse聚合超时
+都保留。后者的单场景离线回放12.352秒pass及strace只作诊断，不能改贴为整套CI通过。
+固定Nightly libc源码映射unproven、动态child imports unknown、其它三个native目标/
+guest/CI/Full及最终Standards/Spec两轴Review仍欠缺。父M2保持in_progress，release_ready=false。

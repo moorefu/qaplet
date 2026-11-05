@@ -53,7 +53,7 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 本地完成并独立合入`13abf9ac`，接收`fe8a17d`；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
 | 22 | 本地完成并独立合入`b8b9f572`，接收`6cca6f9b`；正式Cross/Full待验 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
-| 23 | 19/22本地完成并独立合入；已领取实施 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、同字节消费与安全生命周期，正式consumer隔离/身份及已复现SDK child问题诊断 |
+| 23 | 本地完成，待独立合并接收；正式Cross/Full待验 | Ubuntu完整SDK分发、包外纯C组合Host、双目标archive/旧新头/依赖、两端同字节消费、安全生命周期、Windows SDK child修复及consumer隔离/身份/保留闭包；[本票验证](23-sdk-delivery-validation.md) |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
 | 25 | 等待23本地完成并独立合并 | 实际ARM64 64K的新产品完整合同及至少1000生命周期、100混合异步；旧制品成绩不替代 |
 | 26 | 等待23本地完成并独立合并 | Linux/Windows各10000混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
