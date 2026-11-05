@@ -2,7 +2,7 @@
 
 本地实现分支 `codex/m2-16-js-process`，起点为实际 integration
 `2d538a1507468cb275e8b63b995f47bf58932a8e`。12、14、15 均是已合入祖先。
-当前记录尚在补齐最终供应与交接，不把候选执行或构建成功写成正式 Cross/Full。
+当前本地状态为 local_complete / cross_deferred，不把候选执行或构建成功写成正式 Cross/Full。
 票 16 继续 `claimed`，验收组及父规格不改。
 
 原件根为 `D:/Workspace/dairn/qaplet/.cache/worktrees/m2-16-js-process/out/m2-16-js-process/`。
@@ -85,7 +85,7 @@ PROCESS_IO。STDIO 常量和状态/ref 基础由 17 共享，未完成 17 时不
   在完整 checkpoint 后被撤。`reap-green-linux` 分别保存实际 reaped 位，并把
   collect/handoff 的自动解除 ref 和显式 set_ref 的有效期都绑定实际 reap。
   closed 保持未决，显式 unref 可解除自然等待；CLOSED 后 engine=0，未知原生
-  记录/容量保留，quiesce 仍报 PROCESS_ERROR/WAIT_TIMEOUT，destroy BUSY。
+  记录/容量保留，quiesce 返回 PROCESS_ERROR、native 仍 CLEANING，destroy BUSY。
   本用例的通过表示安全保留这一负向合同，绝不表示 native cleanup 完成；
   有界保留随受控 Host 进程结束收口。17 的 stdio 供应不依赖此 Process 专属增量。
 
@@ -105,9 +105,58 @@ child 确认消费 4096 字节后关闭，实际已写量严格在消费量与 1
 
 ## 最终验证与保留范围
 
-待融合当时实际 integration tip 后，以完整 `sdk.py build` 供应当前源码，保存
-Linux/Windows 同字节正常 catalog、包外 public SDK consumer、受控故障及本地
-开发检查的原件。交接时补齐确切源码、recipe、SDK、ZIP、OS、命令和清理摘要。
+已融合实际17合入点 `caa439aeaf384e9db85a4e2e06c51d8ad40fa659`，
+完整产品供应源码为 `13282ae6f69d4856c8979dafb411e764fd6ab8ac`。
+之后融合当前 integration `a5067a9cb018a7a59934dbb81a67f6101f6b0529`
+只涉及6份非 recipe 文档；逐项核对当前源码、生产提交与交接提交的86份 recipe
+原始 LF 字节，不为纯文档变化重供。17的STDIO24、9个stdio用例、d501的detach
+BUSY屏障及真实物理退额夹具全部保留；同时注册6个M2 builtin身份，未新增票依赖。
+
+最终仅选择 `build-final.json`、`final-artifacts/`，不选择旧候选。
+SDK recipe为 `541ff25d9fabda738092910181edac035f45146a0d9ed006d9ed50387f078937`；
+SDK为 `34733c0aa5be9f6490096c6ce5975df8d058e0636d8d20699e45665891c1b9c5`；
+原始ZIP `final-artifacts/qaplet-sdk.zip` 为17035933字节，SHA-256
+`35913d2247cf2dfed445e60480445fbdd24a1e670eaacd81a7c0e76c50855af9`。
+完整配方构建于Ubuntu；x86_64/aarch64 archive分别审计ELF64 REL目标和19个对象。
+82个ZIP成员、SDK组件、3个APE及sidecars均复核原始供应身份。
+
+| 最终公开边界 | Linux x86_64 | Windows x86_64，同供应字节 |
+|---|---|---|
+| normal SDK/CLI/application | 208 pass | 207 pass；既有optional symlink 1 blocked；required gap=0 |
+| package，封存ZIP包外public SDK | 94 pass | 94 pass |
+| fault，独立受控系统配方 | 24 pass | 25 pass |
+| JS Process实际循环 | 1000生命周期+100混合IO/取消/错误 | 1000生命周期+100混合IO/取消/错误 |
+
+当前正常目录的13个JS Process用例在两端全部通过；循环实际耗时分别为
+3.663192s和15.034440s。正常成功路径每轮观察真实reap、close、quiesce和destroy；
+stop/dispatch/捕获分配失败不再执行用户then/catch/finally，普通OPEN错误可恢复。
+POSIX故障用例真实偷走reap，保留ECHILD/reaped=false，closed不完成、默认ref保留，
+显式unref有效；CLOSED后engine=0但未知原生记录继续占用，quiesce报PROCESS_ERROR，
+destroy BUSY。该负向通过绝不表示未知资源已经清理；有界保留随受控Host进程结束。
+Windows单独实测IO helper启动EAGAIN及精确ERRNO/native错误、严格参数拒绝不带旧错误。
+
+两端实测页大小4096；Linux kernel `6.6.87.2-microsoft-standard-WSL2`，
+Windows kernel `10.0.22000`，CPU/execution_arch均x86_64、执行方式native。
+所有Windows产品执行使用已证实可实跑的正常提升上下文；受限上下文旧超时不改写。
+`scripts/dev.py check`在当前产品源码通过：411工具合同测试，210执行/201显式条件skip，
+另有真实C bootstrap；该tool检查不替代产品/平台验收。
+
+原件选定 `normal-linux/windows.json`、`package-linux/windows.json`、
+`fault-linux/windows.json`、`devcheck.json` 和 `build-final.json`。
+所有实际argv/cwd/期限/OS/输出及before/after身份见同名 `.command.json`、
+`.imports.json`、原始stdout/stderr，以及报告中每条command引用的原始日志。
+Windows package/fault只重放Ubuntu包外构建的相同字节，自己未编译。
+实际parent Python调用/导入与静态tracked/local helper清单分别保存，子进程动态导入
+保持unknown。最终 `HANDOFF.md` / `handoff.json` 供独立merger只读复核。
+
+| 票16本地合同对应 | 当前公开验收证据 |
+|---|---|
+| 显式路径/参数/完整环境/三种stdio/稳定错误 | js-inputs、js-basic、原C process输入目录、包外重放 |
+| owner Promise，exit/reap、EOF、数据、关闭分开 | js-bytes、js-finish-after、js-lifetime、reap受控负向 |
+| ref/unref、GC和直接child责任 | js-liveness、js-lifetime、1000/100循环；EOF与直接回收分别保留 |
+| 双通道、部分写、BUSY、背压、取消、稳定错误 | js-partial/backpressure/io-cancel/limits；Windows start故障 |
+| 既有轮转/账本/jobs、stop/close与物理lifetime | js-terminal、js-issue、共享Work/IO限额、C IO/fault完整目录 |
+
 
 其他必需原生宿主、当前实际 64K、远端 CI/Cross/Full、最终混合资源长测和发布
 门禁保持 deferred。预检、候选、供应构建、平台产品执行分别报告；外部超时、

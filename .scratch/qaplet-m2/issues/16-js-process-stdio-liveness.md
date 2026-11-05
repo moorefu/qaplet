@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local；独立分支 `codex/m2-16-js-process`。
+**Execution state:** local_complete / cross_deferred；独立分支 `codex/m2-16-js-process`。
+
+**Local development:** complete；公开 JS/C、封存包外 SDK 和受控系统故障在本地 Linux/Windows 同字节验收完成。详细范围、失败历史与清理事实见[验收记录](../16-js-process-validation.md)；原件与最终收据位于该 worktree 的 `out/m2-16-js-process/HANDOFF.md` 和 `handoff.json`。其他必需原生目标、当前实际 64K、CI/Cross/Full、最终混合资源长测与发布就绪保持待验，不改变 claimed 状态或下列正式验收合同。
 
 **Execution prerequisites:** 12、14、15本地完成并已独立合并（`3d03f855`、`25d3eb12`、`65de84e2`），实际集成祖先已核验；可与17并行。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -53,6 +55,8 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-05：本地完成；融合已独立合入的17及当时实际 integration `a5067a9` 后交接。当前最终供应产品 `13282ae`、全部原始日志与受控负向保留；尚未由本实现者合入根分支或 push，正式验收欠项不清零。
 
 2026-11-05：按用户指示领取本地实现；保留全部产品、安全和正式验收合同。本地验收并独立合并后放行开发，正式跨平台验收仍保留最终收口。
 
