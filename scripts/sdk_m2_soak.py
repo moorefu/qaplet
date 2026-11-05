@@ -3,6 +3,7 @@
 """Observe supplied M2 Full workloads and replay their actual raw evidence."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -105,6 +106,10 @@ def observe_command(argv, cwd, directory, timeout, interval=1.0, *, target_progr
                            'progress': progress(progress_path) if progress_path.exists() else {}}
                     try:
                         row['resources'] = linux_resources(child.pid)
+                    except PermissionError as error:
+                        row['sample_error'] = {'errno': error.errno, 'reason': str(error),
+                                               'source': '/proc target resource query'}
+                        row['progress_after_sample'] = progress(progress_path) if progress_path.exists() else {}
                     except (FileNotFoundError, ProcessLookupError):
                         row['process_exited_during_sample'] = True
                     observations.write(json.dumps(row, sort_keys=True) + '\n')
@@ -162,6 +167,9 @@ def sample_summary(command):
     rows = [json.loads(line) for line in complete_lines(command['samples_log'])]
     if any('sampler_error' in row for row in rows) or command['sampler_exit_code'] != 0:
         raise ValueError('OS sampler failed; raw failure remains in evidence')
+    unavailable = [row for row in rows if row.get('sample_error')]
+    if any(row.get('progress_after_sample', {}).get('type') != 'final' for row in unavailable):
+        raise ValueError('OS resource query unavailable before actual final cleanup')
     active = [row for row in rows if row.get('resources')]
     if len(active) < 2:
         raise ValueError('At least two real OS samples required')
@@ -194,6 +202,7 @@ def sample_summary(command):
         values = [row['resources'][key] for row in active]
         ranges[key] = {'first': values[0], 'last': values[-1], 'minimum': min(values), 'maximum': max(values)}
     return {'sample_count': len(active), 'source': sorted({row['resources']['source'] for row in active}),
+            'terminal_unavailable_samples': unavailable,
             'owner_thread_id': owner, 'owner_wait_samples': owner_waits, 'owner_wait_kinds': wait_kinds,
             'first_elapsed_seconds': elapsed[0], 'last_elapsed_seconds': elapsed[-1],
             'cpu_seconds_delta': cpu[-1] - cpu[0], 'ranges': ranges, 'phases': phases,
@@ -210,27 +219,88 @@ def validate_duration(command, final, minimum_seconds):
         raise ValueError('Full requires fixture monotonic elapsed at least the requested duration')
 
 
+def inspect_waits(raw, final):
+    rows = [json.loads(line) for line in raw.splitlines()]
+    measurement = 'whole qaplet_run_once call; not timer lateness'
+    if not rows or len(rows) != final['idle_wait_calls']:
+        raise ValueError('Every actual idle wait call must have its raw record')
+    for index, row in enumerate(rows, 1):
+        if (row['index'] != index or row['phase'] != 'idle' or row['measurement'] != measurement or
+                not isinstance(row['requested_ms'], int) or row['requested_ms'] <= 0 or
+                not math.isfinite(row['actual_monotonic_elapsed_ms']) or row['actual_monotonic_elapsed_ms'] < 0):
+            raise ValueError('Wait identity or actual monotonic measurement is invalid')
+    requested = sum(row['requested_ms'] for row in rows)
+    durations = [row['actual_monotonic_elapsed_ms'] for row in rows]
+    elapsed = math.fsum(durations)
+    # Both individual and accumulated values are serialized to six decimals.
+    rounding = (len(rows) + 1) * .000001
+    if requested != final['idle_wait_requested_ms'] or abs(elapsed - final['idle_wait_elapsed_ms']) > rounding:
+        raise ValueError('Raw wait calls contradict the accumulated fixture measurements')
+    return {'measurement': measurement, 'source': 'cycles-waits.ndjson: fixture monotonic clock around actual SDK call',
+            'calls': len(rows), 'requested_ms_total': requested, 'elapsed_ms_total': elapsed,
+            'minimum_ms': min(durations), 'maximum_ms': max(durations), 'mean_ms': elapsed / len(rows)}
+
+
 def check_identity(selected, resolve=Path):
     measured = identity(resolve(selected['path']))
     if any(measured[key] != selected[key] for key in ('sha256', 'size_bytes')):
         raise ValueError('Selected evidence changed: ' + selected['path'])
 
 
+def validate_resources(rows, final, purpose):
+    zero = ('baseline_operations', 'baseline_data_bytes', 'baseline_timers',
+            'baseline_processes', 'baseline_io_endpoints')
+    if any(row[key] != 0 for row in rows for key in zero):
+        raise ValueError('Operation/data/timer/process/endpoint resources did not return to zero')
+    if any(row.get('baseline_keepalive_tokens', 0) != 0 for row in rows):
+        raise ValueError('Keepalive tokens did not return to zero')
+    if purpose == 'full' and 'baseline_keepalive_tokens' not in final:
+        raise ValueError('Full requires directly measured keepalive token baseline')
+    baseline = [index for index, row in enumerate(rows) if row['type'] == 'os-baseline']
+    if len(baseline) != 1 or final['warmup_instances'] != 3:
+        raise ValueError('One frozen post-warmup OS baseline is required')
+    fixed = rows[baseline[0]]
+    for row in rows[baseline[0]:]:
+        if any(row[key] != fixed[key] for key in ('os_handles_before', 'os_threads_before')):
+            raise ValueError('OS resource baseline rolled during measured work')
+    if any(final['os_initial_' + key] != rows[0]['os_' + key + '_before'] for key in ('handles', 'threads')):
+        raise ValueError('Initial and frozen OS baseline provenance differs')
+    if final['normal'] + final['cancelled'] + final['errors'] != final['completed'] or final['baseline_checks'] < final['completed']:
+        raise ValueError('Actual outcomes or per-cycle baseline checks are incomplete')
+    if final['mode'] == 'soak':
+        if final['baseline_frozen'] is not True or sum(row['type'] == 'baseline' for row in rows) != 1:
+            raise ValueError('Persistent Runtime OPEN baseline was not frozen once')
+        if final['generation_checks'] < final['completed'] - 1:
+            raise ValueError('Persistent Runtime resource generation reuse was not verified')
+        if sum(final['phase_elapsed_ms'].values()) < final['requested'] * 1000:
+            raise ValueError('Actual alternating phases did not last the requested duration')
+
+
 def inspect_run(report, resolve=Path):
     """Replay the selected raw fixture and OS samples, never cached pass fields."""
     import sdk_m2_cycles
     command = report['command']
+    check_identity(report['command_catalog'], resolve)
+    catalog = json.loads(resolve(report['command_catalog']['path']).read_text(encoding='utf-8'))
+    if report['scope'] != report['purpose'] or any(catalog[key] != report[key] for key in ('mode', 'purpose', 'requested')):
+        raise ValueError('Run scope or request contradicts the retained actual command catalog')
+    if any(catalog[key] != command[key] for key in ('argv', 'cwd', 'timeout_seconds', 'sample_interval_seconds')):
+        raise ValueError('Executed command contradicts its retained catalog')
     required = {command[key] for key in ('stdout_log', 'stderr_log', 'samples_log', 'progress_log')}
     if command['native_samples_log']:
         required.add(command['native_samples_log'])
+    if command.get('waits_log'):
+        required.add(command['waits_log'])
     if not required.issubset({row['path'] for row in report['raw_evidence']}):
         raise ValueError('A required raw log is absent from the evidence inventory')
     for selected in report['raw_evidence']:
         check_identity(selected, resolve)
     if command['timed_out'] or command['supervisor_terminated'] or command['exit_code'] != 0:
         raise ValueError('Supervisor interruption or nonzero exit cannot pass Full')
-    final = sdk_m2_cycles.inspect(resolve(command['progress_log']).read_bytes(),
+    raw_progress = resolve(command['progress_log']).read_bytes()
+    final = sdk_m2_cycles.inspect(raw_progress,
         resolve(command['stderr_log']).read_bytes(), command['exit_code'], report['mode'], report['requested'])
+    validate_resources([json.loads(line) for line in raw_progress.splitlines()], final, report['purpose'])
     local_command = dict(command)
     for key in ('stdout_log', 'stderr_log', 'samples_log', 'progress_log'):
         local_command[key] = str(resolve(command[key]))
@@ -238,6 +308,9 @@ def inspect_run(report, resolve=Path):
     if final['failed'] != 0 or not final['native_cleanup_complete']:
         raise ValueError('Fixture failure or native cleanup incomplete')
     if report['mode'] == 'soak':
+        if not command.get('waits_log'):
+            raise ValueError('Actual soak wait-call raw evidence is missing')
+        measured['wait_calls'] = inspect_waits(resolve(command['waits_log']).read_bytes(), final)
         validate_duration(command, final, report['requested'])
         if final['runtime_instances'] != 1 or final['created'] != 1:
             raise ValueError('Soak requires one persistent Runtime')
@@ -280,7 +353,7 @@ def aggregate_native_reports(paths, resolve=Path):
         raise ValueError('Duplicated raw workload evidence cannot satisfy Full')
     product_keys, cases = set(), []
     for path, report in reports:
-        if report['report_kind'] != 'qaplet-m2-full-run' or report['purpose'] != 'full' or report['status'] != 'pass':
+        if report['report_kind'] != 'qaplet-m2-full-run' or report['scope'] != 'full' or report['purpose'] != 'full' or report['status'] != 'pass':
             raise ValueError('Required Full workload is failed, missing, or only smoke')
         host = report['host']
         if host['execution_mode'] != 'native' or host['cpu'] != host['execution_arch'] or host['execution_arch'] != 'x86_64' or not host['kernel'] or not host['page_size']:
@@ -350,8 +423,10 @@ def run_supplied(args):
         if fixture['sdk']['sha256'] != producer['sdk']['sha256'] or fixture['sdk_recipe']['sha256'] != producer['sdk_recipe']['sha256']:
             raise ValueError('Cycle supplier SDK identity differs from selected fixed SKU')
         sdk.check_package(producer, args.supplied_host.parent.resolve())
-        if sdk.recipe() != producer['sdk_recipe']['files']:
-            raise ValueError('Current product recipe differs from frozen SDK')
+        checkout_recipe = sdk.recipe()
+        report['checkout_product_recipe_matches'] = checkout_recipe == producer['sdk_recipe']['files']
+        if args.purpose == 'full' and not report['checkout_product_recipe_matches']:
+            raise ValueError('Full requires the accepted current product recipe')
         artifact = args.artifact_dir.resolve() / 'qaplet-m2-cycles.com'
         supplied = identity(artifact)
         matches = [row for row in fixture['artifacts'] if row['sha256'] == supplied['sha256'] and row['size_bytes'] == supplied['size_bytes']]
@@ -400,6 +475,7 @@ def run_supplied(args):
         command = observe_command(executed, work, directory / 'execution',
             args.timeout + (15 if os.name == 'nt' else 0), args.sample_interval,
             target_progress=work / 'cycles-progress.ndjson')
+        command['waits_log'] = str(work / 'cycles-waits.ndjson') if (work / 'cycles-waits.ndjson').exists() else None
         report['command'] = command
         report['commands'].append(command)
         if os.name == 'nt':
@@ -411,9 +487,11 @@ def run_supplied(args):
         paths = {command[key] for key in ('stdout_log', 'stderr_log', 'samples_log', 'progress_log')}
         if command['native_samples_log']:
             paths.add(command['native_samples_log'])
+        if command['waits_log']:
+            paths.add(command['waits_log'])
         report['raw_evidence'] = [identity(path) for path in sorted(paths)]
         final, measured = inspect_run(report)
-        if identity(artifact) != supplied or sdk.recipe() != producer['sdk_recipe']['files']:
+        if identity(artifact) != supplied or sdk.recipe() != checkout_recipe:
             raise ValueError('Consumed product or cycle APE changed during execution')
         for row in report['evaluator_inputs']:
             if identity(row['original']['path']) != row['original']:
