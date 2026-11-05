@@ -879,6 +879,22 @@ static int query(void) {
   CHECK(observer.notifications && !observer.notify_error);
   puts("M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass");return 0;
 }
+static int js_basic(void) {
+  qaplet_process_options o;prepare(&o,"--empty");
+  qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv],env:[],stdio:['ignore','ignore','ignore']});"
+    "const s=await p.exited;await p.closed;if(!s.reaped||s.exitCode!==37)throw Error('exit');return 42})";
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);
+  qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
+  if(code)fprintf(stderr,"JS process code=%d diagnostic=%s\n",code,message);
+  CHECK(code==QAPLET_OK);qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  CHECK(!finish(r));puts("M2 process JS basic: explicit spawn; owner exit/reap Promise; managed closure; result and cleanup: pass");return 0;
+}
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
@@ -941,6 +957,9 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+  if (!strcmp(argv[1],"--m2-process-js-basic")) {
+    int result=js_basic(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
   if (!strcmp(argv[1],"--m2-process-pipe-lifetime")) {
     int result=pipe_lifetime(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
   }
