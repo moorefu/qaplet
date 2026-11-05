@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete
+
+**Local development:** complete
 
 **Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。当前SKU3的guest export不算执行，正式验收仍要求真实ARM64/65536完整适用合同及M2生命周期1000次、混合异步100次，旧产品170项成绩不能替代。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -18,11 +20,11 @@
 
 ## Acceptance criteria
 
-- [ ] guest 或原生内实测 ARM64/65536，固定并记录 QEMU/TCG/machine/CPU/kernel/config/rootfs 与传输前后产品身份。
-- [ ] 消费当前供应 CLI、C Host 与目标 SDK slice，执行全部适用 M1/M2 正负合同和相关深层 ABI，不复用旧输入成绩。
-- [ ] 实际至少 1,000 次生命周期和 100 次混合异步，覆盖等待/取消/迟到完成、终端和 child/stdio 释放。
-- [ ] 原生与 emulated-system 分开；qemu-user 不替代内核，TCG 不被外推为物理性能。
-- [ ] 必需缺项、失败、skip 或超时不通过；原件、逐项日志、计数和清理事实可供独立消费。
+- [x] guest 或原生内实测 ARM64/65536，固定并记录 QEMU/TCG/machine/CPU/kernel/config/rootfs 与传输前后产品身份。
+- [x] 消费当前供应 CLI、C Host 与目标 SDK slice，执行全部适用 M1/M2 正负合同和相关深层 ABI，不复用旧输入成绩。
+- [x] 实际至少 1,000 次生命周期和 100 次混合异步，覆盖等待/取消/迟到完成、终端和 child/stdio 释放。
+- [x] 原生与 emulated-system 分开；qemu-user 不替代内核，TCG 不被外推为物理性能。
+- [x] 必需缺项、失败、skip 或超时不通过；原件、逐项日志、计数和清理事实可供独立消费。
 
 ## Blocking details
 
@@ -58,4 +60,10 @@
 guest与主物理.cache，消费当前SKU3及明确供应的公开C验证fixture。保留真实内核页大小、
 传输前后字节、journal/seal、实际次数和清理事实；不以export、qemu-user或旧SDK替代。
 与24/26协调fixture接口和固定供件，不添加阻塞边；未实际执行部分保持可见。
+
+2026-11-06：当前统一SKU4真实ARM64/64K本票适用矩阵完成，319条完整guest命令、
+394条语义记录、1000生命周期/100混合实际循环（warmup另计）；原始seal/transport、
+native清理与false/null边界及旧SKU3失败均保留。[本地验证与交接](../25-actual64k-validation.md)
+给出精确映射、原件指针与工具迭代限制。状态claimed/local_complete/cross_deferred，
+待独立接收；不占native ARM槽位、不签发父M2/正式Cross/小时soak/最终Review/27或发布。
 
