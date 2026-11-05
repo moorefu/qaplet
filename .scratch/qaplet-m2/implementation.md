@@ -464,3 +464,21 @@ Root实际领取22，fresh实现者独立worktree TDD；真实OS中断、在途r
 Host最终输出与累计5秒主动等待按原合同实施，不从原有0x03 raw输入或SDK stop成绩外推。
 21启动模式差异、九个保留负向和旧供应范围继续保留；22尚未本地验收，不提前放行23。
 19的23前置已满足；原27票/38边/135AC、父spec及正式Cross/Full/64K/长测/Review不变。
+
+2026-11-06（22独立本地接收）：fresh merger从clean root `97cc8f15`实际no-ff合入最终
+clean source `d52371a3`，合并 `b8b9f572` 的tree与source同为 `ad22f50d`。冻结产品1343、
+109recipe/95ZIP、双archive19+19、三fat APE、公开/M1头及两份最终输入快照重核稳定，
+原dirty=false保留。合前合后只读重放20选定报告/164行为case/2283保留文件/2519实际证据
+文件通过；普通CLI Linux67/Windows72与专项16/9分别计数。真实OS sender/target、Ctrl+C
+私有Console、累计5秒主动等待、迟到目标保留、mixed SDK唯一reap/QUIESCENT/destroy已核。
+三个保留负向仍native_cleanup_complete=false，strong三项全SDK cleanup=null；Win child
+真实终态53261与GetExitCodeProcess成功、CLI exit1分开。queue是独立public C Host共享边界，
+不是CLI满队列端到端。两个已删除/tmp pre-repack中间物仅保留原身份，不用作最终proof；
+最终供应/全部配方与ZIP输入/执行raw闭合。历史tracer输入限制、旧失败/timeout/强制设施
+清理、same-CLI Windows child原因unknown、503→entry511/lease511→504→511、原dirty与
+child动态imports unknown均不改贴。merger预核helper失败与源版本保留；合后Ubuntu preflight
+pass（54解析/52编码、主物理.cache）。merger产品执行0，无重建/重复suite/push/CI。
+主收据 `out/qaplet-m2/merge-22-cli-signal/HANDOFF.md`、`handoff.json` 保存身份与命令。
+22 Local development: complete，保持claimed/local_complete/cross_deferred，可放行23本地开发
+但merger未领取。27/38/135、父spec/原Blocked by/AC及正式Cross/64K/Full/长测/最终两轴
+Review/M2与发布门禁继续待验。

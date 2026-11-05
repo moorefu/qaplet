@@ -133,3 +133,39 @@ imports 由既有报告记录，子进程动态 import 保持 unknown，不用�
 正式五原生、当前实际 64K、CI/Full、10000 mixed 生命周期、1 小时组合长测、M2 与最终
 Standards/Spec Review 仍 deferred。原父 spec、27 票、38 条直接阻塞边、135 AC、默认
 限额与 SDK ABI 保留；23 仍需本票独立合入后才满足其 22 开发前置。
+
+## 独立本地接收
+
+2026-11-06，fresh merger 从 clean integration `97cc8f15f23a51e2c3cb13257a3bab9cf208e7a3`
+实际 no-ff 合入最终 clean source `d52371a370efa0e6a777e9ccea50f8834a42a3fa`，
+合并 `b8b9f572cd25a43eb649ced4538616c2eddada2f` 的 tree
+`ad22f50d3e091bc7de4bdd5479e1c18de84ebbbb` 与 source 完全相等。
+主接收原件为 `out/qaplet-m2/merge-22-cli-signal/HANDOFF.md`、`handoff.json`。
+
+合前与合后独立只读重放均通过：20 份选定报告、164 个行为 case、2283 个保留文件、
+2519 个实际证据文件；109 个真实 recipe 输入与两份快照、95 ZIP 成员、公开/M1头、
+双目标 archive 各19个 ELF64 REL 对象、3个 fat APE/sidecar 已逐 raw/Git/producer 核对。
+原producer dirty=false不改，普通回归67/72与专项16/9分别计数；辅助无Console两项不混入164。
+原始callback机器码与双SDK archive无handler引用另核。实际sender/target、私有Console
+Ctrl+C、native entry与模式恢复、mixed唯一reap/QUIESCENT/destroy、共享累计等待及迟到
+hint目标身份闭合。三个expected incomplete继续false，三个strong的全SDK native清理继续null。
+Windows strong child的实际终态为53261（0xD00D）；GetExitCodeProcess成功BOOL和CLI exit1
+分别记录，不互相替代。queue仍只签公共C Host共享relay边界。
+
+最终包外消费者的临时目录 `/tmp/qaplet-sdk-consumer-uqawyama` 已不存在，实际Ubuntu只读
+取件失败原件保留。其三个SDK输入按明确原ZIP成员逐SHA闭合，两个repacked输出按明确
+最终artifact逐SHA闭合；两个pre-repack中间物不可回取，只保留记录身份，不作最终产品
+或源字节证明，不以宽泛路径/hash搜索放行。早期tracer缺失输入、强门旧失败与same-CLI
+Windows child原因unknown、21启动/租约范围、原dirty和动态child imports限制继续保留。
+merger解析helper预核1/2原失败与源版本均保存，最终premerge3/postmerge exit0。
+
+root另存的 `out/qaplet-m2/sdk-cli-child-22/109a5dcd-e343-48c4-988d-da996d4453b8/report.json`
+是后续独立诊断，不属于20/164：最终22 CLI经公开spawn并await exited/closed，启动21/22
+child均返回code26 CONTROL_FAILURE、child exit1/reaped=true，parent exit0且无supervisor
+timeout。结合两版直接无Console均READY成功，问题收窄到SDK启动路径，原因仍unknown；
+交23诊断/修复，不作为支持例外，不称已修复或22独有回归。
+
+合后 Ubuntu root preflight pass：54 Python解析、52文本编码、pinned v3、主物理.cache。
+merger新产品执行0，无SDK重建/重复suite；本记录只改三份Markdown。22
+**Local development: complete**，仍claimed/local_complete/cross_deferred；本地可放行23，
+merger未领取。父spec、原Blocked by/AC及27票/38边/135AC保持不变，正式欠项不提前完成。

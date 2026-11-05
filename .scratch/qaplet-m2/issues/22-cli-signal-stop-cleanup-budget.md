@@ -12,7 +12,8 @@
 
 [本地验证](../22-cli-signal-validation.md)与专属 worktree
 `out/m2-22-cli-signal/HANDOFF.md`、`handoff.json` 保存最终供应、真实 OS 中断及未完保留范围。
-产品冻结 `1343e6c`，已融入实际 integration 起点；当前等待独立接收，未独立合入前不放行 23。
+产品冻结 `1343e6c`，最终 clean source `d52371a3` 已独立 no-ff 合入 `b8b9f572`；
+主接收原件在 `out/qaplet-m2/merge-22-cli-signal/HANDOFF.md`、`handoff.json`，本地开发可放行 23。
 正式 Cross/Full 及父 AC 组保持待验，下列验收项未因本地通过勾为全范围完成。
 
 **Execution prerequisites:** 21已本地完成并独立合入`13abf9ac`（接收`fe8a17d`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
@@ -71,4 +72,18 @@
 67/72、本票 16/9（含补强执行态 2/1）；完整 109 输入/95 ZIP、MS-ABI 原始 callback、OS 投递、原生 reap、
 累计预算、迟到目标保留与原失败见本地验证及 HANDOFF。保持 claimed/local_complete/
 cross_deferred，等待独立合并，不领取后继，不签发父 M2、Full 或最终两轴审查。
+
+2026-11-06（独立本地接收）：fresh merger 从 clean root `97cc8f15` 实际 no-ff 合入
+`d52371a3`，合并 `b8b9f572` 的 tree 与 source 相等。109 recipe/95 ZIP、双目标 archive
+各 19 对象、3 fat APE 及两份最终输入快照逐 raw/Git/producer 重核；原 dirty=false 保留。
+合前合后独立只读重放 20 选定报告、164 行为 case、2283 保留文件及 2519 实际证据文件通过；
+普通 CLI Linux67/Windows72、专项16/9，辅助和历史不混计。三个 expected incomplete=false、
+三个 strong 的全 SDK native cleanup=null 仍分别保留；Windows child 实际退出53261、
+GetExitCodeProcess 成功和 CLI 退出1分开记录。queue 是独立公共 C Host 共享边界。
+两个已删除临时目录的 pre-repack 中间物仅保留原身份，不声称可回取；最终 APE 和所有
+SDK/ZIP/配方输入及执行 raw 已闭合，未据中间物签发最终证明。所有旧失败、早期 tracer
+输入限制、21启动503→entry511与lease511→504→511、child imports unknown不改贴。
+合后 Ubuntu preflight pass（54解析/52编码、主物理.cache）；merger产品执行0，无重建或
+重复suite。Local development: complete，保持claimed/local_complete/cross_deferred，未领取23；
+27/38/135、父spec/Blocked by/AC、正式Cross/64K/Full/长测/最终两轴审查与发布门禁保持待验。
 
