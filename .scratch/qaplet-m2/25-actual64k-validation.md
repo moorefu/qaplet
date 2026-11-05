@@ -1,7 +1,7 @@
 # 25 · 实际 ARM64 / 65536：本地验证与交接
 
 当前产品 SKU4 的全部本票适用合同已实际执行。状态 `local_complete / cross_deferred`，
-待独立 merger 接收；不签发五原生、小时 soak、最终两轴 review、27或 release-ready。
+已由独立 merger 接收；不签发五原生、小时 soak、最终两轴 review、27或 release-ready。
 源 worktree 为 `.cache/worktrees/m2-25-64k-matrix`，分支 `codex/m2-25-64k-matrix`。
 本票全部原件位于该 worktree 的 `out/m2-25/`，没有删除旧 out 或 worktree。
 
@@ -154,3 +154,33 @@ provider元数据/预期重放，两case真实语义分别3.3006s/3.3045s通过�
 宿主/FS/cache/guard、完整stdout/stderr/argv和原件的持久副本。四份融合root24的Markdown
 仅CRLF差异先逐字核GitLF，再单次 `git -c core.autocrlf=input status`；未改配置或重写文档原件。
 最终clean source与准确收据SHA见本票out的HANDOFF，native一次性worktree未删。
+
+## 独立本地接收
+
+2026-11-06，fresh merger从实际integration `a7c507ea04f715e897b343b0715aa6da1d217b7c`
+独立no-ff接收clean source `459935e411025ceea26cc04f01335bb7ed940061`；合并
+`149985e3599d32ab31fd4f6f6cbeee724ba20a6e`的tree与source同为
+`ebc838a99d7c491040db082bc6173907c40ead9b`。主接收原件位于
+`out/qaplet-m2/merge-25-64k-matrix/HANDOFF.md`、`handoff.json`，固定接收收据
+`receipt-010.json`的SHA256为
+`47557246f2f8fa01645418e2fdf58d84cf30fbd784664c37855c5c9b600b5897`。
+
+最终选择`s4-matrix-002.json`及当前冻结评估器闭包，合前4413、合后4506份显式原件
+逐项重核通过；六组语义与原始guest的journal/seal、双通道、签名输入、kernel/config/
+rootfs/QEMU及payload前后SHA均核验。319条完整命令、394条语义记录与实际1000/100
+循环分开计数。公开SDK原ZIP、210供件原件、双archive各19成员、115产品配方、94条
+原Ubuntu构建命令、4份原packer输出及15项辅助制品的实际C/include/头/双库/链接闭包
+独立通过；producer、旧执行和current评估器身份分别保留。
+
+LinuxFS完整检查的208份源码/helper和861份持久原件已核，实际444项/104.936秒、
+optional skip227与C bootstrap通过；其294源到最终459仅两份文档变化。原DrvFS完整
+441项及精确复验的两项30秒timeout、两次不成立对照、旧SKU3失败和不可回取的首次
+派生audit JSON均保留，不改写历史。旧cycles reader759a无exact快照仍是历史限制；
+当前最终证明使用执行前冻结的70份reader源码，原产品/guest未重跑或重标。
+
+合后普通用户Ubuntu预检通过（UID/GID1000、x86_64/4096，70解析/63编码、零违规）。
+103历史root raw、4份冻结文件、spec raw及27票/38边/135条AC原文保持；各scope的
+预期false、strong null及普通M2示例budget保留责任未提升为全native清理完成。
+merger产品执行、编译、guest、重复suite和peer写入/会话控制均为0。状态继续
+claimed/local_complete/cross_deferred；实际64K不填native ARM64槽位，27、其余原生、
+正式CI/Cross/Full、小时长测、最终两轴Review、父M2及发布门禁仍分别待验。

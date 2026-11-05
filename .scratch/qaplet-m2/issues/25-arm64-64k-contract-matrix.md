@@ -67,3 +67,11 @@ native清理与false/null边界及旧SKU3失败均保留。[本地验证与交�
 给出精确映射、原件指针与工具迭代限制。状态claimed/local_complete/cross_deferred，
 待独立接收；不占native ARM槽位、不签发父M2/正式Cross/小时soak/最终Review/27或发布。
 
+2026-11-06：最终clean source `459935e411025ceea26cc04f01335bb7ed940061`已独立
+no-ff接收为`149985e3599d32ab31fd4f6f6cbeee724ba20a6e`，tree等于source。选定当前
+matrix002与冻结评估器闭包，319条完整guest命令/394条语义、实际1000/100循环及
+原件合前/合后重核通过，合后Ubuntu预检70解析/63编码通过。完整收据与历史限制见
+主`out/qaplet-m2/merge-25-64k-matrix/`及[25独立接收](../25-actual64k-validation.md#独立本地接收)。
+状态继续claimed/local_complete/cross_deferred；父spec、Blocked by及五条AC原文不改，
+实际64K不占native ARM槽位，27与正式整体M2/CI/Full/小时长测/最终Review/发布不提前。
+

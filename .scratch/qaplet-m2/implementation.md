@@ -535,3 +535,20 @@ merger产品执行/SDK重编/重复suite为0，未修改25/26原件或控制其�
 [24验证](24-native-matrix-validation.md#独立本地接收)。24 Local development: complete，
 保持claimed/local_complete/cross_deferred；27仍待原正式24–26前置。父spec、27票/
 38边/135AC、正式五原生/CI/Full/64K/长测/最终两轴Review、父M2和发布门禁不变。
+
+## 25 · 独立本地接收
+
+2026-11-06，fresh merger从实际integration `a7c507ea`独立no-ff接收最终clean source
+`459935e4`，合并`149985e3`的tree `ebc838a9`与source相同。最终选择matrix002及执行前
+冻结的70份current评估器源，合前4413、合后4506份显式原件逐项核验，六组只读重放均
+pass。实际完整系统ARM64/65536的319条命令、394条语义与1000/100循环分别计数，
+保留所有false/null；不占native ARM64槽位。210份供件raw、115 RECIPE、原ZIP/双archive、
+C9、15项实际编译链接闭包与103历史root raw保持，原producer与执行context不重标。
+
+合法LinuxFS完整444项检查/227optional及C bootstrap原件持久闭包已核；原DrvFS441及
+精确method两项30秒timeout、失败对照和不可回取的历史派生reader/audit限制均另列。
+合后Ubuntu普通用户预检70解析/63编码通过。merger产品执行/重编/guest/重复suite及
+peer写入或会话控制为0。主收据在`out/qaplet-m2/merge-25-64k-matrix/`，详见
+[25验证](25-actual64k-validation.md#独立本地接收)。25保持claimed/local_complete/
+cross_deferred；27、缺失native、正式CI/Cross/Full与长测、最终两轴Review、父M2及
+发布门禁仍待原要求，不降低27票/38边/135AC或父规格合同。
