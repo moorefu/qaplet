@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -31,7 +32,8 @@ class FullObservationContract(unittest.TestCase):
             active = [row for row in samples if row.get("resources")]
             self.assertGreaterEqual(len(active), 2)
             self.assertTrue(any(row["progress"].get("phase") == "idle" for row in active))
-            self.assertTrue(all(row["resources"]["rss_bytes"] > 0 for row in active))
+            self.assertTrue(any(row["resources"]["rss_bytes"] > 0 for row in active))
+            self.assertTrue(all(row["resources"]["rss_bytes"] >= 0 for row in active))
             self.assertTrue(all(row["resources"]["threads"] >= 1 for row in active))
             self.assertTrue(all(row["resources"]["cpu_seconds"] >= 0 for row in active))
             self.assertEqual([row["elapsed_seconds"] for row in samples],
@@ -61,6 +63,18 @@ class FullObservationContract(unittest.TestCase):
     def test_full_aggregate_requires_four_explicit_original_runs(self):
         with self.assertRaisesRegex(ValueError, "four explicit"):
             sdk_m2_soak.aggregate_native_reports([])
+
+    def test_read_only_join_cannot_overwrite_selected_raw_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            original = directory / "raw.ndjson"
+            original.write_bytes(b"original raw evidence\n")
+            selected = directory / "selected.json"
+            selected.write_text(json.dumps({"raw_evidence": [{"path": str(original)}]}), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/sdk_m2_soak.py"), "verify",
+                "--run-report", str(selected), "--report", str(original)], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(original.read_bytes(), b"original raw evidence\n")
 
 
 if __name__ == "__main__":

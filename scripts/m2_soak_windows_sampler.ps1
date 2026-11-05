@@ -9,6 +9,8 @@ $writer = [System.IO.StreamWriter]::new($OutputPath, $false, [System.Text.UTF8En
 $writer.AutoFlush = $true
 try {
     $target = [System.Diagnostics.Process]::GetProcessById($ProcessId)
+    $initialElapsed = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()-$StartUnixMilliseconds)/1000.0
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
     while (-not $target.HasExited) {
         $target.Refresh()
         $threads = @()
@@ -24,16 +26,21 @@ try {
             }
         }
         $row = @{
-            elapsed_seconds=([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()-$StartUnixMilliseconds)/1000.0
+            elapsed_seconds=$initialElapsed+$watch.Elapsed.TotalSeconds
             process_id=$ProcessId
             resources=@{
-                source='System.Diagnostics.Process: TotalProcessorTime/WorkingSet64/HandleCount/Threads.ThreadState.WaitReason'
+                source='System.Diagnostics.Process: TotalProcessorTime/WorkingSet64/HandleCount/Threads.ThreadState.WaitReason; monotonic Stopwatch'
                 cpu_seconds=$target.TotalProcessorTime.TotalSeconds
                 rss_bytes=$target.WorkingSet64
                 handles=$target.HandleCount
                 threads=$target.Threads.Count
                 thread_waits=$threads
             }
+        }
+        if ($target.HasExited) { break }
+        if ($null -eq $row.resources.rss_bytes -or $null -eq $row.resources.cpu_seconds -or
+            $null -eq $row.resources.handles -or $null -eq $row.resources.threads) {
+            throw 'Live process resource query returned missing values'
         }
         $writer.WriteLine(($row | ConvertTo-Json -Compress -Depth 6))
         Start-Sleep -Milliseconds $IntervalMilliseconds

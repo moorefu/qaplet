@@ -311,6 +311,25 @@ def aggregate_native_reports(paths, resolve=Path):
             'm2_formal_complete': False, 'release_ready': False}
 
 
+def selected_files(paths, resolve):
+    """Protect the complete explicit run inventory before creating join outputs."""
+    files = []
+    for path in paths:
+        try:
+            report = json.loads(Path(path).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue  # The semantic reader reports missing or malformed inputs.
+        if not isinstance(report, dict):
+            continue
+        rows = list(report.get('raw_evidence', []))
+        rows += [report.get(key) for key in ('producer_report', 'fixture_producer', 'artifact',
+                 'input', 'command_catalog', 'native_console_report')]
+        for row in report.get('evaluator_inputs', []):
+            rows.extend((row.get('original'), row.get('retained')))
+        files.extend(resolve(row['path']) for row in rows if isinstance(row, dict) and isinstance(row.get('path'), str))
+    return files
+
+
 def run_supplied(args):
     import sdk
     from startup import measured_host, select_loader
@@ -343,6 +362,16 @@ def run_supplied(args):
                                       'working_tree_dirty': producer['sdk_recipe']['working_tree_dirty']},
                       engine_source=producer['source'], distribution_root=str(args.supplied_host.parent.resolve()),
                       producer_report=identity(args.build_report), fixture_producer=identity(args.fixture_producer), artifact=supplied)
+        from foundation import command as context_command
+        revision, commit, _ = context_command(['git', '-c', 'core.autocrlf=false', 'rev-parse', 'HEAD'],
+                                               directory, 'evaluator-revision', cwd=ROOT)
+        state, changed, _ = context_command(['git', '-c', 'core.autocrlf=false', 'status', '--porcelain'],
+                                             directory, 'evaluator-status', cwd=ROOT)
+        report['commands'].extend((revision, state))
+        if revision['exit_code'] != 0 or state['exit_code'] != 0:
+            raise ValueError('Evaluator checkout identity could not be measured')
+        report['evaluator_source'] = {'git_commit': commit.strip(), 'working_tree_dirty': bool(changed.strip()),
+                                      'note': 'Exact evaluator input bytes are retained separately from SDK product source'}
         measured_host(args, report, directory)
         loader = select_loader(args, report)
         inputs = directory / 'inputs'
@@ -439,7 +468,7 @@ def main():
             source, root = value.split('=', 1)
             mappings.append({'source': source, 'root': root})
         resolver = EvidencePaths({'path_mappings': mappings}, Path.cwd()).resolve
-        guard_evidence_outputs([args.report], args.run_report)
+        guard_evidence_outputs([args.report], args.run_report, files=selected_files(args.run_report, resolver))
         report = {'schema_version': 1, 'report_kind': 'qaplet-m2-full', 'scope': 'full',
                   'started_at': now(), 'evaluator': identity(Path(__file__)), 'release_ready': False}
         try:
