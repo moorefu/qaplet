@@ -29,6 +29,16 @@ a cleanup error. Recorded finite waits are cumulative active-wait budgets,
 not a hard limit on the entire close/quiesce/native-destructor call. A supervisor
 timeout is an incomplete execution, never proof of native cleanup.
 
+M2 `qaplet_get_resource_snapshot` adds an independent, versioned POD alongside
+the existing snapshots. It reports the shared Work/I/O operation and data
+reservations, I/O endpoint/operation/data current values and peaks, and the
+combined Process/file/Console helper count and requested stack bytes with peaks.
+Peaks survive pool retirement and CLOSED. The query is safe from foreign threads
+and does not collect native results, invoke callbacks or enter JS; separate POD
+queries sample separate instants. Existing M1 and M2 snapshot layouts are unchanged.
+Operation data belongs inside the native storage total. Requested worker/helper
+stacks and external OS/Host buffers remain separate from SDK heap and RSS.
+
 M2 `qaplet:work` exports `submit(name, input)`. The Host registers the named
 native handler before the first execution. `name` must be a string and `input`
 a genuine, non-shared `Uint8Array`; neither argument is implicitly coerced.

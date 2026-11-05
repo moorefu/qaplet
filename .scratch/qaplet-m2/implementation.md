@@ -373,3 +373,12 @@ SDK1完整normal保留212/211+optional1原身份，未充当SDK2全矩阵。真�
 所有fixture/context失败和零等待重试修正见[本地记录](20-mixed-cleanup-validation.md)。
 20保持claimed、local_complete/cross_deferred，待独立合入才放行21；父M2、24–27最新矩阵、
 其他原生/实际64K/Cross/CI Full/组合长测/最终Review及发布仍未完成，不push或release-ready。
+
+2026-11-05（19本地预算/观测/首因）：产品冻结1c4a91c，旧IO诊断以公开SDK16入口
+canary/HostNotify在Linux及同字节Windows真实red后最小前置修复；新增独立resource POD
+补共享helper和IO当前/持久峰值，保留旧ABI布局。小公开额度联立timer/token/handler/Work/
+child/stdio、8MiB子额与原生总额/环境、cancel/C保留/physical容量及8种混合永久故障首因
+已公开验证；原ZIP包外真实TTY/Console+Work、环境增量也单列。当前normal214/213+optional1、
+package99/99、fault25/26通过，完整当前TTY及工具/原件/失败见[19验证记录](19-aggregate-validation.md)。
+保持claimed/local_complete/cross_deferred，交独立merger，不自合root；正式矩阵/实际64K/
+CI/Full/长测、父M2及整体Review继续待验，原Blocked by/AC和父spec不改。

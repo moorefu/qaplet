@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred（独立接收待root安排）
 
 **Execution prerequisites:** 09已resolved，16本地完成并独立合并`015cdb9f`（接收`71a5db50`），18本地完成并独立合并`3e85a272`（接收`64624ddd`）；全部当前开发前置已满足，已领取，与20并行。正式Cross/Full欠项不替代也不取消，验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -61,3 +61,10 @@
 旧普通IO诊断拒绝样式仅为待公开证伪风险，先核公开POD/canary再决定修复；不改原AC。
 完成本地验收及独立合入后才标local_complete，正式Cross/Full仍单列待验。
 
+
+2026-11-05：本地五项合同的公开纵向实现/验证完成，冻结产品1c4a91c；先公开复现普通IO
+诊断拒绝写回后5909b8f最小修复，独立resource POD补共享helper与IO当前/峰值。正常
+Linux214/Windows213+optional1、包外99/99、故障25/26及环境/真实TTY组合已核；
+当前完整TTY回归及最终原件清单见[19验证记录](../19-aggregate-validation.md)和本worktree
+ out/m2-19-aggregate/HANDOFF.md、handoff.json。Status保持claimed，不改原Blocked by/AC；
+独立接收、正式其他原生/实际64K/CI/Full/长测/整体Review继续待验，release_ready=false。
