@@ -340,7 +340,7 @@ struct pollfd *qaplet_io_poll_locked(qaplet_runtime *r,nfds_t *count) {
   return fds;
 }
 int qaplet_io_ready_locked(qaplet_runtime *r) {
-  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return 0;
+  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return 0;
 }
 int qaplet_io_referenced_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
@@ -404,6 +404,7 @@ void qaplet_io_collect(qaplet_runtime *r) {
   pthread_mutex_unlock(&r->mutex);
 }
 void qaplet_io_shutdown(qaplet_runtime *r,int closing) {
+  qaplet_js_io_shutdown(r);
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p){
     if(closing)p->closing=1;
