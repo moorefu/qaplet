@@ -6,10 +6,11 @@
 
 **Status:** claimed
 
-**Execution state:** local_complete / cross_deferred；等待独立merger接收。
+**Execution state:** local_complete / cross_deferred；已独立本地接收，实际no-ff `943c1962`。
 
-**Local development:** complete；[本地组合验证](../20-mixed-cleanup-validation.md)及本worktree
-`out/m2-20-mixed/HANDOFF.md`、`handoff.json`保留不同供应/配方的实际执行身份。正式Cross/Full及最终矩阵仍deferred。
+**Local development:** complete；[本地组合验证](../20-mixed-cleanup-validation.md)及主
+`out/qaplet-m2/merge-20-mixed/HANDOFF.md`、`handoff.json`保存独立接收；源worktree的
+`out/m2-20-mixed/`保留不同供应/配方的实际执行身份。正式Cross/Full及最终矩阵仍deferred。
 
 **Execution prerequisites:** 09已resolved，16本地完成并独立合并`015cdb9f`（接收`71a5db50`），18本地完成并独立合并`3e85a272`（接收`64624ddd`）；全部当前开发前置已满足，已领取，与19并行。正式Cross/Full欠项不替代也不取消，验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -76,4 +77,13 @@ pending/BUSY，其他资源仍安全退出/恢复，不声称最终native清理�
 当前相关Host/aggregate旧头回归各28/28、独立包外首因双序各2/2通过，完整ConPTY模式与
 实际原生回收/有意保留分别可见。旧供应1/2、所有失败和source/dirty均保留原身份，未重贴为
 新完整矩阵。最终清洁HEAD及原件摘要见HANDOFF，仍待独立接收后放行21；正式Cross/Full未完成。
+
+2026-11-05（独立本地接收）：fresh merger从clean root `a4e5fec1`实际no-ff合入最终
+clean source `ec93a4ca`，合并`943c1962`与source tree完全一致。复用供应3静态预核并合前/
+合后独立只读重核20scope/1852raw；当前mixed各12、selected各28、首因双序各2通过，四个
+安全保留负向/端仍为native_cleanup_complete=false，ConPTY设施清理另核。供应1完整normal
+212/211+optional1、供应2旧范围及失败均保留原身份；47脚本解析/52编码文件的合后Ubuntu
+preflight通过，主物理.cache。主接收原件见`out/qaplet-m2/merge-20-mixed/`；merger产品执行0，
+无重建/重复suite。原Blocked by/五AC/父spec不变，保持claimed/local_complete/cross_deferred；
+本地开发前置可放行21，merger未领取后继，正式Cross/Full与最终矩阵仍待验。
 

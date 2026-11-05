@@ -1,6 +1,7 @@
 # 20：组合停止与两阶段清理本地验证
 
-2026-11-05。票20保持 claimed、local_complete / cross_deferred，待独立merger接收。
+2026-11-05。票20保持 claimed、local_complete / cross_deferred，已独立本地接收（no-ff `943c1962`）。
+**Local development:** complete。
 本记录不签发正式Cross/Full、其他原生、当前实际64K、24–27最新矩阵/组合长测或M2最终Review。
 每个新增混合case各实际执行1次；普通lifetime的1000次不冒称1000次混合长测。
 
@@ -85,3 +86,29 @@ Runtime永久BUSY，replacement由夹具持有并证明不会被SDK迟到close�
 其他原生、当前实际64K、正式Cross/CI Full、24–27最终矩阵及混合长测、M2整体Standards/Spec Review
 仍deferred。不push、修改main/tag、启动CI或签发release-ready。最终清洁HEAD、实际root融合、
 逐文件原件与可重放收据以本worktree `out/m2-20-mixed/HANDOFF.md`和`handoff.json`为准。
+
+## 独立本地接收
+
+fresh merger从clean root `a4e5fec1b00e581809ff3079ee64b550561af838`实际no-ff合入clean source
+`ec93a4ca55598b70c0a564897852a23bfb9355eb`，合并为`943c19629f5c7ceea0f05588f76704d086493dc5`；
+merge/source tree均为`c201ccf67d34b939c8df276865629fa4931fbf83`。冻结产品0916、95recipe raw LF/Git、
+88ZIP成员、公开/M1头、三fat APE/sidecar及双archive各19对象保持一致。相对19实际no-ff，Core/
+header/SDK README/aggregate测试无差异；最终source在产品之后仅MD，并包含实际root。
+
+合前`premerge-5.json`和合后`postmerge.json`独立重放20scope、1852份raw日志及2376个证据文件。
+当前SDK3 mixed两端各12、selected各28、首因双序各2均按冻结catalog/实际argv/原日志重核。
+四个safe-retention例/端的native_cleanup_complete=false、destroy BUSY保持原义；每端五个完整
+TTY模式读回和Windows ConPTY实际reap/close/reader结束单独核，不替代SDK清理事实。
+供应1完整normal212/211+optional1与供应2 mixed12/selected23/首因2保留各自source/recipe/SDK。
+12项历史依赖当前漂移分别记录父actual或静态身份；不要求旧脚本字节等于当前供应，也不重标旧结果。
+
+merger原preaudit-2因当时source文档在修改而拒绝，未补签pass。接收helper四轮原失败及v1–v4
+源码快照全部保留：scope日志字段冗余假设、通用路径解析器拒绝冻结catalog的合法包内`..`字面argv、
+旧首因报告不含新增tools/sidecar字段。修正仅在主out的merger解析器；产品、供应、报告和判据未改。
+18处该字面argv与冻结catalog精确匹配，规范化目标仍在相应供应SDK，且匹配原ZIP child成员哈希；
+其余路径继续使用原严格解析器。历史首因工具/sidecar缺项保持旧范围，没有补写或冒称新证据。
+
+合后Ubuntu root preflight pass：47脚本解析、52编码文件、主物理.cache。merger新产品执行0，
+无SDK重建、suite/长测重跑或QEMU。27票/38直接边/135AC、父spec摘要、claimed与全部正式欠项不变。
+独立接收收据/命令/日志在主`out/qaplet-m2/merge-20-mixed/HANDOFF.md`、`handoff.json`。
+本地可放行21，merger未领取后继；不push、CI、main/tag、发布或release-ready。

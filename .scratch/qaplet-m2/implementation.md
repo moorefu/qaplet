@@ -404,3 +404,17 @@ pass，46解析/52编码和主物理.cache；产品执行0、无重建/重复sui
 local_complete/cross_deferred，待独立merger接收后才放行21；实际清洁HEAD/原件/回放摘要见
 [本地记录](20-mixed-cleanup-validation.md)及本worktree `out/m2-20-mixed/HANDOFF.md`、`handoff.json`。
 其他原生/当前64K/正式Cross/CI Full/24–27矩阵与组合长测、父M2和最终Review仍未完成。
+
+2026-11-05（20独立本地接收）：fresh merger从clean root `a4e5fec1`实际no-ff合入最终
+clean source `ec93a4ca`，合并`943c1962`的tree与source同为`c201ccf6`。产品0916、95recipe/
+88ZIP/双archive19+19/三fat APE与公开/M1头静态身份未变，Core/header/SDK README与19实际
+合并点无差异；合前合后独立只读重放20scope/1852raw/2376证据文件通过。当前SDK3 mixed
+两端各12、selected各28、首因双序各2；每端四个safe-retention负向仍为native清理未完成，
+五个终端模式恢复与ConPTY设施实际清理另核。SDK1完整normal212/211+optional1与SDK2旧
+范围、source/dirty、早期失败及父actual/静态依赖漂移均保留原身份，不重贴为SDK3完整矩阵。
+merger预核2拒绝和四轮解析helper原失败/v1–v4快照保留，修正仅主out；已知包内字面`..` argv
+精确对冻结catalog和原ZIP child成员，未泛化路径放行。合后Ubuntu root preflight pass，47解析/
+52编码及主物理.cache；merger产品执行0，无重建/重复suite/长测。接收和命令见主
+`out/qaplet-m2/merge-20-mixed/HANDOFF.md`、`handoff.json`。20 **Local development:** complete，
+保持claimed/local_complete/cross_deferred，本地可放行21但merger未领取。27票/38边/135AC与
+父spec、正式其他原生/当前64K/Cross/CI Full/长测/整体Review及发布门禁保持原范围，不push/CI。
