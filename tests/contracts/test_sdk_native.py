@@ -52,9 +52,9 @@ class SDKNativeContract(unittest.TestCase):
         sys.path.insert(0, str(ROOT / 'scripts'))
         from core_gate import Evidence, normalized
         from sdk_matrix import validate_mixed_child
-        producer = json.loads(Path(os.environ['QAPLET_SDK_BUILD_REPORT']).read_text())
+        producer = json.loads(Path(os.environ['QAPLET_SDK_BUILD_REPORT']).read_text(encoding='utf-8'))
         selected = Path(os.environ['QAPLET_SDK_WINDOWS_REPORT'])
-        report = json.loads(selected.read_text())
+        report = json.loads(selected.read_text(encoding='utf-8'))
         self.assertEqual(report['host']['os'], 'Windows')
         original_root = normalized(report['evidence_directory'])
         actual_root = selected.parent / 'evidence' / report['report_id']
