@@ -49,11 +49,11 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 16 | 本地完成并独立合并`015cdb9f`；正式Cross/Full待验 | JS显式spawn、三种stdio、退出/reap与EOF分离、输出保留、双通道/部分写/BUSY/背压、ref/unref/GC、取消及stop/close；轮转与Promise回归 |
 | 17 | 本地完成并独立合并`caa439ae`；正式Cross/Full待验 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
 | 18 | 本地完成并独立合并`3e85a272`，接收`64624ddd`；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
-| 19 | 09已resolved、16/18本地完成并独立合入；已领取，与20并行 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
-| 20 | 09已resolved、16/18本地完成并独立合入；已领取，与19并行 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
+| 19 | 本地完成并独立合入`597020eb`，接收`2b3035f7`；正式Cross/Full待验 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
+| 20 | 09已resolved、16/18本地完成并独立合入；本票实施中，不依赖19 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
 | 21 | 等待20本地完成并独立合并 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
 | 22 | 等待21本地完成并独立合并 | 真实中断向owner交接、重复中断、清理预算耗尽/未回收报告、退出码；不把外部timeout记为成功清理 |
-| 23 | 等待19、22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
+| 23 | 19本地完成并独立合入；仍等待22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
 | 25 | 等待23本地完成并独立合并 | 实际ARM64 64K的新产品完整合同及至少1000生命周期、100混合异步；旧制品成绩不替代 |
 | 26 | 等待23本地完成并独立合并 | Linux/Windows各10000混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
@@ -69,6 +69,11 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 供应3未重跑这些完整catalog。18现已独立合入`3e85a272`，接收`64624ddd`重核21scope/
 2536raw及合后Ubuntu preflight；19/20当前开发前置已满足并已领取，未提前完成本地验收。
 正式跨平台/实际64K/CI/Full与组合长测不由本地selected回归替代，详本票验证记录与原件。
+
+19现已独立合入`597020eb`，接收`2b3035f7`核验当前normal214/213+optional1、package99/99、
+fault25/26、TTY13/20及额外环境/终端组合，保留2430raw、guard范围及原失败；合后Ubuntu
+preflight通过。20正在融合这份真实产品tip并验证自己的最终集成供件，本地尚未独立接收。
+23的19开发前置已满足，22尚未开始；不因共享文件新增20对19的阻塞边。
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，
 不降低父规格的产品/安全/ABI/默认额度、五原生、实际64K、Full及最终独立审查合同。
