@@ -167,7 +167,7 @@ static void *wait_child(void *opaque) {
   } else pthread_mutex_lock(&r->mutex);
   if (pid>0 || handle) {
     slot->status.exited=slot->status.reaped=waited;
-    if (error) { slot->status.code=QAPLET_PROCESS_ERROR; slot->status.error_domain=handle ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO; slot->status.error=error; }
+    if (error) { if (slot->status.code!=QAPLET_CANCELLED) slot->status.code=QAPLET_PROCESS_ERROR; slot->status.error_domain=handle ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO; slot->status.error=error; }
     if (error && !handle) {
       /* Another Host wait/SIGCHLD policy may have removed this child. The
        * numeric PID can already name an unrelated process. Never signal it
@@ -253,9 +253,43 @@ int qaplet_process_referenced_locked(qaplet_runtime *r) { return r->process_snap
 static void terminate_locked(qaplet_runtime *r,process_slot *s) {
   if (!s->ready || s->status.reaped || s->terminating || s->identity_uncertain || (s->pid<=0 && !s->handle)) return;
   s->terminating=1;
+  int error=0; uint32_t domain=s->handle ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO;
   if (s->handle) {
-    if (!TerminateProcess(s->handle,0xD00D)) cleanup_domain_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32);
-  } else if (kill(s->pid,SIGKILL) && errno!=ESRCH) cleanup_locked(r,errno);
+    if (!TerminateProcess(s->handle,0xD00D)) error=GetLastError();
+  } else if (kill(s->pid,SIGKILL) && errno!=ESRCH) error=errno;
+  if (error) {
+    s->status.error_domain=domain; s->status.error=error;
+    cleanup_domain_locked(r,error,domain);
+  }
+}
+static qaplet_code cancel_locked(qaplet_runtime *r,process_slot *s) {
+  if (s->status.code==QAPLET_CANCELLED) return QAPLET_OK;
+  if (s->finished) return QAPLET_ALREADY_COMPLETED;
+  s->status.code=QAPLET_CANCELLED;
+  terminate_locked(r,s);
+  return QAPLET_OK;
+}
+qaplet_code qaplet_process_cancel(qaplet_runtime *r,const qaplet_process *token,qaplet_diagnostic *d) {
+  qaplet_code code=qaplet_check_diagnostic(d);
+  if (!code) code=qaplet_check_structure(token,sizeof(*token));
+  if (!code && !r) code=QAPLET_INVALID_ARGUMENT;
+  if (code) return qaplet_report(d,code);
+  qaplet_notification notification={0};
+  pthread_mutex_lock(&r->mutex);
+  process_slot *s=lookup_locked(r,token);
+  if (!r->m2_enabled) code=QAPLET_UNSUPPORTED;
+  else if (!s) code=QAPLET_INVALID_HANDLE;
+  else {
+    code=cancel_locked(r,s);
+    if (!code) {
+      /* Accepted state stays accepted if its subsequent wake records a fault. */
+      qaplet_wake_locked(r); notification=qaplet_notify_prepare_locked(r);
+      pthread_cond_broadcast(&r->native_condition);
+    }
+  }
+  pthread_mutex_unlock(&r->mutex);
+  qaplet_notify_dispatch(r,notification);
+  return qaplet_report(d,code);
 }
 void qaplet_process_close(qaplet_runtime *r) {
   if (r->process_pool) {
@@ -277,7 +311,7 @@ void qaplet_process_shutdown(qaplet_runtime *r) {
     process_slot *s=&pool->slots[i];
     if (!s->active) continue;
     if (s->status.referenced) { s->status.referenced=0; --r->process_snapshot.referenced; }
-    terminate_locked(r,s);
+    cancel_locked(r,s);
   }
   pthread_cond_broadcast(&r->native_condition);
   pthread_mutex_unlock(&r->mutex);
