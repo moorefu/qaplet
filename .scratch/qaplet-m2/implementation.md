@@ -36,7 +36,8 @@
 | 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
 | 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | implementing_local；12/14/15已独立合并 |
 | 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | local_complete / cross_deferred（独立合并`caa439ae`；Linux195、Windows194+optional1、两端package81、fault23/24；claimed保留） |
-| 18–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
+| 18 | `codex/m2-18-tty` | `.cache/worktrees/m2-18-tty` | implementing_local；05已resolved、17已本地完成并独立合并 |
+| 19–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
 全部保持原文；父规格原字节未变，当前SHA-256为

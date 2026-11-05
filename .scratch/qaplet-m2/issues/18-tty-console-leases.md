@@ -4,11 +4,11 @@
 
 **Blocked by:** [05 · 真实终端租约、resize 与 Console 文本探针](05-tty-console-os-probes.md)、[17 · 标准 stdio 的显式安全接入](17-standard-stdio-opt-in.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local；独立分支 `codex/m2-18-tty`。
 
-**Execution prerequisites:** 05已resolved；等待17本地完成并独立合并，当前未满足全部开发前置。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 05已resolved；17已本地完成并独立合并 `caa439ae`，接收收据 `5bc82e1c` 已核，真实开发前置满足。17仍保留claimed/cross_deferred，18不新增对16的阻塞边。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 13、14、15、66、67、68、69、70、71、72、73、77、86、87。
 
@@ -52,6 +52,8 @@
 [父规格与全部合同](../spec.md) · [任务索引与依赖](../README.md) · [已确认拆分及覆盖映射](../ticket-proposal.md) · [开发入口](../../../docs/development.md) · [SDK 入口](../../../docs/development/sdk.md) · [证据合同](../../../docs/development/evidence.md) · [独立审查材料](../../../docs/agents/review.md)
 
 ## Comments
+
+2026-11-05：在17独立接收后领取。来源为实际集成点 `5bc82e1c`，17原件和重放收据见主 `out/qaplet-m2/merge-17-stdio/`；终端探针材料只作实施事实，不冒充本票产品验收。16继续独立最终供应，19/20仍等待16和18本地完成及独立合并。
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
