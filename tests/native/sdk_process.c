@@ -203,6 +203,11 @@ static void io_notify(void *opaque){
 static void *io_foreign(void *opaque){
   io_observer *o=opaque;qaplet_io_operation token=QAPLET_IO_OPERATION_INIT;qaplet_io_result result=QAPLET_IO_RESULT_INIT;
   qaplet_io_status status=QAPLET_IO_STATUS_INIT;
+  struct {qaplet_io_status value;uint64_t tail;} extended={QAPLET_IO_STATUS_INIT,0};extended.value.struct_size=sizeof(extended);
+  if(qaplet_get_io_status(o->runtime,&o->operation,&extended.value,NULL)!=QAPLET_OK || extended.value.struct_size!=sizeof(extended) || extended.tail)atomic_store(&o->error,1);
+  extended.tail=1;if(qaplet_get_io_status(o->runtime,&o->operation,&extended.value,NULL)!=QAPLET_INVALID_ARGUMENT)atomic_store(&o->error,1);
+  qaplet_io_operation wrong=o->operation;++wrong.runtime_id;
+  if(qaplet_get_io_status(o->runtime,&wrong,&status,NULL)!=QAPLET_INVALID_HANDLE)atomic_store(&o->error,1);
   if(qaplet_io_read(o->runtime,&o->endpoint,1,&token,NULL)!=QAPLET_WRONG_THREAD ||
      qaplet_io_write(o->runtime,&o->endpoint,"X",1,&token,NULL)!=QAPLET_WRONG_THREAD ||
      qaplet_io_finish(o->runtime,&o->endpoint,NULL)!=QAPLET_WRONG_THREAD || qaplet_io_close(o->runtime,&o->endpoint,NULL)!=QAPLET_WRONG_THREAD ||

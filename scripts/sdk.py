@@ -30,6 +30,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_io_faults.c", "io-faults.c", None, None),
     ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
     ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
     ("tests/native/sdk_work.c", "host-work.c", "work-host.o", "host-work-compile"),
@@ -314,6 +315,7 @@ def package_consume(args, report, directory):
         compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
@@ -394,6 +396,21 @@ def package_consume(args, report, directory):
             "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
             "controlled_system_fixture": args.operation == "fault-consume", "platforms": platforms,
             "reason": "Process C consumer compiled outside both source checkouts from the sealed supplied SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-io-faults.com"
+        for mode, expected, platforms in IO_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-", output / "sdk/process-child.exe"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -585,17 +602,25 @@ PROCESS_FAULT_CASES = (
     ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
     ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
 )
+IO_FAULT_CASES = (
+    ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--allocation", "controlled I/O allocation: actual SDK refusal is permanent; owner starts child termination without another pump/close; first cause and physical cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--reuse", "controlled I/O reuse: real closed native descriptor/HANDLE reused; pending cancel/close and stale endpoint/operation tokens never target replacement; exact new child byte and cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--wake", "controlled I/O wake: accepted token survives actual wake failure; cancellation/release remain accepted; independent first cause and owner cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--physical", "controlled I/O physical: cancelled syscall exits before gated helper TLS destruction; released token invalid; bytes/count retained CLOSED; finite retry and BUSY destroy; real join retires storage: pass\n", ["Windows"]),
+    ("--start", "controlled I/O start: real helper start refusal preserves native errno; no accepted token/count/bytes; ordinary failure retries and cleans up: pass\n", ["Windows"]),
+)
 
 
-def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False):
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False):
     """Public package-only Process application; wrapped OS fixture is separate."""
     (work / "tmp").mkdir(parents=True)
-    name = "qaplet-process-faults" if faults else "qaplet-process-host"
-    source = sdk / ("process-faults.c" if faults else "host-process.c")
-    symbols = ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    name = "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
+    source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
+    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
-    report["process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+    report["io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
         "source": identity(source), "include_directories": [str(sdk / "include")],
         "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
         "wrapped_symbols": list(symbols), "scope": "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}

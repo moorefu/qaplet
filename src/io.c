@@ -283,9 +283,7 @@ static qaplet_code submit(qaplet_runtime *r,const qaplet_io_endpoint *token,cons
         else {o->helper=1;++r->helper_threads;r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;r->native_handles++;++r->native_retained;++p->snapshot.helper_threads;p->snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;peak(r->native_handles,&r->native_handles_peak);}
       }
     }
-    if(!code){
-      if(!code){o->active=1;o->handoff=1;e->pending=o;++e->handoffs;++p->snapshot.operations;p->snapshot.data_bytes+=n;++p->snapshot.pending_handoffs;increment(&p->snapshot.accepted);output->runtime_id=r->runtime_id;output->slot=index;output->generation=generation;qaplet_wake_locked(r);notification=qaplet_notify_prepare_locked(r);}
-    }
+    if(!code){o->active=1;o->handoff=1;e->pending=o;++e->handoffs;++p->snapshot.operations;p->snapshot.data_bytes+=n;++p->snapshot.pending_handoffs;increment(&p->snapshot.accepted);output->runtime_id=r->runtime_id;output->slot=index;output->generation=generation;qaplet_wake_locked(r);notification=qaplet_notify_prepare_locked(r);}
   }
   if(code && reserved)qaplet_operation_retire_locked(r,n);
   pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);if(code)qaplet_native_free(r,data,n);return qaplet_report(d,code);
