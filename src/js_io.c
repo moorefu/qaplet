@@ -122,6 +122,7 @@ static JSValue endpoint_operation(JSContext *c,JSValueConst self,int argc,JSValu
 static JSValue endpoint_control(JSContext *c,JSValueConst self,int argc,JSValueConst *argv,int magic) {
   (void)argc;(void)argv;qaplet_runtime *r=JS_GetContextOpaque(c);js_endpoint *e=JS_GetOpaque(self,endpoint_class);if(!e)return fail(c,QAPLET_INVALID_HANDLE);
   if(magic==4){qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;return JS_NewBool(c,!e->closed && !qaplet_get_io_endpoint_status(r,&e->token,&status,NULL) && status.referenced);}
+  if(magic==1 && !e->writing)return fail(c,QAPLET_BAD_STATE);
   if(e->closed)return JS_UNDEFINED;
   r->bridge_active=1;qaplet_code code=magic==0 ? qaplet_io_close(r,&e->token,NULL) : magic==1 ? qaplet_io_finish(r,&e->token,NULL) : qaplet_io_set_ref(r,&e->token,magic==2,NULL);r->bridge_active=0;
   if(!code)refresh_closed(r,e);return code ? fail(c,code) : JS_UNDEFINED;
