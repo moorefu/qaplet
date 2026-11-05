@@ -77,8 +77,13 @@ def current_recipe():
 def contract_identity(profile):
     catalog = select_cases(profile)
     paths = ('scripts/local_check.py', 'scripts/sdk.py', 'scripts/sdk_matrix.py',
-             'scripts/startup.py', 'scripts/build_ape.py', 'scripts/foundation.py',
-             'scripts/workflow_support.py', 'scripts/input_lock.py')
+             'scripts/startup.py', 'scripts/build_ape.py', 'scripts/sdk_link.py', 'scripts/foundation.py',
+             'scripts/workflow_support.py', 'scripts/input_lock.py',
+             'scripts/sdk_signal.py', 'scripts/m2_cli_signal.py', 'scripts/m2_cli_signal_windows.py',
+             'scripts/m2_cli_signal_budget.py', 'scripts/m2_cli_signal_mixed.py', 'scripts/m2_cli_signal_strong.py',
+             'tests/contracts/test_sdk_native.py', 'tests/contracts/test_sdk_retention.py',
+             'tests/contracts/test_m2_cli_signal_tools.py', 'scripts/sdk_m2_example.py',
+             'tests/contracts/test_sdk_m2_package.py')
     if profile == 'ci':
         paths += ('scripts/ci_tiers.py', 'scripts/dev.py', 'tests/contracts/test_local_check.py',
                   'tests/contracts/test_ci_tiers.py', 'tests/contracts/test_ci_efficiency.py')
@@ -122,11 +127,16 @@ def validate_supplier(path, artifacts, expected):
 @contextmanager
 def selected_catalog(catalog):
     previous = sdk.HOST_CASES, sdk.CLI_CASES, sdk.EXAMPLE_CASES
+    previous_m2 = sdk.M2_EXAMPLE_CASES
     sdk.HOST_CASES, sdk.CLI_CASES, sdk.EXAMPLE_CASES = catalog
+    # Explicit development profiles retain their existing selected scope. The
+    # full package/native entry points separately require the M2 composition.
+    sdk.M2_EXAMPLE_CASES = ()
     try:
         yield
     finally:
         sdk.HOST_CASES, sdk.CLI_CASES, sdk.EXAMPLE_CASES = previous
+        sdk.M2_EXAMPLE_CASES = previous_m2
 
 
 def sdk_report(scope):

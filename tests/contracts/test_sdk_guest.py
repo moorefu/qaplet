@@ -50,6 +50,8 @@ qaplet.args-missing-source qaplet.args-source-tail qaplet.args-missing-file qapl
 qaplet.args-missing-separator qaplet.args-invalid-budget qaplet.args-overflow-budget
 qaplet-example.abi qaplet-example.application qaplet-example.rejection qaplet-example.queue-full
 qaplet-example.deadline qaplet-example.missing qaplet-example.arguments qaplet-example.metadata
+qaplet-m2-example.normal qaplet-m2-example.file-error qaplet-m2-example.cancel
+qaplet-m2-example.cleanup-pending qaplet-m2-example.metadata qaplet-m2-example.arguments
 """.split())
 
 

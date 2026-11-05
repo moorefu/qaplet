@@ -1,14 +1,15 @@
 """Actual Ctrl+C in a hidden, privately owned native Console."""
 import argparse,json,os,subprocess,time
 from pathlib import Path
-from m2_cli_signal import identity
+from m2_cli_signal import capture_inputs, identity
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--cli',type=Path,required=True);p.add_argument('--host',type=Path,required=True);p.add_argument('--report',type=Path,required=True)
     p.add_argument('--mode',choices=('all','wait','execute','async-output','sync-output','queue','mixed'),default='all')
     p.add_argument('--thread-fault',action='store_true')
     p.add_argument('--late',action='store_true')
-    args=p.parse_args();cases=[];args.report.parent.mkdir(parents=True,exist_ok=True)
+    args=p.parse_args();args.report=args.report.resolve();cases=[];args.report.parent.mkdir(parents=True,exist_ok=True)
+    consumer=capture_inputs(args.report.parent/(args.report.stem+'-raw'))
     for mode in (('wait','execute','async-output','sync-output') if args.mode=='all' else (args.mode,)):
         directory=args.report.parent/(args.report.stem+'-raw')/mode;directory.mkdir(parents=True)
         source="Promise.all([import('qaplet:stdio'),import('qaplet:timers')]).then(async ([s,t])=>{await s.stdout.write(new Uint8Array([82,69,65,68,89,10])).promise;"
@@ -53,5 +54,6 @@ def main():
         if args.thread_fault:scope='Controlled CLI OS-pthread retirement failure; actual repeated Ctrl+C during native exit hold; cumulative SDK+relay active wait, incomplete and exit1; no complete native cleanup claim'
         cases.append({'case':'windows-Ctrl+C-'+mode,'status':'pass' if passed else 'fail','argv':argv,'launcher_exit':child.returncode,'native':native,'queue_result':queue,'terminal_modes':modes,'direct_child':direct,'supervisor_timeout':expired,'elapsed_seconds':time.monotonic()-before,'controlled_system_fixture':args.thread_fault or args.late,'controlled_native_observer':mode=='mixed','active_condition_waits_seconds':waits,'cumulative_observed_active_wait_seconds':sum(waits),'raw_records':rows,'native_cleanup_complete':bool(passed) and not args.thread_fault,'scope':scope})
     report={'status':'pass' if all(c['status']=='pass' for c in cases) else 'fail','cli':identity(args.cli),'host_artifact':identity(args.host),'script':identity(Path(__file__)),'cases':cases,'host':{'platform':__import__('platform').platform(),'architecture':__import__('platform').machine(),'page_size':__import__('mmap').PAGESIZE},'ci':None}
+    report.update(consumer_identity=consumer,execution_gate='execute awaits stdout READY; continuation may not have entered for(;;); use m2_cli_signal_strong.py for the unsuspended gate')
     args.report.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps({'status':report['status'],'report':str(args.report)}));return report['status']!='pass'
 if __name__=='__main__':raise SystemExit(main())

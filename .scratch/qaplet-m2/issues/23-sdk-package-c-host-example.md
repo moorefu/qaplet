@@ -6,7 +6,15 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred
+
+**Local development:** complete
+
+[本地验证](../23-sdk-delivery-validation.md)与专属worktree
+`out/m2-23-sdk-delivery/HANDOFF.md`、`handoff.json`保存最终SKU3、包外纯C组合例、
+Windows公开spawn→CLI修复、两端实际消费及原件/限制。产品配方冻结`144d5e18`，
+其后`d6d1d16`只修两处测试读取编码，未改产品RECIPE。尚待独立合并接收；在实际
+接收前不领取24–26。正式Cross/Full及父AC组仍待验，下列验收项未因本地通过勾选。
 
 **Execution prerequisites:** 19已本地完成并独立合入`597020eb`（接收`2b3035f7`），22亦已独立合入`b8b9f572`（接收`6cca6f9b`）；当前全部开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
@@ -61,4 +69,12 @@ SDK分发与消费工具收口。先诊断Windows公开SDK启动CLI child的可�
 旧/新parent与旧/新child组合均已观察到child exit1/reaped、parent exit0，直接无Console
 启动同一供件则正常；原因待定位，不把它改成支持例外。保留22信号/安全合同和实际限制。
 只有23本地完成及独立合入才放行24/25/26本地开发；27仍需其正式全范围验收。
+
+2026-11-06：23本地实现完成，已融合两条内部职责分支和真实integration祖先。
+SKU3正常Linux229/Windows228+optional1、ZIP包外两例14、CLI67/72、sender2/1及
+强执行态2/1通过；只读两native slot接受，其余三个仍blocked。公开Windows
+CONTROL_FAILURE已用单项SystemRoot与socket10106真实OS对照定位并最小修复，
+explicit replacement/空env/句柄隔离合同保留。所有输入及packing原件可审计，原tmp
+已不可达且原因unknown照实记录。状态claimed/local_complete/cross_deferred；
+父M2、24–27正式矩阵/64K/Full长测及最终两轴Review未完成。
 

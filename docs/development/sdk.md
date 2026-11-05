@@ -1,5 +1,40 @@
 # Embed SDK development
 
+The complete M2 distribution includes four audited APEs: the public contract
+Host, CLI, retained M1 application and new `qaplet-m2-example.com`.
+`sdk/application-m2.c` is a package-only pure C Host that combines a named
+bounded regular-file worker, copied producer events, HostNotify/external-loop
+hints, direct-child asynchronous stdin/stdout/stderr, resource PODs and safe
+close/quiesce/destroy in one Runtime. Its normal, file-error, cancellation and
+cleanup-budget modes retain distinct public outcomes; the last intentionally
+keeps its worker/data/notification channel and reports incomplete cleanup.
+The old M1 application and frozen-header consumer remain available.
+
+The manifest now includes all 19 semantic M2 limits, the 14 base limits and
+library/instance capabilities. The M2 application's `--metadata` reads the live
+SDK and is checked against those fields. Ordinary native consumption and the
+external package consumer execute six M2 application cases in separate case
+directories, preserving actual argv, file bytes, raw JSON/POD observations,
+child reap/EOF and cleanup scope. Guest export includes the same six contracts
+and explicit input bytes; exporting is not guest execution or acceptance.
+`sdk.py example-consume` provides the smaller package-only compile/run of both
+creation examples; it does not claim the larger `package-consume` catalog.
+
+The generic external consumer retains every actual extracted `sdk/` ZIP member
+before its first compiler invocation. Original packer output is copied to the
+evidence directory immediately, including repack failure, while the frozen
+portable linker stays unchanged. The ordinary SDK's three fixed-name mixed
+smokes have their own report/case cwd, absolute supplied artifacts and individual
+marker/wait records. Consumer helper/test identities bind the actual current
+catalog and copied helper sources; old reports keep their original identities.
+
+`sdk_signal.py` supplies `signal-arm.com` for `m2_cli_signal_strong.py`, which
+uses an explicit
+Host identity gate before READY; the public spawn and infinite JS loop share an
+unsuspended JS stack. Native child exit/reap proof remains distinct from whole
+SDK quiescence. Linux sender PID, actual delivery result and target wait state
+are retained. This explicit helper scope is separate from default local checks.
+
 Mixed-resource lifetime validation is available through `sdk.py mixed-consume`.
 Ubuntu extracts the sealed ZIP outside the repository, compiles the delivered
 `host-mixed.c` and separate `mixed-faults.c` against its public header/archive,
@@ -75,7 +110,12 @@ argument are strict strings. `argv` is the complete C argument vector, including
 argv[0]; omitting it uses the executable path as argv[0]. `env` is a complete
 replacement object with string values, or an array of `KEY=value` strings.
 Omitting it uses the Runtime factory's immutable environment snapshot. The
-optional `stdio` array has exactly three entries (`pipe`, `inherit`, `ignore`),
+Windows factory snapshot restores an already present `SYSTEMROOT` in the fixed
+CRT's `/C/...` representation to native drive form before it is used by
+`CreateProcess`. It neither reads later Host changes nor adds a missing key.
+Explicit replacement values, empty environments, and other variables remain
+verbatim; Hosts supplying a replacement own any native child requirements.
+The optional `stdio` array has exactly three entries (`pipe`, `inherit`, `ignore`),
 and defaults to three pipes. Paths are explicit; relative paths use the Runtime
 cwd, with the same validation, native errors and inheritance rules as C spawn.
 
@@ -537,7 +577,10 @@ identities remain separate. The successful current closure uses product commit
 `21bd317f4246571f0048789ca97167632c09f924` / Full `41489263809`; see the
 [integration record](../../.scratch/qaplet-m1/16-evidence-validation.md).
 
-## M2 显式空实例增量
+## 历史：M2 显式空实例增量
+
+本节的105项供应描述保留当时范围；完整M2分发、组合例和当前入口见本页开头，
+不能用早期空实例成绩替代完整M2验收。
 
 `qaplet_create` 保持 M1 布局、reserved 和旧模式。新增的
 `qaplet_create_m2(base, m2, output, diagnostic)` 使用独立 `qaplet_m2_config`

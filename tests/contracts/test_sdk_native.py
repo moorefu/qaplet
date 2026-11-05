@@ -13,6 +13,73 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SDKNativeContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("QAPLET_SDK_NATIVE_REPORT"),
+                         "Actual supplied SDK native report required")
+    def test_mixed_smokes_preserve_separate_working_directories_and_fixed_name_evidence(self):
+        report = json.loads(Path(os.environ["QAPLET_SDK_NATIVE_REPORT"]).read_text(encoding="utf-8"))
+        cases = {row["case_id"]: row for row in report["cases"]}
+        roots = []
+        for suffix in ("stop", "races", "nonreturning"):
+            case_id = "qaplet-host.m2-mixed-" + suffix
+            case = cases[case_id]
+            command = case["commands"][0]
+            root = Path(command["cwd"])
+            roots.append(root)
+            self.assertEqual(root, Path(report["evidence_directory"]) / case_id)
+            self.assertTrue(Path(command["argv"][0]).is_absolute())
+            artifact_index = 0 if report["host"]["os"] == "Windows" else 1
+            self.assertTrue(Path(command["argv"][artifact_index]).is_absolute())
+            child = Path(command['argv'][-1])
+            self.assertTrue(child.is_absolute())
+            self.assertNotIn('..', child.parts, 'Resolve the supplied child before entering the case cwd')
+            bound = case['process_child']
+            self.assertEqual(Path(bound['original']['path']), child)
+            self.assertEqual(bound['package_member']['file'], 'sdk/process-child.exe')
+            self.assertEqual(bound['original']['sha256'], bound['package_member']['sha256'])
+            self.assertEqual(Path(bound['retained']['path']), root / 'process-child.exe')
+            self.assertEqual(hashlib.sha256(Path(bound['retained']['path']).read_bytes()).hexdigest(), bound['package_member']['sha256'])
+            self.assertEqual(Path(case["marker"]["path"]), root / "mixed-result.txt")
+            self.assertEqual(Path(case["wait_trace"]["path"]), root / "mixed-waits.ndjson")
+            self.assertEqual(Path(case["marker"]["path"]).read_bytes(), case["expected"]["stdout"].encode())
+            self.assertEqual([row["requested_active_wait_ms"] for row in case["wait_observations"]], [0, 5, 5])
+            self.assertEqual(case["status"], "pass")
+            self.assertIs(case["native_cleanup_complete"], suffix != "nonreturning")
+        self.assertEqual(len(set(roots)), 3)
+
+    @unittest.skipUnless(os.name == 'posix' and os.environ.get('QAPLET_SDK_BUILD_REPORT') and
+                         os.environ.get('QAPLET_SDK_WINDOWS_REPORT'), 'Actual Windows SDK report replayed from Ubuntu required')
+    def test_foreign_supplier_child_paths_need_only_case_owned_retained_bytes(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from core_gate import Evidence, normalized
+        from sdk_matrix import validate_mixed_child
+        producer = json.loads(Path(os.environ['QAPLET_SDK_BUILD_REPORT']).read_text(encoding='utf-8'))
+        selected = Path(os.environ['QAPLET_SDK_WINDOWS_REPORT'])
+        report = json.loads(selected.read_text(encoding='utf-8'))
+        self.assertEqual(report['host']['os'], 'Windows')
+        original_root = normalized(report['evidence_directory'])
+        actual_root = selected.parent / 'evidence' / report['report_id']
+        host = next(row for row in report['artifacts'] if row['name'] == 'qaplet-host')
+        with tempfile.TemporaryDirectory(prefix='qaplet-mixed-moved-') as temp:
+            moved = Path(temp)
+            evidence = Evidence({'path_mappings': [{'source': original_root, 'root': str(moved)}]}, moved)
+            for suffix in ('stop', 'races', 'nonreturning'):
+                case_id = 'qaplet-host.m2-mixed-' + suffix
+                case = next(row for row in report['cases'] if row['case_id'] == case_id)
+                child = case['process_child']
+                self.assertFalse(Path(child['original']['path']).is_file(), 'The native Windows supplier path must be unreachable here')
+                relative = normalized(child['retained']['path'])[len(original_root)+1:]
+                destination = moved / relative
+                destination.parent.mkdir(parents=True)
+                shutil.copyfile(actual_root / relative, destination)
+                validate_mixed_child(case, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
+                corrupted = json.loads(json.dumps(case))
+                corrupted['process_child']['original']['path'] += '.wrong'
+                with self.assertRaises(ValueError):
+                    validate_mixed_child(corrupted, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
+                destination.write_bytes(destination.read_bytes() + b'changed')
+                with self.assertRaises(ValueError):
+                    validate_mixed_child(case, producer, normalized(host['path']), original_root + '/' + case_id, evidence)
+
     @unittest.skipUnless(os.name == "posix" and os.environ.get("QAPLET_SDK_BUILD_REPORT") and
                          os.environ.get("QAPLET_SDK_NATIVE_REPORT") and os.environ.get("QAPLET_SDK_LOADER_DIR"),
                          "Actual SDK/native closure and POSIX loader modes required")
@@ -74,7 +141,7 @@ class SDKNativeContract(unittest.TestCase):
             self.assertEqual(value["coverage"][0]["lifecycle"]["completed_cycles"], 1000)
             shutil.copytree(native.parent / "evidence" / original["report_id"], work / "evidence" / original["report_id"])
             selected = work / "run.json"
-            for name in ("missing_case", "short_lifecycle", "guest_replacement", "required_skip"):
+            for name in ("missing_case", "short_lifecycle", "guest_replacement", "required_skip", "mixed_cwd", "mixed_marker", "mixed_waits", "consumer_identity"):
                 mutation = json.loads(json.dumps(original))
                 if name == "missing_case":
                     mutation["cases"] = [case for case in mutation["cases"] if case["case_id"] != "qaplet-host.stop-ordering"]
@@ -82,12 +149,19 @@ class SDKNativeContract(unittest.TestCase):
                     mutation["lifecycle"]["completed_cycles"] = 99
                 elif name == "guest_replacement":
                     mutation["host"]["execution_mode"] = "emulated-system"
-                else:
+                elif name == "required_skip":
                     mutation["cases"][0]["status"] = "skip"
+                elif name == "consumer_identity":
+                    mutation.pop("consumer_identity")
+                else:
+                    mixed = next(row for row in mutation["cases"] if row["case_id"] == "qaplet-host.m2-mixed-stop")
+                    if name == "mixed_cwd": mixed["commands"][0]["cwd"] = original["evidence_directory"]
+                    elif name == "mixed_marker": mixed["marker"]["path"] = original["evidence_directory"] + "/mixed-result.txt"
+                    else: mixed["wait_observations"] = []
                 selected.write_text(json.dumps(mutation), encoding="utf-8")
                 code, value = check(selected, name)
                 self.assertEqual(code, 1, name + ": " + str(value))
-                self.assertTrue(any(word in value["reason"].lower() for word in ("catalog", "lifecycle", "native", "contract")), value)
+                self.assertTrue(any(word in value["reason"].lower() for word in ("catalog", "lifecycle", "native", "contract", "mixed", "invocation")), value)
 
 
 if __name__ == "__main__":

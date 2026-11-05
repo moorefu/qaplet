@@ -3,12 +3,14 @@
 """Ubuntu-built public signal Host and independently identified CLI observers."""
 import argparse,json,os,re,shutil,sys,uuid
 from pathlib import Path
-from build_ape import BuildError,audit,identity,link_portable,publish_ape,run
+from build_ape import BuildError,audit,identity,publish_ape,run
+from sdk_link import link_portable
 from foundation import ROOT,host_facts,now,sha256
 from workflow_support import write_evidence_report
 import sdk
 
 MODES={
+    'signal-arm':('cli-signal-arm.c',()),
     'signal-host':('cli-signal.c',()),
     'signal-fault':('cli-signal-faults.c',('pthread_create','pthread_cond_timedwait')),
     'signal-late':('cli-signal-late.c',('write','GetProcAddress','qaplet_destroy')),
@@ -22,6 +24,7 @@ def main():
     report={'report_kind':'qaplet-cli-signal-consumers','status':'not_run','started_at':now(),'host':host_facts(),'commands':[],'artifacts':[],'ci':None}
     try:
         if report['host']['os']!='Linux' or __import__('platform').freedesktop_os_release().get('ID')!='ubuntu':raise BuildError('Ubuntu producer required')
+        sdk.capture_consumer_inputs(report,directory)
         producer=json.loads(args.producer.read_text());supplied=args.supplied.resolve();sdk.check_package(producer,supplied)
         if producer['status']!='pass':raise BuildError('Successful SDK producer required')
         if output.exists() and any(output.iterdir()):raise BuildError('New output directory required')
@@ -35,16 +38,23 @@ def main():
         report.update(producer_report=identity(args.producer),sdk=producer['sdk'],sdk_recipe=producer['sdk_recipe'],package=producer['package'],recipe_snapshots=[identity(path) for path in sorted(inputs.rglob('*')) if path.is_file()])
         tree=Path(producer['native_toolchain']['tree']);helpers=producer['portable_helpers'];work=args.build_dir.resolve()/str(uuid.uuid4());work.mkdir(parents=True)
         report['build_directory']=str(work);archive=supplied/'sdk/lib/libqaplet.a';header=supplied/'sdk/include'
-        report['public_sdk']={'archive':identity(archive),'header':identity(header/'qaplet.h'),'private_headers':False}
+        retained=[]
+        for item in producer['package']['members']:
+            if not item['file'].startswith('sdk/'):continue
+            source=supplied/item['file'];target=inputs/item['file'];target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,target)
+            saved=identity(target)
+            if any(saved[key]!=item[key] for key in ('sha256','size_bytes')):raise BuildError('Signal input differs from exact package member: '+item['file'])
+            retained.append({'package_member':{key:item[key] for key in ('file','sha256','size_bytes')},'original':identity(source),'retained':saved})
+        report['public_sdk']={'archive':identity(archive),'archives':[identity(archive),identity(supplied/'sdk/lib/.aarch64/libqaplet.a')],'header':identity(header/'qaplet.h'),'retained_inputs':retained,'private_headers':False}
         for mode,(fixture,symbols) in MODES.items():
             build=work/mode;(build/'tmp').mkdir(parents=True)
             env=dict(os.environ,TMPDIR=str(build/'tmp'),LC_ALL='C',TZ='UTC',SOURCE_DATE_EPOCH='0',BUILDLOG=str(output/(mode+'.build-commands.log')))
             objects=[]
             units=[(supplied/'sdk'/fixture,'fixture')]
-            if mode!='signal-host':units.insert(0,(inputs/'src/cli.c','cli'))
+            if mode not in ('signal-host','signal-arm'):units.insert(0,(inputs/'src/cli.c','cli'))
             for source,name in units:
                 run(report,directory,mode+'-'+name+'-compile',[tree/'bin/cosmocc','-Os','-I'+str(header),'-c',source,'-o',build/(name+'.o')],args.compile_timeout,build,env);objects.append(build/(name+'.o'))
-            link_portable(args,report,directory,tree,helpers,mode,[*objects,archive],build/(mode+'.com'),build,env,libraries=(*('-Wl,--wrap='+symbol for symbol in symbols),'-lm','-lpthread'))
+            link_portable(args,report,directory,tree,helpers,mode,[*objects,*([] if mode=='signal-arm' else [archive])],build/(mode+'.com'),build,env,libraries=(*('-Wl,--wrap='+symbol for symbol in symbols),'-lm','-lpthread'))
             helper_source=next(Path(item['path']).parent for item in helpers['source']['files'] if Path(item['path']).name=='LICENSE')
             publish_ape(build,output,mode,helpers,helper_source)
             report['artifacts'].append(audit(args,report,directory,tree,mode,output))
