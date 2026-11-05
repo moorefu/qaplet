@@ -4,11 +4,11 @@
 
 **Blocked by:** [20 · 组合资源的停止与两阶段清理](20-mixed-stop-close-quiesce.md)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-**Execution state:** not_started
+**Execution state:** implementing_local
 
-**Execution prerequisites:** 等待20本地完成并独立合并，当前未满足开发前置。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 20已本地完成并独立合入`943c1962`（接收`776e50cb`），当前开发前置已满足，已领取。正式Cross/Full仍待验；验证范围见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
 
 **Spec stories:** 6、7、8、9、10、11、16、17、19、20、21、22、23、24、25、66、94、95、98、108。
 
@@ -53,4 +53,9 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-05：20独立接收后由root实际领取；分支`codex/m2-21-cli`、worktree
+`.cache/worktrees/m2-21-cli`从当前actual integration起步，fresh实现者按公开行为TDD。
+沿既有统一驱动/入口结果副本收口CLI、真实标准路由及0/1/2；22信号专属闭环仍在后继。
+本地完成及独立合入才放行22；当前领取不代表正式AC组、Cross/Full或父M2已验收。
 

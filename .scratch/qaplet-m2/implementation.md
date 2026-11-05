@@ -418,3 +418,12 @@ merger预核2拒绝和四轮解析helper原失败/v1–v4快照保留，修正�
 `out/qaplet-m2/merge-20-mixed/HANDOFF.md`、`handoff.json`。20 **Local development:** complete，
 保持claimed/local_complete/cross_deferred，本地可放行21但merger未领取。27票/38边/135AC与
 父spec、正式其他原生/当前64K/Cross/CI Full/长测/整体Review及发布门禁保持原范围，不push/CI。
+
+2026-11-05（21真实开发前置满足）：20独立no-ff`943c1962`及接收`776e50cb`已完成，
+主收据`out/qaplet-m2/merge-20-mixed/handoff.json` SHA256为
+`04b0e3d4d9eeebbca0a97b0102cd9778259fe5ed657c754ddbc04226352cc0a5`。
+两端SDK3 mixed12/selected28/首因2原件及95recipe、88ZIP、19+19archive、1852raw已核；
+保留负向不改清理语义，旧完整normal保持原scope。Root实际领取21，fresh实现者独立
+worktree TDD，复用统一驱动、入口副本及标准流/终端公开边界，当前未完成本地验收。
+22等21本地完成与独立合入；23的19已满足、22仍待。原38边/135AC及父spec不变，
+正式Cross/Full/当前64K/长测/整体Review/M2仍未验收；当前不push/CI或release-ready。

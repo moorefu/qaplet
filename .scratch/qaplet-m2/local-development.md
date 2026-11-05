@@ -50,8 +50,8 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 17 | 本地完成并独立合并`caa439ae`；正式Cross/Full待验 | 真实重定向pipe/文件/无效句柄分类，默认不接管、借用不关原句柄/不改共享flags，安全拒绝；JS/C字节、EOF、取消、预算及物理保留 |
 | 18 | 本地完成并独立合并`3e85a272`，接收`64624ddd`；正式Cross/Full待验 | 真实PTY/Console跨Runtime别名独占、显式双向join、完整模式恢复/readback、Host resize桥、严格UTF-8/已验VT、物理join与有限预算；[本票记录](18-tty-validation.md) |
 | 19 | 本地完成并独立合入`597020eb`，接收`2b3035f7`；正式Cross/Full待验 | timer/work/process/stdio/TTY组合额度、保留字节、POD跨线程快照、拒绝与终止首因；硬限额及稳定错误 |
-| 20 | 09已resolved、16/18本地完成并独立合入；本票实施中，不依赖19 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
-| 21 | 等待20本地完成并独立合并 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
+| 20 | 本地完成并独立合入`943c1962`，接收`776e50cb`；正式Cross/Full待验 | 混合资源stop/close/quiesce/destroy，取消竞争、OS未退休记录、唯一reap、首因及用户JS屏障；宿主通知安全 |
+| 21 | 20本地完成并独立合入；已领取实施 | 最小CLI真实异步运行、入口结果保留、自然退出/错误、stdout/stderr与退出码；不增加Node兼容 |
 | 22 | 等待21本地完成并独立合并 | 真实中断向owner交接、重复中断、清理预算耗尽/未回收报告、退出码；不把外部timeout记为成功清理 |
 | 23 | 19本地完成并独立合入；仍等待22本地完成并独立合并 | Ubuntu完整SDK分发、包外纯C Host、逐目标archive/头文件/依赖、消费同一供应字节及生命周期示例 |
 | 24 | 等待23本地完成并独立合并 | 五原生完整合同及每目标至少1000生命周期、100混合异步；缺失宿主保留not_run |
@@ -74,6 +74,11 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 fault25/26、TTY13/20及额外环境/终端组合，保留2430raw、guard范围及原失败；合后Ubuntu
 preflight通过。20正在融合这份真实产品tip并验证自己的最终集成供件，本地尚未独立接收。
 23的19开发前置已满足，22尚未开始；不因共享文件新增20对19的阻塞边。
+
+20现已独立合入`943c1962`、接收`776e50cb`。最终SKU3两端mixed各12、相关回归各28、
+首因两序各2通过，1852raw/20scope及合后Ubuntu preflight独立重核；四个保留负向/端
+继续标native_cleanup_complete=false。旧SKU1/2原范围保留，不改贴成当前完整normal。
+21据此领取，正式跨平台/Full/64K/长测与父M2待验边界不变。
 
 以上只校正开发调度与验证范围，不删除原Blocked by边、不修改任何Acceptance criteria，
 不降低父规格的产品/安全/ABI/默认额度、五原生、实际64K、Full及最终独立审查合同。
