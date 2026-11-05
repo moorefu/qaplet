@@ -1126,7 +1126,8 @@ static int js_errors_contract(void) {
     "let ok=check(()=>submit('absent',new Uint8Array()),20)&&check(()=>submit('read',new Uint8Array(65)),13)"
     "&&check(()=>submit({toString(){++hooks;return 'read'}},new Uint8Array()),1)"
     "&&check(()=>submit('read',new Uint16Array()),8)&&check(()=>submit('read',new Proxy(new Uint8Array(),{})),8)"
-    "&&check(()=>submit('read',new Uint8Array(new SharedArrayBuffer(1))),8);return ok&&hooks===0})()";
+    "&&check(()=>submit('read',new Uint8Array(new SharedArrayBuffer(1))),8)"
+    "&&check(()=>submit('\\ud800',new Uint8Array()),12)&&check(()=>submit('\\udc00',new Uint8Array()),12);return ok&&hooks===0})()";
   CHECK(!js_true(runtime,source));
   qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
   CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.accepted && !stats.operations && !stats.worker_threads);

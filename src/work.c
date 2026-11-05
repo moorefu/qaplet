@@ -645,10 +645,12 @@ static JSValue js_submit(JSContext *context,JSValueConst self,int argc,JSValueCo
   qaplet_runtime *runtime=JS_GetContextOpaque(context);
   if (argc!=2 || !JS_IsString(argv[0])) return throw_work(context,QAPLET_INVALID_ARGUMENT);
   size_t name_length,length=0;
+  qaplet_code code=qaplet_js_string_size(runtime,argv[0],&name_length);
+  if (code) return JS_HasException(context) ? JS_EXCEPTION : throw_work(context,code);
   const char *name=JS_ToCStringLen(context,&name_length,argv[0]);
   if (!name) return JS_EXCEPTION;
   JSValue buffer=JS_UNDEFINED;unsigned char *bytes=NULL;
-  qaplet_code code=input_bytes(runtime,argv[1],&buffer,&bytes,&length);
+  code=input_bytes(runtime,argv[1],&buffer,&bytes,&length);
   JSValue handle=JS_UNDEFINED,capabilities[]={JS_UNDEFINED,JS_UNDEFINED};
   if (!code) {
     handle=JS_NewObjectClass(context,work_class);

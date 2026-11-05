@@ -144,6 +144,7 @@ qaplet_code qaplet_timers_deliver(qaplet_runtime *, unsigned *, int immediate, u
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *);
 qaplet_code qaplet_store_scalar(qaplet_runtime *, JSValueConst);
 qaplet_code qaplet_copy_js_value(qaplet_runtime *, JSValueConst, qaplet_result *, unsigned char **);
+qaplet_code qaplet_js_string_size(qaplet_runtime *, JSValueConst, size_t *);
 int qaplet_utf8_valid(const char *, size_t);
 qaplet_code qaplet_values_init(qaplet_runtime *);
 void qaplet_values_reset(qaplet_runtime *);
