@@ -1,34 +1,135 @@
 {
   "name": "M0-SVC private SCM ABI",
-  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
-  "permissions": {"contents": "read", "actions": "read"},
+  "on": {
+    "push": {},
+    "pull_request": {},
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
   "jobs": {
     "build": {
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 30,
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"name": "SCM public command contracts", "run": "python -m unittest discover -s tests/contracts -p test_svc_scm.py -v"},
-        {"name": "Acquire exact locked Nightly", "env": {"GH_TOKEN": "${{ github.token }}"}, "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/svc-scm/acquisition.json"},
-        {"name": "Populate locked toolchain explicitly", "run": "python scripts/nightly_toolchain.py fetch --archive .cache/downloads/cosmocc.zip --report out/svc-scm/inputs/nightly.json"},
-        {"name": "Populate source-locked portable helper inputs", "run": "python scripts/ape_helpers.py fetch --report out/svc-scm/inputs/helpers.json"},
-        {"name": "Ubuntu-build isolated SCM artifact and verify Linux ordinary entry", "run": "python scripts/svc_scm.py build --output-dir out/svc-scm/artifacts --report out/svc-scm/build-info.json"},
-        {"name": "Retain producer and raw failures", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "svc-scm-build-${{ github.sha }}", "path": "out/svc-scm/", "if-no-files-found": "error", "retention-days": 7}}
-      ]
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Select affected contracts (plan only)",
+          "id": "scope",
+          "uses": "./.github/actions/ci-scope",
+          "with": {
+            "report": "out/svc-scm/scope.json"
+          }
+        },
+        {
+          "name": "SCM public command contracts",
+          "run": "python -m unittest discover -s tests/contracts -p test_svc_scm.py -v",
+          "if": "${{ steps.scope.outputs.svc_scm == 'true' }}"
+        },
+        {
+          "name": "Acquire exact locked Nightly",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "python scripts/fetch_locked_toolchain.py --archive .cache/downloads/cosmocc.zip --report out/svc-scm/acquisition.json",
+          "if": "${{ steps.scope.outputs.svc_scm == 'true' }}"
+        },
+        {
+          "name": "Populate locked toolchain explicitly",
+          "run": "python scripts/nightly_toolchain.py fetch --archive .cache/downloads/cosmocc.zip --report out/svc-scm/inputs/nightly.json",
+          "if": "${{ steps.scope.outputs.svc_scm == 'true' }}"
+        },
+        {
+          "name": "Populate source-locked portable helper inputs",
+          "run": "python scripts/ape_helpers.py fetch --report out/svc-scm/inputs/helpers.json",
+          "if": "${{ steps.scope.outputs.svc_scm == 'true' }}"
+        },
+        {
+          "name": "Ubuntu-build isolated SCM artifact and verify Linux ordinary entry",
+          "run": "python scripts/svc_scm.py build --output-dir out/svc-scm/artifacts --report out/svc-scm/build-info.json",
+          "if": "${{ steps.scope.outputs.svc_scm == 'true' }}"
+        },
+        {
+          "name": "Retain producer and raw failures",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "svc-scm-build-${{ github.sha }}",
+            "path": "out/svc-scm/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ],
+      "outputs": {
+        "selected": "${{ steps.scope.outputs.svc_scm }}"
+      }
     },
     "windows-scm": {
       "needs": "build",
       "runs-on": "windows-2022",
       "timeout-minutes": 10,
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"uses": "actions/download-artifact@v8", "with": {"name": "svc-scm-build-${{ github.sha }}", "path": "out/svc-scm/producer"}},
-        {"name": "Consume exact Ubuntu-built SCM fixture", "run": "python scripts/svc_scm.py run --input-report out/svc-scm/producer/build-info.json --artifact out/svc-scm/producer/artifacts/svc-scm.com --report out/svc-scm/windows/scm.json"},
-        {"name": "Independent final SCM cleanup", "if": "${{ always() }}", "shell": "pwsh", "run": "if (Test-Path -LiteralPath out/svc-scm/windows/evidence) { Get-ChildItem -LiteralPath out/svc-scm/windows/evidence -Filter fixture-plan.json -Recurse | ForEach-Object { python scripts/svc_scm.py cleanup --plan $_.FullName --report (Join-Path $_.DirectoryName 'final-cleanup.json'); if ($LASTEXITCODE -ne 0) { throw 'SCM final cleanup failed' } } }"},
-        {"name": "Retain SCM OS truth, events and cleanup", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "svc-scm-windows-${{ github.sha }}", "path": "out/svc-scm/windows/", "if-no-files-found": "error", "retention-days": 7}}
-      ]
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "svc-scm-build-${{ github.sha }}",
+            "path": "out/svc-scm/producer"
+          }
+        },
+        {
+          "name": "Consume exact Ubuntu-built SCM fixture",
+          "run": "python scripts/svc_scm.py run --input-report out/svc-scm/producer/build-info.json --artifact out/svc-scm/producer/artifacts/svc-scm.com --report out/svc-scm/windows/scm.json"
+        },
+        {
+          "name": "Independent final SCM cleanup",
+          "if": "${{ always() }}",
+          "shell": "pwsh",
+          "run": "if (Test-Path -LiteralPath out/svc-scm/windows/evidence) { Get-ChildItem -LiteralPath out/svc-scm/windows/evidence -Filter fixture-plan.json -Recurse | ForEach-Object { python scripts/svc_scm.py cleanup --plan $_.FullName --report (Join-Path $_.DirectoryName 'final-cleanup.json'); if ($LASTEXITCODE -ne 0) { throw 'SCM final cleanup failed' } } }"
+        },
+        {
+          "name": "Retain SCM OS truth, events and cleanup",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "svc-scm-windows-${{ github.sha }}",
+            "path": "out/svc-scm/windows/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ],
+      "if": "${{ needs.build.outputs.selected == 'true' }}"
     }
+  },
+  "concurrency": {
+    "group": "${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'push' || github.event_name == 'pull_request' }}"
   }
 }

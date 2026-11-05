@@ -180,19 +180,18 @@ class CITiersContract(unittest.TestCase):
                 elif mutation == "tolerated_probe":
                     next(step for step in value["jobs"]["arm64-page-gaps"]["steps"] if "scripts/arm64_guest.py run" in step.get("run", ""))["continue-on-error"] = True
                 elif mutation == "empty_native":
-                    value["jobs"]["native-startup"]["strategy"]["matrix"]["include"] = []
+                    value["jobs"]["native-startup"]["strategy"]["matrix"] = {"include": []}
                 elif mutation == "missing_native":
-                    value["jobs"]["native-startup"]["strategy"]["matrix"]["include"].pop()
+                    value["jobs"]["native-startup"]["strategy"]["matrix"] = {"include": [{"runner": "windows-2022"}]}
                 elif mutation == "duplicate_native":
-                    rows = value["jobs"]["native-startup"]["strategy"]["matrix"]["include"]
-                    rows[-1] = rows[0]
+                    value["jobs"]["native-startup"]["strategy"]["matrix"] = {"include": [{"runner": "windows-2022"}] * 5}
                 elif mutation == "skip_seal":
-                    next(step for step in value["jobs"]["build"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
+                    next(step for step in value["jobs"]["offline-rebuild"]["steps"] if "scripts/ci_tiers.py seal-offline" in step.get("run", ""))["if"] = "${{ false }}"
                 elif mutation == "skip_core_consumer":
                     next(step for step in value["jobs"]["full-core"]["steps"] if "scripts/core_gate.py evaluate" in step.get("run", ""))["if"] = "${{ false }}"
                 else:
-                    step = next(step for step in value["jobs"]["build"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
-                    step["run"] = step["run"].removeprefix("mkdir -p out/m0/offline\n")
+                    step = next(step for step in value["jobs"]["offline-rebuild"]["steps"] if "scripts/offline_integrity.py run" in step.get("run", ""))
+                    step["run"] = step["run"].removeprefix("mkdir -p out/full-offline/offline\n")
                 path = work / "workflow.json"
                 path.write_text(json.dumps(value), encoding="utf-8")
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/build_ape.py"), "check-ci", "--workflow", str(path),
@@ -204,8 +203,10 @@ class CITiersContract(unittest.TestCase):
             work = Path(temp)
             event, report = work / "event.json", work / "plan.json"
             event.write_text("{}", encoding="utf-8")
+            paths = work / "paths.json"
+            paths.write_text('["src/values.c"]', encoding="utf-8")
             result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", "push",
-                "--event-json", str(event),
+                "--event-json", str(event), "--changed-paths", str(paths),
                 "--report", str(report)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = json.loads(report.read_text(encoding="utf-8"))["native_matrix"]["include"]
@@ -225,13 +226,15 @@ class CITiersContract(unittest.TestCase):
                 ("workflow_dispatch", "refs/heads/topic", {"tier": "full"}, "full", False),
                 ("schedule", "refs/heads/main", {}, "full", True),
                 ("push", "refs/tags/v1.0-rc1", {}, "full", False),
-                ("push", "refs/heads/codex/m2-integration", {}, "full", False),
+                ("push", "refs/heads/codex/m2-integration", {}, "fast", False),
                 ("push", "refs/heads/codex/m2-02-waker", {}, "fast", False),
                 ("workflow_dispatch", "refs/heads/main", {"tier": "invalid"}, None, False),
             ):
                 event.write_text(json.dumps({"inputs": inputs, "repository": {"default_branch": "main"}}), encoding="utf-8")
+                paths = work / "paths.json"
+                paths.write_text('["src/values.c"]', encoding="utf-8")
                 result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", name,
-                    "--event-json", str(event), "--ref", ref, "--report", str(report)], capture_output=True, text=True, timeout=20)
+                    "--event-json", str(event), "--changed-paths", str(paths), "--ref", ref, "--report", str(report)], capture_output=True, text=True, timeout=20)
                 value = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual(result.returncode, 0 if expected else 1, result.stdout + result.stderr)
                 if expected:
@@ -266,14 +269,14 @@ class CITiersContract(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("trusted", result["reason"].lower())
 
-    def test_push_is_fast_and_sensitive_pull_request_is_elevated(self):
+    def test_engine_push_is_fast_and_integration_pull_request_is_cross(self):
         with tempfile.TemporaryDirectory(prefix="qaplet-tiers-") as temp:
             work = Path(temp)
             event = work / "event.json"
             changed = work / "paths.json"
             report = work / "plan.json"
             event.write_text("{}", encoding="utf-8")
-            changed.write_text('["tests/native/quickjs_eval.c"]', encoding="utf-8")
+            changed.write_text('["src/values.c"]', encoding="utf-8")
             def plan(name):
                 result = subprocess.run([sys.executable, str(CLI), "plan", "--event-name", name,
                     "--event-json", str(event), "--changed-paths", str(changed),
@@ -284,7 +287,8 @@ class CITiersContract(unittest.TestCase):
             self.assertEqual(pushed["tier"], "fast")
             self.assertFalse(pushed["run_cross"])
             elevated = plan("pull_request")
-            self.assertEqual(elevated["tier"], "full")
-            self.assertTrue(elevated["run_full"])
+            self.assertEqual(elevated["tier"], "cross")
+            self.assertFalse(elevated["run_full"])
+            self.assertTrue(elevated["run_cross"])
             self.assertFalse(elevated["write_cache"])
-            self.assertEqual(elevated["sensitive_paths"], ["tests/native/quickjs_eval.c"])
+            self.assertEqual(elevated["sensitive_paths"], ["src/values.c"])

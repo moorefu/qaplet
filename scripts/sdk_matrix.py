@@ -160,11 +160,20 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
 
 
 def matrix(args, report, directory):
+    targets = TARGETS[:1] if args.profile == "fast" else TARGETS
+    if args.target_plan:
+        from ci_tiers import native_targets
+        require(args.profile == "cross", "Target plan requires Cross profile")
+        selected_targets = native_targets(args.target_plan)
+        targets = tuple(row for row in TARGETS if (row[1], row[2]) in selected_targets)
+        report["target_plan"] = identity(args.target_plan)
     report.update(report_kind="qaplet-sdk-matrix", profile=args.profile, release_ready=False,
                   evaluator_sources=[identity(sdk.ROOT / "scripts" / name) for name in ("sdk_matrix.py", "core_gate.py")],
                   coverage=[{"target": name, "status": "blocked", "reason": "No actual native SDK report", "reports": []}
-                            for name, _, _ in (TARGETS[:1] if args.profile == "fast" else TARGETS)],
+                            for name, _, _ in targets],
                   inputs=[], path_mappings=[], evidence_index=[])
+    if len(targets) not in (1, 5) or args.target_plan and len(targets) < 5:
+        report["profile"] = "targeted"
     if not args.build_report or not args.artifact:
         raise BuildError("Actual supplied Ubuntu SDK producer/artifact and native reports required", "blocked")
     selected = identity(args.build_report)

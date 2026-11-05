@@ -183,7 +183,7 @@ def collect_actions(output, commit):
     selection, metadata = [], []
     for artifact in listing["artifacts"]:
         name = artifact["name"]
-        if not name.endswith("-" + commit) or not name.startswith(("m0-build-", "m0-startup-", "m0-io-", "m0-page-gap-", "m0-pages64k-native-")) or name.startswith("m0-startup-matrix-"):
+        if not name.endswith("-" + commit) or not name.startswith(("m0-build-", "m0-offline-", "m0-startup-", "m0-io-", "m0-page-gap-", "m0-pages64k-native-")) or name.startswith("m0-startup-matrix-"):
             continue
         require(not artifact["expired"] and artifact["workflow_run"]["head_sha"] == run_commit and
                 str(artifact["workflow_run"]["id"]) == run_id, "Required artifact expired or wrong workflow commit/run")

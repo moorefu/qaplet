@@ -245,6 +245,20 @@ def matrix(args, report, artifacts):
     report["additional_reports"] = []
     targets = [name for name, *_ in TARGETS] if args.profile == "full" else [
         "linux-x86_64", "windows-x86_64", "macos-x86_64", "macos-aarch64", "linux-aarch64"]
+    if args.target_plan:
+        from ci_tiers import native_targets
+        wanted = native_targets(args.target_plan)
+        if args.profile != "cross":
+            if len(wanted) != 5:
+                raise BuildError("Full cannot narrow the declared native matrix")
+        else:
+            names = {("Linux", "x86_64"): "linux-x86_64", ("Windows", "x86_64"): "windows-x86_64",
+                     ("Darwin", "x86_64"): "macos-x86_64", ("Darwin", "aarch64"): "macos-aarch64",
+                     ("Linux", "aarch64"): "linux-aarch64"}
+            targets = [names[row] for row in wanted]
+            if len(targets) < 5:
+                report["profile"] = "targeted"
+        report["target_plan"] = identity(args.target_plan)
     coverage = {name: {"target": name, "status": "blocked", "reason": "No actual startup report", "reports": []} for name in targets}
     report["coverage"] = list(coverage.values())
     paths = [*args.input_report, *(path for root in args.input_dir for path in sorted(root.rglob("startup.json")))]
@@ -277,6 +291,8 @@ def matrix(args, report, artifacts):
                     "host": host, "status": item["status"], "reason": "Measured native page size covers neither required ARM64 target"})
                 continue
             raise BuildError("Report does not cover a required measured target (including actual ARM64 page size)")
+        if key not in coverage:
+            raise BuildError("Native report is outside the explicitly selected target scope")
         slot = coverage[key]
         slot["reports"].append({**identity(path), "report_id": item["report_id"], "host": item["host"], "status": item["status"]})
         if item["status"] == "fail":
@@ -487,6 +503,7 @@ def main():
     parser.add_argument("operation", choices=("run", "matrix", "guest-manifest", "import-guest", "page-gaps"))
     parser.add_argument("--controlled-probe", action="store_true", help="consume candidate probes without issuing ordinary or full-matrix acceptance")
     parser.add_argument("--profile", choices=("full", "cross"), default="full", help="matrix coverage: six page targets or five native hosts")
+    parser.add_argument("--target-plan", type=Path, help="Explicit native selection; Full remains complete")
     parser.add_argument("--build-report", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--report", type=Path, required=True)

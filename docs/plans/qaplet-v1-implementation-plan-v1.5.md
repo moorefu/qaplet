@@ -1412,7 +1412,7 @@ docs/
 
 ## 22. 本计划所依赖的主要源码与规范索引
 
-本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针。任务 01–05 已完成：统一 v3 迁移、目标 QuickJS 与 M0-A ESM/Promise 增量已晋级 pinned；[04](../../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)记录所验输入的六目标 Core、页补缺及严格回归，[05](../../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)记录 Fast/Cross/Full 实际执行。后续配方变化须重新验收其新输入。06 原件镜像发布门禁由用户暂缓，release-ready 仍未满足；[正式 M1/SDK 已完成](../../.scratch/qaplet-m1/final-review-validation.md)，[正式 M2 规格](../../.scratch/qaplet-m2/spec.md)已就绪、尚未实施。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
+本版固定了选定的 GitHub Actions Build/Artifact 身份，原 ZIP 与原工具链在既有 M0 已下载、独立校验并运行探针。任务 01–05 已完成：统一 v3 迁移、目标 QuickJS 与 M0-A ESM/Promise 增量已晋级 pinned；[04](../../.scratch/qaplet-v15-alignment/cross-host-revalidation.md)记录所验输入的六目标 Core、页补缺及严格回归，[05](../../.scratch/qaplet-v15-alignment/tiered-ci-validation.md)记录 Fast/Cross/Full 实际执行。后续配方变化须重新验收其新输入。06 原件镜像发布门禁由用户暂缓，release-ready 仍未满足；[正式 M1/SDK 已完成](../../.scratch/qaplet-m1/final-review-validation.md)，[正式 M2](../../.scratch/qaplet-m2/README.md)正在实施。2026-11-05 起开发调度、CI 分层与产品里程碑按[执行优化](qaplet-v1.5-execution-optimization.md)及[工程审计](../reviews/qaplet-development-efficiency-review.md)更新；原产品与发布合同保留。下面链接是计划输入/工程参考，不得替代 Release 原始证据。
 
 ### QuickJS / Cosmopolitan / APE
 

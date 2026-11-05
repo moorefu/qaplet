@@ -1,18 +1,67 @@
 {
   "name": "Repository workflow tools",
-  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
-  "permissions": {"contents": "read"},
+  "on": {
+    "push": {},
+    "pull_request": {},
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
   "jobs": {
     "workflow": {
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 10,
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"name": "Check tracked outputs, syntax and tooling orchestration", "run": "python scripts/dev.py preflight --report out/workflow/preflight.json"},
-        {"name": "Exercise public workflow commands", "run": "python -B -m unittest discover -s tests/contracts -p 'test_workflow*.py' -v"},
-        {"name": "Retain workflow evidence", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "workflow-tools-${{ github.sha }}", "path": "out/workflow/", "if-no-files-found": "error"}}
-      ]
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Select affected contracts (plan only)",
+          "id": "scope",
+          "uses": "./.github/actions/ci-scope",
+          "with": {
+            "report": "out/workflow/scope.json"
+          }
+        },
+        {
+          "name": "Check tracked outputs, syntax and tooling orchestration",
+          "run": "python scripts/dev.py preflight --report out/workflow/preflight.json",
+          "if": "${{ steps.scope.outputs.workflow_tools == 'true' }}"
+        },
+        {
+          "name": "Exercise public workflow commands",
+          "run": "python -B -m unittest discover -s tests/contracts -p 'test_workflow*.py' -v",
+          "if": "${{ steps.scope.outputs.workflow_tools == 'true' }}"
+        },
+        {
+          "name": "Retain workflow evidence",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "workflow-tools-${{ github.sha }}",
+            "path": "out/workflow/",
+            "if-no-files-found": "error"
+          }
+        }
+      ],
+      "outputs": {
+        "selected": "${{ steps.scope.outputs.workflow_tools }}"
+      }
     }
+  },
+  "concurrency": {
+    "group": "${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'push' || github.event_name == 'pull_request' }}"
   }
 }
