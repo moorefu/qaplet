@@ -340,7 +340,7 @@ struct pollfd *qaplet_io_poll_locked(qaplet_runtime *r,nfds_t *count) {
   return fds;
 }
 int qaplet_io_ready_locked(qaplet_runtime *r) {
-  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return 0;
+  qaplet_io_pool *p=r->io_pool;if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(o->active && o->handoff==1 && o->state!=QAPLET_IO_PENDING && !o->physical)return 1;}return r->io_js_control_ready!=0;
 }
 int qaplet_io_issuable_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
@@ -352,7 +352,7 @@ int qaplet_io_referenced_locked(qaplet_runtime *r) {
   qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];
     if(o->active && o->handoff && o->endpoint->referenced && (o->state==QAPLET_IO_PENDING || !o->physical))return 1;}
-  return 0;
+  return r->io_js_control_refs!=0;
 }
 unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
   unsigned count=0;pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
@@ -368,7 +368,9 @@ unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
     o->handoff=0;--p->snapshot.pending_handoffs;--o->endpoint->handoffs;o->endpoint=NULL;++count;
     if(o->released && !o->helper)retire_operation_locked(r,o);
   }
-  pthread_mutex_unlock(&r->mutex);return count;
+  pthread_mutex_unlock(&r->mutex);
+  while(count<max && r->io_js_control_ready && r->io_js_control_deliver){int delivered=r->io_js_control_deliver(r);if(delivered<=0)break;++count;}
+  return count;
 }
 void qaplet_io_js_checkpoint(qaplet_runtime *r) {
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;

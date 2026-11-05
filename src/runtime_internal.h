@@ -35,6 +35,8 @@ struct qaplet_runtime {
   int (*process_js_deliver)(qaplet_runtime *, const qaplet_process *);
   int (*io_js_deliver)(qaplet_runtime *, const qaplet_io_operation *);
   void (*io_js_closed)(qaplet_runtime *, const qaplet_io_endpoint *);
+  uint64_t io_js_control_ready,io_js_control_refs;
+  int (*io_js_control_deliver)(qaplet_runtime *);
   qaplet_notify_function notify_function;
   void *notify_userdata;
   uint64_t notify_inflight, notify_inflight_peak;
@@ -113,6 +115,8 @@ JSModuleDef *qaplet_process_load(qaplet_runtime *);
 void qaplet_js_async_checkpoint(qaplet_runtime *);
 void qaplet_js_async_shutdown(qaplet_runtime *);
 void qaplet_js_io_checkpoint(qaplet_runtime *);
+/* Owner-only POD observation through public IO status, never under mutex. */
+void qaplet_js_io_poll(qaplet_runtime *);
 void qaplet_js_io_shutdown(qaplet_runtime *);
 void qaplet_process_js_checkpoint(qaplet_runtime *);
 qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *, qaplet_m2_diagnostic *);
