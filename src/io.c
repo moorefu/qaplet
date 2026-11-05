@@ -119,14 +119,17 @@ static void close_endpoint_locked(qaplet_runtime *r,io_endpoint *e) {
   if(e->pending && e->pending->physical)return;
   if(IsWindows())handle_closed_locked(r,&e->handle);else fd_closed_locked(r,&e->fd);
 }
-static void cancel_locked(qaplet_runtime *r,io_operation *o) {
-  if(o->state!=QAPLET_IO_PENDING)return;
-  o->state=QAPLET_IO_CANCELLED;o->code=QAPLET_CANCELLED;
-  increment(&r->io_pool->snapshot.cancelled);++r->io_pool->snapshot.retained_results;
+static void cancel_native_locked(qaplet_runtime *r,io_operation *o) {
   if(IsWindows() && o->physical && !CancelIoEx(o->endpoint->handle,&o->overlapped)){
     int error=GetLastError();
     if(error!=1168)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_WIN32);
   }
+}
+static void cancel_locked(qaplet_runtime *r,io_operation *o) {
+  if(o->state!=QAPLET_IO_PENDING)return;
+  o->state=QAPLET_IO_CANCELLED;o->code=QAPLET_CANCELLED;
+  increment(&r->io_pool->snapshot.cancelled);++r->io_pool->snapshot.retained_results;
+  cancel_native_locked(r,o);
   if(!o->physical && o->endpoint->pending==o)o->endpoint->pending=NULL;
   pthread_cond_broadcast(&r->native_condition);
 }
@@ -139,7 +142,7 @@ static void complete_locked(qaplet_runtime *r,io_operation *o,size_t n,int error
       o->code=error ? QAPLET_IO_ERROR : QAPLET_OK;o->state=error ? QAPLET_IO_FAILED : QAPLET_IO_SUCCEEDED;
       o->error=error;o->error_domain=error ? domain : 0;o->eof=eof;++p->snapshot.retained_results;increment(&p->snapshot.completed);
     }
-  } else if(error && error!=995){o->error=error;o->error_domain=domain;}
+  } else if(error && error!=995 && !o->error){o->error=error;o->error_domain=domain;}
   if(o->state!=QAPLET_IO_PENDING){
     if(e->pending==o)e->pending=NULL;
     if(eof || (error && error!=995) || e->finishing || e->ended)close_endpoint_locked(r,e);
@@ -155,6 +158,7 @@ static void retire_operation_locked(qaplet_runtime *r,io_operation *o) {
 }
 static void *wait_operation(void *opaque) {
   io_operation *o=opaque;qaplet_runtime *r=o->runtime;pthread_mutex_lock(&r->mutex);
+  int cleanup_wait=0;
   for(;;){
     while(!o->physical && o->state==QAPLET_IO_PENDING)pthread_cond_wait(&r->native_condition,&r->mutex);
     if(!o->physical)break;
@@ -167,7 +171,18 @@ static void *wait_operation(void *opaque) {
      * previously completed chunks were already charged to length. */
     int ok=waited==0 && GetOverlappedResult(handle,&o->overlapped,&n,false);
     int error=ok ? 0 : wait_error ? wait_error : GetLastError();
-    if(waited!=0){cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_WIN32);break;}
+    if(waited!=0){
+      /* A helper's ordinary I/O wait error is an operation result, not proof
+       * that its pending kernel request stopped using the reserved buffer. */
+      if(o->state==QAPLET_IO_PENDING){o->state=QAPLET_IO_FAILED;o->code=QAPLET_IO_ERROR;o->error=error;o->error_domain=QAPLET_ERROR_DOMAIN_WIN32;++r->io_pool->snapshot.retained_results;increment(&r->io_pool->snapshot.completed);}
+      close_endpoint_locked(r,o->endpoint);cancel_native_locked(r,o);
+      /* Keep a waiter until cancellation really completes, so an external
+       * owner receives a completion wake without periodic collection. A
+       * second failed control wait retains uncertain ownership and fails
+       * the control path instead of spinning or silently losing that wake. */
+      if(!cleanup_wait){cleanup_wait=1;continue;}
+      cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_WIN32);qaplet_control_failure_locked(r,EIO);break;
+    }
     complete_locked(r,o,n,error==109 && !o->writing ? 0 : error,QAPLET_ERROR_DOMAIN_WIN32,error==109 && !o->writing);
     qaplet_notification notification=qaplet_notify_prepare_locked(r);
     pthread_mutex_unlock(&r->mutex);qaplet_notify_dispatch(r,notification);pthread_mutex_lock(&r->mutex);
@@ -340,12 +355,22 @@ unsigned qaplet_io_handoff(qaplet_runtime *r,uint64_t max) {
 void qaplet_io_collect(qaplet_runtime *r) {
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p && p->operations)for(uint64_t i=0;i<r->m2_limits.operations;++i){io_operation *o=&p->operations[i];if(!o->active)continue;
+    if(IsWindows() && o->physical && o->exited){
+      cancel_native_locked(r,o);
+      /* Only a signalled native completion proves the kernel stopped using
+       * OVERLAPPED/data. A failed or incomplete check retains ownership. */
+      uint32_t waited=WaitForSingleObject(o->overlapped.hEvent,0);
+      if(waited==0){uint32_t n=0;int ok=GetOverlappedResult(o->endpoint->handle,&o->overlapped,&n,false),error=ok ? 0 : GetLastError();
+        if(ok || error!=996)complete_locked(r,o,n,error==109 && !o->writing ? 0 : error,QAPLET_ERROR_DOMAIN_WIN32,error==109 && !o->writing);
+      }else if(waited!=258)cleanup_locked(r,GetLastError(),QAPLET_ERROR_DOMAIN_WIN32);
+    }
     if(o->helper && o->exited && !o->join_attempted){
       o->join_attempted=1;pthread_mutex_unlock(&r->mutex);int error=pthread_tryjoin_np(o->thread,NULL);pthread_mutex_lock(&r->mutex);
       if(error==EBUSY)o->join_attempted=0;
       else if(error)cleanup_locked(r,error,QAPLET_ERROR_DOMAIN_ERRNO);
-      else {o->helper=0;--r->native_retained;--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;handle_closed_locked(r,&o->overlapped.hEvent);}
+      else {o->helper=0;--r->native_retained;--r->native_handles;--r->helper_threads;r->helper_stack_bytes-=r->m2_limits.helper_stack_bytes;--p->snapshot.helper_threads;p->snapshot.helper_stack_bytes-=r->m2_limits.helper_stack_bytes;}
     }
+    if(!o->helper && !o->physical)handle_closed_locked(r,&o->overlapped.hEvent);
     if((o->released || p->closing) && !o->physical && !o->helper && !o->handoff)retire_operation_locked(r,o);
   }
   if(p)for(uint64_t i=0;i<r->m2_limits.native_handles;++i){io_endpoint *e=&p->endpoints[i];

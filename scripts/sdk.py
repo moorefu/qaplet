@@ -603,6 +603,7 @@ PROCESS_FAULT_CASES = (
     ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
 )
 IO_FAULT_CASES = (
+    ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
     ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
     ("--allocation", "controlled I/O allocation: actual SDK refusal is permanent; owner starts child termination without another pump/close; first cause and physical cleanup: pass\n", ["Windows", "POSIX"]),
     ("--reuse", "controlled I/O reuse: real closed native descriptor/HANDLE reused; pending cancel/close and stale endpoint/operation tokens never target replacement; exact new child byte and cleanup: pass\n", ["Windows", "POSIX"]),
@@ -617,7 +618,7 @@ def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, 
     (work / "tmp").mkdir(parents=True)
     name = "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
     source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
-    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
     report["io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {

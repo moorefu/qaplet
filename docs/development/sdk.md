@@ -480,3 +480,8 @@ POSIX owned pipe 使用 nonblocking owner poll；EPIPE 不改宿主 SIGPIPE hand
 错误、接受后 wake 失败、分配拒绝即 owner 启动清理、实际 fd/HANDLE 复用，以及
 Windows helper 启动拒绝和 TLS 析构 gate。Linux/Windows 本地成绩与 deferred Cross
 见票 15 实施记录；这些受控配方不混入普通产品或借用 stdio 支持声明。
+
+普通 helper I/O wait 失败先结为保留原生错误的操作终态；仍取消并等待实际内核完成，
+再经 HostNotify 唤醒外部 owner。该恢复不依赖 owner 周期轮询；event、OVERLAPPED、
+buffer 在完成证明与 helper join 前继续保留。无法维持清理等待时保留不确定责任，
+不把 helper 退出冒充内核已停止使用数据。

@@ -146,3 +146,6 @@ quota, and closes the parent's temporary child ends after spawn. No borrowed
 stdio route is implied. `io-faults.c` is a separate package-only system fixture
 for real short transfer/error, accepted wake failure, allocation failure,
 descriptor/HANDLE reuse, and Windows helper startup/physical-exit gates.
+An ordinary helper I/O-wait error retains its native error and cancels the
+pending request. The helper still signals the external Host when kernel I/O
+actually completes; its event/data remain reserved until that proof and join.
