@@ -61,12 +61,13 @@ static void refresh_closed(qaplet_runtime *r,js_endpoint *e) {
  * calls JS. Owner observation only copies public POD; delivery uses the normal
  * completion category and retains its reference until the full jobs boundary. */
 static void control_counts(qaplet_runtime *r) {
-  uint64_t ready=0,refs=0;
+  uint64_t ready=0,refs=0,handoffs=0;
   for(js_endpoint *e=r->js_io_endpoints;e;e=e->next){
     if(e->control==1 && !e->closed)++ready;
     if(e->control && e->referenced)++refs;
+    if(e->control)++handoffs;
   }
-  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=ready;r->io_js_control_refs=refs;pthread_mutex_unlock(&r->mutex);
+  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=ready;r->io_js_control_refs=refs;r->io_js_control_handoffs=handoffs;pthread_mutex_unlock(&r->mutex);
 }
 void qaplet_js_io_poll(qaplet_runtime *r) {
   for(js_endpoint *e=r->js_io_endpoints;e;e=e->next){
@@ -170,7 +171,7 @@ void qaplet_js_io_shutdown(qaplet_runtime *r) {
   while(t){js_io_task *next=t->next;JS_FreeValue(r->context,t->resolve);JS_FreeValue(r->context,t->reject);t->terminal=1;t->code=QAPLET_CANCELLED;release_endpoint(r->context,t->endpoint);if(!--t->refs)js_free(r->context,t);t=next;}
   js_endpoint *e=r->js_io_endpoints;r->js_io_endpoints=NULL;
   while(e){js_endpoint *next=e->next;JS_FreeValue(r->context,e->resolve);JS_FreeValue(r->context,e->reject);e->closed=1;release_endpoint(r->context,e);e=next;}
-  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=r->io_js_control_refs=0;pthread_mutex_unlock(&r->mutex);
+  pthread_mutex_lock(&r->mutex);r->io_js_control_ready=r->io_js_control_refs=r->io_js_control_handoffs=0;pthread_mutex_unlock(&r->mutex);
 }
 static const JSCFunctionListEntry endpoint_methods[]={JS_CFUNC_MAGIC_DEF("read",1,endpoint_operation,0),JS_CFUNC_MAGIC_DEF("write",1,endpoint_operation,1),JS_CFUNC_MAGIC_DEF("close",0,endpoint_control,0),JS_CFUNC_MAGIC_DEF("finish",0,endpoint_control,1),JS_CFUNC_MAGIC_DEF("ref",0,endpoint_control,2),JS_CFUNC_MAGIC_DEF("unref",0,endpoint_control,3),JS_CFUNC_MAGIC_DEF("hasRef",0,endpoint_control,4)};
 JSValue qaplet_js_io_endpoint(qaplet_runtime *r,const qaplet_io_endpoint *token,int writing) {
