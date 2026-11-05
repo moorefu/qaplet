@@ -8,7 +8,7 @@
 
 **Execution state:** local_complete；本地Linux/Windows实现与供应验收完成，完整Cross `cross_deferred`。
 
-**Local development:** complete；已融合实际integration `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21`，支持后续本地开发。独立merger尚待接收，其他原生平台、当前实际64K、CI与组合长测仍待验收，`Status: claimed`保留。
+**Local development:** complete；已融合实际integration `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21`，并由独立merger以`65de84e2cd86104f4249211ec06bcc7a352eafd1`接收，支持后续本地开发。其他原生平台、当前实际64K、CI与组合长测仍待验收，`Status: claimed`保留。
 
 **Execution prerequisites:** 03已完成、11/13的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
@@ -65,4 +65,6 @@ Work/I/O 共用 operations/data 预留，保留 12 的 JS Work 及 14 的唯一 
 Linux normal186、Windows185+既有optional1、两端package各72、fault分别16/17，
 devcheck402项/202实际/200条件skip及bootstrap通过；完整身份与真实红绿见
 [本票验证记录](../15-process-io-validation.md)。保持claimed/cross_deferred，不push或触发CI。
+
+2026-11-05：独立merger核对最终source `37bbde4`增量与final-3供应，按当前catalog重放普通、包外和故障原件及1448 raw日志，no-ff合并为`65de84e`。合后Ubuntu预检与锁定源码校验通过；只接收本地完成，保留claimed/cross_deferred。主交接位于`out/qaplet-m2/merge-15-process-io/HANDOFF.md`。
 

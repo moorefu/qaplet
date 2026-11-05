@@ -106,3 +106,22 @@ helpers，运行前后逐文件记录；另记父进程真实 imports/called cod
 
 后续缺口保持：其他必需原生目标、当前实际64K产品、CI/Full、跨资源最终组合长测。
 本票不实现 JS Process/stdio/TTY、不签发父 M2 或 release-ready，不 push/触发 CI。
+
+## 独立本地合并接收
+
+2026-11-05：独立merger审查source `37bbde4470f1bf3418ce663f491700d591eb93ba`
+相对实际root `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21`的21文件增量，未发现阻止
+本地接收的产品问题。以每命令`core.autocrlf=false`执行no-ff合并，得到
+`65de84e2cd86104f4249211ec06bcc7a352eafd1`；其合并树与source tip完全相同。
+
+复用supplier原审计（重定向输出以保留原件）、`sdk.check_package`、
+`sdk_matrix.validate_native`和`build_ape.headers`独立核对：80配方raw/Git/LF、
+80原ZIP成员、双架构各16个ELF64 REL、三fat APE头、1448份raw日志及当前普通/
+包外/故障catalog均通过。合前与合后均通过，未重建SDK或重跑全suite。
+合后实际Ubuntu-22.04仓库preflight及共享`.cache/quickjs`锁定源码verify通过。
+主交接与检查原件在`out/qaplet-m2/merge-15-process-io/`；重放helper曾因两类既有
+case结构的字段假设失败，两次失败stdout/stderr保留，修正只涉及主out helper。
+
+接收范围仍为`Local development: complete / Status: claimed / cross_deferred`。
+其他原生目标、当前实际64K、CI/Full、最终跨资源组合长测和发布就绪均保持待验；
+源worktree、全部旧输出与失败保留，未启动16/17、push或触发CI。

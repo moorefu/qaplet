@@ -31,7 +31,7 @@
 | 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原件见 `tickets/10` / `10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
 | 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | awaiting_cross（`d8a9ba9` 已合取消/结果release与物理保留） |
 | 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；新 `.cache/worktrees/m2-13-cross-fix` | in_progress（Full两Mac16必需失败；B02纯POD跨线程查询真实缺口） |
-| 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（Linux186、Windows185+optional1、两端package72、fault16/17；待独立merger） |
+| 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
 | 12、14、16–27 | 待分派或见后续记录 | 见后续记录 | 按各自 blocker 与槽位分派 |
 
 ## 环境事实
