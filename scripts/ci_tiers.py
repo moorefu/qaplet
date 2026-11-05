@@ -364,7 +364,7 @@ def check_tier_transport(workflow):
     require(fast_runs[-1] == "python scripts/local_check.py --profile all --output-dir out/fast --report out/fast/check.json" and
             not any("offline_integrity" in run or "make check " in run or "m2_" in run or "build-ape" in run for run in fast_runs),
             "Fast must compile/run current SDK behavior without historical apps, offline pair or guest")
-    require(any(step.get("with", {}).get("path") == "out/fast/\n.cache/build/local-check/\n!.cache/build/local-check/**/objects/**" and
+    require(any(step.get("with", {}).get("path") == "out/fast/\nout/m0/\n.cache/build/local-check/\n!.cache/build/local-check/**/objects/**" and
                 step["with"].get("include-hidden-files") is True and step.get("if") == "${{ always() }}"
                 for step in jobs["fast"]["steps"]), "Fast must retain original supplier SDK/report/logs, including ARM archive, without build objects")
     selected = {

@@ -908,7 +908,7 @@
           "uses": "actions/upload-artifact@v7",
           "with": {
             "name": "qaplet-fast-${{ github.sha }}",
-            "path": "out/fast/\n.cache/build/local-check/\n!.cache/build/local-check/**/objects/**",
+            "path": "out/fast/\nout/m0/\n.cache/build/local-check/\n!.cache/build/local-check/**/objects/**",
             "if-no-files-found": "error",
             "include-hidden-files": true
           }
