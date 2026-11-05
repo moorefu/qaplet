@@ -92,7 +92,15 @@ HOST_CASES = (
     ("m2-process-pipe-write-failure", ["--m2-process-pipe-write-failure", "{self}", "{launcher}"], "M2 process pipe write failure: child closes stdin before ready; zero accepted bytes; Host SIGPIPE handler/mask/pending preserved; ordinary native error keeps Runtime OPEN; cleanup: pass\n"),
     ("m2-process-pipe-bytes", ["--m2-process-pipe-bytes", "{self}", "{launcher}"], "M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass\n"),
     ("m2-process-pipe-defaults", ["--m2-process-pipe-defaults", "{self}", "{launcher}"], "M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass\n"),
+    ("m2-process-terminal", ["--m2-process-terminal", "{self}", "{launcher}"], "M2 process terminal cleanup: PENDING/ordinary-error close; owner STOPPED/FAILED force/reap before close; first cause retained; queued jobs/finally never run; native cleanup drained: pass\n"),
     ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
+    ("m2-work-js-errors", ["--m2-work-js-errors"], "M2 work JS errors: strict uncoerced names/Uint8Array; atomic missing/oversized refusal; bounded output rejection; real errno domain/value; caught operation errors preserve OPEN and recover capacity: pass\n"),
+    ("m2-work-js-stop", ["--m2-work-js-stop"], "M2 work JS stop: owner confirmation cancels queued and running tasks; no then/catch/finally after stop; CLOSED releases engine but retains physical bytes/code/userdata; finite quiesce retries and actual native exit: pass\n"),
+    ("m2-work-js-ledgers", ["--m2-work-js-ledgers"], "M2 work JS ledgers: active entry and independent completion share cumulative jobs/dispatch budget across pumps; infinite jobs fail at exact limit; terminal task resources retire: pass\n"),
+    ("m2-work-js-cancel", ["--m2-work-js-cancel"], "M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass\n"),
+    ("m2-work-js-checkpoints", ["--m2-work-js-checkpoints"], "M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass\n"),
+    ("m2-work-js-liveness", ["--m2-work-js-liveness"], "M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass\n"),
+    ("m2-work-js-file", ["--m2-work-js-file"], "M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass\n"),
     ("m2-process-query", ["--m2-process-query", "{self}", "{launcher}"], "M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass\n"),
     ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass\n"),
     ("m2-process-liveness", ["--m2-process-liveness", "{self}", "{launcher}"], "M2 process liveness: referenced child permits ready unref timer/immediate; unref child returns naturally; explicit pump delivers; physical cleanup: pass\n"),
@@ -305,10 +313,12 @@ def package_consume(args, report, directory):
     if args.operation == "fault-consume":
         compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -329,7 +339,8 @@ def package_consume(args, report, directory):
         if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
         executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
             [*loader, artifact], args.timeout, expected=None)
-        expected = (next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
+        expected = ("controlled M2 work JS allocation: actual SDK calloc refusal from caught JS submit remains permanent; no accepted task; first cause preserved; native and engine cleanup: pass\n" +
+                    next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
                     "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion/cancel survives wake failure; join error independently retained CLOSED/BUSY without identity retry or false cleanup: pass\n")
         passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
         report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",
@@ -364,6 +375,25 @@ def package_consume(args, report, directory):
                 "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
                 "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
                 "timeout_seconds": args.timeout, "reason": "Public timer/scheduling C Host compiled outside both source checkouts from sealed supplied SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-process-faults.com"
+        cases = [(mode, [mode, str(output / "sdk/process-child.exe") if os.name == "nt" else "/bin/true"], expected, platforms)
+                 for mode, expected, platforms in PROCESS_FAULT_CASES if ("Windows" if os.name == "nt" else "POSIX") in platforms]
+    else:
+        artifact = output / "qaplet-process-host.com"
+        cases = [(suffix, [value.replace("{self}", str(artifact)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments], expected, ["Windows", "POSIX"])
+                 for suffix, arguments, expected in HOST_CASES if suffix.startswith("m2-process-")]
+    for suffix, arguments, expected, platforms in cases:
+        executed, stdout, stderr = run(report, directory, artifact.stem + "." + suffix,
+            [*loader, artifact, *arguments], args.timeout, expected=None)
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": artifact.stem + "." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "command": executed,
+            "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+            "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+            "controlled_system_fixture": args.operation == "fault-consume", "platforms": platforms,
+            "reason": "Process C consumer compiled outside both source checkouts from the sealed supplied SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -539,6 +569,48 @@ def compile_work_faults(args, report, directory, tree, helpers, sdk, work, outpu
     artifact = audit(args, report, directory, tree, "qaplet-work-faults", output)
     artifact["build_commands"] = identity(output / "qaplet-work-faults.build-commands.log")
     report["artifacts"].append(artifact)
+
+
+PROCESS_FAULT_SUCCESS = "M2 process system boundary: controlled failure/physical exit; retained capacity; safe close/quiesce/destroy: pass\n"
+PROCESS_FAULT_CASES = (
+    ("--exit-race", "M2 process exited-child race: real native exit37 before helper publication; cancel and close preserve actual exit without false terminate error; helper remains sole reap/close owner; retry quiesce drains: pass\n", ["Windows"]),
+    ("--cancel-wake", "M2 process cancel wake: cancellation remains accepted after real wake failure; CANCELLED and actual reap preserved; first control cause survives stop/close; physical cleanup drains: pass\n", ["Windows", "POSIX"]),
+    ("--cancel-physical", "M2 process cancel physical: accepted CANCELLED before reap; reap before helper TLS exit; release invalidates token while capacity retained; zero/finite quiesce and BUSY destroy; actual join releases resources: pass\n", ["Windows", "POSIX"]),
+    ("--cancel-error", "M2 process cancel native error: accepted cancellation preserves actual terminate error and natural exit; physical retention and cleanup diagnostic independent: pass\n", ["Windows", "POSIX"]),
+    ("--physical", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--thread-fail", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--alloc-fail", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--stop-create", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--fork-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
+    ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
+    ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
+)
+
+
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False):
+    """Public package-only Process application; wrapped OS fixture is separate."""
+    (work / "tmp").mkdir(parents=True)
+    name = "qaplet-process-faults" if faults else "qaplet-process-host"
+    source = sdk / ("process-faults.c" if faults else "host-process.c")
+    symbols = ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    report["process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+        "source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
+        "wrapped_symbols": list(symbols), "scope": "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / (name + ".com"), work, environment,
+        libraries=(*("-Wl,--wrap=" + symbol for symbol in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(), consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log")); report["artifacts"].append(artifact)
+    (output / "sdk").mkdir(exist_ok=True)
+    shutil.copyfile(sdk / "process-child.exe", output / "sdk/process-child.exe")
+    report["process_child"] = identity(output / "sdk/process-child.exe")
 
 
 def compile_example(args, report, directory, tree, helpers, sdk, work, output):

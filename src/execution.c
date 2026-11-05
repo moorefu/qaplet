@@ -213,6 +213,7 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
     }
   }
   if (!JS_IsJobPending(runtime->engine)) {
+    qaplet_work_checkpoint(runtime);
     if (runtime->rejections && !runtime->execution_code) {
       qaplet_capture_exception(runtime, runtime->rejections->reason);
       runtime->execution_code = qaplet_module_exception_code(runtime, runtime->rejections->reason);
@@ -309,8 +310,8 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     }
     qaplet_process_collect(runtime);
     pthread_mutex_lock(&runtime->mutex);
-    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || runtime->work_snapshot.pending_handoffs || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
-    int work_ready = qaplet_work_ready_locked(runtime);
+    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_work_referenced_locked(runtime) || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
+    int work_ready = timer_eligible && qaplet_work_ready_locked(runtime);
     int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
     int io_ready = timer_eligible && qaplet_io_ready_locked(runtime);
     pthread_mutex_unlock(&runtime->mutex);

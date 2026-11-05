@@ -1,5 +1,36 @@
 # Embed SDK development
 
+M2 `qaplet:work` exports `submit(name, input)`. The Host registers the named
+native handler before the first execution. `name` must be a string and `input`
+a genuine, non-shared `Uint8Array`; neither argument is implicitly coerced.
+Acceptance copies its current view bytes and reserves the handler's full output
+capacity using the same bounded WorkPool as C submission.
+
+```js
+import { submit } from 'qaplet:work';
+const task = submit('read', encodedPath);
+const bytes = await task.promise; // a copied Uint8Array
+```
+
+The Task has `cancel()`, `ref()`, `unref()` and `hasRef()`. New tasks default to
+ref. `cancel()` records cancellation; repeated accepted cancellation succeeds,
+while completion winning first throws an Error with `code: 29`
+(`ALREADY_COMPLETED`). Cancellation rejects `promise` with `code: 28`
+(`CANCELLED`), without inventing a native error. Work operation errors have own
+numeric `code`, `errorDomain` and `error` properties; ordinary native errors
+retain their domain/value and do not permanently fail the Runtime.
+
+The owner settles the Promise through the completion category and completes its
+runnable jobs before releasing the task's default ref and native result. A
+cancelled call still running physically retains its copied buffers and capacity.
+`unref()` only changes natural loop exit; an explicit pump/run_once can deliver
+ready unref work. Keeping a completed Task or Promise does not retain native
+results, and discarding a Task does not cancel it. Finished tasks report
+`hasRef() === false`; ref/unref then have no effect. Stop/close release their JS
+references without running remaining then/catch/finally callbacks. Work code and
+userdata remain valid until native quiescence. The existing public C submit,
+result-copy and release callback/drive guards retain their documented behavior.
+
 `python3 scripts/sdk.py build` produces `qaplet-sdk.zip` on Ubuntu with the
 public header, x86_64 and hidden `.aarch64` static archives, complete pure C
 application, source modules, licenses, manifest and audited Host/CLI/application
@@ -395,3 +426,18 @@ python3 scripts/sdk.py fault-consume --build-report out/sdk/build.json \
 ```
 
 该增量的本地成绩与未完成矩阵见 [票据 01 实施记录](../../.scratch/qaplet-m2/01-runtime-validation.md)。
+
+M2 直接子进程的 `qaplet_process_cancel` 可在任意线程调用，不进入 JS，也不是
+signal-safe。它与原生退出发布在同一接受锁下排序：取消先接受后，status.code 为
+`CANCELLED`，重复取消为 OK；退出先发布则为 `ALREADY_COMPLETED`。实际
+exit/signal/native error、reap、owner 交付与 helper 物理退出独立保留。取消只强制
+终止并回收直接子进程，不承诺整树或温和信号，也不等于输出管道关闭。
+release 在 reap 前仍为 BUSY；helper 未真实 join 时，已 release 的槽和预算仍保留。
+owner 确认 STOPPED/FAILED 即走相同终止责任，无须先 close；close/quiesce 不执行
+用户 jobs/finally。失去 child identity 后不再向数字 PID 重发信号。
+
+`sdk.py package-consume` 现在实际包外编译并执行全部公开 Process catalog；
+`fault-consume` 以独立配方编译 `process-faults.c`，保留 helper 入场/TLS gate、
+真实 terminate error、取消接受后 wake 故障、创建 rollback 与身份丢失证据。
+Windows 只消费 Ubuntu 供应的同字节 APE/child；其 HANDLE 复用用例在真实 close
+后立即持有 OS 复用事件，再验证旧 token 与迟到 helper 不影响新对象。
