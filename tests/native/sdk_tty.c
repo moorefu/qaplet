@@ -236,10 +236,42 @@ static int console_resize(int javascript){
 }
 typedef struct {qaplet_runtime *runtime;qaplet_code code;} wrong_tty;
 static void *wrong_tty_owner(void *opaque){wrong_tty *p=opaque;qaplet_tty_support support=QAPLET_TTY_SUPPORT_INIT;p->code=qaplet_tty_inspect(p->runtime,0,&support,NULL);return NULL;}
+typedef struct {qaplet_runtime *runtime;unsigned calls,failures;} tty_notify_probe;
+static void tty_forbidden_notify(void *opaque){
+  tty_notify_probe *p=opaque;++p->calls;qaplet_io_endpoint e=QAPLET_IO_ENDPOINT_INIT;qaplet_io_operation op=QAPLET_IO_OPERATION_INIT;
+  qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_tty_support support=QAPLET_TTY_SUPPORT_INIT;qaplet_tty_write_status written=QAPLET_TTY_WRITE_STATUS_INIT;
+  qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.code=QAPLET_HOST_ERROR;d.flags=0x1234;d.length=123;qaplet_diagnostic original=d;
+#define TTY_NOTIFY_REFUSAL(call) do{d=original;if((call)!=QAPLET_BUSY || memcmp(&d,&original,sizeof(d)))++p->failures;}while(0)
+  TTY_NOTIFY_REFUSAL(qaplet_tty_acquire(p->runtime,0,&options,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_join(p->runtime,NULL,0,&options,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_join(p->runtime,&e,0,&options,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_release(p->runtime,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_get_tty_status(p->runtime,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_get_size(p->runtime,&e,&status,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_watch_resize(p->runtime,&e,1,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_notify_resize(p->runtime,&e,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_tty_inspect(p->runtime,0,&support,&d));
+  TTY_NOTIFY_REFUSAL(qaplet_get_tty_write_status(p->runtime,&op,&written,&d));
+#undef TTY_NOTIFY_REFUSAL
+}
 static int validation(void){
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
   qaplet_abi abi=QAPLET_ABI_INIT;CHECK(qaplet_query_abi(&abi)==QAPLET_OK && (abi.capabilities&QAPLET_CAP_TTY));
   qaplet_tty_options options=QAPLET_TTY_OPTIONS_INIT;qaplet_tty_status status=QAPLET_TTY_STATUS_INIT;qaplet_io_endpoint e=QAPLET_IO_ENDPOINT_INIT;
+  qaplet_diagnostic short_diagnostic=QAPLET_DIAGNOSTIC_INIT;short_diagnostic.struct_size=8;short_diagnostic.code=QAPLET_HOST_ERROR;short_diagnostic.flags=0x1234;short_diagnostic.length=123;qaplet_diagnostic original_diagnostic=short_diagnostic;unsigned diagnostic_failures=0;
+  qaplet_tty_support diagnostic_support=QAPLET_TTY_SUPPORT_INIT;qaplet_io_operation diagnostic_operation=QAPLET_IO_OPERATION_INIT;qaplet_tty_write_status diagnostic_write=QAPLET_TTY_WRITE_STATUS_INIT;
+#define TTY_SHORT_DIAGNOSTIC(call) do{short_diagnostic=original_diagnostic;qaplet_code refused=(call);if(refused!=QAPLET_ABI_MISMATCH || memcmp(&short_diagnostic,&original_diagnostic,sizeof(short_diagnostic)))++diagnostic_failures;}while(0)
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_acquire(r,0,&options,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_join(r,NULL,0,&options,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_join(r,&e,0,&options,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_release(r,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_get_tty_status(r,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_get_size(r,&e,&status,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_watch_resize(r,&e,1,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_notify_resize(r,&e,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_tty_inspect(r,0,&diagnostic_support,&short_diagnostic));
+  TTY_SHORT_DIAGNOSTIC(qaplet_get_tty_write_status(r,&diagnostic_operation,&diagnostic_write,&short_diagnostic));
+#undef TTY_SHORT_DIAGNOSTIC
   options.flags=0x80000000u;CHECK(qaplet_tty_acquire(r,0,&options,&e,&status,NULL)==QAPLET_INVALID_ARGUMENT && !e.generation);options.flags=0;options.reserved=1;
   CHECK(qaplet_tty_acquire(r,0,&options,&e,&status,NULL)==QAPLET_INVALID_ARGUMENT && !e.generation);options.reserved=0;options.struct_size=8;
   CHECK(qaplet_tty_acquire(r,0,&options,&e,&status,NULL)==QAPLET_ABI_MISMATCH && !e.generation);options=(qaplet_tty_options)QAPLET_TTY_OPTIONS_INIT;
@@ -248,8 +280,13 @@ static int validation(void){
   qaplet_tty_support support=QAPLET_TTY_SUPPORT_INIT;CHECK(qaplet_tty_inspect(r,3,&support,NULL)==QAPLET_INVALID_ARGUMENT);
   CHECK(qaplet_get_tty_status(r,&e,&status,NULL)==QAPLET_INVALID_HANDLE && qaplet_tty_notify_resize(r,&e,NULL)==QAPLET_INVALID_HANDLE);
   wrong_tty p={r,QAPLET_OK};pthread_t t;CHECK(!pthread_create(&t,NULL,wrong_tty_owner,&p) && !pthread_join(t,NULL) && p.code==QAPLET_WRONG_THREAD);
+  tty_notify_probe notify={r,0,0};qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=tty_forbidden_notify;hook.userdata=&notify;
+  CHECK(qaplet_set_host_notify(r,&hook,NULL)==QAPLET_OK && qaplet_wake(r,NULL)==QAPLET_OK && notify.calls);
   qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.endpoints && !io.operations && !io.data_bytes && qaplet_close(r,NULL)==QAPLET_OK && qaplet_destroy(r,NULL)==QAPLET_OK);
   CHECK(qaplet_create(&b,&r,NULL)==QAPLET_OK && qaplet_tty_inspect(r,0,&support,NULL)==QAPLET_UNSUPPORTED && qaplet_close(r,NULL)==QAPLET_OK && qaplet_destroy(r,NULL)==QAPLET_OK);
+  if(diagnostic_failures)fprintf(stderr,"TTY diagnostic prefix mutated or wrong refusal in %u public calls; both Runtimes cleaned\n",diagnostic_failures);
+  if(notify.failures)fprintf(stderr,"TTY HostNotify mutated diagnostic or wrong refusal in %u public calls; both Runtimes cleaned\n",notify.failures);
+  CHECK(!diagnostic_failures && !notify.failures);
   puts("M2 TTY validation: strict version/size/unknown flags/reserved/tail; wrong owner and invalid identity; no accepted resource; old factory remains unsupported: pass");return 0;
 }
 static int resize_event_fd=-1;
