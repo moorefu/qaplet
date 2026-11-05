@@ -30,6 +30,10 @@ struct qaplet_runtime {
   qaplet_work_snapshot work_snapshot;
   uint64_t operations_current, operations_peak, operation_data_current, operation_data_peak;
   qaplet_io_pool *io_pool;
+  void *js_processes, *js_io_endpoints, *js_io_tasks;
+  int bridge_active;
+  int (*process_js_deliver)(qaplet_runtime *, const qaplet_process *);
+  int (*io_js_deliver)(qaplet_runtime *, const qaplet_io_operation *);
   qaplet_notify_function notify_function;
   void *notify_userdata;
   uint64_t notify_inflight, notify_inflight_peak;
@@ -101,6 +105,13 @@ void qaplet_operation_retire_locked(qaplet_runtime *, size_t);
 qaplet_code qaplet_check_diagnostic(qaplet_diagnostic *);
 qaplet_code qaplet_report(qaplet_diagnostic *, qaplet_code);
 qaplet_code qaplet_owner(qaplet_runtime *);
+/* Only resource entry points accept the bridge scope. Driver/lifecycle entry
+ * points keep qaplet_owner, and HostNotify may never inherit this scope. */
+qaplet_code qaplet_resource_owner(qaplet_runtime *);
+JSModuleDef *qaplet_process_load(qaplet_runtime *);
+void qaplet_js_async_checkpoint(qaplet_runtime *);
+void qaplet_js_async_shutdown(qaplet_runtime *);
+void qaplet_process_js_checkpoint(qaplet_runtime *);
 qaplet_code qaplet_create_internal(const qaplet_config *, const qaplet_m2_config *, qaplet_runtime **, qaplet_diagnostic *, qaplet_m2_diagnostic *);
 qaplet_code qaplet_m2_configure(const qaplet_m2_config *, const qaplet_limits *, qaplet_m2_limits *);
 void qaplet_driver_set(qaplet_runtime *, int);

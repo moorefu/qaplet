@@ -120,6 +120,10 @@ qaplet_code qaplet_owner(qaplet_runtime *runtime) {
   if (runtime->driver_active || runtime->snapshot.phase == QAPLET_PHASE_RUNNING) return QAPLET_BUSY;
   return QAPLET_OK;
 }
+qaplet_code qaplet_resource_owner(qaplet_runtime *runtime) {
+  if (runtime && runtime->bridge_active && !qaplet_in_notify && pthread_equal(runtime->owner,pthread_self())) return QAPLET_OK;
+  return qaplet_owner(runtime);
+}
 
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);
