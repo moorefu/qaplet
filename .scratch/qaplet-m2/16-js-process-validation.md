@@ -161,3 +161,37 @@ Windows package/fault只重放Ubuntu包外构建的相同字节，自己未编�
 其他必需原生宿主、当前实际 64K、远端 CI/Cross/Full、最终混合资源长测和发布
 门禁保持 deferred。预检、候选、供应构建、平台产品执行分别报告；外部超时、
 必需 skip/not_run/失败不记通过，不清理或覆写旧证据，不 push。
+
+## 独立本地接收 · 2026-11-05
+
+独立 merger 已实际 no-ff 合入 source `353ee94996031e531d12a9f6e1c23a7c9c580e0f`，
+合并点 `015cdb9fcf83b9d0bce19759e07e3839312ddc63` 的两个 parent 分别为 actual root
+`a5067a9cb018a7a59934dbb81a67f6101f6b0529` 和 source；合并树与 source 完全相同。
+合前两树 clean，12/14/15 与实际17合入点均为 source 祖先，17接收和18领取文档保留。
+产品仍冻结 `13282ae6`；后续仅非 recipe Markdown，不重标原 producer git/dirty 范围。
+
+合前与合后分别调用既有 `sdk.check_package`、`sdk_matrix.validate_native` 和 APE header
+消费者，只读重放86份 recipe 的 raw LF/产品及当前 Git blobs、82个原 ZIP 成员、公开
+header、双CPU各19个 ELF64 REL对象、三 fat APE及全部1722份原始日志。normal Linux208、
+Windows207加既有optional symlink1/required gaps0，package94/94、独立fault24/25、各端
+13个JS Process和本票1000+100循环、普通SDK1000生命周期均核对原实际执行与输出。
+84个tracked Python与原devcheck同字节；411项中210执行/201显式条件skip、真实C bootstrap
+保留原scope。合后另实际执行Ubuntu轻量preflight通过，主物理`.cache`、45解析/52编码文件。
+
+共用IO/stdio/header/runtime源码与已接收17一致，STDIO24、9个stdio case、detach BUSY和
+完整jobs交接保留；M2 builtin为6，TTY25尚未启用。reap故障负向保留真实ECHILD/unreaped、
+closed pending及default ref，显式unref不释放未知原生责任；CLOSED后记录/容量保留，
+quiesce错误及等待未完成、destroy BUSY均是安全保留期望，不能作为清理成功。
+
+8个scope静态过近似清单中的非执行`out/audit_final.py`在各自执行期间before/after相同，
+随后只新增HANDOFF文档身份和防覆写断言。merger在内存撤销这两处，精确还原原静态摘要
+06528bc…/10454字节；当前b17e755…/10541用于最终audit。原件未改写，不伪称保有历史
+源快照；actual parent imports/calls和捕获命令分别核对，child动态imports依旧unknown。
+本轮接收helper最初的静态全体当前相同假设及只数未勾选AC的假设失败日志均保留，修正
+仅在主out接收helper，后继`premerge-3.json`和`postmerge.json`通过。
+
+接收材料位于主 `out/qaplet-m2/merge-16-js-process/HANDOFF.md` 和 `handoff.json`。
+merger新增产品执行0；未重建SDK、重复历史probe/长测、运行QEMU、push或触发CI。
+27票/38边/135AC及父spec原摘要不变；本票保持claimed、local_complete/cross_deferred。
+其他必需原生、当前实际64K、CI/Cross/Full、最终混合长测、父M2及release-ready仍未完成。
+这次是独立本地接收，整体Standards/Spec审查留待M2最终收口；19/20仍等待18独立合入。

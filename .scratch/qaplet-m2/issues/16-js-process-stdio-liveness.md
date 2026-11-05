@@ -62,3 +62,11 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+2026-11-05（独立本地接收）：source `353ee949` 经独立原件核验后实际no-ff合入
+`015cdb9f`，合并树同源，17既有产品与18领取记录保留。86 recipe/raw LF/Git、82 ZIP、
+双archive各19、normal208/207+既有optional1、package94/94、fault24/25、1722 raw logs、
+原本票1000+100循环及devcheck/bootstrap均复核，合后Ubuntu preflight通过。
+lost-reap负向保留未知原生责任，不计为清理成功。详[独立接收记录](../16-js-process-validation.md#独立本地接收--2026-11-05)
+与主`out/qaplet-m2/merge-16-js-process/HANDOFF.md`。claimed及local_complete/cross_deferred、
+原Blocked-by和五条正式AC不变；19/20仍需18独立合入，其他平台/64K/Cross/Full与发布继续待验。
+
