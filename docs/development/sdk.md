@@ -436,6 +436,16 @@ snapshot. A restored route is replaced only on successful lease acquisition;
 quota refusal preserves its previous route, and old tokens/control capacity
 remain retained. Unfinished physical restoration still conflicts. Native mode
 restoration belongs to release/stop/close, without requiring user JS cleanup.
+Final results and diagnostics use the same actual standard routes after native
+retirement. Windows file output uses the shared HANDLE position, and Console
+text uses explicit strict UTF-8 to UTF-16 conversion and `WriteConsoleW`, without
+changing or depending on the output code page. Broken/invalid final stdout is
+an execution failure (`IO_ERROR`, exit 1). POSIX writes preserve the caller's
+signal mask and process dispositions while handling their own SIGPIPE failure.
+The pinned PE CRT enables `WINDOW_INPUT` and selects UTF-8 before `main`.
+Console checks record that startup effect separately, then compare complete
+mode restoration with the actual CLI-entry baseline. Restoration of the mode
+that existed before this fixed CRT ran is not claimed by these local checks.
 Ticket 22 separately closes the real signal/Ctrl+C and cleanup-budget matrix.
 
 `sdk.py cli-consume` extracts the selected SDK ZIP outside both checkouts,

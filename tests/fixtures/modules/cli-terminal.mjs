@@ -1,5 +1,4 @@
 import * as stdio from 'qaplet:stdio';
-import {spawn} from 'qaplet:process';
 import {argv} from 'qaplet:runtime';
 if (!stdio.stdin || !stdio.stdout || !stdio.stderr) throw Error('missing initial terminal routes');
 const initialInput=stdio.stdin;
@@ -16,9 +15,8 @@ if(input===stdio.stdin || output===stdio.stdout || (await import('qaplet:stdio')
 await initialInput.closed;
 try {initialInput.read(1);throw Error('old facade reopened');}
 catch(e) {if(e.code!==5) throw e;}
-const args=argv[1]==='-' ? [argv[0],'--m2-cli-mark'] : [argv[1],argv[0],'--m2-cli-mark'];
-const child=spawn(args[0],{argv:args,stdio:['inherit','inherit','inherit']});
-if((await child.exited).exitCode!==0) throw Error('native raw/VT readback');
+// The native fixture publishes input only after observing raw input and VT
+// output on these exact routes; the application has no private fixture API.
 let bytes=[];
 while(bytes.length<5) bytes.push(...(await input.read(5-bytes.length).promise).bytes);
 if(bytes.join(',')!=='65,228,184,173,90') throw Error('terminal input');

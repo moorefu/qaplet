@@ -9,11 +9,14 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include "libc/dce.h"
+#include "libc/nt/console.h"
 #include "libc/nt/runtime.h"
 
 static int finish(int status) {
@@ -108,28 +111,88 @@ static qaplet_code restore_stdio(qaplet_runtime *runtime,cli_stdio *host,int qui
   return result;
 }
 
-static void print_result(const qaplet_result *result) {
+static qaplet_code render_result(const qaplet_result *result,char **out,size_t *length) {
+  size_t capacity=result->type==QAPLET_VALUE_BYTES ? result->length*2+3 :
+                  result->type==QAPLET_VALUE_STRING ? result->length+1 : 128;
+  char *text=malloc(capacity);if(!text)return QAPLET_MEMORY_LIMIT;size_t n=0;
   switch (result->type) {
-    case QAPLET_VALUE_UNDEFINED: fputs("undefined",stdout); break;
-    case QAPLET_VALUE_NULL: fputs("null",stdout); break;
-    case QAPLET_VALUE_BOOL: fputs(result->boolean ? "true" : "false",stdout); break;
+    case QAPLET_VALUE_UNDEFINED: n=sprintf(text,"undefined");break;
+    case QAPLET_VALUE_NULL: n=sprintf(text,"null");break;
+    case QAPLET_VALUE_BOOL: n=sprintf(text,"%s",result->boolean ? "true" : "false");break;
     case QAPLET_VALUE_DOUBLE:
-      if (isnan(result->number)) fputs("NaN",stdout);
-      else if (isinf(result->number)) fputs(signbit(result->number) ? "-Infinity" : "Infinity",stdout);
-      else printf("%.17g",result->number);
+      if (isnan(result->number)) n=sprintf(text,"NaN");
+      else if (isinf(result->number)) n=sprintf(text,"%s",signbit(result->number) ? "-Infinity" : "Infinity");
+      else n=sprintf(text,"%.17g",result->number);
       break;
-    case QAPLET_VALUE_INT64: printf("%" PRId64,result->signed_integer); break;
-    case QAPLET_VALUE_UINT64: printf("%" PRIu64,result->unsigned_integer); break;
+    case QAPLET_VALUE_INT64: n=sprintf(text,"%" PRId64,result->signed_integer);break;
+    case QAPLET_VALUE_UINT64: n=sprintf(text,"%" PRIu64,result->unsigned_integer);break;
     case QAPLET_VALUE_STRING:
-      if (result->length) fwrite(result->buffer,1,result->length,stdout);
+      n=result->length;if(n)memcpy(text,result->buffer,n);
       break;
     case QAPLET_VALUE_BYTES:
-      fputs("0x",stdout);
-      for (size_t i=0;i<result->length;++i) printf("%02x",((unsigned char *)result->buffer)[i]);
+      text[n++]='0';text[n++]='x';
+      for(size_t i=0;i<result->length;++i){unsigned byte=((unsigned char *)result->buffer)[i];text[n++]="0123456789abcdef"[byte>>4];text[n++]="0123456789abcdef"[byte&15];}
       break;
   }
-  putchar('\n');
+  text[n++]='\n';*out=text;*length=n;return QAPLET_OK;
 }
+
+/* A one-shot Host write after native retirement, not another loop/SDK backend.
+ * Win32 CRT offsets can be cached separately from the shared HANDLE position
+ * advanced by managed IO. Use the actual selected route for final output too.
+ * Console gets explicit UTF-16, independent of the console output code page;
+ * its UTF-8 text boundary is the same strict scalar subset as the SDK adapter. */
+static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
+  if(IsWindows()){
+    int64_t handle=GetStdHandle(-10-(int)stream);uint32_t mode=0;
+    if(!handle || handle==-1)return QAPLET_IO_ERROR;
+    int console=GetConsoleMode(handle,&mode);
+    while(size){
+      uint32_t written=0;
+      if(!console){
+        uint32_t chunk=size>65536 ? 65536 : size;
+        if(!WriteFile(handle,data,chunk,&written,NULL) || !written || written>chunk)return QAPLET_IO_ERROR;
+        data+=written;size-=written;
+      }else{
+        char16_t wide[1024];uint32_t count=0;size_t used=0;
+        while(used<size && count<1022){
+          unsigned first=(unsigned char)data[used++],scalar=first,following=0,minimum=0;
+          if(first>=128){if(first>=194 && first<=223){scalar=first&31;following=1;minimum=128;}
+            else if(first<=239 && first>=224){scalar=first&15;following=2;minimum=2048;}
+            else if(first<=244 && first>=240){scalar=first&7;following=3;minimum=65536;}
+            else return QAPLET_INVALID_UTF8;}
+          if(following>size-used)return QAPLET_INVALID_UTF8;
+          for(unsigned i=0;i<following;++i){unsigned next=(unsigned char)data[used++];if((next&192)!=128)return QAPLET_INVALID_UTF8;scalar=(scalar<<6)|(next&63);}
+          if(scalar<minimum || scalar>0x10ffff || (scalar>=0xd800 && scalar<=0xdfff))return QAPLET_INVALID_UTF8;
+          if(scalar>65535){scalar-=65536;wide[count++]=0xd800+(scalar>>10);wide[count++]=0xdc00+(scalar&1023);}else wide[count++]=scalar;
+        }
+        uint32_t at=0;
+        while(at<count){if(!WriteConsole(handle,wide+at,count-at,&written,NULL) || !written || written>count-at)return QAPLET_IO_ERROR;at+=written;}
+        data+=used;size-=used;
+      }
+    }
+    return QAPLET_OK;
+  }
+  /* Match the SDK byte writer's thread-local SIGPIPE discipline. Never change
+   * the Host's process disposition; consume only a signal produced by this
+   * failed output and preserve one that was already pending. */
+  sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);
+  if(pthread_sigmask(SIG_BLOCK,&blocked,&previous))return QAPLET_IO_ERROR;
+  int was_pending=!sigpending(&pending) && sigismember(&pending,SIGPIPE);
+  int failed=0;
+  while(size){ssize_t n=write(stream,data,size);if(n<0 && errno==EINTR)continue;if(n<=0){failed=1;break;}data+=n;size-=n;}
+  if(!was_pending && !sigpending(&pending) && sigismember(&pending,SIGPIPE)){
+    struct timespec zero={0};while(sigtimedwait(&blocked,NULL,&zero)<0 && errno==EINTR){}
+  }
+  if(pthread_sigmask(SIG_SETMASK,&previous,NULL))failed=1;
+  return failed ? QAPLET_IO_ERROR : QAPLET_OK;
+}
+
+static qaplet_code output_result(const qaplet_result *result) {
+  char *data=NULL;size_t size=0;qaplet_code code=render_result(result,&data,&size);
+  if(!code)code=write_output(1,data,size);free(data);return code;
+}
+static void report_error(const char *message) {write_output(2,message,strlen(message));}
 
 int main(int argc, char **argv) {
   qaplet_config config = QAPLET_CONFIG_INIT;
@@ -214,15 +277,18 @@ int main(int argc, char **argv) {
     restoration=restore_stdio(runtime,&host,!cleanup);
     if (!cleanup) cleanup=qaplet_destroy(runtime,NULL);
   }
-  /* SDK byte writes have retired before the Host's buffered result/diagnostics
+  /* SDK byte writes have retired before the Host's final result/diagnostics
    * use these same routes. Blocking flags and complete terminal modes have
    * been restored; a large eval result must not silently truncate on EAGAIN. */
-  if (!code && !unsettled && !cleanup && !restoration && !is_run) print_result(&result);
+  if (!code && !unsettled && !cleanup && !restoration && !is_run){
+    code=output_result(&result);
+    if(code){char text[128];snprintf(text,sizeof(text),"qaplet: code=%u %s (entry result output)\n",code,code==QAPLET_MEMORY_LIMIT ? "MEMORY_LIMIT" : code==QAPLET_INVALID_UTF8 ? "INVALID_UTF8" : "IO_ERROR");report_error(text);}
+  }
   free(result.buffer);
-  if (execution_code) fprintf(stderr,"qaplet: code=%u %s\n",(unsigned)execution_code,message);
-  if (unsettled) fputs("qaplet: UNSETTLED_ENTRY\n",stderr);
-  if(cleanup)fprintf(stderr,"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup);
-  if(restoration)fprintf(stderr,"qaplet: standard stream restoration incomplete code=%u\n",(unsigned)restoration);
+  if (execution_code){char text[1200];snprintf(text,sizeof(text),"qaplet: code=%u %s\n",(unsigned)execution_code,message);report_error(text);}
+  if (unsettled) report_error("qaplet: UNSETTLED_ENTRY\n");
+  if(cleanup){char text[128];snprintf(text,sizeof(text),"qaplet: native cleanup incomplete code=%u\n",(unsigned)cleanup);report_error(text);}
+  if(restoration){char text[128];snprintf(text,sizeof(text),"qaplet: standard stream restoration incomplete code=%u\n",(unsigned)restoration);report_error(text);}
   if(cleanup || restoration)code=cleanup ? cleanup : restoration;
   return finish(code || unsettled ? 1 : 0);
 }

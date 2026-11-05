@@ -38,12 +38,31 @@ def digest(data):
     return {"sha256":hashlib.sha256(data).hexdigest(),"size_bytes":len(data)}
 
 
-def execute(args, report, directory, name, argv, code, expected, stderr=b"", data=b"", pipes=False, error_contains=False):
+def execute(args, report, directory, name, argv, code, expected, stderr=b"", data=b"", pipes=False, error_contains=False, output_fault=None):
     work=directory/name;work.mkdir()
     (work/"stdin.bin").write_bytes(data)
     started=now(); timed_out=False; flags=[]; threads=[]; failure=None
     output=[bytearray(),bytearray()]
-    if pipes and os.name!="nt":
+    if output_fault:
+        readfd,writefd=os.pipe();os.close(readfd);previous=None
+        options={"stdout":writefd} if output_fault=="broken" else {}
+        if output_fault=="invalid" and os.name!="nt":options["preexec_fn"]=lambda:os.close(1)
+        if output_fault=="invalid" and os.name=="nt":
+            import ctypes
+            kernel=ctypes.WinDLL("kernel32",use_last_error=True);kernel.GetStdHandle.restype=ctypes.c_void_p
+            kernel.SetStdHandle.argtypes=[ctypes.c_uint32,ctypes.c_void_p]
+            previous=kernel.GetStdHandle(-11)
+            if not kernel.SetStdHandle(-11,None):raise OSError(ctypes.get_last_error(),"SetStdHandle(invalid fixture)")
+        try:
+            with (work/"stdin.bin").open("rb") as fi,(work/"stderr.log").open("wb") as fe:
+                p=subprocess.Popen(list(map(str,argv)),cwd=work,stdin=fi,stderr=fe,**options)
+                try:p.wait(timeout=args.timeout)
+                except subprocess.TimeoutExpired:timed_out=True;p.kill();p.wait()
+        finally:
+            os.close(writefd)
+            if previous is not None and not kernel.SetStdHandle(-11,previous):raise OSError("Restore Host stdout")
+        stdout=b"";errors=(work/"stderr.log").read_bytes();native={"route":"actual "+output_fault+" final Host stdout"}
+    elif pipes and os.name!="nt":
         import fcntl
         pairs=[os.pipe() for _ in range(3)]
         owned=[pairs[0][0],pairs[1][1],pairs[2][1]]
@@ -108,22 +127,25 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
         execute(args,report,directory,name,[*loader,cli,*[s.replace("{modules}",str(modules)) for s in arguments]],code,
                 stdout.encode(),stderr.encode(),error_contains=bool(stderr))
     data=bytes(range(256))*257
-    source="import('qaplet:stdio').then(s=>{(async()=>{for(;;){let r=await s.stdin.read(65536).promise;if(r.eof)break;const a=s.stdout.write(r.bytes),b=s.stderr.write(r.bytes);r.bytes.fill(7);await Promise.all([a.promise,b.promise])}})();return 'ENTRY'})"
+    put="async function put(out,bytes){for(;;){try{return await out.write(bytes).promise}catch(e){if(e.code!==24||e.bytesWritten)throw e;await new Promise(resolve=>t.setImmediate(resolve))}}}"
+    source="Promise.all([import('qaplet:stdio'),import('qaplet:timers')]).then(([s,t])=>{"+put+"(async()=>{for(;;){let r=await s.stdin.read(65536).promise;if(r.eof)break;await Promise.all([put(s.stdout,r.bytes),put(s.stderr,r.bytes)]);r.bytes.fill(7)}})();return 'ENTRY'})"
     execute(args,report,directory,"file-binary-background",[*loader,cli,"eval","--source",source],0,data+b"ENTRY\n",data,data)
     if not windows:execute(args,report,directory,"pipe-binary-background",[*loader,cli,"eval","--source",source],0,data+b"ENTRY\n",data,data,pipes=True)
     else:
         source="import('qaplet:stdio').then(s=>s.stdin===null&&s.stdout===null&&s.stderr===null)"
         execute(args,report,directory,"synchronous-pipes-unsupported",[cli,"eval","--source",source],0,b"true\n",pipes=True)
     execute(args,report,directory,"large-result-restored",[*loader,cli,"eval","--source","'X'.repeat(200000)"],0,b"X"*200000+b"\n",pipes=True)
+    for fault in ("broken","invalid"):
+        execute(args,report,directory,"final-output-"+fault,[*loader,cli,"eval","--source","'saved中🙂'"],1,b"",b"qaplet: code=30 IO_ERROR",error_contains=True,output_fault=fault)
     childargs=[str(host),"--m2-cli-emit"] if windows else [str(loader[0]),str(host),"--m2-cli-emit"]
-    source="Promise.all([import('qaplet:process'),import('qaplet:stdio')]).then(([{spawn},s])=>{const a="+json.dumps(childargs)+";const p=spawn(a[0],{argv:a});p.stdin.finish();async function drain(input,output){for(;;){const r=await input.read(4096).promise;if(r.eof)break;await output.write(r.bytes).promise}}Promise.all([drain(p.stdout,s.stdout),drain(p.stderr,s.stderr),p.exited]).then(v=>{if(v[2].exitCode!==37)throw Error('child exit')});return 'ENTRY'})"
+    source="Promise.all([import('qaplet:process'),import('qaplet:stdio'),import('qaplet:timers')]).then(([{spawn},s,t])=>{"+put+"const a="+json.dumps(childargs)+";const p=spawn(a[0],{argv:a});p.stdin.finish();async function drain(input,output){for(;;){const r=await input.read(4096).promise;if(r.eof)break;await put(output,r.bytes)}}Promise.all([drain(p.stdout,s.stdout),drain(p.stderr,s.stderr),p.exited]).then(v=>{if(v[2].exitCode!==37)throw Error('child exit')});return 'ENTRY'})"
     emit=bytes(range(256))*512
     execute(args,report,directory,"process-dual-channel",[*loader,cli,"eval","--source",source],0,emit+b"ENTRY\n",emit)
     source="import('qaplet:process').then(({spawn})=>{try{spawn('qaplet-missing-explicit-path',{stdio:['ignore','ignore','ignore']})}catch(e){if(e.code===27&&e.errorDomain&&e.error)return 42;throw e}throw Error('missing refusal')})"
     execute(args,report,directory,"ordinary-process-error",[*loader,cli,"eval","--source",source],0,b"42\n")
     source="import('qaplet:timers').then(t=>{t.setImmediate(()=>{try{let a=[];for(;;)a.push(new Uint8Array(1048576))}catch(e){}});return 'ENTRY'})"
     execute(args,report,directory,"background-allocation",[*loader,cli,"eval","--source",source],1,b"",b"qaplet: code=11 MEMORY_LIMIT",error_contains=True)
-    for mode in ("normal","error","budget"):
+    for mode in ("normal","error","budget","unicode"):
         work=directory/("terminal-"+mode);work.mkdir()
         argv=[*loader,host,"--m2-cli-terminal",cli,host,loader[0] if loader else "-",modules/"cli-terminal.mjs",mode]
         if windows:
@@ -136,12 +158,21 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
         record=work/"cli-terminal.ndjson";rows=[json.loads(line) for line in record.read_text().splitlines()] if record.is_file() else []
         groups={stage:[{k:v for k,v in row.items() if k!="stage"} for row in rows if row["stage"]==stage] for stage in ("before","modified","restored")}
         restored=len(rows)==9 and groups["before"]==groups["restored"] and groups["before"]!=groups["modified"]
+        codepage=None
+        if mode=="unicode":
+            raw=raw if windows else (work/"cli-pty.stdout.log").read_bytes()
+            passed=passed and "A中🙂Z".encode() in raw
+            if windows:
+                path=work/"cli-codepage.json";codepage=json.loads(path.read_text()) if path.is_file() else None
+                passed=passed and bool(codepage and codepage["requested"]==437 and codepage["after"]==437 and codepage["restored"]==codepage["before"])
         marker=work/"cli-terminal-result.txt";status=work/"cli-child-status.json"
         passed=passed and restored and marker.is_file() and status.is_file()
         report["commands"].append(command) if windows else None
         report["cases"].append({"case_id":"qaplet-cli.terminal-"+mode,"required":True,"status":"pass" if passed else "fail",
             "commands":[command],"terminal_readback":identity(record) if record.is_file() else None,"rows":rows,
-            "full_modes_and_flags_restored":restored,"child_status":json.loads(status.read_text()) if status.is_file() else None,
+            "full_modes_and_flags_restored":restored,"codepage":codepage,"child_status":json.loads(status.read_text()) if status.is_file() else None,
+            "startup_observations":identity(work/"cli-startup.ndjson") if (work/"cli-startup.ndjson").is_file() else None,
+            "startup_scope":"Pinned PE CRT changes WINDOW_INPUT/UTF-8 before main; explicit same-CLI help warmup freezes actual-entry baseline. Pre-CRT restoration is not claimed" if windows else None,
             "native_cleanup_complete":bool(passed),"scope":"Initial C prelease; first JS snapshot; released/restored old group; independent raw/VT facades; true CLI child exit; native readback; no signal claim"})
     if before!=[identity(path) for path in (host,cli)]:raise BuildError("Supplied CLI/Host bytes changed")
     report["cli_artifact"]=identity(cli)

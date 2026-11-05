@@ -11,7 +11,14 @@
 #include <unistd.h>
 #include "libc/dce.h"
 #include "libc/nt/console.h"
+#include "libc/nt/accounting.h"
+#include "libc/nt/process.h"
 #include "libc/nt/runtime.h"
+#include "libc/nt/struct/startupinfo.h"
+#include "libc/nt/synchronization.h"
+#include "libc/proc/ntspawn.h"
+extern int64_t CreateFile(const char16_t *,uint32_t,uint32_t,void *,uint32_t,uint32_t,int64_t);
+extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"CLI public contract line %d: %s errno=%d\n",__LINE__,#x,errno);return 1;}}while(0)
 static int dispose(qaplet_runtime *r){
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT;
@@ -73,32 +80,68 @@ static int routing(void){
   CHECK(!qaplet_stdio_detach(r,0,NULL) && !qaplet_tty_acquire(r,0,&o,&next,&s,NULL) && next.generation!=old.generation);
   CHECK(!qaplet_tty_release(r,&next,&s,NULL) && s.restored && !dispose(r));return 0;
 }
+static int native_console_spawn(const char **args,unsigned n,struct NtProcessInformation *process){
+  struct NtStartupInfo startup={.cb=sizeof(startup),.dwFlags=0x100};int64_t handles[3]={0};
+  for(int i=0;i<3;++i){CHECK(DuplicateHandle(-1,GetStdHandle(-10-i),-1,&handles[i],0,1,2));startup.stdiofds[i]=handles[i];}
+  char16_t command[32768];char *native_args[13];for(unsigned i=0;i<n;++i)native_args[i]=(char *)args[i];native_args[n]=NULL;
+  CHECK(mkntcmdline(command,native_args,32768)<32768 && CreateProcess(NULL,command,NULL,NULL,1,0,NULL,NULL,&startup,process));
+  CHECK(CloseHandle(process->hThread));for(int i=0;i<3;++i)CHECK(CloseHandle(handles[i]));return 0;
+}
 static int terminal(int argc,char **argv){
   /* cli, this supplied Host, loader or -, ESM fixture, normal/error/budget. */
   CHECK(argc==7);int saved[3]={-1,-1,-1},master=-1,slave=-1;
-  if(!IsWindows()){
+  int64_t original[3]={0},console[3]={0};uint32_t original_cp=0;
+  int unicode=!strcmp(argv[6],"unicode");
+  if(IsWindows()){
+    /* Explicit private ConPTY fixture setup, never a product fallback. Windows
+     * does not promise useful GetStdHandle values for this native launcher.
+     * Install and inherit these real Console routes before starting the CLI. */
+    console[0]=CreateFile(u"CONIN$",0xc0000000u,3,NULL,3,0,0);
+    console[1]=CreateFile(u"CONOUT$",0xc0000000u,3,NULL,3,0,0);console[2]=console[1];
+    CHECK(console[0]!=-1 && console[1]!=-1);
+    for(int i=0;i<3;++i){original[i]=GetStdHandle(-10-i);CHECK(SetStdHandle(-10-i,console[i]));}
+    original_cp=GetConsoleOutputCP();
+    /* The pinned PE CRT enables WINDOW_INPUT and UTF-8 before main. Record
+     * that distinct process-start effect, then freeze the actual entry baseline
+     * with an explicit --help run of these same CLI bytes. This is not evidence
+     * that CLI main/SDK restores the pre-CRT mode. */
+    native_mode modes[3]={0};CHECK(!record("facility-before-CRT",modes));
+    const char *warm[]={argv[2],"--help"};struct NtProcessInformation warmup={0};uint32_t exit_code=99;
+    CHECK(!native_console_spawn(warm,2,&warmup) && WaitForSingleObject(warmup.hProcess,5000)==0 && GetExitCodeProcess(warmup.hProcess,&exit_code) && !exit_code && CloseHandle(warmup.hProcess));
+    CHECK(!record("actual-entry-baseline",modes) && !rename("cli-terminal.ndjson","cli-startup.ndjson"));
+  }else{
     master=posix_openpt(O_RDWR|O_NOCTTY|O_NONBLOCK);CHECK(master>=0 && !grantpt(master) && !unlockpt(master));
     slave=open(ptsname(master),O_RDWR|O_NOCTTY);CHECK(slave>=0);
     for(int i=0;i<3;++i){saved[i]=dup(i);CHECK(saved[i]>=0 && dup2(slave,i)==i);}CHECK(!close(slave));
   }
-  native_mode before[3]={0},after[3]={0};CHECK(!record("before",before) && !routing());
+  native_mode before[3]={0},after[3]={0};CHECK(!routing() && !record("before",before));
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
-  CHECK(!qaplet_create_m2(&b,&m,&r,NULL));qaplet_process_options o=QAPLET_PROCESS_OPTIONS_INIT;
+  qaplet_process_options o=QAPLET_PROCESS_OPTIONS_INIT;
   const char *args[12];unsigned n=0;int loader=strcmp(argv[4],"-")!=0;
   args[n++]=loader ? argv[4] : argv[2];if(loader)args[n++]=argv[2];
   if(!strcmp(argv[6],"budget")){args[n++]="--max-dispatches";args[n++]="600";}
-  args[n++]="run";args[n++]=argv[5];args[n++]="--";args[n++]=argv[3];args[n++]=argv[4];args[n++]=argv[6];
+  if(unicode){args[n++]="eval";args[n++]="--source";args[n++]="import('qaplet:stdio').then(async s=>{await s.stdin.releaseTerminal();await Promise.all([s.stdin.closed,s.stdout.closed,s.stderr.closed]);const input=s.acquireTerminal(0,{raw:true});input.joinTerminal(1,{vt:true});input.joinTerminal(2);let n=0;while(n<5)n+=(await input.read(5-n).promise).bytes.length;return 'A中🙂Z'})";}
+  else{args[n++]="run";args[n++]=argv[5];args[n++]="--";args[n++]=argv[3];args[n++]=argv[4];args[n++]=argv[6];}
   qaplet_string strings[12];for(unsigned i=0;i<n;++i)strings[i]=(qaplet_string){args[i],strlen(args[i])};
   o.path=strings[0];o.argv=strings;o.argc=n;for(int i=0;i<3;++i)o.stdio[i]=QAPLET_PROCESS_INHERIT;
   qaplet_process child=QAPLET_PROCESS_INIT;qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
-  CHECK(!qaplet_process_spawn(r,&o,&child,&status,NULL));
+  struct NtProcessInformation native={0};
+  if(IsWindows()){
+    CHECK(!native_console_spawn(args,n,&native));
+  }else{CHECK(!qaplet_create_m2(&b,&m,&r,NULL) && !qaplet_process_spawn(r,&o,&child,&status,NULL));}
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT;int sent=0;
   do{
-    CHECK(!qaplet_run_once(r,10,&d,NULL));
-    if(!IsWindows() && !sent && !access("text.ready",F_OK)){
-      const unsigned char text[]={65,228,184,173,90};CHECK(write(master,text,5)==5);sent=1;
+    if(IsWindows()){
+      uint32_t waited=WaitForSingleObject(native.hProcess,10);CHECK(waited==0 || waited==258);
+      if(!waited){CHECK(GetExitCodeProcess(native.hProcess,&status.native_exit_code));status.exited=status.reaped=1;CHECK(CloseHandle(native.hProcess));}
+    }else{CHECK(!qaplet_run_once(r,10,&d,NULL) && !qaplet_process_get_status(r,&child,&status,NULL));}
+    if(!sent){
+      native_mode mode={0};int ready;
+      if(IsWindows()){uint32_t output=0;CHECK(GetConsoleMode(console[0],&mode.mode) && GetConsoleMode(console[1],&output));ready=!(mode.mode&7) && (output&4);}
+      else{CHECK(!tcgetattr(0,&mode.term));ready=!(mode.term.c_lflag&(ECHO|ICANON|ISIG)) && (fcntl(0,F_GETFL)&O_NONBLOCK);}
+      if(ready){native_mode modified[3]={0};CHECK(!record("modified",modified));if(unicode && IsWindows())CHECK(SetConsoleOutputCP(437) && GetConsoleOutputCP()==437);FILE *f=fopen("text.ready","wb");CHECK(f && fputs("ready",f)>=0 && !fclose(f));
+        if(!IsWindows()){const unsigned char text[]={65,228,184,173,90};CHECK(write(master,text,5)==5);}sent=1;}
     }
-    CHECK(!qaplet_process_get_status(r,&child,&status,NULL));
   }while(!status.exited || !status.reaped || status.helper_active);
   CHECK(!record("restored",after));
   for(int i=0;i<3;++i){
@@ -107,13 +150,16 @@ static int terminal(int argc,char **argv){
   }
   FILE *observed=fopen("cli-child-status.json","wb");CHECK(observed);
   fprintf(observed,"{\"exit_code\":%u,\"signal\":%u,\"exited\":%u,\"reaped\":%u,\"helper_active\":%u}\n",status.native_exit_code,status.native_signal,status.exited,status.reaped,status.helper_active);CHECK(!fclose(observed));
-  CHECK(!dispose(r));
-  if(!IsWindows()){
+  if(IsWindows()){
+    if(unicode){unsigned measured=GetConsoleOutputCP();CHECK(measured==437 && SetConsoleOutputCP(original_cp));FILE *f=fopen("cli-codepage.json","wb");CHECK(f);fprintf(f,"{\"before\":%u,\"requested\":437,\"after\":%u,\"restored\":%u}\n",original_cp,measured,GetConsoleOutputCP());CHECK(!fclose(f));}
+    for(int i=0;i<3;++i)CHECK(SetStdHandle(-10-i,original[i]));CHECK(CloseHandle(console[0]) && CloseHandle(console[1]));
+  }else{
+    CHECK(!dispose(r));
     FILE *raw=fopen("cli-pty.stdout.log","wb");CHECK(raw);char data[4096];ssize_t got;
     while((got=read(master,data,sizeof(data)))>0)CHECK(fwrite(data,1,got,raw)==got);CHECK(!fclose(raw));
     for(int i=0;i<3;++i)CHECK(dup2(saved[i],i)==i && !close(saved[i]));CHECK(!close(master));
   }
-  CHECK(status.native_exit_code==(!strcmp(argv[6],"normal") ? 0 : 1) && !status.native_signal);
+  CHECK(status.native_exit_code==((!strcmp(argv[6],"normal") || unicode) ? 0 : 1) && !status.native_signal);
   FILE *f=fopen("cli-terminal-result.txt","wb");CHECK(f && fputs("CLI terminal: native modes/flags restored; actual child reaped; owner cleanup complete\n",f)>=0 && !fclose(f));
   return 0;
 }
