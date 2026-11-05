@@ -30,6 +30,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
+    ("tests/native/sdk_mixed_faults.c", "mixed-faults.c", None, None),
     ("tests/native/sdk_tty.c", "host-tty.c", "tty-host.o", "tty-host-compile"),
     ("tests/native/sdk_tty_faults.c", "tty-faults.c", None, None),
     ("tests/native/sdk_stdio_faults.c", "stdio-faults.c", None, None),
@@ -72,6 +74,7 @@ RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "te
 RECIPE += ("src/cli.c", "tests/native/sdk_process_winchild.c", "scripts/m2_process_pe.py", "scripts/sdk_matrix.py", "scripts/sdk_guest.py")
 RECIPE += ("examples/application.c", "examples/SDK-README.md")
 RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
+RECIPE += ("scripts/sdk_mixed.py",)
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
 EXAMPLE_CASES = (
@@ -91,6 +94,9 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-nonreturning", ["--m2-mixed-nonreturning", "{self}", "{launcher}", "{modules}/../process-child.exe"], "M2 mixed nonreturning: work remains physically held at process exit; CLOSED engine zero; repeated zero/finite quiesce pending and destroy BUSY; child reaped, stdio/TTY restored and other IO retired; no native cleanup success claimed: pass\n"),
     ("m2-tty-validation", ["--m2-tty-validation"], "M2 TTY validation: strict version/size/unknown flags/reserved/tail; wrong owner and invalid identity; no accepted resource; old factory remains unsupported: pass\n"),
     ("m2-process-js-cycles", ["--m2-process-js-cycles", "{self}", "{launcher}"], "M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass\n"),
     ("m2-process-js-liveness", ["--m2-process-js-liveness", "{self}", "{launcher}"], "M2 process JS liveness: unref natural idle; ref restores keepalive; discarded Process survives bounded cyclic GC pressure; explicit owner drive observes natural exit and closure: pass\n"),
@@ -348,16 +354,19 @@ def package_consume(args, report, directory):
     helpers = prepare_portable_helpers(args, report, directory, tree)
     report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
                   package=producer["package"])
-    if args.operation == "tty-consume":
-        from sdk_tty import compile_consumers, run_supplied
-        compile_consumers(args,report,directory,tree,helpers,external / "sdk",external / "tty-build",output)
+    if args.operation in ("tty-consume", "mixed-consume"):
+        if args.operation == "mixed-consume":
+            from sdk_mixed import compile_consumers, run_supplied
+        else:
+            from sdk_tty import compile_consumers, run_supplied
+        compile_consumers(args,report,directory,tree,helpers,external / "sdk",external / args.operation,output)
         measured_host(args,report,directory)
         loader=select_loader(args,report)
         run_supplied(args,report,directory,output,loader)
         check_package(producer,external,check_archive=False)
         verify_inputs(args,report,directory,stage="after")
         recheck(report["native_toolchain"],original,component("cosmocc",purpose=consumption_purpose("build",args.controlled_probe)))
-        report.update(status="pass" if all(case["status"]=="pass" for case in report["cases"]) else "fail",reason="Outside-source sealed SDK public TTY consumers and real native terminal/fault fixtures")
+        report.update(status="pass" if all(case["status"]=="pass" for case in report["cases"]) else "fail",reason="Outside-source sealed SDK public " + args.operation + " consumers and real native/fault fixtures")
         return
     if args.operation == "fault-consume":
         compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
@@ -1012,7 +1021,7 @@ def consume(args, report, directory):
 def main():
     cache = Path(workspace(ROOT)["cache_root"])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "tty-consume", "matrix"))
+    parser.add_argument("operation", choices=("build", "run", "package-consume", "fault-consume", "tty-consume", "mixed-consume", "matrix"))
     parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
     parser.add_argument("--target-plan", type=Path, help="Explicit CI native target plan; never narrows Full")
     parser.add_argument("--input-report", type=Path, action="append", default=[])
@@ -1042,7 +1051,7 @@ def main():
     directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
     if args.operation != "build":
         try:
-            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume", "tty-consume") else [])],
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "fault-consume", "tty-consume", "mixed-consume") else [])],
                 [args.build_report, args.loader_manifest, *args.input_report],
                 [*([args.artifact.resolve().parent] if args.artifact else []),
                  *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
@@ -1060,7 +1069,7 @@ def main():
             from sdk_matrix import matrix
             matrix(args, report, directory)
         else:
-            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume}[args.operation](args, report, directory)
+            {"build": build, "run": consume, "package-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume}[args.operation](args, report, directory)
     except BuildError as error:
         report.update(status=error.status, reason=str(error))
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
