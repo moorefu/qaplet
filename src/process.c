@@ -133,7 +133,19 @@ qaplet_code qaplet_process_init(qaplet_runtime *r) {
   pool->environment=qaplet_native_alloc(r,bytes);
   if (!pool->environment) return QAPLET_MEMORY_LIMIT;
   char *cursor=(char *)(pool->environment+count+1);
-  for (size_t i=0;i<count;++i) pool->environment[i]=copy_string(&cursor,(qaplet_string){environ[i],strlen(environ[i])});
+  for (size_t i=0;i<count;++i) {
+    size_t length=strlen(environ[i]);
+    char *entry=pool->environment[i]=copy_string(&cursor,(qaplet_string){environ[i],length});
+    /* The fixed CRT presents the inherited Windows SYSTEMROOT as /C/Windows.
+     * Passing that logical path verbatim to CreateProcess breaks native
+     * provider loading (including the child's first Winsock socket). Adapt
+     * this existing OS path in the factory's immutable copy only. Explicit
+     * replacement environments, other values and missing keys stay exact;
+     * reading the current native environment would lose Host setenv changes. */
+    if (IsWindows() && length>=14 && !strncasecmp(entry,"SYSTEMROOT=",11) &&
+        entry[11]=='/' && ((entry[12]>='a' && entry[12]<='z') || (entry[12]>='A' && entry[12]<='Z')) && entry[13]=='/')
+      mungentpath(entry+11);
+  }
   pool->environment[count]=NULL; r->process_snapshot.environment_bytes=bytes;
   return QAPLET_OK;
 }
