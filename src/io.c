@@ -588,6 +588,6 @@ qaplet_code qaplet_get_io_snapshot(qaplet_runtime *r,qaplet_io_snapshot *out,qap
   qaplet_code code=qaplet_check_diagnostic(d);if(!code)code=qaplet_check_structure(out,sizeof(*out));if(!code && !r)code=QAPLET_INVALID_ARGUMENT;if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;
-  else {qaplet_io_snapshot value=QAPLET_IO_SNAPSHOT_INIT;if(r->io_pool)value=r->io_pool->snapshot;value.shared_operations=r->operations_current;value.shared_operations_peak=r->operations_peak;value.shared_data_bytes=r->operation_data_current;value.shared_data_bytes_peak=r->operation_data_peak;memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
+  else {qaplet_io_snapshot value=QAPLET_IO_SNAPSHOT_INIT;if(r->io_pool)value=r->io_pool->snapshot;value.pending_handoffs+=r->io_js_control_handoffs;value.shared_operations=r->operations_current;value.shared_operations_peak=r->operations_peak;value.shared_data_bytes=r->operation_data_current;value.shared_data_bytes_peak=r->operation_data_peak;memcpy((char *)out+8,(char *)&value+8,sizeof(value)-8);}
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }

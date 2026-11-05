@@ -543,6 +543,9 @@ typedef struct {
   uint32_t start_error_domain;
   int32_t start_error;
 } qaplet_io_snapshot;
+/* pending_handoffs includes owner-observed JS endpoint-close completions until
+ * their complete jobs checkpoint. Those reuse each bounded endpoint wrapper's
+ * control record; they allocate no new I/O operation or data reservation. */
 #define QAPLET_IO_ENDPOINT_INIT {sizeof(qaplet_io_endpoint),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_OPERATION_INIT {sizeof(qaplet_io_operation),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_STATUS_INIT {sizeof(qaplet_io_status),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0}

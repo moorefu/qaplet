@@ -35,7 +35,7 @@ struct qaplet_runtime {
   int (*process_js_deliver)(qaplet_runtime *, const qaplet_process *);
   int (*io_js_deliver)(qaplet_runtime *, const qaplet_io_operation *);
   void (*io_js_closed)(qaplet_runtime *, const qaplet_io_endpoint *);
-  uint64_t io_js_control_ready,io_js_control_refs;
+  uint64_t io_js_control_ready,io_js_control_refs,io_js_control_handoffs;
   int (*io_js_control_deliver)(qaplet_runtime *);
   qaplet_notify_function notify_function;
   void *notify_userdata;
