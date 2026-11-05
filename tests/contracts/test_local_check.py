@@ -71,6 +71,18 @@ class LocalCheckTests(unittest.TestCase):
             self.assertEqual(value['selection']['host_cases'], [])
             self.assertIn('test_ci*.py', value['selection']['ci_patterns'])
 
+    def test_all_and_tty_plans_include_implemented_stdio_without_tty_claim(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for profile in ('all', 'tty'):
+                with self.subTest(profile=profile):
+                    report = Path(temp) / (profile + '.json')
+                    result = self.cli('--profile', profile, '--plan', '--output-dir', temp, '--report', report)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    value = json.loads(report.read_text(encoding='utf-8'))
+                    self.assertEqual(value['execution_status'], 'not_run')
+                    self.assertIn('m2-stdio-js-bytes', value['selection']['host_cases'])
+                    self.assertIn('m2-stdio-backpressure', value['selection']['host_cases'])
+
     def test_invalid_profile_and_partial_supplier_are_refused(self):
         for args in [('--profile', 'unknown'), ('--supplier-report', 'old.json')]:
             with self.subTest(args=args):

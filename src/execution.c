@@ -214,6 +214,7 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
   }
   if (!JS_IsJobPending(runtime->engine)) {
     qaplet_work_checkpoint(runtime);
+    qaplet_js_io_checkpoint(runtime);
     if (runtime->rejections && !runtime->execution_code) {
       qaplet_capture_exception(runtime, runtime->rejections->reason);
       runtime->execution_code = qaplet_module_exception_code(runtime, runtime->rejections->reason);
@@ -263,7 +264,7 @@ qaplet_code qaplet_pump(qaplet_runtime *runtime, qaplet_progress *progress,
   if (code) return qaplet_report(diagnostic, code);
   qaplet_driver_set(runtime, 1);
   code = qaplet_pump_ready(runtime, progress, diagnostic, 0);
-  if (code && runtime->m2_enabled) qaplet_process_shutdown(runtime);
+  if (code && runtime->m2_enabled && qaplet_get_lifecycle(runtime)!=QAPLET_OPEN) qaplet_process_shutdown(runtime);
   qaplet_driver_set(runtime, 0);
   return code;
 }
@@ -309,8 +310,9 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
       if (automatic == 2 && !runtime->execution_active) break;
     }
     qaplet_process_collect(runtime);
+    if(runtime->m2_enabled)qaplet_js_io_poll(runtime);
     pthread_mutex_lock(&runtime->mutex);
-    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_work_referenced_locked(runtime) || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
+    int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_work_referenced_locked(runtime) || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime) || qaplet_io_referenced_locked(runtime);
     int work_ready = timer_eligible && qaplet_work_ready_locked(runtime);
     int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
     int io_ready = timer_eligible && qaplet_io_ready_locked(runtime);

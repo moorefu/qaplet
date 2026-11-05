@@ -120,6 +120,10 @@ qaplet_code qaplet_owner(qaplet_runtime *runtime) {
   if (runtime->driver_active || runtime->snapshot.phase == QAPLET_PHASE_RUNNING) return QAPLET_BUSY;
   return QAPLET_OK;
 }
+qaplet_code qaplet_resource_owner(qaplet_runtime *runtime) {
+  if (runtime && runtime->bridge_active && !qaplet_in_notify && pthread_equal(runtime->owner,pthread_self())) return QAPLET_OK;
+  return qaplet_owner(runtime);
+}
 
 qaplet_lifecycle qaplet_get_lifecycle(qaplet_runtime *runtime) {
   pthread_mutex_lock(&runtime->mutex);
@@ -146,7 +150,7 @@ qaplet_code qaplet_query_abi(qaplet_abi *output) {
       QAPLET_CAP_SCALAR_RESULT | QAPLET_CAP_OWNER_THREAD | QAPLET_CAP_POD_SNAPSHOT |
       QAPLET_CAP_RESOURCE_BASE | QAPLET_CAP_COPIED_VALUES | QAPLET_CAP_PROMISE_JOBS |
       QAPLET_CAP_FILE_MODULES | QAPLET_CAP_EXECUTION_BUDGETS | QAPLET_CAP_MODULE_POLICY | QAPLET_CAP_HOST_MODULES |
-      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
+      QAPLET_CAP_POD_EVENTS | QAPLET_CAP_RUNTIME_SNAPSHOT | QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO | QAPLET_CAP_STDIO | QAPLET_CAP_RESOURCE_LIMITS | QAPLET_CAP_COOPERATIVE_STOP;
   return code;
 }
 

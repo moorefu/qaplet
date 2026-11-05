@@ -403,7 +403,7 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   qaplet_query_abi(&abi);
   pthread_mutex_lock(&runtime->mutex);
   value.capabilities = runtime->m2_enabled ? abi.capabilities : abi.capabilities &
-    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO);
+    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO | QAPLET_CAP_STDIO);
   value.lifecycle = runtime->snapshot.lifecycle;
   value.phase = runtime->snapshot.phase;
   value.termination_reason = runtime->snapshot.termination_reason;
@@ -482,7 +482,7 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
   for (;;) {
     code = qaplet_pump_ready(runtime, &progress, diagnostic, entry_only ? 2 : continuous);
     progressed |= progress.progressed;
-    if (code) { qaplet_process_shutdown(runtime); reason = code == QAPLET_EXECUTION_STOPPED ? QAPLET_DRIVE_STOPPED : QAPLET_DRIVE_ERROR; break; }
+    if (code) { if(qaplet_get_lifecycle(runtime)!=QAPLET_OPEN)qaplet_process_shutdown(runtime); reason = code == QAPLET_EXECUTION_STOPPED ? QAPLET_DRIVE_STOPPED : QAPLET_DRIVE_ERROR; break; }
     if (entry_only && progress.phase == QAPLET_PHASE_DONE) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (!continuous && progress.progressed) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (JS_IsJobPending(runtime->engine) || qaplet_events_pending(runtime)) continue;
@@ -501,11 +501,11 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
     if (runtime->snapshot.termination_reason || runtime->snapshot.queue_depth) {
       pthread_mutex_unlock(&runtime->mutex); continue;
     }
-    if (!runtime->keepalive_tokens && !qaplet_work_referenced_locked(runtime) && !qaplet_process_referenced_locked(runtime) && !qaplet_timers_ref_locked(runtime)) {
+    if (!runtime->keepalive_tokens && !qaplet_work_referenced_locked(runtime) && !qaplet_process_referenced_locked(runtime) && !qaplet_timers_ref_locked(runtime) && !qaplet_io_referenced_locked(runtime)) {
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
-    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime) || qaplet_io_ready_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
+    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime) || qaplet_io_ready_locked(runtime) || qaplet_io_issuable_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
     if (!continuous && !remaining) {
       reason = QAPLET_DRIVE_WAIT_TIMEOUT;
       pthread_mutex_unlock(&runtime->mutex); break;

@@ -187,7 +187,7 @@ static qaplet_module *resolve(qaplet_runtime *runtime, const char *base, const c
   qaplet_code code = QAPLET_MODULE_RESOLVE;
   /* Registered host and declared builtin names are not file URLs. */
   if (!root && (!strncmp(name, "host:", 5) || !strcmp(name, "qaplet:events") || !strcmp(name, "qaplet:runtime") ||
-      (runtime->m2_enabled && (!strcmp(name, "qaplet:timers") || !strcmp(name, "qaplet:work"))))) {
+      (runtime->m2_enabled && (!strcmp(name, "qaplet:timers") || !strcmp(name, "qaplet:work") || !strcmp(name,"qaplet:stdio"))))) {
     qaplet_module *entry = find_module(runtime, name);
     if (entry) return entry;
     module_throw(runtime, QAPLET_MODULE_RESOLVE);
@@ -303,7 +303,7 @@ static int compile_module(qaplet_runtime *runtime, qaplet_module *entry) {
         qaplet_events_load(runtime) : !strcmp(entry->url, "qaplet:runtime") ?
         qaplet_runtime_load(runtime) : !strcmp(entry->url, "qaplet:timers") ?
         qaplet_timers_load(runtime) : !strcmp(entry->url, "qaplet:work") ?
-        qaplet_work_load(runtime) : qaplet_host_load(runtime, entry->url);
+        qaplet_work_load(runtime) : !strcmp(entry->url,"qaplet:stdio") ? qaplet_stdio_load(runtime) : qaplet_host_load(runtime, entry->url);
     if (!module) goto failure;
     entry->compiled = JS_DupValue(runtime->context, JS_MKPTR(JS_TAG_MODULE, module));
     return 0;
@@ -446,7 +446,8 @@ qaplet_code qaplet_modules_init(qaplet_runtime *runtime, const qaplet_config *co
   qaplet_code code = qaplet_modules_register_host(runtime, "qaplet:events");
   if (!code) code = qaplet_modules_register_host(runtime, "qaplet:runtime");
   if (!code && runtime->m2_enabled) code=qaplet_modules_register_host(runtime, "qaplet:timers");
-  return !code && runtime->m2_enabled ? qaplet_modules_register_host(runtime, "qaplet:work") : code;
+  if(!code && runtime->m2_enabled)code=qaplet_modules_register_host(runtime,"qaplet:work");
+  return !code && runtime->m2_enabled ? qaplet_modules_register_host(runtime, "qaplet:stdio") : code;
 }
 
 static int initialize_runtime(JSContext *context, JSModuleDef *module) {

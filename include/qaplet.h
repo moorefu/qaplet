@@ -57,6 +57,7 @@ enum {
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_PROCESS = 1u << 22,
   QAPLET_CAP_PROCESS_IO = 1u << 23,
+  QAPLET_CAP_STDIO = 1u << 24,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -508,6 +509,12 @@ typedef struct {
   uint32_t struct_size, abi_version;
   uint64_t runtime_id, slot, generation;
 } qaplet_io_operation;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint32_t writing, ended, referenced, physical_pending;
+  uint64_t pending_handoffs;
+} qaplet_io_endpoint_status;
+#define QAPLET_IO_ENDPOINT_STATUS_INIT {sizeof(qaplet_io_endpoint_status),QAPLET_ABI_VERSION,0,0,0,0,0}
 typedef enum { QAPLET_IO_PENDING, QAPLET_IO_SUCCEEDED, QAPLET_IO_FAILED, QAPLET_IO_CANCELLED } qaplet_io_state;
 typedef struct {
   uint32_t struct_size, abi_version;
@@ -536,6 +543,9 @@ typedef struct {
   uint32_t start_error_domain;
   int32_t start_error;
 } qaplet_io_snapshot;
+/* pending_handoffs includes owner-observed JS endpoint-close completions until
+ * their complete jobs checkpoint. Those reuse each bounded endpoint wrapper's
+ * control record; they allocate no new I/O operation or data reservation. */
 #define QAPLET_IO_ENDPOINT_INIT {sizeof(qaplet_io_endpoint),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_OPERATION_INIT {sizeof(qaplet_io_operation),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_STATUS_INIT {sizeof(qaplet_io_status),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0}
@@ -546,6 +556,12 @@ qaplet_code qaplet_io_read(qaplet_runtime *,const qaplet_io_endpoint *,size_t,qa
 qaplet_code qaplet_io_write(qaplet_runtime *,const qaplet_io_endpoint *,const void *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_io_finish(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
 qaplet_code qaplet_io_close(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
+/* Idle endpoints do not keep the loop alive. A referenced endpoint retains
+ * accepted operations until the owner completion/jobs checkpoint. Process
+ * endpoints initially rely on their process reference; stdio defaults to ref. */
+qaplet_code qaplet_io_set_ref(qaplet_runtime *,const qaplet_io_endpoint *,uint32_t,qaplet_diagnostic *);
+/* Any-thread POD query; ended tokens stay queryable until resource detach. */
+qaplet_code qaplet_get_io_endpoint_status(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_io_endpoint_status *,qaplet_diagnostic *);
 /* Any thread, no JS. Cancellation wins once under the native publication lock;
  * repeated retained cancellation is OK, a published result ALREADY_COMPLETED.
  * Queries copy POD only. Like every SDK entry, HostNotify reentry is BUSY.
@@ -559,6 +575,40 @@ qaplet_code qaplet_get_io_status(qaplet_runtime *,const qaplet_io_operation *,qa
 qaplet_code qaplet_io_copy_result(qaplet_runtime *,const qaplet_io_operation *,qaplet_io_result *,qaplet_diagnostic *);
 qaplet_code qaplet_io_release(qaplet_runtime *,const qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_diagnostic *);
+
+/* Explicit Host standard streams (0 stdin, 1 stdout, 2 stderr), M2 only.
+ * inspect classifies the real current fd / Win32 GetStdHandle independently
+ * of attach support. Creation never inspects, duplicates or changes stdio.
+ * attach duplicates a supported endpoint; SDK close/EOF never closes the Host
+ * original. dup/DuplicateHandle share flags/modes/offset: Host must coordinate
+ * replacement, concurrent I/O and mode changes through native quiescence.
+ * SDK never changes shared flags. Blocking pipes, unsupported devices and
+ * TTY/Console without the later explicit terminal capability are UNSUPPORTED.
+ * POSIX pipes must already be O_NONBLOCK. Windows pipes require a verified
+ * overlapped byte mode (and a queryable write quota). Regular synchronous files use bounded native helpers;
+ * logical cancellation cannot preempt a filesystem call. Buffers, duplicated
+ * handle, helper and quotas remain retained until actual exit and join.
+ * get returns only an explicitly attached stream; JS cannot implicitly attach.
+ * detach closes the SDK endpoint, invalidates its token, and starts retirement.
+ * It returns BUSY without side effects while a JS wrapper still owns its close
+ * or jobs handoff: close the endpoint and drive that completion before retry.
+ * All mutations are owner-only outside drives/callbacks; inspect is owner-only.
+ * No native handle is exposed. info errors describe classification/start errors.
+ */
+typedef enum { QAPLET_STDIO_INVALID, QAPLET_STDIO_PIPE, QAPLET_STDIO_FILE,
+  QAPLET_STDIO_TTY, QAPLET_STDIO_CONSOLE, QAPLET_STDIO_OTHER } qaplet_stdio_kind;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_stdio_kind kind;
+  uint32_t supported, attached, error_domain;
+  int32_t error;
+  uint32_t reserved;
+} qaplet_stdio_info;
+#define QAPLET_STDIO_INFO_INIT {sizeof(qaplet_stdio_info),QAPLET_ABI_VERSION,QAPLET_STDIO_INVALID,0,0,0,0,0}
+qaplet_code qaplet_stdio_inspect(qaplet_runtime *,uint32_t,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_attach(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_get(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_detach(qaplet_runtime *,uint32_t,qaplet_diagnostic *);
 
 /* Named native work, M2 only. Declarations and names are copied atomically.
  * Zero byte/concurrency fields inherit the finite instance defaults. No
