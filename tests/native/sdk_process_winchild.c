@@ -14,6 +14,7 @@ API(H,GetStdHandle,(U32));
 API(int,ReadFile,(H,void *,U32,U32 *,void *));
 API(int,WriteFile,(H,const void *,U32,U32 *,void *));
 API(void,ExitProcess,(U32));
+API(int,CloseHandle,(H));
 struct FileInfo { U32 attributes,times[6],volume,size_high,size_low,links,index_high,index_low; };
 API(int,GetFileInformationByHandle,(H,struct FileInfo *));
 static int equal(const U16 *a,const U16 *b) { while (*a && *a==*b) { ++a;++b; } return *a==*b; }
@@ -22,6 +23,22 @@ void entry(void) {
   U16 **argv=CommandLineToArgvW(GetCommandLineW(),&argc);
   if (!argv || argc<2) ExitProcess(98);
   U32 amount=0; unsigned char byte;
+  if(equal(argv[1],u"--eof-before-exit")){CloseHandle(GetStdHandle(-11u));CloseHandle(GetStdHandle(-12u));while(ReadFile(GetStdHandle(-10u),&byte,1,&amount,0) && amount){}ExitProcess(37);}
+  if(equal(argv[1],u"--cancel-output")){const unsigned char data[]={'R',0,1,255,'T','\n'};WriteFile(GetStdHandle(-11u),data,6,&amount,0);while(ReadFile(GetStdHandle(-10u),&byte,1,&amount,0) && amount){}ExitProcess(37);}
+  if(equal(argv[1],u"--flood")){
+    unsigned char data[4096];for(U32 i=0;i<4096;++i)data[i]=i%256;
+    if(!WriteFile(GetStdHandle(-12u),"R",1,&amount,0) || amount!=1)ExitProcess(98);
+    for(U32 block=0;block<256;++block){if(!WriteFile(GetStdHandle(-11u),data,4096,&amount,0) || amount!=4096)ExitProcess(98);}
+    ExitProcess(WriteFile(GetStdHandle(-12u),"D",1,&amount,0) && amount==1 ? 37 : 98);
+  }
+  if(equal(argv[1],u"--closed-input")){int ok=CloseHandle(GetStdHandle(-10u)) && WriteFile(GetStdHandle(-11u),"R",1,&amount,0) && amount==1;ExitProcess(ok ? 37 : 98);}
+  if(equal(argv[1],u"--partial-input")){
+    unsigned char data[4096];U32 total=0,n=0;
+    WriteFile(GetStdHandle(-11u),"R",1,&n,0);
+    while(total<4096){if(!ReadFile(GetStdHandle(-10u),data+total,4096-total,&n,0) || !n)ExitProcess(98);total+=n;}
+    for(int i=0;i<4096;++i)if(data[i]!=0x5a)ExitProcess(98);
+    ExitProcess(CloseHandle(GetStdHandle(-10u)) ? 37 : 98);
+  }
   if (equal(argv[1],u"--inherit") || equal(argv[1],u"--pipe")) {
     if(equal(argv[1],u"--inherit")) {
     H identities[4]={0}; int field=0;

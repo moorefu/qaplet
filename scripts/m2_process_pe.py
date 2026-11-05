@@ -8,7 +8,7 @@ BASE = 0x140000000
 IMPORTS = {
     "KERNEL32.dll": ["GetCommandLineW", "GetEnvironmentStringsW", "FreeEnvironmentStringsW",
         "GetEnvironmentVariableW", "GetCurrentDirectoryW", "GetStdHandle", "ReadFile", "WriteFile",
-        "GetHandleInformation", "GetFileInformationByHandle", "LocalFree", "ExitProcess", "Sleep"],
+        "GetHandleInformation", "GetFileInformationByHandle", "LocalFree", "ExitProcess", "Sleep", "CloseHandle"],
     "SHELL32.dll": ["CommandLineToArgvW"],
 }
 

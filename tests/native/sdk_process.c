@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -117,6 +118,10 @@ static int pipe_bytes(void) {
   CHECK(qaplet_io_release(r,&in,NULL)==QAPLET_OK && qaplet_get_io_status(r,&in,&pending,NULL)==QAPLET_INVALID_HANDLE);
   result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=output;result.capacity=sizeof(output);
   CHECK(!io_result(r,&out,&result) && !result.code && result.length==5 && !result.eof && !memcmp(output,"I\0\xffN\n",5));
+  unsigned char short_bytes[4]={0xaa,0xaa,0xaa,0xaa};qaplet_io_result short_copy=QAPLET_IO_RESULT_INIT;short_copy.buffer=short_bytes;short_copy.capacity=sizeof(short_bytes);
+  CHECK(qaplet_io_copy_result(r,&out,&short_copy,NULL)==QAPLET_BUFFER_TOO_SMALL && short_copy.length==5);
+  for(unsigned i=0;i<sizeof(short_bytes);++i)CHECK(short_bytes[i]==0xaa);
+  CHECK(qaplet_io_copy_result(r,&out,&result,NULL)==QAPLET_OK && !memcmp(output,"I\0\xffN\n",5));
   CHECK(qaplet_io_release(r,&out,NULL)==QAPLET_OK);
   result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=errors;result.capacity=sizeof(errors);
   CHECK(!io_result(r,&err,&result) && !result.code && result.length==4 && !result.eof && !memcmp(errors,"E\0\xfeR",4));
@@ -138,6 +143,203 @@ static int pipe_bytes(void) {
   CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
   CHECK(!finish(r));
   puts("M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass");return 0;
+}
+static volatile sig_atomic_t pipe_signals;
+static void pipe_signal(int number){if(number==SIGPIPE)++pipe_signals;}
+static int pipe_write_failure(void) {
+  for(int blocked=0;blocked<(IsWindows() ? 1 : 2);++blocked){
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_process_options options;prepare(&options,"--closed-input");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+  qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(spawn_ok(r,&options,&p,&s,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep[3]={QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT};
+  for(int i=0;i<3;++i)CHECK(qaplet_process_get_stdio(r,&p,i,&ep[i],NULL)==QAPLET_OK);
+  qaplet_io_operation ready=QAPLET_IO_OPERATION_INIT,write=QAPLET_IO_OPERATION_INIT;
+  CHECK(qaplet_io_read(r,&ep[1],1,&ready,NULL)==QAPLET_OK);unsigned char byte=0;
+  qaplet_io_result result=QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+  CHECK(!io_result(r,&ready,&result) && result.length==1 && byte=='R');CHECK(qaplet_io_release(r,&ready,NULL)==QAPLET_OK);
+  void (*previous)(int)=SIG_DFL;if(!IsWindows()){pipe_signals=0;previous=signal(SIGPIPE,pipe_signal);CHECK(previous!=SIG_ERR);}
+  sigset_t original_mask,expected_mask,after_mask,pending_mask,pipe_mask;sigemptyset(&pipe_mask);sigaddset(&pipe_mask,SIGPIPE);
+  if(!IsWindows()){
+    CHECK(!pthread_sigmask(SIG_SETMASK,NULL,&original_mask));
+    if(blocked){CHECK(!pthread_sigmask(SIG_BLOCK,&pipe_mask,NULL) && !raise(SIGPIPE));CHECK(!sigpending(&pending_mask) && sigismember(&pending_mask,SIGPIPE));}
+    CHECK(!pthread_sigmask(SIG_SETMASK,NULL,&expected_mask));
+  }
+  unsigned char bytes[65536];memset(bytes,0x5a,sizeof(bytes));
+  CHECK(qaplet_io_write(r,&ep[0],bytes,sizeof(bytes),&write,NULL)==QAPLET_OK);memset(bytes,0,sizeof(bytes));
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;
+  CHECK(!io_result(r,&write,&result));
+  CHECK(result.state==QAPLET_IO_FAILED && result.code==QAPLET_IO_ERROR && result.error>0 && !result.length);
+  CHECK(result.error_domain==(IsWindows() ? QAPLET_ERROR_DOMAIN_WIN32 : QAPLET_ERROR_DOMAIN_ERRNO));
+  if(!IsWindows()){
+    struct sigaction current;CHECK(!sigaction(SIGPIPE,NULL,&current) && current.sa_handler==pipe_signal && !pipe_signals);
+    CHECK(!pthread_sigmask(SIG_SETMASK,NULL,&after_mask));
+    for(int signal=1;signal<NSIG;++signal)CHECK(sigismember(&expected_mask,signal)==sigismember(&after_mask,signal));
+    if(blocked){int got=0;CHECK(!sigpending(&pending_mask) && sigismember(&pending_mask,SIGPIPE) && !sigwait(&pipe_mask,&got) && got==SIGPIPE);}
+    CHECK(!pthread_sigmask(SIG_SETMASK,&original_mask,NULL) && signal(SIGPIPE,previous)!=SIG_ERR);
+  }
+  qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
+  CHECK(qaplet_io_release(r,&write,NULL)==QAPLET_OK);
+  for(int i=0;i<3;++i)CHECK(qaplet_io_close(r,&ep[i],NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_get_process_status(r,&p,&s,NULL)==QAPLET_OK && s.reaped && s.native_exit_code==37);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && !finish(r));
+  }
+  puts("M2 process pipe write failure: child closes stdin before ready; zero accepted bytes; Host SIGPIPE handler/mask/pending preserved; ordinary native error keeps Runtime OPEN; cleanup: pass");return 0;
+}
+typedef struct {
+  qaplet_runtime *runtime;qaplet_io_endpoint endpoint;qaplet_io_operation operation;
+  _Atomic int error,notifications;
+} io_observer;
+static void io_notify(void *opaque){
+  io_observer *o=opaque;atomic_fetch_add(&o->notifications,1);
+  qaplet_io_status status=QAPLET_IO_STATUS_INIT;qaplet_io_result result=QAPLET_IO_RESULT_INIT;qaplet_io_snapshot snapshot=QAPLET_IO_SNAPSHOT_INIT;
+  qaplet_io_operation token=QAPLET_IO_OPERATION_INIT;
+  if(qaplet_get_io_status(o->runtime,&o->operation,&status,NULL)!=QAPLET_BUSY || qaplet_io_cancel(o->runtime,&o->operation,NULL)!=QAPLET_BUSY ||
+     qaplet_io_read(o->runtime,&o->endpoint,1,&token,NULL)!=QAPLET_BUSY || qaplet_io_finish(o->runtime,&o->endpoint,NULL)!=QAPLET_BUSY ||
+     qaplet_io_close(o->runtime,&o->endpoint,NULL)!=QAPLET_BUSY || qaplet_io_copy_result(o->runtime,&o->operation,&result,NULL)!=QAPLET_BUSY ||
+     qaplet_io_release(o->runtime,&o->operation,NULL)!=QAPLET_BUSY || qaplet_get_io_snapshot(o->runtime,&snapshot,NULL)!=QAPLET_BUSY)atomic_store(&o->error,1);
+}
+static void *io_foreign(void *opaque){
+  io_observer *o=opaque;qaplet_io_operation token=QAPLET_IO_OPERATION_INIT;qaplet_io_result result=QAPLET_IO_RESULT_INIT;
+  qaplet_io_status status=QAPLET_IO_STATUS_INIT;
+  if(qaplet_io_read(o->runtime,&o->endpoint,1,&token,NULL)!=QAPLET_WRONG_THREAD ||
+     qaplet_io_write(o->runtime,&o->endpoint,"X",1,&token,NULL)!=QAPLET_WRONG_THREAD ||
+     qaplet_io_finish(o->runtime,&o->endpoint,NULL)!=QAPLET_WRONG_THREAD || qaplet_io_close(o->runtime,&o->endpoint,NULL)!=QAPLET_WRONG_THREAD ||
+     qaplet_io_copy_result(o->runtime,&o->operation,&result,NULL)!=QAPLET_WRONG_THREAD || qaplet_io_release(o->runtime,&o->operation,NULL)!=QAPLET_WRONG_THREAD ||
+     qaplet_io_cancel(o->runtime,&o->operation,NULL)!=QAPLET_OK || qaplet_io_cancel(o->runtime,&o->operation,NULL)!=QAPLET_OK ||
+     qaplet_get_io_status(o->runtime,&o->operation,&status,NULL)!=QAPLET_OK || status.state!=QAPLET_IO_CANCELLED)atomic_store(&o->error,1);
+  return NULL;
+}
+static int pipe_control(void){
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.processes=1;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  io_observer observer={.runtime=r};qaplet_host_notify hook=QAPLET_HOST_NOTIFY_INIT;hook.function=io_notify;hook.userdata=&observer;
+  CHECK(qaplet_set_host_notify(r,&hook,NULL)==QAPLET_OK);
+  qaplet_process_options options;prepare(&options,"--hang");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+  qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;CHECK(spawn_ok(r,&options,&p,&s,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep[3]={QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT};
+  for(int i=0;i<3;++i)CHECK(qaplet_process_get_stdio(r,&p,i,&ep[i],NULL)==QAPLET_OK);
+  qaplet_io_operation read=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_read(r,&ep[1],1,&read,NULL)==QAPLET_OK);
+  unsigned char byte=0;qaplet_io_result result=QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+  CHECK(!io_result(r,&read,&result) && result.length==1 && byte=='R' && qaplet_io_release(r,&read,NULL)==QAPLET_OK);
+  CHECK(qaplet_io_read(r,&ep[1],1,&read,NULL)==QAPLET_OK);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+  observer.endpoint=ep[1];observer.operation=read;
+  pthread_t thread;CHECK(!pthread_create(&thread,NULL,io_foreign,&observer) && !pthread_join(thread,NULL) && !observer.error);
+  CHECK(qaplet_io_release(r,&read,NULL)==QAPLET_OK && qaplet_io_close(r,&ep[1],NULL)==QAPLET_OK);
+  qaplet_io_status status=QAPLET_IO_STATUS_INIT;CHECK(qaplet_get_io_status(r,&read,&status,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_io_finish(r,&ep[0],NULL)==QAPLET_OK && qaplet_io_close(r,&ep[2],NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK);
+  qaplet_process next=QAPLET_PROCESS_INIT;double until=milliseconds()+5000;qaplet_code accepted;
+  do{accepted=qaplet_process_spawn(r,&options,&next,&s,NULL);if(accepted!=QAPLET_RESOURCE_LIMIT)break;sched_yield();}while(milliseconds()<until);
+  CHECK(accepted==QAPLET_OK && next.generation!=p.generation);
+  qaplet_io_operation rejected=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_read(r,&ep[1],1,&rejected,NULL)==QAPLET_INVALID_HANDLE);
+  for(int i=0;i<3;++i){qaplet_io_endpoint endpoint=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_process_get_stdio(r,&next,i,&endpoint,NULL)==QAPLET_OK && qaplet_io_close(r,&endpoint,NULL)==QAPLET_OK);}
+  CHECK(!finish(r) && observer.notifications && !observer.error);
+  puts("M2 process pipe control: foreign cancel/POD; owner mutations; HostNotify BUSY; release invalidates while cancel/close retires physically; reused process endpoints reject stale tokens: pass");return 0;
+}
+static qaplet_code io_quota_work(qaplet_work_context *context,const void *input,size_t n,qaplet_work_output *out,void *userdata){
+  (void)context;(void)input;(void)n;(void)userdata;((unsigned char *)out->data)[0]='W';out->length=1;return QAPLET_OK;
+}
+static int pipe_shared_limits(void){
+  for(int count_limit=0;count_limit<2;++count_limit){
+    qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+    m.limits.operations=count_limit ? 1 : 2;m.limits.operation_data_bytes=4;m.limits.io_block_bytes=1;
+    CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    qaplet_work_handler handler=QAPLET_WORK_HANDLER_INIT;handler.name="quota";handler.name_length=5;handler.function=io_quota_work;handler.input_bytes=3;handler.output_bytes=1;
+    CHECK(qaplet_register_work_handler(r,&handler,NULL)==QAPLET_OK);
+    qaplet_process_options options;prepare(&options,"--hang");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+    qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;CHECK(spawn_ok(r,&options,&p,&s,NULL)==QAPLET_OK);
+    qaplet_io_endpoint output=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_process_get_stdio(r,&p,1,&output,NULL)==QAPLET_OK);
+    qaplet_work_task work=QAPLET_WORK_TASK_INIT;CHECK(qaplet_work_submit(r,"quota",5,"ABC",3,&work,NULL)==QAPLET_OK);
+    qaplet_work_status ws=QAPLET_WORK_STATUS_INIT;double until=milliseconds()+5000;
+    do{CHECK(qaplet_get_work_status(r,&work,&ws,NULL)==QAPLET_OK);if(ws.state==QAPLET_WORK_SUCCEEDED)break;sched_yield();}while(milliseconds()<until);
+    CHECK(ws.state==QAPLET_WORK_SUCCEEDED);
+    qaplet_io_snapshot snapshot=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.shared_operations==1 && snapshot.shared_data_bytes==4);
+    qaplet_io_operation read=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_read(r,&output,1,&read,NULL)==QAPLET_RESOURCE_LIMIT && !read.runtime_id);
+    CHECK(qaplet_work_release(r,&work,NULL)==QAPLET_OK && qaplet_io_read(r,&output,1,&read,NULL)==QAPLET_RESOURCE_LIMIT);
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+    CHECK(qaplet_io_read(r,&output,1,&read,NULL)==QAPLET_OK);
+    unsigned char byte=0;qaplet_io_result result=QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+    CHECK(!io_result(r,&read,&result) && result.length==1 && byte=='R');
+    CHECK(qaplet_work_submit(r,"quota",5,"ABC",3,&work,NULL)==QAPLET_RESOURCE_LIMIT);
+    CHECK(qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.shared_operations==1 && snapshot.shared_data_bytes==1);
+    CHECK(qaplet_io_release(r,&read,NULL)==QAPLET_OK);
+    CHECK(qaplet_work_submit(r,"quota",5,"ABC",3,&work,NULL)==QAPLET_OK);
+    qaplet_snapshot state=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_OPEN && !state.termination_reason);
+    CHECK(!finish(r));
+  }
+  puts("M2 process pipe shared limits: Work and I/O share count and data; retained results and owner handoff keep reservations; ordinary saturation refuses atomically and recovers: pass");return 0;
+}
+static int pipe_backpressure(void){
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;m.limits.pump_io_bytes=4096;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_process_options options;prepare(&options,"--flood");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+  qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status process=QAPLET_PROCESS_STATUS_INIT;CHECK(spawn_ok(r,&options,&p,&process,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep[3]={QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT};for(int i=0;i<3;++i)CHECK(qaplet_process_get_stdio(r,&p,i,&ep[i],NULL)==QAPLET_OK);
+  qaplet_io_operation error=QAPLET_IO_OPERATION_INIT,output=QAPLET_IO_OPERATION_INIT;unsigned char byte=0;
+  CHECK(qaplet_io_read(r,&ep[2],1,&error,NULL)==QAPLET_OK);qaplet_io_result result=QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+  CHECK(!io_result(r,&error,&result) && result.length==1 && byte=='R' && qaplet_io_release(r,&error,NULL)==QAPLET_OK);
+  CHECK(qaplet_io_finish(r,&ep[0],NULL)==QAPLET_OK);
+  qaplet_io_snapshot snapshot=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.data_bytes<=1 && snapshot.operations<=1);
+  CHECK(qaplet_io_read(r,&ep[2],1,&error,NULL)==QAPLET_OK);
+  unsigned char data[65536];size_t total=0;int eof=0;
+  while(!eof){
+    qaplet_code accepted;double until=milliseconds()+5000;
+    do{
+      accepted=qaplet_io_read(r,&ep[1],sizeof(data),&output,NULL);if(accepted!=QAPLET_RESOURCE_LIMIT)break;
+      /* A released result does not retire a helper before physical thread
+       * exit. Retry ordinary capacity after owner collection, without sleeps. */
+      qaplet_progress progress=QAPLET_PROGRESS_INIT;CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);sched_yield();
+    }while(milliseconds()<until);
+    CHECK(accepted==QAPLET_OK);
+    result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=data;result.capacity=sizeof(data);
+    CHECK(!io_result(r,&output,&result) && !result.code && result.length<=4096);
+    for(size_t i=0;i<result.length;++i)CHECK(data[i]==(unsigned char)((total+i)%256));
+    total+=result.length;eof=result.eof;CHECK(qaplet_io_release(r,&output,NULL)==QAPLET_OK);
+    CHECK(qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.shared_data_bytes<=4*65536 && total<=1048576);
+  }
+  CHECK(total==1048576);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+  CHECK(!io_result(r,&error,&result) && !result.code && result.length==1 && byte=='D' && qaplet_io_release(r,&error,NULL)==QAPLET_OK);
+  CHECK(qaplet_io_read(r,&ep[2],1,&error,NULL)==QAPLET_OK);
+  result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=&byte;result.capacity=1;
+  CHECK(!io_result(r,&error,&result) && !result.code && result.eof && !result.length && qaplet_io_release(r,&error,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && !finish(r));
+  puts("M2 process pipe backpressure: no output demand allocates no collection buffer; independent stderr; ordered 1MiB binary pull; per-pump byte quota; bounded retained data; EOF and cleanup: pass");return 0;
+}
+static int pipe_lifetime(void){
+  for(int cancel=0;cancel<2;++cancel){
+    qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    qaplet_process_options options;prepare(&options,cancel ? "--cancel-output" : "--eof-before-exit");for(int i=0;i<3;++i)options.stdio[i]=QAPLET_PROCESS_PIPE;
+    qaplet_process p=QAPLET_PROCESS_INIT;qaplet_process_status process=QAPLET_PROCESS_STATUS_INIT;CHECK(spawn_ok(r,&options,&p,&process,NULL)==QAPLET_OK);
+    qaplet_io_endpoint ep[3]={QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT,QAPLET_IO_ENDPOINT_INIT};for(int i=0;i<3;++i)CHECK(qaplet_process_get_stdio(r,&p,i,&ep[i],NULL)==QAPLET_OK);
+    qaplet_io_operation output=QAPLET_IO_OPERATION_INIT,error=QAPLET_IO_OPERATION_INIT;unsigned char bytes[64];qaplet_io_result result=QAPLET_IO_RESULT_INIT;
+    if(cancel){
+      CHECK(qaplet_io_read(r,&ep[1],1,&output,NULL)==QAPLET_OK);result.buffer=bytes;result.capacity=sizeof(bytes);
+      CHECK(!io_result(r,&output,&result) && result.length==1 && bytes[0]=='R' && qaplet_io_release(r,&output,NULL)==QAPLET_OK);
+      CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+      CHECK(qaplet_io_read(r,&ep[1],sizeof(bytes),&output,NULL)==QAPLET_OK);result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=bytes;result.capacity=sizeof(bytes);
+      CHECK(!io_result(r,&output,&result) && !result.code && !result.eof && result.length==5 && !memcmp(bytes,"\0\1\xffT\n",5));
+      CHECK(qaplet_io_release(r,&output,NULL)==QAPLET_OK);
+    }
+    CHECK(qaplet_io_read(r,&ep[1],sizeof(bytes),&output,NULL)==QAPLET_OK && qaplet_io_read(r,&ep[2],sizeof(bytes),&error,NULL)==QAPLET_OK);
+    result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=bytes;result.capacity=sizeof(bytes);
+    CHECK(!io_result(r,&output,&result) && !result.code && result.eof && !result.length && qaplet_io_release(r,&output,NULL)==QAPLET_OK);
+    result=(qaplet_io_result)QAPLET_IO_RESULT_INIT;result.buffer=bytes;result.capacity=sizeof(bytes);
+    CHECK(!io_result(r,&error,&result) && !result.code && result.eof && !result.length && qaplet_io_release(r,&error,NULL)==QAPLET_OK);
+    CHECK(qaplet_get_process_status(r,&p,&process,NULL)==QAPLET_OK && process.referenced);
+    if(!cancel)CHECK(!process.exited && !process.reaped && qaplet_process_release(r,&p,NULL)==QAPLET_BUSY);
+    CHECK(qaplet_io_finish(r,&ep[0],NULL)==QAPLET_OK);
+    qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+    CHECK(qaplet_get_process_status(r,&p,&process,NULL)==QAPLET_OK && process.reaped && !process.referenced && process.code==(cancel ? QAPLET_CANCELLED : QAPLET_OK));
+    CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && !finish(r));
+  }
+  puts("M2 process pipe lifetime: EOF before child exit; stdin finish gates reap; process cancel preserves buffered binary output; native exit and managed EOF remain separate through ref handoff: pass");return 0;
 }
 static int completed(qaplet_runtime *r,qaplet_process *p,uint32_t expected) {
   qaplet_drive_result d=QAPLET_DRIVE_RESULT_INIT; qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT;
@@ -637,6 +839,21 @@ static int query(void) {
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
+  if(!strcmp(mode,"--eof-before-exit")){CHECK(!close(1) && !close(2));closefrom(3);char byte;while(read(0,&byte,1)>0){}return 37;}
+  if(!strcmp(mode,"--cancel-output")){const unsigned char data[]={'R',0,1,255,'T','\n'};CHECK(write(1,data,sizeof(data))==sizeof(data));char byte;while(read(0,&byte,1)>0){}return 37;}
+  if(!strcmp(mode,"--flood")){
+    unsigned char data[4096];for(size_t i=0;i<sizeof(data);++i)data[i]=i%256;
+    CHECK(write(2,"R",1)==1);
+    for(unsigned block=0;block<256;++block){size_t offset=0;while(offset<sizeof(data)){ssize_t n=write(1,data+offset,sizeof(data)-offset);if(n<=0)return 98;offset+=n;}}
+    return write(2,"D",1)==1 ? 37 : 98;
+  }
+  if(!strcmp(mode,"--closed-input")){CHECK(!close(0) && write(1,"R",1)==1);return 37;}
+  if(!strcmp(mode,"--partial-input")){
+    unsigned char data[4096];size_t total=0;CHECK(write(1,"R",1)==1);
+    while(total<sizeof(data)){ssize_t n=read(0,data+total,sizeof(data)-total);if(n<=0)return 98;total+=n;}
+    for(size_t i=0;i<sizeof(data);++i)if(data[i]!=0x5a)return 98;
+    return close(0) ? 98 : 37;
+  }
   if (!strcmp(mode,"--inherit") || !strcmp(mode,"--pipe")) {
     if(!strcmp(mode,"--inherit")) {
     const char *cursor=argv[3];unsigned count=0;
@@ -681,6 +898,21 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+  if (!strcmp(argv[1],"--m2-process-pipe-lifetime")) {
+    int result=pipe_lifetime(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
+  if (!strcmp(argv[1],"--m2-process-pipe-backpressure")) {
+    int result=pipe_backpressure(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
+  if (!strcmp(argv[1],"--m2-process-pipe-shared-limits")) {
+    int result=pipe_shared_limits(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
+  if (!strcmp(argv[1],"--m2-process-pipe-control")) {
+    int result=pipe_control(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
+  if (!strcmp(argv[1],"--m2-process-pipe-write-failure")) {
+    int result=pipe_write_failure(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
   if (!strcmp(argv[1],"--m2-process-pipe-bytes")) {
     int result=pipe_bytes(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
   }

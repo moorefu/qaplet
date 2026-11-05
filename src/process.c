@@ -357,7 +357,7 @@ static int close_child_directory(int directory,int acknowledgement) {
     }
   }
 }
-static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char **argv,char **env,const char *cwd,const qaplet_process_options *o) {
+static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char **argv,char **env,const char *cwd,const qaplet_process_options *o,qaplet_process_status *failure) {
   struct rlimit limits={0};
   if (!IsXnu() && getrlimit(RLIMIT_NOFILE,&limits)) return errno;
   int directory=-1,io[2]={-1,-1},nulls[3]={-1,-1,-1},error=0;
@@ -376,9 +376,9 @@ static int spawn_posix(qaplet_runtime *r,process_slot *s,const char *path,char *
     if (nulls[i]<0) error=errno; else { acquired(r); error=private_fd(r,&nulls[i]); }
   }
   for (int i=0;i<3 && !error;++i) if (o->stdio[i]==QAPLET_PROCESS_PIPE) {
-    int64_t unused=0;qaplet_process_status failure=QAPLET_PROCESS_STATUS_INIT;
-    qaplet_code code=qaplet_io_pipe(r,i==0,&s->stdio[i],&nulls[i],&unused,&failure);
-    if(code)error=failure.error ? failure.error : code==QAPLET_RESOURCE_LIMIT ? EMFILE : ENOMEM;
+    int64_t unused=0;
+    qaplet_code code=qaplet_io_pipe(r,i==0,&s->stdio[i],&nulls[i],&unused,failure);
+    if(code){failure->code=code;error=failure->error ? failure->error : code==QAPLET_RESOURCE_LIMIT ? EMFILE : ENOMEM;}
   }
   if (!error) {
     s->pid=fork();
@@ -569,7 +569,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
   }
   pthread_mutex_unlock(&r->mutex);
   if (!error) {
-    error=IsWindows() ? spawn_windows(r,slot,path,argv,env,cwd,o,&value) : spawn_posix(r,slot,path,argv,env,cwd,o);
+    error=IsWindows() ? spawn_windows(r,slot,path,argv,env,cwd,o,&value) : spawn_posix(r,slot,path,argv,env,cwd,o,&value);
     pthread_mutex_lock(&r->mutex);
     slot->ready=1;
     if (error) {
@@ -594,6 +594,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
   if (qaplet_get_lifecycle(r)!=QAPLET_OPEN) qaplet_process_shutdown(r);
   qaplet_driver_set(r,0);
  rejected:
+  if(code && qaplet_get_lifecycle(r)!=QAPLET_OPEN)qaplet_process_shutdown(r);
   value.code=code; memcpy((char *)status+8,(char *)&value+8,sizeof(value)-8);
   return qaplet_report(diagnostic,code);
 }
@@ -667,6 +668,6 @@ qaplet_code qaplet_process_get_stdio(qaplet_runtime *r,const qaplet_process *t,u
   if(!code && stream>2)code=QAPLET_INVALID_ARGUMENT;if(!code)code=qaplet_owner(r);if(code)return qaplet_report(d,code);
   pthread_mutex_lock(&r->mutex);process_slot *s=lookup_locked(r,t);
   if(!r->m2_enabled)code=QAPLET_UNSUPPORTED;else if(!s || r->snapshot.lifecycle==QAPLET_CLOSED)code=QAPLET_INVALID_HANDLE;
-  else if(!s->stdio[stream].generation)code=QAPLET_UNSUPPORTED;else *out=s->stdio[stream];
+  else if(!s->stdio[stream].generation)code=QAPLET_UNSUPPORTED;else memcpy((char *)out+8,(char *)&s->stdio[stream]+8,sizeof(*out)-8);
   pthread_mutex_unlock(&r->mutex);return qaplet_report(d,code);
 }

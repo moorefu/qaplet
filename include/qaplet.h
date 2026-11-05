@@ -533,12 +533,14 @@ typedef struct {
   uint64_t endpoints, operations, data_bytes, retained_results, pending_handoffs;
   uint64_t shared_operations, shared_operations_peak, shared_data_bytes, shared_data_bytes_peak;
   uint64_t helper_threads, helper_stack_bytes, accepted, completed, cancelled, transferred_bytes;
+  uint32_t start_error_domain;
+  int32_t start_error;
 } qaplet_io_snapshot;
 #define QAPLET_IO_ENDPOINT_INIT {sizeof(qaplet_io_endpoint),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_OPERATION_INIT {sizeof(qaplet_io_operation),QAPLET_ABI_VERSION,0,0,0}
 #define QAPLET_IO_STATUS_INIT {sizeof(qaplet_io_status),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0}
 #define QAPLET_IO_RESULT_INIT {sizeof(qaplet_io_result),QAPLET_ABI_VERSION,0,0,0,0,NULL,0,0,0,0}
-#define QAPLET_IO_SNAPSHOT_INIT {sizeof(qaplet_io_snapshot),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+#define QAPLET_IO_SNAPSHOT_INIT {sizeof(qaplet_io_snapshot),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
 qaplet_code qaplet_process_get_stdio(qaplet_runtime *,const qaplet_process *,uint32_t,qaplet_io_endpoint *,qaplet_diagnostic *);
 qaplet_code qaplet_io_read(qaplet_runtime *,const qaplet_io_endpoint *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_io_write(qaplet_runtime *,const qaplet_io_endpoint *,const void *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
