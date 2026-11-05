@@ -576,6 +576,40 @@ qaplet_code qaplet_io_copy_result(qaplet_runtime *,const qaplet_io_operation *,q
 qaplet_code qaplet_io_release(qaplet_runtime *,const qaplet_io_operation *,qaplet_diagnostic *);
 qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_diagnostic *);
 
+/* Explicit Host standard streams (0 stdin, 1 stdout, 2 stderr), M2 only.
+ * inspect classifies the real current fd / Win32 GetStdHandle independently
+ * of attach support. Creation never inspects, duplicates or changes stdio.
+ * attach duplicates a supported endpoint; SDK close/EOF never closes the Host
+ * original. dup/DuplicateHandle share flags/modes/offset: Host must coordinate
+ * replacement, concurrent I/O and mode changes through native quiescence.
+ * SDK never changes shared flags. Blocking pipes, unsupported devices and
+ * TTY/Console without the later explicit terminal capability are UNSUPPORTED.
+ * POSIX pipes must already be O_NONBLOCK. Windows pipes require a verified
+ * overlapped byte mode (and a queryable write quota). Regular synchronous files use bounded native helpers;
+ * logical cancellation cannot preempt a filesystem call. Buffers, duplicated
+ * handle, helper and quotas remain retained until actual exit and join.
+ * get returns only an explicitly attached stream; JS cannot implicitly attach.
+ * detach closes the SDK endpoint, invalidates its token, and starts retirement.
+ * It returns BUSY without side effects while a JS wrapper still owns its close
+ * or jobs handoff: close the endpoint and drive that completion before retry.
+ * All mutations are owner-only outside drives/callbacks; inspect is owner-only.
+ * No native handle is exposed. info errors describe classification/start errors.
+ */
+typedef enum { QAPLET_STDIO_INVALID, QAPLET_STDIO_PIPE, QAPLET_STDIO_FILE,
+  QAPLET_STDIO_TTY, QAPLET_STDIO_CONSOLE, QAPLET_STDIO_OTHER } qaplet_stdio_kind;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_stdio_kind kind;
+  uint32_t supported, attached, error_domain;
+  int32_t error;
+  uint32_t reserved;
+} qaplet_stdio_info;
+#define QAPLET_STDIO_INFO_INIT {sizeof(qaplet_stdio_info),QAPLET_ABI_VERSION,QAPLET_STDIO_INVALID,0,0,0,0,0}
+qaplet_code qaplet_stdio_inspect(qaplet_runtime *,uint32_t,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_attach(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_get(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *,qaplet_diagnostic *);
+qaplet_code qaplet_stdio_detach(qaplet_runtime *,uint32_t,qaplet_diagnostic *);
+
 /* Named native work, M2 only. Declarations and names are copied atomically.
  * Zero byte/concurrency fields inherit the finite instance defaults. No
  * replacement/unregister. First accepted execution or valid pump freezes them.

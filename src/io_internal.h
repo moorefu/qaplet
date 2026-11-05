@@ -6,6 +6,8 @@
 /* Owned pipe adapter. Child ends are returned to ProcessHost's existing
  * inheritance/rollback owner; parent ends belong exclusively to this module. */
 qaplet_code qaplet_io_pipe(qaplet_runtime *,int,qaplet_io_endpoint *,int *,int64_t *,qaplet_process_status *);
+void qaplet_stdio_classify(uint32_t,qaplet_stdio_info *,int *,int64_t *,uint32_t *);
+int qaplet_io_standard_locked(qaplet_runtime *,uint32_t,qaplet_io_endpoint *,qaplet_stdio_info *);
 int qaplet_io_ended_locked(qaplet_runtime *,const qaplet_io_endpoint *);
 void qaplet_io_detach_locked(qaplet_runtime *,const qaplet_io_endpoint *);
 void qaplet_io_shutdown(qaplet_runtime *,int closing);

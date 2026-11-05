@@ -43,6 +43,8 @@ def select_cases(profile):
     if profile == 'ci':
         return (), (), ()
     groups = ('engine', 'loop', 'work', 'process') if profile == 'all' else (profile,)
+    if profile == 'all' and any(row[0].startswith(('m2-tty', 'm2-stdio')) for row in sdk.HOST_CASES):
+        groups += ('tty',)
     names = set(CORE)
     for group in groups:
         if group == 'engine':

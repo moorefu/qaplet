@@ -67,6 +67,57 @@ M2 is explicit: call `qaplet_create_m2` with the unchanged M1 base config plus
 `qaplet_get_m2_snapshot` reports capabilities actually enabled on the instance,
 finite effective limits, lifecycle, execution phase and native cleanup state.
 Old `qaplet_create` handles do not acquire M2 capabilities or native resources.
+
+Host standard streams require explicit `qaplet_stdio_attach(runtime, stream,
+&endpoint, &info, diagnostic)` for stream 0/1/2 before importing `qaplet:stdio`.
+`qaplet_stdio_inspect` classifies the actual POSIX fd or Windows `GetStdHandle`;
+`kind` and `supported` are independent. Default creation does not inspect or
+take over stdio. Without Host attachment the module exports three `null` values.
+Attached `stdin`, `stdout` and `stderr` expose `kind`, `read(n)` or
+`write(Uint8Array)` returning `{promise, cancel}`, plus `closed`, `finish`,
+`close`, `ref`, `unref`, and `hasRef`. Read resolves `{bytes, eof}` and write
+resolves `{bytesWritten}`; errors carry `code`, `errorDomain`, `error`, and
+`bytesWritten`, plus a copied `bytes` array for consumed read data. Streams retain
+their explicit attachment snapshot at first import. Close/finish and await `closed`
+before the Host detaches a stream represented in JS; detach invalidates old JS
+handles and does not rebind cached module exports.
+Detach returns `BUSY` without closing or invalidating anything while a JS wrapper
+still owns close delivery or its full jobs checkpoint. After C `qaplet_io_close`
+and owner driving complete that handoff, the Host can retry detach safely.
+
+POSIX pipes must already have Host-authorized `O_NONBLOCK`. Windows pipes must
+be real overlapped byte pipes, with a queryable quota for writes. Synchronous
+blocking pipes, unsupported devices, and TTY/Console byte attachment currently
+return `UNSUPPORTED`, without changing flags or modes. TTY/Console classification
+does not claim terminal text, UTF-8, resize, or lease support.
+
+SDK close/EOF closes only its duplicated descriptor/HANDLE. A duplicate shares
+flags, modes and often offsets: the Host must coordinate native stream replacement,
+concurrent I/O and shared state through native quiescence. The SDK never changes
+shared flags. Regular synchronous file calls use finite helper/thread-stack,
+handle, operation and storage budgets. Cancel is logical; an in-flight file call
+retains all capacity and the duplicate until actual exit/join. It stops keeping
+the loop alive while still physically running; copying its result remains BUSY
+until the actual byte count is stable. Close and finite quiesce preserve this
+responsibility, and destroy stays BUSY while cleanup remains.
+
+Idle standard streams do not keep the loop alive. Accepted referenced operations
+retain through owner completion and all resulting Promise jobs. Retained C
+results consume capacity without keeping the loop alive. `qaplet_stdio_detach`
+invalidates that attachment and starts safe native retirement; attach again only
+after coordinating the Host endpoint. `finish` closes the SDK write endpoint
+after its current write, while `close` requests immediate cancellation. Both
+preserve the Host original and already-written side effects.
+
+When a Host closes a JS-wrapped endpoint through the C API without an IO task,
+owner driving observes native POD status and queues the endpoint's already
+reserved close notice in the normal completion category. `closed` settles on
+the owner, with the same dispatch budget and full jobs checkpoint. Unref notices
+wait for explicit driving. `qaplet_get_io_snapshot().pending_handoffs` includes
+these close notices through that checkpoint, while operation/data counts stay
+unchanged. Runtime close drops the pending JS work and completes native cleanup.
+Ordinary JS callback errors keep an OPEN Runtime and its streams usable; only
+terminal lifecycle transitions initiate shutdown.
 The M2-runtime bit covers the explicit lifecycle and ready-work drive. Timers,
 OS waiting, named work, direct children and owned process pipes have independent
 capability bits. Host standard streams are not implicitly taken over.

@@ -273,6 +273,16 @@ static int pipe_shared_limits(void){
     CHECK(qaplet_work_submit(r,"quota",5,"ABC",3,&work,NULL)==QAPLET_RESOURCE_LIMIT);
     CHECK(qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.shared_operations==1 && snapshot.shared_data_bytes==1);
     CHECK(qaplet_io_release(r,&read,NULL)==QAPLET_OK);
+    /* A published result does not prove the native IO helper was joined.
+     * Observe the shared reservation until owner collection physically retires
+     * it before requiring another resource to consume that same capacity. */
+    double retired_until=milliseconds()+5000;
+    do{
+      CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && qaplet_get_io_snapshot(r,&snapshot,NULL)==QAPLET_OK);
+      if(!snapshot.shared_operations && !snapshot.shared_data_bytes)break;
+      sched_yield();
+    }while(milliseconds()<retired_until);
+    CHECK(!snapshot.shared_operations && !snapshot.shared_data_bytes);
     CHECK(qaplet_work_submit(r,"quota",5,"ABC",3,&work,NULL)==QAPLET_OK);
     qaplet_snapshot state=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_OPEN && !state.termination_reason);
     CHECK(!finish(r));
