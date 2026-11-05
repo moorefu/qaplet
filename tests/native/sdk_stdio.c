@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sched.h>
+#include <time.h>
 #include <unistd.h>
 #include "libc/dce.h"
 #include "libc/nt/runtime.h"
@@ -126,10 +128,54 @@ static int pipe_bytes(void) {
   else CHECK(fcntl(0,F_GETFL)==flags && dup2(saved,0)==0 && !close(saved) && !close(p[0]));
   puts("M2 stdio pipe: real stdin redirection; unsafe blocking borrow refused without side effects; safe binary/NUL/short read/EOF/cancel/BUSY; shared flags and Host handle preserved: pass");return 0;
 }
+typedef struct {char path[64];int fd,saved;int64_t handle,saved_handle;unsigned stream;} file_fixture;
+static int install_file(file_fixture *f,unsigned stream){
+  *f=(file_fixture){.fd=-1,.saved=-1,.stream=stream};strcpy(f->path,"/tmp/qaplet-stdio-XXXXXX");
+  f->fd=mkstemp(f->path);CHECK(f->fd>=0);
+  if(IsWindows()){
+    char16_t native[4096];CHECK(__mkntpath(f->path,native)>=0);
+    f->handle=CreateFile(native,0xc0000000u,7,NULL,3,0x80,0);CHECK(f->handle!=-1);
+    f->saved_handle=GetStdHandle(-10-(int)stream);CHECK(SetStdHandle(-10-(int)stream,f->handle));
+  }else{f->saved=dup(stream);CHECK(f->saved>=0 && dup2(f->fd,stream)==stream);}
+  return 0;
+}
+static int restore_file(file_fixture *f){
+  if(IsWindows())CHECK(SetStdHandle(-10-(int)f->stream,f->saved_handle) && CloseHandle(f->handle));
+  else CHECK(dup2(f->saved,f->stream)==f->stream && !close(f->saved));
+  CHECK(!close(f->fd) && !unlink(f->path));return 0;
+}
+static int output_limits(void){
+  file_fixture f[3];for(unsigned i=0;i<3;++i)CHECK(!install_file(&f[i],i));
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  m.limits.operations=2;m.limits.operation_data_bytes=12;m.limits.io_block_bytes=6;m.limits.pump_io_bytes=3;
+  m.limits.work_input_bytes=1;m.limits.work_output_bytes=1;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep[3];qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;
+  for(unsigned i=0;i<3;++i){ep[i]=(qaplet_io_endpoint)QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_stdio_attach(r,i,&ep[i],&info,NULL)==QAPLET_OK);}
+  unsigned char a[]={0,1,127,128,255,10},z[]={9,8,0,7,255,6};
+  qaplet_io_operation op[2]={QAPLET_IO_OPERATION_INIT,QAPLET_IO_OPERATION_INIT},reject=QAPLET_IO_OPERATION_INIT;
+  CHECK(qaplet_io_write(r,&ep[1],a,6,&op[0],NULL)==QAPLET_OK && qaplet_io_write(r,&ep[2],z,6,&op[1],NULL)==QAPLET_OK);
+  memset(a,0xa5,6);memset(z,0x5a,6);
+  CHECK(qaplet_io_read(r,&ep[0],1,&reject,NULL)==QAPLET_RESOURCE_LIMIT && !reject.generation);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.shared_operations==2 && io.shared_data_bytes==12 && io.helper_threads==2);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  for(unsigned i=0;i<2;++i){qaplet_io_result result=QAPLET_IO_RESULT_INIT;CHECK(qaplet_io_copy_result(r,&op[i],&result,NULL)==QAPLET_OK && result.code==QAPLET_OK && result.length==6);}
+  CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.shared_operations==2 && io.shared_data_bytes==12 && io.retained_results==2);
+  CHECK(qaplet_io_read(r,&ep[0],1,&reject,NULL)==QAPLET_RESOURCE_LIMIT);
+  CHECK(qaplet_io_release(r,&op[0],NULL)==QAPLET_OK && qaplet_io_release(r,&op[1],NULL)==QAPLET_OK);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
+  CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.shared_operations && !io.shared_data_bytes && !io.helper_threads && !io.operations && !io.endpoints);
+  CHECK(qaplet_destroy(r,NULL)==QAPLET_OK);
+  const unsigned char expected[2][6]={{0,1,127,128,255,10},{9,8,0,7,255,6}};unsigned char actual[6];
+  for(unsigned i=1;i<3;++i)CHECK(lseek(f[i].fd,0,SEEK_SET)==0 && read(f[i].fd,actual,6)==6 && !memcmp(actual,expected[i-1],6));
+  for(unsigned i=0;i<3;++i)CHECK(!restore_file(&f[i]));
+  puts("M2 stdio output limits: independent stdout/stderr copied binary writes; bounded 3-byte advances; shared count/data include retained results; refusal atomic; physical cleanup returns capacity: pass");return 0;
+}
 int sdk_stdio(int argc,char **argv) {
   if(argc>1 && !strcmp(argv[1],"--classify"))return classify();
   if(argc>1 && !strcmp(argv[1],"--file"))return file_bytes();
   if(argc>1 && !strcmp(argv[1],"--pipe"))return pipe_bytes();
+  if(argc>1 && !strcmp(argv[1],"--output-limits"))return output_limits();
   qaplet_abi abi=QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi)==QAPLET_OK);
   CHECK(abi.capabilities & (1u<<24));
