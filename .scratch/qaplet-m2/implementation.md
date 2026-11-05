@@ -34,7 +34,7 @@
 | 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；`.cache/worktrees/m2-13-cross-fix` | local_complete / cross_deferred（后续修复已合；历史Full失败与当前本地证据分别保留） |
 | 14 | `codex/m2-14-process-cancel` | 原件见后续记录 | local_complete / cross_deferred（独立合并`25d3eb12`） |
 | 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
-| 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | implementing_local；12/14/15已独立合并 |
+| 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | local_complete / cross_deferred（待独立合并；Linux208、Windows207+optional1、两端package94、fault24/25；claimed保留，见16验收记录） |
 | 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | local_complete / cross_deferred（独立合并`caa439ae`；Linux195、Windows194+optional1、两端package81、fault23/24；claimed保留） |
 | 18 | `codex/m2-18-tty` | `.cache/worktrees/m2-18-tty` | implementing_local；05已resolved、17已本地完成并独立合并 |
 | 19–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
@@ -314,3 +314,18 @@ detach握手，未重建/重复全suite/QEMU/push/CI；全部原件和旧失败�
 详主`out/qaplet-m2/merge-17-stdio/HANDOFF.md`及`handoff.json`。17本地完成已可放行18，
 Status claimed/cross_deferred保留，原38边/135AC与父spec未变。其他原生、当前64K、
 CI/Full、最终混合长测、父M2和release-ready仍未完成；16专属Process后续负向不外推。
+
+2026-11-05（16独立本地接收）：source `353ee949` 已融合actual root `a5067a9c`，
+实际no-ff `015cdb9f`合并树同源。产品13282ae6的86 recipe raw/Git/LF、82原ZIP成员、
+双archive各19 ELF64 REL、公开header/三fat APE和1722 raw logs合前/合后独立重放通过。
+normal Linux208、Windows207+既有optional1/required0gap，package94/94、fault24/25，
+各13个JS Process、本票1000+100循环及普通SDK1000生命周期均保留原实际执行身份。
+共用17 IO/stdio/header/runtime字节和STDIO24/9cases/detach BUSY保留，M2 builtin6。
+lost-reap负向证明未知原生责任/容量安全保留，closed pending、显式unref和CLOSED后的
+quiesce error/pending、destroy BUSY不被冒称清理成功。84 tracked Python与原devcheck
+同字节，411总/210执行/201条件skip与bootstrap保留原scope；合后Ubuntu preflight通过。
+静态过近似auditor的两处后续文档收据改动独立内存还原原摘要，parent actual与静态清单
+分开，child imports仍unknown；原件/旧失败不改写，未重建或重复产品/历史长测/QEMU。
+详主`out/qaplet-m2/merge-16-js-process/HANDOFF.md`及`handoff.json`。16保持claimed、
+local_complete/cross_deferred；19/20仍等待18本地完成并独立合入。原38边/135AC、父spec、
+其他原生/当前64K/CI/Full/混合长测及最终整体Review未完成，不push或签发release-ready。

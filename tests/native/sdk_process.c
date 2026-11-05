@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include "libc/dce.h"
@@ -889,6 +890,250 @@ static int query(void) {
   CHECK(observer.notifications && !observer.notify_error);
   puts("M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass");return 0;
 }
+static int js_basic(int quiet) {
+  qaplet_process_options o;prepare(&o,"--empty");
+  qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv],env:[],stdio:['ignore','ignore','ignore']});"
+    "const s=await p.exited;await p.closed;if(!s.reaped||s.exitCode!==37)throw Error('exit');return 42})";
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);
+  qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
+  if(code)fprintf(stderr,"JS process code=%d diagnostic=%s\n",code,message);
+  qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);if(!quiet)puts("M2 process JS basic: explicit spawn; owner exit/reap Promise; managed closure; result and cleanup: pass");return 0;
+}
+static int js_issue(void) {
+  qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;b.limits.execution_timeout_ms=1000;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{const p=spawn(argv[0],{argv:[...argv]});"
+    "const w=p.stdin.write(new Uint8Array([1]));p.stdin.finish();if((await w.promise).bytesWritten!==1)throw Error('write');p.stdout.close();p.stderr.close();await p.exited;await p.closed;return 42})";
+  qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&p,NULL);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  if(!code)code=qaplet_run(r,&drive,NULL);qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);
+  puts("M2 process JS issue: IO accepted from a JS job issues before native wait without an auxiliary timer; actual write and reap: pass");return 0;
+}
+static int js_closed_case_limits(const char *mode,const char *source,int tiny) {
+  qaplet_process_options o;prepare(&o,mode);qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;if(tiny){m.limits.operations=2;m.limits.operation_data_bytes=8;m.limits.io_block_bytes=4;}else if(!strcmp(mode,"--partial-input"))m.limits.io_block_bytes=1048576;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  if(tiny){qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="quota";h.name_length=5;h.function=io_quota_work;h.input_bytes=3;h.output_bytes=1;CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);}
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;
+  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
+  if(code)fprintf(stderr,"JS contract code=%d diagnostic=%s\n",code,message);
+  qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;
+  passed=passed && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs && !io.shared_operations && !io.shared_data_bytes && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.referenced && !ps.retained_results;
+  if(tiny)passed=passed && io.shared_operations_peak==2 && io.shared_data_bytes_peak==8;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);return 0;
+}
+static int js_closed_case(const char *mode,const char *source){return js_closed_case_limits(mode,source,0);}
+static int js_io_cancel(int quiet) {
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});function rejects(f,c){try{f()}catch(e){if(e.code===c)return;throw e}throw Error('missing refusal')}"
+    "rejects(()=>p.stdout.read('1'),1);rejects(()=>p.stdout.read(0),1);rejects(()=>p.stdout.read(65537),13);"
+    "rejects(()=>p.stdin.write(new Uint16Array(1)),8);rejects(()=>p.stdin.write(new Uint8Array(0)),1);rejects(()=>p.stdin.write(new Uint8Array(65537)),13);"
+    "rejects(()=>p.stdout.read.call({},1),25);const t=p.stdout.read(1);t.cancel();t.cancel();"
+    "const error=await t.promise.then(()=>{throw Error('cancel resolved')},e=>e);if(error.code!==28||error.errorDomain!==0||!(error.bytes instanceof Uint8Array)||error.bytes.length!==0)throw Error('cancel data');"
+    "if((await p.stdout.read(1).promise).bytes[0]!==82)throw Error('cancel consumed bytes');p.cancel();p.cancel();"
+    "const exit=await p.exited.then(()=>{throw Error('process cancel')},e=>e);if(exit.code!==28||!exit.reaped)throw Error('reap');"
+    "p.stdin.close();p.stdout.close();p.stderr.close();rejects(()=>p.stdout.finish(),5);await p.closed;return 42})";
+  CHECK(!js_closed_case("--hang",source));if(!quiet)puts("M2 process JS IO cancel: strict uncoerced byte endpoints; deterministic cancel-before-issue; copied read error bytes; no lost pipe data; actual child reap and closure: pass");return 0;
+}
+static int js_cycles(void) {
+  for(unsigned i=0;i<1000;++i)CHECK(!js_basic(1));
+  for(unsigned i=0;i<100;++i)CHECK(!js_io_cancel(1));
+  puts("M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass");return 0;
+}
+#ifdef SDK_JS_START_FAULT
+static _Atomic int js_fail_next_thread;
+static _Atomic int js_steal_next_wait;
+int __real_pthread_create(pthread_t *,const pthread_attr_t *,void *(*)(void *),void *);
+int __real_sys_waitid(int,int,void *,int,void *);
+int __wrap_sys_waitid(int type,int pid,void *info,int options,void *usage) {
+  int result=__real_sys_waitid(type,pid,info,options,usage);
+  if(!result && atomic_exchange(&js_steal_next_wait,0)){int status=0;if(waitpid(pid,&status,0)!=pid)return -1;errno=ECHILD;return -1;}
+  return result;
+}
+int __wrap_pthread_create(pthread_t *thread,const pthread_attr_t *attr,void *(*function)(void *),void *userdata) {
+  if(atomic_exchange(&js_fail_next_thread,0))return EAGAIN;
+  return __real_pthread_create(thread,attr,function,userdata);
+}
+static qaplet_code js_arm_start(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)r;(void)call;(void)argc;(void)argv;(void)opaque;atomic_store(&js_fail_next_thread,1);return QAPLET_OK;
+}
+static qaplet_code js_arm_wait(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)r;(void)call;(void)argc;(void)argv;(void)opaque;atomic_store(&js_steal_next_wait,1);return QAPLET_OK;
+}
+static int js_reap_fault(void) {
+  CHECK(!IsWindows());qaplet_process_options o;prepare(&o,"--empty");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);unsigned marks=0;
+  qaplet_host_export items[2]={QAPLET_HOST_EXPORT_INIT,QAPLET_HOST_EXPORT_INIT};items[0].name="arm";items[0].name_length=3;items[0].kind=QAPLET_HOST_FUNCTION;items[0].function=js_arm_wait;
+  items[1].name="mark";items[1].name_length=4;items[1].kind=QAPLET_HOST_FUNCTION;items[1].function=cleanup_mark;items[1].userdata=&marks;
+  qaplet_host_module module=QAPLET_HOST_MODULE_INIT;module.name="host:reap";module.name_length=9;module.exports=items;module.export_count=2;CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+  char source[1200];snprintf(source,sizeof(source),"Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('host:reap')]).then(async ([{spawn},{argv},{arm,mark}])=>{"
+    "arm();globalThis.p=spawn(argv[0],{argv:[...argv],env:[],stdio:['ignore','ignore','ignore']});p.closed.then(mark,mark);"
+    "const e=await p.exited.catch(e=>e);if(e.code!==%d||e.reaped!==false||e.errorDomain!==%u||e.error!==%d)throw Error('reap error facts');return 42})",QAPLET_PROCESS_ERROR,QAPLET_ERROR_DOMAIN_ERRNO,ECHILD);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&progress,NULL);double until=milliseconds()+5000;
+  while(!code && milliseconds()<until){code=qaplet_run_once(r,1000,&drive,NULL);if(drive.phase==QAPLET_PHASE_DONE)break;}
+  qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && !marks && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.referenced==1;
+  if(passed){const char *unref="p.unref();p.hasRef()===false";qaplet_result result=QAPLET_RESULT_INIT;passed=qaplet_eval(r,unref,strlen(unref),&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_BOOL && result.boolean;}
+  CHECK(qaplet_close(r,NULL)==QAPLET_PROCESS_ERROR);until=milliseconds()+5000;
+  do{CHECK(qaplet_quiesce(r,0,&drive,NULL)==QAPLET_PROCESS_ERROR);CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK);if(!ps.helper_threads)break;sched_yield();}while(milliseconds()<until);
+  qaplet_m2_snapshot snapshot=QAPLET_M2_SNAPSHOT_INIT;CHECK(qaplet_get_m2_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_CLOSED && !snapshot.engine_current_bytes && snapshot.native_state==QAPLET_NATIVE_CLEANING && !snapshot.native_handles);
+  CHECK(ps.processes==1 && !ps.helper_threads && !marks && qaplet_destroy(r,NULL)==QAPLET_BUSY);CHECK(passed && !atomic_load(&js_steal_next_wait));
+  puts("M2 process JS uncertain reap: real stolen wait; rejected exit preserves ECHILD/unreaped facts; closed stays pending; ref requires explicit unref; CLOSED retains unknown ownership; quiesce pending/destroy BUSY; no cleanup success claimed: pass");return 0;
+}
+static int js_start_fault(void) {
+  CHECK(IsWindows());qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_host_export item=QAPLET_HOST_EXPORT_INIT;item.name="arm";item.name_length=3;item.kind=QAPLET_HOST_FUNCTION;item.function=js_arm_start;
+  qaplet_host_module module=QAPLET_HOST_MODULE_INIT;module.name="host:io-start";module.name_length=13;module.exports=&item;module.export_count=1;CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+  char source[1800];snprintf(source,sizeof(source),"Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('host:io-start')]).then(async ([{spawn},{argv},{arm}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});arm();try{p.stdout.read(1);throw Error('missing OS start refusal')}catch(e){if(e.code!==%d||e.errorDomain!==%u||e.error!==%d)throw Error('start error fields '+e.code+':'+e.errorDomain+':'+e.error)}"
+    "try{p.stdout.read(0);throw Error('missing input refusal')}catch(e){if(e.code!==1||e.errorDomain!==0||e.error!==0)throw Error('stale OS error')}"
+    "if((await p.stdout.read(1).promise).bytes[0]!==82)throw Error('recovery');p.stdin.finish();for(const endpoint of [p.stdout,p.stderr])for(;;){if((await endpoint.read(1).promise).eof)break}"
+    "if((await p.exited).exitCode!==37)throw Error('exit');await p.closed;return 42})",QAPLET_IO_ERROR,QAPLET_ERROR_DOMAIN_ERRNO,EAGAIN);
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);if(!code)code=qaplet_run(r,&drive,&d);if(code)fprintf(stderr,"JS IO start code=%d diagnostic=%s\n",code,message);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.accepted==3 && !io.shared_operations && !io.shared_data_bytes;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(passed && !atomic_load(&js_fail_next_thread));
+  puts("M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass");return 0;
+}
+#endif
+static int js_liveness(void) {
+  qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;b.limits.engine_heap_bytes=1024*1024;
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{globalThis.p=spawn(argv[0],{argv:[...argv]});"
+    "await p.stdout.read(1).promise;p.unref();globalThis.exited=p.exited;globalThis.closed=p.closed;globalThis.input=p.stdin;globalThis.out=p.stdout;globalThis.err=p.stderr;return 42})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE && drive.phase==QAPLET_PHASE_DONE);
+  qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.processes==1 && !ps.referenced);
+  CHECK(qaplet_eval(r,"p.ref();42",10,&progress,NULL)==QAPLET_OK && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.referenced==1);
+  CHECK(qaplet_run_once(r,0,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_WAIT_TIMEOUT);
+  source="p.unref();p=null;for(let i=0;i<100000;++i){let a={};a.self=a;}42";
+  CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.processes==1 && !ps.referenced);
+  qaplet_keepalive token=QAPLET_KEEPALIVE_INIT;CHECK(qaplet_keepalive_create(r,&token,NULL)==QAPLET_OK);
+  source="input.write(new Uint8Array([1])).promise.then(async()=>{input.finish();out.close();err.close();if((await exited).exitCode!==37)throw Error('GC cancelled');await closed;return 42})";
+  CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK);double until=milliseconds()+5000;
+  do{CHECK(qaplet_run_once(r,1000,&drive,NULL)==QAPLET_OK);if(drive.phase==QAPLET_PHASE_DONE)break;}while(milliseconds()<until);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  CHECK(qaplet_keepalive_release(r,&token,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  CHECK(!finish(r));puts("M2 process JS liveness: unref natural idle; ref restores keepalive; discarded Process survives bounded cyclic GC pressure; explicit owner drive observes natural exit and closure: pass");return 0;
+}
+static int js_limits(void) {
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('qaplet:work')]).then(async ([{spawn},{argv},{submit}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});const w=submit('quota',new Uint8Array([65,66,67])),a=p.stdout.read(4);"
+    "try{p.stdin.write(new Uint8Array([1]));throw Error('count')}catch(e){if(e.code!==24)throw e}"
+    "try{p.stdout.read(1);throw Error('busy')}catch(e){if(e.code!==4)throw e}a.cancel();p.cancel();"
+    "if((await w.promise)[0]!==87)throw Error('work');const errors=await Promise.all([a.promise.catch(e=>e),p.exited.catch(e=>e)]);if(errors.some(e=>e.code!==28))throw Error('cancel');"
+    "p.stdin.close();p.stdout.close();p.stderr.close();await p.closed;return 42})";
+  CHECK(!js_closed_case_limits("--hang",source,1));puts("M2 process JS limits: Work/IO share two operations/eight reserved bytes; atomic count/data refusal; BUSY priority; cancelled reservations retained through owner handoff then released: pass");return 0;
+}
+static int js_terminal(void) {
+  for(unsigned failed=0;failed<6;++failed){qaplet_process_options o;prepare(&o,"--hang");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+    if(failed==1 || failed==3){b.limits.pump_jobs=1;b.limits.execution_dispatches=64;}if(failed==2)b.limits.engine_heap_bytes=1024*1024;
+    qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    unsigned marks=0;qaplet_host_export item=QAPLET_HOST_EXPORT_INIT;item.name="mark";item.name_length=4;item.kind=QAPLET_HOST_FUNCTION;item.function=cleanup_mark;item.userdata=&marks;
+    qaplet_host_module module=QAPLET_HOST_MODULE_INIT;module.name="host:process-cleanup";module.name_length=20;module.exports=&item;module.export_count=1;CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+    const char *setup="Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('host:process-cleanup')]).then(async ([{spawn},{argv},h])=>{"
+      "globalThis.p=spawn(argv[0],{argv:[...argv]});p.exited.then(()=>h.mark(),()=>h.mark()).finally(()=>h.mark());await p.stdout.read(1).promise;"
+      "globalThis.h=h;globalThis.t=p.stdout.read(1);t.promise.then(()=>h.mark(),()=>h.mark()).finally(()=>h.mark());return 42})";
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+    CHECK(qaplet_eval(r,setup,strlen(setup),&progress,NULL)==QAPLET_OK);
+    double until=milliseconds()+5000;do{CHECK(qaplet_run_once(r,1000,&drive,NULL)==QAPLET_OK);qaplet_result result=QAPLET_RESULT_INIT;if(drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42)break;}while(milliseconds()<until);
+    CHECK(drive.phase==QAPLET_PHASE_DONE && !marks);
+    qaplet_code code;
+    if(!failed){CHECK(qaplet_request_stop(r,NULL)==QAPLET_OK);code=qaplet_run_once(r,0,&drive,NULL);CHECK(code==QAPLET_EXECUTION_STOPPED);}
+    else {const char *bad=failed==1 ? "const u=p.stderr.read(1);u.promise.catch(()=>{function again(){Promise.resolve().then(again)}again()});u.cancel();new Promise(()=>{})" : failed==3 ? "const u=p.stderr.read(1);u.promise.catch(()=>{function again(){Promise.resolve().then(again)}again()});u.cancel();42" : failed>=4 ? "const u=p.stderr.read(1);u.promise.catch(()=>{throw Error('ordinary callback')});u.cancel();42" : "try{globalThis.hog=[];for(;;)hog.push(new Uint8Array(65536))}catch(e){};42";
+      code=qaplet_eval(r,bad,strlen(bad),&progress,NULL);if(failed==5 && !code)code=qaplet_run(r,&drive,NULL);else for(unsigned i=0;i<80 && !code;++i)code=qaplet_pump(r,&progress,NULL);CHECK(code==(failed==2 ? QAPLET_MEMORY_LIMIT : failed>=4 ? QAPLET_JS_EXCEPTION : QAPLET_DISPATCH_LIMIT));}
+    qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.termination_reason==(failed>=4 ? QAPLET_OK : code) && snapshot.lifecycle==(failed>=4 ? QAPLET_OPEN : failed ? QAPLET_FAILED : QAPLET_STOPPED));
+    if(failed==1 || failed==3)CHECK(snapshot.execution_dispatches==64);
+    qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && ps.referenced==(failed>=4 ? 1 : 0) && !marks);
+    if(failed>=4){qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_eval(r,"42",2,&progress,NULL)==QAPLET_OK && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);}
+    CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_close(r,NULL)==QAPLET_OK && !marks);qaplet_m2_snapshot closed=QAPLET_M2_SNAPSHOT_INIT;CHECK(qaplet_get_m2_snapshot(r,&closed,NULL)==QAPLET_OK && closed.lifecycle==QAPLET_CLOSED && !closed.engine_current_bytes);
+    CHECK(!finish(r) && !marks);
+  }
+  puts("M2 process JS terminal: owner stop/dispatch/caught allocation failure cancels child and IO before close; ordinary callback error recovers; no then/catch/finally after termination; CLOSED engine released; actual quiesce/destroy: pass");return 0;
+}
+static int js_lifetime(void) {
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});let seen=false;p.exited.then(()=>{seen=true});"
+    "const out=await p.stdout.read(1).promise,err=await p.stderr.read(1).promise;"
+    "if(!out.eof||!err.eof||seen||!p.hasRef())throw Error('EOF before exit');p.stdin.finish();p.stdin.finish();"
+    "if((await p.exited).exitCode!==37)throw Error('exit');await p.closed;"
+    "const args=[...argv];args[args.indexOf('--eof-before-exit')]='--cancel-output';const q=spawn(args[0],{argv:args});"
+    "const first=await q.stdout.read(1).promise;if(first.bytes[0]!==82)throw Error('ready');q.cancel();q.cancel();"
+    "const cancelled=await q.exited.then(()=>{throw Error('cancel resolved')},e=>{if(e.code!==28||e.reaped!==true)throw Error('cancel facts');return e});"
+    "if(!q.hasRef())throw Error('unread ref');q.stdin.finish();let all=[];for(;;){const x=await q.stdout.read(8).promise;all.push(...x.bytes);if(x.eof)break}"
+    "if(all.join(',')!=='0,1,255,84,10')throw Error('remaining output');q.stderr.close();q.stderr.close();await q.closed;return 42})";
+  CHECK(!js_closed_case("--eof-before-exit",source));puts("M2 process JS lifetime: EOF before exit; cancel before actual reap; native facts; unread binary output after exit; ref through managed closure; repeated close/cancel: pass");return 0;
+}
+static int js_backpressure(void) {
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});let exited=false;p.exited.then(()=>{exited=true});p.stdin.finish();"
+    "const ready=await p.stderr.read(1).promise;if(ready.bytes[0]!==82||exited)throw Error('producer gate');"
+    "let total=0;for(;;){const x=await p.stdout.read(65536).promise;for(const b of x.bytes){if(b!==total%256)throw Error('order');++total}if(x.eof)break}"
+    "if(total!==1048576)throw Error('bounded output');let errors=[];for(;;){const x=await p.stderr.read(2).promise;errors.push(...x.bytes);if(x.eof)break}"
+    "if(errors.join(',')!=='68'||(await p.exited).exitCode!==37)throw Error('stderr/exit');await p.closed;return 42})";
+  CHECK(!js_closed_case("--flood",source));puts("M2 process JS backpressure: controlled producer; no implicit collection; independent stderr; ordered 1MiB binary pull; bounded chunks and EOF: pass");return 0;
+}
+static int js_partial(void) {
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});if((await p.stdout.read(1).promise).bytes[0]!==82)throw Error('ready');"
+    "const w=p.stdin.write(new Uint8Array(1048576).fill(90));const e=await w.promise.then(()=>{throw Error('missing partial error')},e=>e);"
+    "if(e.code!==30||!e.errorDomain||!e.error||e.bytesWritten<4096||e.bytesWritten>=1048576)throw Error('partial bytes '+e.bytesWritten);"
+    "await p.stdin.closed;for(const endpoint of [p.stdout,p.stderr])for(;;){if((await endpoint.read(16).promise).eof)break}"
+    "if((await p.exited).exitCode!==37)throw Error('consumption');await p.closed;try{p.cancel();throw Error('completion cancel')}catch(e){if(e.code!==29)throw e}return 42})";
+  CHECK(!js_closed_case("--partial-input",source));puts("M2 process JS partial write: controlled 4096-byte consumer; stable native error and actual accepted byte count; completion-first cancel; ordinary error cleanup: pass");return 0;
+}
+static int js_inputs(void) {
+  qaplet_process_options o;prepare(&o,"--args");arguments[o.argc++]=(qaplet_string){native_cwd,strlen(native_cwd)};
+  CHECK(!setenv("QAPLET_SNAPSHOT","frozen",1) && !unsetenv("QAPLET_AFTER_CREATE"));
+  qaplet_config b=QAPLET_CONFIG_INIT;b.argv=arguments;b.argc=o.argc;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);CHECK(!setenv("QAPLET_SNAPSHOT","changed",1) && !setenv("QAPLET_AFTER_CREATE","later",1));
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const cwd=argv[argv.length-1],args=argv.slice(0,-1),ignore=['ignore','ignore','ignore'];"
+    "function rejects(f,c){try{f()}catch(e){if(e.code===c)return;throw e}throw Error('missing refusal '+c)}"
+    "rejects(()=>spawn(1),1);rejects(()=>spawn(String.fromCharCode(0xd800)),12);rejects(()=>spawn('a'+String.fromCharCode(0)),1);"
+    "rejects(()=>spawn(args[0],{argv:[1]}),1);rejects(()=>spawn(args[0],{stdio:['ignore','ignore','ignore','ignore']}),1);"
+    "try{spawn('qaplet-missing-explicit-path',{env:[],stdio:ignore});throw Error('missing OS error')}catch(e){if(e.code!==27||!e.errorDomain||!e.error)throw e}"
+    "const p=spawn(args[0],{argv:args,cwd,env:{QAPLET_ONLY:'完整 值',QAPLET_CWD:cwd},stdio:ignore});"
+    "args.fill('changed');if((await p.exited).exitCode!==37)throw Error('snapshot');await p.closed;"
+    "const saved=argv.slice(0,-1);saved[saved.indexOf('--args')]='--snapshot';const q=spawn(saved[0],{argv:saved,stdio:ignore});"
+    "if((await q.exited).exitCode!==37)throw Error('factory env');await q.closed;const inherited=saved.map(x=>x==='--snapshot'?'--empty':x);"
+    "const h=spawn(inherited[0],{argv:inherited,env:{},stdio:['inherit','inherit','inherit']});if(h.stdin!==null||h.stdout!==null||h.stderr!==null)throw Error('inherit endpoints');"
+    "if((await h.exited).exitCode!==37)throw Error('inherit exit');await h.closed;return 42})";
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;
+  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
+  if(code)fprintf(stderr,"JS inputs code=%d diagnostic=%s\n",code,message);qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+  int cleanup=finish(r);CHECK(!cleanup);CHECK(!unsetenv("QAPLET_SNAPSHOT") && !unsetenv("QAPLET_AFTER_CREATE"));CHECK(passed);
+  puts("M2 process JS inputs: strict path/options/UTF-8; copied Unicode argv and cwd; complete environment mapping and factory snapshot; ordinary rejection cleanup: pass");return 0;
+}
+static int js_bytes(int after) {
+  qaplet_process_options o;prepare(&o,"--pipe");qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
+  arguments[b.argc++]=(qaplet_string){after ? "after" : "before",after ? 5 : 6};
+  qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime')]).then(async ([{spawn},{argv}])=>{"
+    "const p=spawn(argv[0],{argv:[...argv]});let a=p.stdout.read(64),b=p.stderr.read(64);"
+    "try{p.stdout.read(1);throw Error('missing BUSY')}catch(e){if(e.code!==4)throw e}"
+    "const input=new Uint8Array([73,0,255,78,10]),w=p.stdin.write(input);input.fill(0);const after=argv[argv.length-1]==='after';if(!after)p.stdin.finish();"
+    "if((await w.promise).bytesWritten!==5)throw Error('write');if(after)p.stdin.finish();"
+    "async function drain(e,first){let all=[];for(;;){const x=await first.promise;all.push(...x.bytes);if(x.eof)return all;first=e.read(64)}}"
+    "const [out,err]=await Promise.all([drain(p.stdout,a),drain(p.stderr,b)]);"
+    "if(out.join(',')!=='73,0,255,78,10'||err.join(',')!=='69,0,254,82')throw Error('binary');"
+    "if((await p.exited).exitCode!==37)throw Error('exit');await p.closed;"
+    "try{w.cancel();throw Error('completed cancel')}catch(e){if(e.code!==29)throw e}return 42}).catch(e=>{throw Error(JSON.stringify({code:e.code,native:e.error,domain:e.errorDomain,stack:e.stack}))})";
+  char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);
+  qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  if(!code)code=qaplet_run(r,&drive,&d);if(code)fprintf(stderr,"JS bytes code=%d diagnostic=%s\n",code,message);
+  qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
+  if(!passed){int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);}
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs && !io.shared_operations && !io.shared_data_bytes);
+  qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.referenced && !ps.retained_results);
+  CHECK(!finish(r));puts("M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass");return 0;
+}
 static int child(int argc,char **argv) {
   if (argc<4) return 98;
   const char *mode=argv[2];
@@ -902,7 +1147,16 @@ static int child(int argc,char **argv) {
   }
   if(!strcmp(mode,"--closed-input")){CHECK(!close(0) && write(1,"R",1)==1);return 37;}
   if(!strcmp(mode,"--partial-input")){
-    unsigned char data[4096];size_t total=0;CHECK(write(1,"R",1)==1);
+    unsigned char data[4096];size_t total=0;
+    /* Bound this actual Linux producer/consumer fixture below the request.
+     * A full write into a 64K kernel pipe is also valid OS acceptance, so it
+     * cannot prove the partial-error contract without this explicit capacity. */
+    /* Linux UAPI F_LINUX_SPECIFIC_BASE(1024)+7; the pinned portable header
+     * omits this Linux-only fixture control. Use one actual kernel page so
+     * this fixture also works on a 64K kernel. Its public IO block override
+     * is 1MiB, greater than that capacity. Never use this command on another OS. */
+    if(IsLinux()){long page=sysconf(_SC_PAGESIZE);CHECK(page>0 && fcntl(0,1031,page)==page);}
+    CHECK(write(1,"R",1)==1);
     while(total<sizeof(data)){ssize_t n=read(0,data+total,sizeof(data)-total);if(n<=0)return 98;total+=n;}
     for(size_t i=0;i<sizeof(data);++i)if(data[i]!=0x5a)return 98;
     return close(0) ? 98 : 37;
@@ -951,6 +1205,27 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
+#ifdef SDK_JS_START_FAULT
+  if (!strcmp(argv[1],"--m2-process-js-reap-fault")) {int result=js_reap_fault();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-start-fault")) {int result=js_start_fault();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+#endif
+  if (!strcmp(argv[1],"--m2-process-js-cycles")) {int result=js_cycles();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-liveness")) {int result=js_liveness();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-io-cancel")) {int result=js_io_cancel(0);CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-limits")) {int result=js_limits();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-terminal")) {int result=js_terminal();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-lifetime")) {int result=js_lifetime();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-backpressure")) {int result=js_backpressure();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-partial")) {int result=js_partial();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-finish-after")) {int result=js_bytes(1);CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-inputs")) {int result=js_inputs();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-issue")) {int result=js_issue();CHECK(!unlink(executable));CHECK(!rmdir(cwd));return result;}
+  if (!strcmp(argv[1],"--m2-process-js-bytes")) {
+    int result=js_bytes(0); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
+  if (!strcmp(argv[1],"--m2-process-js-basic")) {
+    int result=js_basic(0); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
+  }
   if (!strcmp(argv[1],"--m2-process-pipe-lifetime")) {
     int result=pipe_lifetime(); CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
   }
