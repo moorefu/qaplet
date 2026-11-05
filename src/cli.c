@@ -17,18 +17,39 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 #include <unistd.h>
 #include "libc/dce.h"
 #include "libc/nt/console.h"
+#include "libc/nt/events.h"
+#include "libc/nt/ipc.h"
 #include "libc/nt/runtime.h"
+#include "libc/nt/synchronization.h"
+#include "libc/nt/nt/file.h"
+#include "libc/nt/struct/filemodeinformation.h"
+extern uint32_t GetFileType(int64_t);
+extern bool32 GetOverlappedResult(int64_t,struct NtOverlapped *,uint32_t *,bool32);
+
+typedef struct host_output_record {
+  struct NtOverlapped operation;
+  struct host_output_record *next;
+  char data[65536];
+} host_output_record;
+static host_output_record *retained_output;
+static int host_output_incomplete;
+static qaplet_code write_output(unsigned,const char *,size_t);
+static void report_error(const char *);
 
 static int finish(int status) {
   /* The supplied Cosmopolitan exit path encodes POSIX wait status on PE.
    * CLI status is a raw OS contract. Complete SDK cleanup and stdio first. */
+  if(host_output_incomplete){
+    report_error("qaplet: Host output native cleanup incomplete; storage retained until process exit\n");
+    if(!status)status=1;
+  }
   fflush(NULL);
   if (IsWindows()) ExitProcess(status);
   return status;
 }
 
 static int invalid_arguments(void) {
-  fputs("qaplet: INVALID_ARGUMENT\n",stderr);
+  report_error("qaplet: INVALID_ARGUMENT\n");
   return finish(2);
 }
 
@@ -147,11 +168,43 @@ static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
     int64_t handle=GetStdHandle(-10-(int)stream);uint32_t mode=0;
     if(!handle || handle==-1)return QAPLET_IO_ERROR;
     int console=GetConsoleMode(handle,&mode);
+    int asynchronous=0;
+    if(!console){
+      uint32_t type=GetFileType(handle);if(!type)return QAPLET_IO_ERROR;
+      if(type==1 || type==3){
+        struct NtIoStatusBlock status={0};struct NtFileModeInformation file_mode={0};
+        if(NtQueryInformationFile(handle,&status,&file_mode,sizeof(file_mode),kNtFileModeInformation)<0)return QAPLET_IO_ERROR;
+        asynchronous=!(file_mode.Mode&0x30);
+        if(type==1 && asynchronous)return QAPLET_UNSUPPORTED; /* no async-file expansion */
+        if(type==3 && asynchronous){uint32_t flags=0,quota=0;
+          if(!GetNamedPipeInfo(handle,&flags,&quota,NULL,NULL) || (flags&4) || !quota)return QAPLET_UNSUPPORTED;
+        }
+      }
+    }
     while(size){
       uint32_t written=0;
       if(!console){
         uint32_t chunk=size>65536 ? 65536 : size;
-        if(!WriteFile(handle,data,chunk,&written,NULL) || !written || written>chunk)return QAPLET_IO_ERROR;
+        if(asynchronous){
+          /* One bounded Host-owned operation after SDK retirement. Both the
+           * unique OVERLAPPED/event and its copied bytes survive a pending IRP.
+           * A failed completion query is not proof of physical retirement. */
+          host_output_record *owned=malloc(sizeof(*owned));if(!owned)return QAPLET_MEMORY_LIMIT;
+          owned->operation=(struct NtOverlapped){0};owned->next=NULL;memcpy(owned->data,data,chunk);
+          owned->operation.hEvent=CreateEvent(NULL,1,0,NULL);
+          if(!owned->operation.hEvent){free(owned);return QAPLET_IO_ERROR;}
+          int accepted=WriteFile(handle,owned->data,chunk,NULL,&owned->operation);
+          uint32_t error=accepted ? 0 : GetLastError();
+          if((accepted || error==997) && !GetOverlappedResult(handle,&owned->operation,&written,1)){
+            owned->next=retained_output;retained_output=owned;host_output_incomplete=1;return QAPLET_IO_ERROR;
+          }
+          if(!CloseHandle(owned->operation.hEvent)){
+            owned->next=retained_output;retained_output=owned;host_output_incomplete=1;return QAPLET_IO_ERROR;
+          }
+          free(owned);
+          if(!accepted && error!=997)return QAPLET_IO_ERROR;
+        }else if(!WriteFile(handle,data,chunk,&written,NULL))return QAPLET_IO_ERROR;
+        if(!written || written>chunk)return QAPLET_IO_ERROR;
         data+=written;size-=written;
       }else{
         char16_t wide[1024];uint32_t count=0;size_t used=0;
@@ -208,17 +261,17 @@ int main(int argc, char **argv) {
     position+=2;
   }
   if (argc-position==1 && !strcmp(argv[position],"--help")) {
-    fputs("Usage: qaplet [--timeout-ms N] [--max-dispatches N] run <file> [-- args...]\n"
+    const char *text="Usage: qaplet [--timeout-ms N] [--max-dispatches N] run <file> [-- args...]\n"
           "       qaplet [--timeout-ms N] [--max-dispatches N] eval --source <text>\n"
           "       qaplet --help | --version\n"
           "run uses ESM; argv contains only args after --. eval uses Script.\n"
           "eval prints scalar values, raw UTF-8 strings, or 0x-prefixed hex bytes, then a newline.\n"
-          "Zero budgets use finite SDK defaults. Exit: 0 success, 1 execution, 2 arguments.\n",stdout);
-    return finish(0);
+          "Zero budgets use finite SDK defaults. Exit: 0 success, 1 execution, 2 arguments.\n";
+    return finish(write_output(1,text,strlen(text)) ? 1 : 0);
   }
   if (argc-position==1 && !strcmp(argv[position],"--version")) {
-    printf("qaplet 0.1.0 (Embed SDK ABI %u)\n",QAPLET_ABI_VERSION);
-    return finish(0);
+    char text[64];snprintf(text,sizeof(text),"qaplet 0.1.0 (Embed SDK ABI %u)\n",QAPLET_ABI_VERSION);
+    return finish(write_output(1,text,strlen(text)) ? 1 : 0);
   }
   int is_run=position<argc && !strcmp(argv[position],"run");
   const char *input=NULL;
@@ -230,7 +283,7 @@ int main(int argc, char **argv) {
     if (argc-position>3) {
       config.argc=(size_t)(argc-position-3);
       arguments=calloc(config.argc,sizeof(*arguments));
-      if (!arguments) { fputs("qaplet: code=11 MEMORY_LIMIT\n",stderr); return finish(1); }
+      if (!arguments) { report_error("qaplet: code=11 MEMORY_LIMIT\n"); return finish(1); }
       for (size_t i=0;i<config.argc;++i) arguments[i]=(qaplet_string){argv[position+3+i],strlen(argv[position+3+i])};
       config.argv=arguments;
     }
@@ -282,7 +335,7 @@ int main(int argc, char **argv) {
    * been restored; a large eval result must not silently truncate on EAGAIN. */
   if (!code && !unsettled && !cleanup && !restoration && !is_run){
     code=output_result(&result);
-    if(code){char text[128];snprintf(text,sizeof(text),"qaplet: code=%u %s (entry result output)\n",code,code==QAPLET_MEMORY_LIMIT ? "MEMORY_LIMIT" : code==QAPLET_INVALID_UTF8 ? "INVALID_UTF8" : "IO_ERROR");report_error(text);}
+    if(code){char text[128];snprintf(text,sizeof(text),"qaplet: code=%u %s (entry result output)\n",code,code==QAPLET_MEMORY_LIMIT ? "MEMORY_LIMIT" : code==QAPLET_INVALID_UTF8 ? "INVALID_UTF8" : code==QAPLET_UNSUPPORTED ? "UNSUPPORTED" : "IO_ERROR");report_error(text);}
   }
   free(result.buffer);
   if (execution_code){char text[1200];snprintf(text,sizeof(text),"qaplet: code=%u %s\n",(unsigned)execution_code,message);report_error(text);}

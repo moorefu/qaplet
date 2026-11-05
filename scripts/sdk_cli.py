@@ -13,7 +13,7 @@ import uuid
 
 import ape_helpers
 from build_ape import BuildError, audit, identity, link_portable, publish_ape, run
-from foundation import host_facts, now, sha256
+from foundation import ROOT, host_facts, now, sha256
 from input_lock import consumption_purpose
 from startup import measured_host, select_loader
 from workflow_support import guard_evidence_outputs, write_evidence_report
@@ -32,6 +32,16 @@ def compile_consumers(args, report, directory, tree, helpers, sdk, work, output)
     publish_ape(work,output,"qaplet-cli-host",helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),
                 consumption_purpose("build",args.controlled_probe)))
     report["artifacts"].append(audit(args,report,directory,tree,"qaplet-cli-host",output))
+    observed=work/'output-observer';(observed/'tmp').mkdir(parents=True)
+    env=dict(env,TMPDIR=str(observed/'tmp'),BUILDLOG=str(output/'qaplet-cli-output-observer.build-commands.log'))
+    symbols=('WriteFile','GetOverlappedResult','CloseHandle','malloc','free','ExitProcess')
+    report['controlled_cli_output']={'scope':'Controlled product-source CLI build, not a public SDK Host/private-drive API claim',
+        'cli_source':identity(ROOT/'src/cli.c'),'observer_source':identity(sdk/'cli-output-observer.c'),'wrapped_symbols':list(symbols),'controlled_system_fixture':True}
+    for source,name in ((ROOT/'src/cli.c','cli'),(sdk/'cli-output-observer.c','observer')):
+        run(report,directory,'cli-output-'+name+'-compile',[tree/'bin/cosmocc','-Os','-I'+str(sdk/'include'),'-c',source,'-o',observed/(name+'.o')],args.compile_timeout,observed,env)
+    link_portable(args,report,directory,tree,helpers,'qaplet-cli-output-observer',[observed/'cli.o',observed/'observer.o',sdk/'lib/libqaplet.a'],observed/'qaplet-cli-output-observer.com',observed,env,libraries=(*('-Wl,--wrap='+s for s in symbols),'-lm','-lpthread'))
+    publish_ape(observed,output,'qaplet-cli-output-observer',helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose('build',args.controlled_probe)))
+    report['artifacts'].append(audit(args,report,directory,tree,'qaplet-cli-output-observer',output))
 
 
 def digest(data):
@@ -180,6 +190,9 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
             "startup_scope":"Pinned PE CRT changes WINDOW_INPUT/UTF-8 before main; explicit same-CLI help warmup freezes actual-entry baseline. Pre-CRT restoration is not claimed" if windows else None,
             "native_cleanup_complete":bool(passed),"scope":"Initial C prelease; first JS snapshot; released/restored old group; independent raw/VT facades; true CLI child exit; native readback; no signal claim"})
     if before!=[identity(path) for path in (host,cli)]:raise BuildError("Supplied CLI/Host bytes changed")
+    if windows:
+        from m2_cli_output import append_cases
+        append_cases(args,report,directory,cli,artifacts/'qaplet-cli-output-observer.com')
     report["cli_artifact"]=identity(cli)
     report["actual_parent_imports"]=[{"module":name,**identity(Path(module.__file__).resolve())} for name,module in sorted(sys.modules.items())
         if getattr(module,"__file__",None) and Path(module.__file__).is_file() and Path(module.__file__).resolve().parent==Path(__file__).resolve().parent]

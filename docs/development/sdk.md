@@ -442,6 +442,12 @@ text uses explicit strict UTF-8 to UTF-16 conversion and `WriteConsoleW`, withou
 changing or depending on the output code page. Broken/invalid final stdout is
 an execution failure (`IO_ERROR`, exit 1). POSIX writes preserve the caller's
 signal mask and process dispositions while handling their own SIGPIPE failure.
+Verified Windows overlapped byte pipes use a separate bounded Host-owned
+OVERLAPPED/event and copied chunk after SDK retirement. `IO_PENDING` is accepted;
+the Host waits for the actual completion before retiring that storage. If the
+completion cannot be confirmed, it reports incomplete Host output and retains
+the event, OVERLAPPED and copied bytes until process exit. Async regular files
+remain unsupported. This Host operation does not enlarge Runtime limits.
 The pinned PE CRT enables `WINDOW_INPUT` and selects UTF-8 before `main`.
 Console checks record that startup effect separately, then compare complete
 mode restoration with the actual CLI-entry baseline. Restoration of the mode

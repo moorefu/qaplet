@@ -30,6 +30,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_cli_output_observer.c", "cli-output-observer.c", None, None),
     ("tests/native/sdk_cli.c", "host-cli.c", "cli-host.o", "cli-host-compile"),
     ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
     ("tests/native/sdk_mixed_faults.c", "mixed-faults.c", None, None),
@@ -80,6 +81,7 @@ RECIPE += ("examples/application.c", "examples/SDK-README.md")
 RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
+RECIPE += ("scripts/m2_cli_output.py",)
 
 # Same public-process tuple as CLI_CASES; package consumers use this catalog too.
 EXAMPLE_CASES = (
