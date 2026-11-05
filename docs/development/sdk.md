@@ -31,6 +31,64 @@ references without running remaining then/catch/finally callbacks. Work code and
 userdata remain valid until native quiescence. The existing public C submit,
 result-copy and release callback/drive guards retain their documented behavior.
 
+M2 `qaplet:process` exports `spawn(path, options)`. `path`, `cwd` and every
+argument are strict strings. `argv` is the complete C argument vector, including
+argv[0]; omitting it uses the executable path as argv[0]. `env` is a complete
+replacement object with string values, or an array of `KEY=value` strings.
+Omitting it uses the Runtime factory's immutable environment snapshot. The
+optional `stdio` array has exactly three entries (`pipe`, `inherit`, `ignore`),
+and defaults to three pipes. Paths are explicit; relative paths use the Runtime
+cwd, with the same validation, native errors and inheritance rules as C spawn.
+
+The Process has `stdin`, `stdout`, `stderr` (a byte endpoint, or null for an
+inherited/ignored stream), `exited`, `closed`, `cancel()`, `ref()`, `unref()` and
+`hasRef()`. `exited` resolves after actual direct-child exit/reap with `code`,
+`exited`, `reaped`, `exitCode`, `signal`, `errorDomain`, and `error`. Accepted
+process cancellation rejects it with code 28 and preserves those actual native
+facts. `closed` resolves after reap and all managed endpoints end. It remains
+separate from helper exit and the Host's native quiescence barrier. A ref Process
+keeps the loop alive through reap, managed pipe closure and the complete owner
+jobs checkpoint. Unref and garbage collection do not cancel it.
+
+`endpoint.read(n)` and `endpoint.write(bytes)` return an IO Task with `promise`
+and `cancel()`. Reads use a positive integer bound and resolve to
+`{bytes: Uint8Array, eof: boolean}`; an unavailable read stays pending. Writes
+accept a genuine non-shared Uint8Array, copy its current view before acceptance,
+and resolve to `{bytesWritten}`. Errors preserve `code`, `errorDomain`, `error`,
+and the write's actual `bytesWritten`; read errors also preserve a copied
+`bytes` array. Inspect the byte count before retrying a failed write. Each
+endpoint permits one unfinished physical operation; a second returns BUSY.
+`finish()` closes the writing side after its accepted write completes, while
+`close()` immediately requests shutdown/cancellation. Both expose completion
+through `endpoint.closed`; finishing before or after awaiting the write is valid.
+The byte endpoint also provides `ref()`, `unref()` and `hasRef()` for its IO.
+
+```js
+import { spawn } from 'qaplet:process';
+const child = spawn('/bin/cat');
+async function count(endpoint) {
+  let total = 0;
+  for (;;) {
+    const { bytes, eof } = await endpoint.read(65536).promise;
+    total += bytes.length;
+    if (eof) return total;
+  }
+}
+const output = Promise.all([count(child.stdout), count(child.stderr)]);
+await child.stdin.write(new Uint8Array([65, 0, 255])).promise;
+child.stdin.finish();
+const status = await child.exited;
+const lengths = await output;
+await child.closed;
+```
+
+The adapter uses the same public C IO tokens, shared operation/data reservations
+and completion rotation as native callers. Result reservations and Promise roots
+remain until the complete jobs checkpoint; physical IO/helpers retain their
+storage until completion/join even after logical release. Stop/close drop the JS
+roots without running remaining then/catch/finally callbacks, start direct-child
+cancellation, and leave native cleanup to close/quiesce/destroy.
+
 `python3 scripts/sdk.py build` produces `qaplet-sdk.zip` on Ubuntu with the
 public header, x86_64 and hidden `.aarch64` static archives, complete pure C
 application, source modules, licenses, manifest and audited Host/CLI/application
