@@ -190,3 +190,31 @@ rev-parse 后，最终 `handoff-audit-final-2` 在文档提交后生成 `handoff
 其他必需原生平台、当前实际64K产品、CI/Full、最终混合资源长测和 release-ready
 仍 deferred。没有 root 自合、push 或 CI；保留全部 out 原件、旧失败和 worktree
 供独立 merger 核验。
+
+## 独立本地接收
+
+2026-11-05：独立merger以最终source `8b9e389c8c0ef3d70d847776108ad86284cc033a`
+接收产品 `61603f2a006301b60d2575587a906638369db13a` 的第四份供应。确认source
+包含当时actual root `8212c0551c5981963e9ffd33201e0c8a78338ef1` 与12/15独立
+合并祖先、两树clean后，no-ff merge `caa439aeaf384e9db85a4e2e06c51d8ad40fa659`
+树与source完全相同。
+
+合前及合后均使用现有SDK package/native typed consumer和独立raw/catalog重放，
+重核85个recipe输入的供应摘要、产品/交接/合后Git blob与raw LF，公开header、82个
+原ZIP成员、完整分发文件、双CPU各18个ELF64 REL对象、三fat APE headers和1608份
+原日志。normal Linux195、Windows194+既有optional symlink1/required gaps0，
+package各81，controlled fault23/24，真实PTY/显式Console分类及清理各1，原生
+lifecycle各1000，均保持原实际执行身份。STDIO24与未实现TTY25边界未扩大。
+
+独立核验84个tracked Python与devcheck-3 before快照、159bd900 Git和当前字节相同；
+411项/210实际/201条件skip及C bootstrap保留其旧source范围。最后C/header/adapter
+由供应4完整公开边界覆盖；merger新实际执行仅Ubuntu仓库preflight，缓存仍为主
+`.cache`。未重建SDK、未重复长测、未启动QEMU、未push或CI、未执行整体双轴Review。
+独立helper初次对combined fault输出形状的假设失败保留于主out/premerge日志，修正
+仅在忽略的接收helper，后继premerge-2及postmerge通过；没有新的产品失败。
+
+供应HANDOFF/handoff.json摘要前后相同，原supplier dirty字段和全部旧失败保持原样。
+本票claimed/local_complete/cross_deferred支持18本地开发；其他必需原生、当前实际
+64K、CI/Full、最终组合长测及发布就绪未验收。16尚未集成的Process专属lost-reap
+负向不由本票签发。完整选择、命令与摘要见主`out/qaplet-m2/merge-17-stdio/HANDOFF.md`
+及`handoff.json`。

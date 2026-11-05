@@ -35,7 +35,7 @@
 | 14 | `codex/m2-14-process-cancel` | 原件见后续记录 | local_complete / cross_deferred（独立合并`25d3eb12`） |
 | 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（独立合并`65de84e`；Linux186、Windows185+optional1、两端package72、fault16/17；claimed保留） |
 | 16 | `codex/m2-16-js-process` | `.cache/worktrees/m2-16-js-process` | implementing_local；12/14/15已独立合并 |
-| 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | implementing_local；12/15已独立合并；与16并行 |
+| 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | local_complete / cross_deferred（独立合并`caa439ae`；Linux195、Windows194+optional1、两端package81、fault23/24；claimed保留） |
 | 18–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
@@ -301,3 +301,15 @@ Linux normal186、同字节Windows185+既有optional1，两端package各72、独
 详[本票验证记录](15-process-io-validation.md)及其物理根 `handoff.json`。本票
 local_complete/cross_deferred，待独立merger；当前其他原生/实际64K/CI/Full与组合长测
 仍未验收，不push、不自合root、不签发父M2或release-ready。
+
+2026-11-05（17独立本地接收）：最终source `8b9e389c` 已融合实际root `8212c055`，
+独立no-ff `caa439ae`合并树同源。冻结产品61603f2的供应4通过独立合前/合后重放：
+85 recipe raw/Git/LF、原ZIP82、公开header/完整分发、双archive各18 ELF64 REL、
+三fat APE及1608raw logs；normal Linux195、Windows194+既有optional1/必需缺口0，
+package各81、独立fault23/24、真实stdin PTY/显式Console分类各1、原lifecycle各1000。
+84 tracked Python与devcheck-3/159bd900相同，旧411工具合同及bootstrap保留原范围；
+合后新实际执行Ubuntu preflight通过，共享主`.cache`。供应4覆盖最后C/header/adapter
+detach握手，未重建/重复全suite/QEMU/push/CI；全部原件和旧失败未改写。
+详主`out/qaplet-m2/merge-17-stdio/HANDOFF.md`及`handoff.json`。17本地完成已可放行18，
+Status claimed/cross_deferred保留，原38边/135AC与父spec未变。其他原生、当前64K、
+CI/Full、最终混合长测、父M2和release-ready仍未完成；16专属Process后续负向不外推。
