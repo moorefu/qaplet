@@ -6,7 +6,7 @@
 
 **Status:** claimed
 
-**Execution state:** local_complete / cross_deferred；独立分支 `codex/m2-18-tty`，待独立merger接收。
+**Execution state:** local_complete / cross_deferred；已独立no-ff合入 `3e85a272`，接收原件在主 `out/qaplet-m2/merge-18-tty/`。
 
 **Local development:** complete；[本地验证记录](../18-tty-validation.md)及worktree `out/m2-18-tty/HANDOFF.md`、`handoff.json`保存最终供应3与供应2原执行的不同范围。正式Cross/Full及最终矩阵仍deferred。
 
@@ -61,3 +61,4 @@
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
 
+2026-11-05（独立本地接收）：实际no-ff `3e85a27222ddcd2959437b947db4d517047f728d`，parents为root `516ddd4`与最终source `8e8833a`，合并树同source。合前/合后21scope及2536原始日志只读重核，供应3 TTY13/20、selected27/27、包外24/24与供应2完整normal/package/fault保留各自身份；合后Ubuntu preflight通过。保持claimed/local_complete/cross_deferred；本地开发前置可放行19/20，不签发正式Cross/Full或M2完成。收据见主 `out/qaplet-m2/merge-18-tty/HANDOFF.md`、`handoff.json`，旧非TTY诊断仅为19待公开证伪风险。

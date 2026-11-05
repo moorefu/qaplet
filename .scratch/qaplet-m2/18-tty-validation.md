@@ -143,3 +143,39 @@ consumer实际import；若审计后续适配，另存新版本并保留旧字节
 交独立merger接收，不自行合入根。其余原生目标、当前实际64K、CI/Full、五平台最终
 矩阵、混合资源长测/1小时及整体Review仍未完成；release_ready=false。没有push/CI/
 main/tags/release或账户改动，没有自合root或清除原件。
+
+## 独立本地接收
+
+2026-11-05：fresh merger从clean root `516ddd4a6a3516f23ad493358f4d4953b78f4990`
+实际no-ff合入最终source `8e8833a706989b89d61c7311cc49533615a87c91`，产生
+`3e85a27222ddcd2959437b947db4d517047f728d`。两parent及合并树与source相同已核；
+产品仍为 `958b3e26ec5bfa8824259bf1aed60b0224eab543`，其后5份MD不改变90项配方。
+
+独立接收复用主 `out/qaplet-m2/merge-18-tty/preaudit-3.json` 的固定静态结果并逐项确认
+当前身份稳定：90项raw LF/Git/producer、原ZIP84成员、双archive各19个ELF64 REL、
+公开/M1头及三fat APE与sidecars。供应2静态原件和2→3两文件差异继续保留。
+`premerge-2.json`、`postmerge.json`独立只读消费21scope和2536原始日志，结果通过：
+
+| 原实际范围 | 独立重放 |
+| --- | --- |
+| 供应3当前TTY，真实模式/alias/resize/Console与独立fault | Linux13、Windows20 pass；ConPTY清理全部true |
+| 供应3相关IO/stdio与TTY诊断、facts/lifetime | 两端各27 pass；其中既有lifetime实际1000 |
+| 供应3 ZIP公开包外IO/stdio消费 | 两端各24 pass；Ubuntu源树外编译，Windows同字节 |
+| 供应2原完整normal | Linux209 pass；Windows208 pass与既有optional symlink1；required缺口0 |
+| 供应2原完整package/fault | package94/94、fault24/25 pass；仍为原source/SDK身份 |
+| 供应1完整工具检查 | 原source0842320，411总/210执行/201条件skip及真实C bootstrap |
+| 后续工具与L0 | 供应2定向12项/11执行+1条件skip；供应3TTY L0 executed/pass |
+| 合后新实际检查 | Ubuntu root preflight pass；主物理.cache、46脚本解析、52编码文件 |
+
+实际父imports/calls、静态过近似清单、子argv与child动态imports unknown分别保留；
+没有把auditor倒推成早期consumer依赖。merger首次helper把动态facts的None期望误当
+固定stdout，原失败命令/log保留，仅修主out helper的公开facts语义后通过；源和供应原件未改。
+没有重建SDK、运行新产品或重复成功suite/历史probe/长测/QEMU，没有push或触发CI。
+
+接收后保持claimed、local_complete / cross_deferred，19/20本地开发前置可放行；merger
+未领取19/20。27票、38条Blocked by、135项AC及父规格原字节未改。其他必需原生、当前
+实际64K、正式CI/Cross/Full、组合长测/1小时、整体Standards/Spec Review及发布门禁仍待验，
+release_ready=false。旧非TTY诊断样式保留为19待公开证伪风险，不表述成已复现漏洞。
+
+主 `out/qaplet-m2/merge-18-tty/HANDOFF.md` 和 `handoff.json`保存actual merge、后续
+仅三份接收MD的commit、检查与命令日志身份；供应worktree、原HANDOFF/JSON及旧失败原地保留。

@@ -344,3 +344,14 @@ worktree `out/m2-18-tty/HANDOFF.md`、`handoff.json`交接。SIGHUP设施失败�
 alias真实产品红、event/TLS屏障红与非recipe Windows路径错误等原件均保留。
 18保持claimed/local_complete/cross_deferred，待独立合入后放行19/20；不自合root。
 其他原生、当前实际64K、CI/Full、组合长测和最终整体Review仍未完成，不push或release。
+
+2026-11-05（18独立本地接收）：fresh merger实际no-ff `3e85a272`，从clean root516合入
+最终source8e8833a，tree同源；冻结产品958b3e2、90recipe、84ZIP成员及双archive19+19不变。
+合前/合后只读重核21scope/2536raw：供应3 TTY13/20、selected27/27、包外24/24；供应2
+完整normal209/208+optional1、package94/94及fault24/25保留原身份，供应1工具411/210/201
+保留原范围。合后Ubuntu root preflight通过，46解析/52编码文件及主物理.cache。父actual
+依赖与静态清单/child imports unknown分开；merger无新产品执行、重建或历史长测重跑。
+收据与命令见主 `out/qaplet-m2/merge-18-tty/HANDOFF.md`、`handoff.json`。18保持claimed/
+local_complete/cross_deferred，本地可放行19/20，未由merger领取；旧非TTY诊断仅留19待公开
+证伪风险。27票/38边/135AC和父spec不变，其他原生/当前64K/CI/Full/混合长测/整体Review
+及发布门禁仍待验，不push或release-ready。
