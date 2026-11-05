@@ -17,7 +17,9 @@ recipe `4a59fdcf6cc545e87fd11033dcafafe4afb064537652ef6d8cce435d26996136`。
 
 本worktree的`out/m2-24-native-matrix/selection-sku4-current.json`逐份以完整
 SHA/长度明确选择当前实际执行。最终严格报告、全部原件清单、命令与交接步骤位于
-同目录`HANDOFF.md`、`handoff.json`和`matrix-sku4-final.json`。
+同目录`HANDOFF.md`、`handoff.json`和`matrix-sku4-final-2.json`；Ubuntu只读同原件
+重放为`matrix-sku4-final-linux-2.json`，Windows路径先经Evidence映射再取父目录，
+原先丢失Windows反斜杠路径的Linux reader红件独立保留。
 
 新增`m2_native_matrix.py`及case-name-only catalog列出全部五原生18分组；缺失、
 必需skip、fail、超时、guest替代native、错供应、重复case、M1循环替代M2、计数不足
