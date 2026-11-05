@@ -38,6 +38,13 @@
 | 17 | `codex/m2-17-standard-stdio` | `.cache/worktrees/m2-17-standard-stdio` | implementing_local；12/15已独立合并；与16并行 |
 | 18–27 | 待分派 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 按各自真实blocker分派；最终验收合同保留 |
 
+2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
+全部保持原文；父规格原字节未变，当前SHA-256为
+`f203700a2b1ad82a67f3e0fc3c0ecbae96ff8db470ae85f1c019b131a51c400b`。
+祖先/合同核验在 `out/qaplet-m2/alignment-16-27.json`，启动预检在
+`out/qaplet-m2/preflight-16-17-start.json`（pass）。这些只证明前置与材料正确，
+不计16/17产品测试。两票独立实现者已分别在上表worktree启动。
+
 ## 环境事实
 
 `out/qaplet-m2/context.json` 记录实际上下文：Ubuntu、Linux x86_64、WSL2 kernel `6.6.87.2-microsoft-standard-WSL2`、4096 页、uid/gid 1000、构建允许。该报告只证明执行环境，不证明产品合同通过。
