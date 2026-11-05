@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "runtime_internal.h"
+#include "io_internal.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -277,7 +278,8 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
   }
   runtime->host_registration_locked = 1;
   uint64_t jobs = 0, events = 0, deliveries = 0;
-  unsigned progressed = 0;
+  uint64_t io_budget=runtime->m2_limits.pump_io_bytes;
+  unsigned progressed = runtime->m2_enabled ? qaplet_io_pump(runtime,&io_budget) : 0;
   /* One driver slice is an immediate round. Registrations during this slice
    * remain live but cannot be claimed until a later slice. */
   uint64_t immediate_cutoff = runtime->timer_sequence;
@@ -311,11 +313,12 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     int timer_eligible = !automatic || runtime->keepalive_tokens || runtime->snapshot.queue_depth || qaplet_work_referenced_locked(runtime) || qaplet_timers_ref_locked(runtime) || qaplet_process_referenced_locked(runtime);
     int work_ready = timer_eligible && qaplet_work_ready_locked(runtime);
     int process_ready = timer_eligible && qaplet_process_pending_locked(runtime);
+    int io_ready = timer_eligible && qaplet_io_ready_locked(runtime);
     pthread_mutex_unlock(&runtime->mutex);
     int timer_ready = timer_eligible && qaplet_timers_pending(runtime,0,0);
     int immediate_ready = timer_eligible && qaplet_timers_pending(runtime,1,immediate_cutoff);
     int event_ready = events < runtime->snapshot.limits.pump_events && qaplet_events_pending(runtime);
-    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !immediate_ready && !event_ready && !work_ready && !process_ready)) {
+    if ((runtime->m2_enabled && deliveries == 32) || (!timer_ready && !immediate_ready && !event_ready && !work_ready && !process_ready && !io_ready)) {
       progress->phase = runtime->snapshot.phase;
       progress->progressed = progressed;
       progress->code = QAPLET_OK;
@@ -323,15 +326,16 @@ qaplet_code qaplet_pump_ready(qaplet_runtime *runtime, qaplet_progress *progress
     }
     /* Resume after the last claimed category, including across a pump which
      * returned halfway through its jobs checkpoint. Empty categories skip. */
-    int ready[4]={work_ready || process_ready,timer_ready,immediate_ready,event_ready};
+    int ready[4]={work_ready || process_ready || io_ready,timer_ready,immediate_ready,event_ready};
     unsigned selected=runtime->ready_cursor;
     while (!ready[selected]) selected=(selected+1)%4;
     if (selected==0) {
       unsigned provider=runtime->completion_cursor;
-      if ((provider==0 && !work_ready) || (provider==1 && !process_ready)) provider=1-provider;
-      unsigned completed=provider==0 ? qaplet_work_handoff(runtime,1) : qaplet_process_handoff(runtime,1);
+      int providers[3]={work_ready,process_ready,io_ready};
+      while(!providers[provider])provider=(provider+1)%3;
+      unsigned completed=provider==0 ? qaplet_work_handoff(runtime,1) : provider==1 ? qaplet_process_handoff(runtime,1) : qaplet_io_handoff(runtime,1);
       deliveries+=completed;
-      if (completed) { progressed=1;runtime->ready_cursor=1;runtime->completion_cursor=1-provider; }
+      if (completed) { progressed=1;runtime->ready_cursor=1;runtime->completion_cursor=(provider+1)%3; }
       if (qaplet_execution_check(runtime)) break;
       continue;
     }

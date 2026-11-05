@@ -256,7 +256,8 @@ qaplet_code qaplet_report(qaplet_diagnostic *diagnostic, qaplet_code code) {
         code == QAPLET_CONTROL_FAILURE ? "CONTROL_FAILURE" :
         code == QAPLET_PROCESS_ERROR ? "PROCESS_ERROR" :
         code == QAPLET_CANCELLED ? "CANCELLED" :
-        code == QAPLET_ALREADY_COMPLETED ? "ALREADY_COMPLETED" : "UNKNOWN";
+        code == QAPLET_ALREADY_COMPLETED ? "ALREADY_COMPLETED" :
+        code == QAPLET_IO_ERROR ? "IO_ERROR" : "UNKNOWN";
     size_t length = strlen(message), copied = 0;
     if (diagnostic->capacity) {
       copied = length < diagnostic->capacity - 1 ? length : diagnostic->capacity - 1;

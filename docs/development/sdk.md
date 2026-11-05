@@ -441,3 +441,47 @@ owner 确认 STOPPED/FAILED 即走相同终止责任，无须先 close；close/q
 真实 terminate error、取消接受后 wake 故障、创建 rollback 与身份丢失证据。
 Windows 只消费 Ubuntu 供应的同字节 APE/child；其 HANDLE 复用用例在真实 close
 后立即持有 OS 复用事件，再验证旧 token 与迟到 helper 不影响新对象。
+
+## M2 C Host 的 owned Process pipes
+
+`QAPLET_CAP_PROCESS_IO`（bit 23）交付默认 stdin/stdout/stderr 三路 pipe；普通
+I/O 错误为新增 `QAPLET_IO_ERROR=30`，旧错误值和 M1 POD 布局不变。公开独立
+版本化端点、操作、结果和快照不暴露 fd/HANDLE。`qaplet_process_get_stdio` 的
+stream 0/1/2 对应三路，inherit/ignore 返回 UNSUPPORTED。
+
+owner 在驱动/回调之外提交 bounded read/write、finish/close、copy/release；取消
+和 POD 查询可任意线程调用，不进入 JS；HostNotify 一律 BUSY。读 PENDING 与 EOF
+分开，短读返回当前可用字节。写先复制，终态保存 OS 已确认接受的字节数，失败或
+取消不回滚；该数不是 child 消费量。取消后原生 I/O 未退出时 copy 为 BUSY，确保
+字节数稳定；release 立即使 token 失效，但物理调用、helper join 和 owner handoff
+均完成之前不能归还 record/data 额度。start_error_domain/error 保存启动原生错误。
+
+`qaplet_io_finish` 让已接受的 stdin 写完成后正常关写；`qaplet_io_close` 立即取消
+并关端点。stdout/stderr 独立拉取保序，无消费者不继续采集；单方向一个未完成操作，
+额外请求 BUSY。默认单块 64KiB，每 pump 256KiB，Work 与 I/O 合计 128 operations /
+8MiB data，数据仍属于 16MiB native 总额。`qaplet_get_io_snapshot` 同时报告 I/O
+占用和共享 current/peak；计量不把结果释放误当成线程物理退出。
+
+child reap、exit 交付和 managed stdio end 独立；已退出仍可读剩余输出，EOF 也不证明
+child 已退出。ref 持续到 reap、管道 EOF/显式 close 和完成 handoff；process release
+在 stdio 未结束时仍 BUSY。显式 process cancel 保留剩余输出，Runtime stop/FAILED/
+close 则关闭 managed endpoints 并保留必要原生存储，quiesce 只收原生责任。
+
+POSIX owned pipe 使用 nonblocking owner poll；EPIPE 不改宿主 SIGPIPE handler/mask，
+也不吞调用前已有的 pending SIGPIPE。Windows 用实际 named-overlapped pipe，借助
+有限 helper 等待 native event 后唤醒内部 waker，不短轮询。创建期从仍 owned 的读端
+查询实际 server output quota 并据此分块写；临时 child ends 按继承协议及时关闭。
+独立探针保留“大 pending write 取消虽返回 0、peer 已读到字节”的真实反例，不把
+它外推为精确零副作用。该 route 只覆盖本票 owned Process pipes，17 的宿主 stdio
+仍须独立判能力。
+
+`package-consume` 实跑上述公开 Process/I/O catalog；`fault-consume` 另以供应 ZIP
+的 `io-faults.c` 包外编译独立 APE，记录 syscall 包装、真实 1024-byte 前缀、原生
+错误、接受后 wake 失败、分配拒绝即 owner 启动清理、实际 fd/HANDLE 复用，以及
+Windows helper 启动拒绝和 TLS 析构 gate。Linux/Windows 本地成绩与 deferred Cross
+见票 15 实施记录；这些受控配方不混入普通产品或借用 stdio 支持声明。
+
+普通 helper I/O wait 失败先结为保留原生错误的操作终态；仍取消并等待实际内核完成，
+再经 HostNotify 唤醒外部 owner。该恢复不依赖 owner 周期轮询；event、OVERLAPPED、
+buffer 在完成证明与 helper join 前继续保留。无法维持清理等待时保留不确定责任，
+不把 helper 退出冒充内核已停止使用数据。

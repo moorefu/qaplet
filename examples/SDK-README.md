@@ -67,8 +67,9 @@ M2 is explicit: call `qaplet_create_m2` with the unchanged M1 base config plus
 `qaplet_get_m2_snapshot` reports capabilities actually enabled on the instance,
 finite effective limits, lifecycle, execution phase and native cleanup state.
 Old `qaplet_create` handles do not acquire M2 capabilities or native resources.
-The M2-runtime bit currently covers the empty Runtime lifecycle and ready-work
-drive only. Timer, OS waiting, work, process and stdio capabilities are absent.
+The M2-runtime bit covers the explicit lifecycle and ready-work drive. Timers,
+OS waiting, named work, direct children and owned process pipes have independent
+capability bits. Host standard streams are not implicitly taken over.
 
 `qaplet_pump` never waits. M2 `qaplet_run_once` drives one bounded ready-work round;
 `qaplet_run` continues until idle, an error, stop, or an unsettled entry with no
@@ -98,7 +99,7 @@ cancellation is successful; native completion published first returns
 `QAPLET_ALREADY_COMPLETED`. Query actual `exited`, `reaped`, exit code, signal
 and native error independently. Cancellation does not report a fake reap, close
 managed output streams, or release a still-running helper's storage.
-`qaplet_process_release` remains BUSY before reap. STOPPED/FAILED owner
+`qaplet_process_release` remains BUSY before reap and managed pipe end/handoff. STOPPED/FAILED owner
 confirmation starts the same termination path before close. After close,
 retry bounded `qaplet_quiesce`; destroy remains BUSY until physical cleanup.
 The Host must never reap SDK children itself.
@@ -108,3 +109,43 @@ SDK outside the checkout. `fault-consume` separately builds `process-faults.c`
 with recorded OS wrappers for deterministic helper/TLS handoffs, real native
 errors and accepted wake failure. These controlled fixtures are distinct from
 normal product evidence.
+
+`QAPLET_CAP_PROCESS_IO` enables the default three owned byte pipes. Use
+`qaplet_process_get_stdio` with stream 0/1/2 to get stdin/stdout/stderr tokens;
+inherit/ignore have no managed endpoint. Submit bounded `qaplet_io_read` or
+`qaplet_io_write`, observe `qaplet_get_io_status`, copy the stable result with
+`qaplet_io_copy_result`, then `qaplet_io_release`. Submit independent stdout and
+stderr reads; a second unfinished operation on the same endpoint returns BUSY.
+PENDING read means temporarily unavailable; a successful explicit EOF ends that
+read endpoint. The SDK reads only on demand, with finite OS backpressure.
+
+Write input is copied before acceptance. A write result counts bytes confirmed
+accepted by the OS, including a prefix before ordinary failure or cancellation;
+it does not count child consumption. `qaplet_io_finish` drains an accepted stdin
+write and then closes the write end. `qaplet_io_close` immediately requests
+cancellation and endpoint shutdown. Operation cancel is any-thread native
+control; read/write/finish/close/result copy/release belong to the owner outside
+drives/callbacks. POD status/snapshots are any-thread; all reject HostNotify
+reentry. Copy remains BUSY while cancelled physical I/O can still change its
+byte count. Release invalidates the token immediately but does not free physical
+buffers or a helper still exiting. Startup OS errors remain in the I/O snapshot.
+
+Child exit/reap and stdout/stderr EOF are independent. A ref child stays live
+through managed stdio end and owner completion handoff. Explicit process cancel
+preserves buffered output for subsequent reads. Close/stop/FAILED initiate native
+cleanup, without running JS. Work and I/O share the finite operation-count and
+operation-data budgets inside the native-storage total; retained results, native
+calls and pending handoffs continue charging their reservations.
+
+The owned POSIX pipe adapter uses nonblocking owner poll and preserves the
+Host's SIGPIPE disposition, thread mask and preexisting pending signal. Windows
+uses real named pipes with overlapped parent handles, synchronous inherited
+child ends, event waits and CancelIoEx. It queries the owned read end's actual
+server output quota before inheritance, bounds native write chunks by that
+quota, and closes the parent's temporary child ends after spawn. No borrowed
+stdio route is implied. `io-faults.c` is a separate package-only system fixture
+for real short transfer/error, accepted wake failure, allocation failure,
+descriptor/HANDLE reuse, and Windows helper startup/physical-exit gates.
+An ordinary helper I/O-wait error retains its native error and cancels the
+pending request. The helper still signals the external Host when kernel I/O
+actually completes; its event/data remain reserved until that proof and join.

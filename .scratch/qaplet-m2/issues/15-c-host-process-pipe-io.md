@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress；本地Linux/Windows阶段，完整Cross deferred。
+**Execution state:** local_complete；本地Linux/Windows实现与供应验收完成，完整Cross `cross_deferred`。
+
+**Local development:** complete；已融合实际integration `ce9cd7e41fed5361c54a9112d6fccccd15ee1f21`，支持后续本地开发。独立merger尚待接收，其他原生平台、当前实际64K、CI与组合长测仍待验收，`Status: claimed`保留。
 
 **Execution prerequisites:** 03已完成、11/13的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
@@ -18,11 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] pipe/inherit/ignore 及默认三路 pipe 全部可用；读写操作复用可靠完成与共享操作/字节额度，不挤占业务事件。
-- [ ] 每方向一个未完成操作，额外请求 BUSY；读当前可用字节并区分暂不可用/EOF，保留任意字节和 NUL。
-- [ ] 写入先复制，短写和失败都保留实际已写量；正常结束写入与立即取消/关闭分开。
-- [ ] stdout/stderr 独立拉取保序、慢消费者背压和每轮 I/O 额度有效；退出/reap 与 EOF 分开，未读数据仍可消费。
-- [ ] 真实 fd/HANDLE 复用、取消中 close、迟到完成和继承泄漏无误投/UAF；受管理 stdio 未结束时 ref 责任仍在。
+以下勾选限定于已执行的本地 Linux/Windows；完整 Cross/Full 与父规格组合验收仍未完成。
+
+- [x] pipe/inherit/ignore 及默认三路 pipe 全部可用；读写操作复用可靠完成与共享操作/字节额度，不挤占业务事件。
+- [x] 每方向一个未完成操作，额外请求 BUSY；读当前可用字节并区分暂不可用/EOF，保留任意字节和 NUL。
+- [x] 写入先复制，短写和失败都保留实际已写量；正常结束写入与立即取消/关闭分开。Windows bytes 是 OS 已确认写入量，不等于 child 最终消费量。
+- [x] stdout/stderr 独立拉取保序、慢消费者背压和每轮 I/O 额度有效；退出/reap 与 EOF 分开，未读数据仍可消费。
+- [x] 真实 fd/HANDLE 复用、取消中 close、迟到完成和继承泄漏无误投/UAF；受管理 stdio 未结束时 ref 责任仍在。
 
 ## Blocking details
 
@@ -55,4 +59,10 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-05：完成本地 Linux/Windows 纵向实现与验收，新增 owned Process pipe I/O，
+Work/I/O 共用 operations/data 预留，保留 12 的 JS Work 及 14 的唯一 cancel/reap 责任。
+Linux normal186、Windows185+既有optional1、两端package各72、fault分别16/17，
+devcheck402项/202实际/200条件skip及bootstrap通过；完整身份与真实红绿见
+[本票验证记录](../15-process-io-validation.md)。保持claimed/cross_deferred，不push或触发CI。
 

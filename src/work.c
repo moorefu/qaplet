@@ -254,8 +254,8 @@ static qaplet_code submit(qaplet_runtime *runtime,const char *name,size_t name_l
     metadata=slots+workers;
   }
   pthread_mutex_lock(&runtime->mutex);
-  if (runtime->work_snapshot.operations>=runtime->m2_limits.operations ||
-      bytes>runtime->m2_limits.operation_data_bytes-runtime->work_snapshot.data_bytes ||
+  if (runtime->operations_current>=runtime->m2_limits.operations ||
+      bytes>runtime->m2_limits.operation_data_bytes-runtime->operation_data_current ||
       !fits_locked(runtime,bytes+metadata) || pool->sequence==UINT64_MAX) code=QAPLET_RESOURCE_LIMIT;
   pthread_mutex_unlock(&runtime->mutex);
   if (!code) code=storage(runtime);
@@ -274,6 +274,7 @@ static qaplet_code submit(qaplet_runtime *runtime,const char *name,size_t name_l
     if (!pool->tasks[slot].active && pool->tasks[slot].generation!=UINT64_MAX) { task=&pool->tasks[slot]; break; }
   if (!code && !task) code=QAPLET_RESOURCE_LIMIT;
   if (!code) code=start_worker_locked(runtime);
+  if (!code) code=qaplet_operation_reserve_locked(runtime,bytes);
   if (!code) {
     runtime->host_registration_locked=1;
     uint64_t generation=task->generation+1;
@@ -375,6 +376,7 @@ qaplet_code qaplet_work_copy_result(qaplet_runtime *runtime,const qaplet_work_ta
   return qaplet_report(diagnostic,code);
 }
 static void retire_task(qaplet_runtime *runtime,work_task *task) {
+  qaplet_operation_retire_locked(runtime,task->data_size);
   free_locked(runtime,task->data,task->data_size);
   runtime->work_snapshot.data_bytes-=task->data_size; --runtime->work_snapshot.operations;
   if (terminal(task)) --runtime->work_snapshot.retained_results;

@@ -31,7 +31,8 @@
 | 10 | `codex/m2-10-work` / `codex/m2-10-file-fix` | 原件见 `tickets/10` / `10-file-fix` | completed（`f2b0e0c` SDK五原生710+实际64K142，包外21/fault2） |
 | 11 | `codex/m2-11-cancel` | `.cache/worktrees/m2-11` | awaiting_cross（`d8a9ba9` 已合取消/结果release与物理保留） |
 | 13 | `codex/m2-13-process` / `codex/m2-13-cross-fix` | 冻结 `.cache/worktrees/m2-13`；新 `.cache/worktrees/m2-13-cross-fix` | in_progress（Full两Mac16必需失败；B02纯POD跨线程查询真实缺口） |
-| 12、14–27 | 待分派 | 待创建 | 按各自 blocker 与槽位分派 |
+| 15 | `codex/m2-15-process-io` | `.cache/worktrees/m2-15-process-io` | local_complete / cross_deferred（Linux186、Windows185+optional1、两端package72、fault16/17；待独立merger） |
+| 12、14、16–27 | 待分派或见后续记录 | 见后续记录 | 按各自 blocker 与槽位分派 |
 
 ## 环境事实
 
@@ -277,3 +278,15 @@ preflight通过；root19个既有非配方Python仅CRLF恢复为Git原始LF，�
 development complete，claimed/cross_deferred保留；15已收到actual integration SHA。
 详主 `out/qaplet-m2/merge-14-fusion-js12/HANDOFF.md`、`handoff.json`。不重复380/QEMU/
 Full，不push/触发CI/整体Review；父M2、其他原生平台、actual64K及组合长测仍未验收。
+
+2026-11-05（15本地实现与验收）：`codex/m2-15-process-io` 已自然融合 actual root
+`ce9cd7e41fed5361c54a9112d6fccccd15ee1f21`，保留12完整JS Work与14唯一cancel/reap修复。
+产品供应 `74906ff4` 的 owned Process三PIPE、可靠operation token、共享128operations/
+8MiB data与物理保留、独立有限背压、EOF/ref及stop/FAILED/close全合同已在公开边界实跑。
+Linux normal186、同字节Windows185+既有optional1，两端package各72、独立fault16/17，
+两端生命周期各1000次；devcheck402项/202实际/200条件skip与bootstrap通过。
+80配方raw/Git/LF/ZIP、双archive各16 ELF64 REL及1448 raw logs、全tracked Python/helper
+前后静态身份和父实际imports分别核验；子动态imports未知明确保留，非recipe EOL仅分类。
+详[本票验证记录](15-process-io-validation.md)及其物理根 `handoff.json`。本票
+local_complete/cross_deferred，待独立merger；当前其他原生/实际64K/CI/Full与组合长测
+仍未验收，不push、不自合root、不签发父M2或release-ready。

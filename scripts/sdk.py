@@ -30,6 +30,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_io_faults.c", "io-faults.c", None, None),
     ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
     ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
     ("tests/native/sdk_work.c", "host-work.c", "work-host.o", "host-work-compile"),
@@ -55,7 +56,7 @@ HOST_UNITS = (
     ("tests/native/sdk_values.c", "host-values.c", None, None),
 )
 
-RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
           "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
           "scripts/sdk.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
           "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
@@ -77,7 +78,7 @@ EXAMPLE_CASES = (
     ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
     ("arguments", [], 2, "", "Usage: qaplet-example"),
 )
-RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 16744447, "defaults": {
     "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
     "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
     "execution_timeout_ms": 30000, "execution_dispatches": 100000,
@@ -85,6 +86,13 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 8355839, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-process-pipe-lifetime", ["--m2-process-pipe-lifetime", "{self}", "{launcher}"], "M2 process pipe lifetime: EOF before child exit; stdin finish gates reap; process cancel preserves buffered binary output; native exit and managed EOF remain separate through ref handoff: pass\n"),
+    ("m2-process-pipe-backpressure", ["--m2-process-pipe-backpressure", "{self}", "{launcher}"], "M2 process pipe backpressure: no output demand allocates no collection buffer; independent stderr; ordered 1MiB binary pull; per-pump byte quota; bounded retained data; EOF and cleanup: pass\n"),
+    ("m2-process-pipe-shared-limits", ["--m2-process-pipe-shared-limits", "{self}", "{launcher}"], "M2 process pipe shared limits: Work and I/O share count and data; retained results and owner handoff keep reservations; ordinary saturation refuses atomically and recovers: pass\n"),
+    ("m2-process-pipe-control", ["--m2-process-pipe-control", "{self}", "{launcher}"], "M2 process pipe control: foreign cancel/POD; owner mutations; HostNotify BUSY; release invalidates while cancel/close retires physically; reused process endpoints reject stale tokens: pass\n"),
+    ("m2-process-pipe-write-failure", ["--m2-process-pipe-write-failure", "{self}", "{launcher}"], "M2 process pipe write failure: child closes stdin before ready; zero accepted bytes; Host SIGPIPE handler/mask/pending preserved; ordinary native error keeps Runtime OPEN; cleanup: pass\n"),
+    ("m2-process-pipe-bytes", ["--m2-process-pipe-bytes", "{self}", "{launcher}"], "M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass\n"),
+    ("m2-process-pipe-defaults", ["--m2-process-pipe-defaults", "{self}", "{launcher}"], "M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass\n"),
     ("m2-process-terminal", ["--m2-process-terminal", "{self}", "{launcher}"], "M2 process terminal cleanup: PENDING/ordinary-error close; owner STOPPED/FAILED force/reap before close; first cause retained; queued jobs/finally never run; native cleanup drained: pass\n"),
     ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
     ("m2-work-js-errors", ["--m2-work-js-errors"], "M2 work JS errors: strict uncoerced names/Uint8Array; atomic missing/oversized refusal; bounded output rejection; real errno domain/value; caught operation errors preserve OPEN and recover capacity: pass\n"),
@@ -307,6 +315,7 @@ def package_consume(args, report, directory):
         compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
@@ -387,6 +396,21 @@ def package_consume(args, report, directory):
             "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
             "controlled_system_fixture": args.operation == "fault-consume", "platforms": platforms,
             "reason": "Process C consumer compiled outside both source checkouts from the sealed supplied SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-io-faults.com"
+        for mode, expected, platforms in IO_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-", output / "sdk/process-child.exe"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -403,7 +427,7 @@ def seal_package(report, output):
     manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **RUNTIME_METADATA,
         "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
             "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
-            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work"],
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io"],
         "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
             for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
         "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
@@ -578,17 +602,26 @@ PROCESS_FAULT_CASES = (
     ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
     ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
 )
+IO_FAULT_CASES = (
+    ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
+    ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--allocation", "controlled I/O allocation: actual SDK refusal is permanent; owner starts child termination without another pump/close; first cause and physical cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--reuse", "controlled I/O reuse: real closed native descriptor/HANDLE reused; pending cancel/close and stale endpoint/operation tokens never target replacement; exact new child byte and cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--wake", "controlled I/O wake: accepted token survives actual wake failure; cancellation/release remain accepted; independent first cause and owner cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--physical", "controlled I/O physical: cancelled syscall exits before gated helper TLS destruction; released token invalid; bytes/count retained CLOSED; finite retry and BUSY destroy; real join retires storage: pass\n", ["Windows"]),
+    ("--start", "controlled I/O start: real helper start refusal preserves native errno; no accepted token/count/bytes; ordinary failure retries and cleans up: pass\n", ["Windows"]),
+)
 
 
-def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False):
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False):
     """Public package-only Process application; wrapped OS fixture is separate."""
     (work / "tmp").mkdir(parents=True)
-    name = "qaplet-process-faults" if faults else "qaplet-process-host"
-    source = sdk / ("process-faults.c" if faults else "host-process.c")
-    symbols = ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    name = "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
+    source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
+    symbols = ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / (name + ".build-commands.log")))
-    report["process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+    report["io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
         "source": identity(source), "include_directories": [str(sdk / "include")],
         "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
         "wrapped_symbols": list(symbols), "scope": "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
@@ -692,7 +725,7 @@ def build(args, report, directory):
     environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
                        BUILDLOG=str(output / "qaplet-host.build-commands.log"))
     objects = []
-    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
         obj = work / (path.stem + ".o")
         run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
             args.compile_timeout, work, environment)

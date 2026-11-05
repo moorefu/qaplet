@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "runtime_internal.h"
+#include "io_internal.h"
 #include <limits.h>
 #include <stddef.h>
 #include <string.h>
@@ -402,7 +403,7 @@ qaplet_code qaplet_get_m2_snapshot(qaplet_runtime *runtime, qaplet_m2_snapshot *
   qaplet_query_abi(&abi);
   pthread_mutex_lock(&runtime->mutex);
   value.capabilities = runtime->m2_enabled ? abi.capabilities : abi.capabilities &
-    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS);
+    ~((uint64_t)QAPLET_CAP_M2_RUNTIME | QAPLET_CAP_M2_WAIT | QAPLET_CAP_M2_TIMERS | QAPLET_CAP_M2_WORK | QAPLET_CAP_HOST_NOTIFY | QAPLET_CAP_PROCESS | QAPLET_CAP_PROCESS_IO);
   value.lifecycle = runtime->snapshot.lifecycle;
   value.phase = runtime->snapshot.phase;
   value.termination_reason = runtime->snapshot.termination_reason;
@@ -504,7 +505,7 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
       reason = progress.phase == QAPLET_PHASE_PENDING ? QAPLET_DRIVE_UNSETTLED_ENTRY : QAPLET_DRIVE_IDLE;
       pthread_mutex_unlock(&runtime->mutex); break;
     }
-    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
+    if (qaplet_work_ready_locked(runtime) || qaplet_process_pending_locked(runtime) || qaplet_io_ready_locked(runtime)) { pthread_mutex_unlock(&runtime->mutex); continue; }
     if (!continuous && !remaining) {
       reason = QAPLET_DRIVE_WAIT_TIMEOUT;
       pthread_mutex_unlock(&runtime->mutex); break;
@@ -524,16 +525,18 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
     int timeout = duration == UINT64_MAX ? -1 : duration / 1000000 >= INT_MAX ? INT_MAX :
       (int)(duration / 1000000 + (duration % 1000000 != 0));
     struct pollfd fd = {runtime->wake_fd[0], POLLIN, 0};
+    nfds_t fd_count=0;struct pollfd *fds=qaplet_io_poll_locked(runtime,&fd_count);
+    if(!fds){fds=&fd;fd_count=1;}
     increment(&runtime->wait_calls);
     pthread_mutex_unlock(&runtime->mutex);
-    int ready = poll(&fd, 1, timeout), error = errno;
+    int ready = poll(fds, fd_count, timeout), error = errno;
     pthread_mutex_lock(&runtime->mutex);
     uint64_t after;
     if (qaplet_clock_locked(runtime, &after) && !continuous) {
       uint64_t elapsed = after - before;
       remaining = elapsed >= remaining ? 0 : remaining - elapsed;
     }
-    if ((ready < 0 && error != EINTR) || (ready > 0 && (fd.revents & (POLLERR | POLLHUP | POLLNVAL))))
+    if ((ready < 0 && error != EINTR) || (ready > 0 && (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL))))
       qaplet_control_failure_locked(runtime, ready < 0 ? error : EIO);
     pthread_mutex_unlock(&runtime->mutex);
     /* Even at timeout, observe accepted work and the execution deadline before

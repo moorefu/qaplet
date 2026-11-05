@@ -25,7 +25,7 @@ typedef enum {
   QAPLET_PAYLOAD_TOO_LARGE = 22, QAPLET_EXECUTION_STOPPED = 23,
   QAPLET_RESOURCE_LIMIT = 24, QAPLET_INVALID_HANDLE = 25,
   QAPLET_CONTROL_FAILURE = 26, QAPLET_PROCESS_ERROR = 27,
-  QAPLET_CANCELLED = 28, QAPLET_ALREADY_COMPLETED = 29
+  QAPLET_CANCELLED = 28, QAPLET_ALREADY_COMPLETED = 29, QAPLET_IO_ERROR = 30
 } qaplet_code;
 typedef enum {
   QAPLET_OPEN, QAPLET_STOP_REQUESTED, QAPLET_STOPPED, QAPLET_FAILED, QAPLET_CLOSED
@@ -56,6 +56,7 @@ enum {
   QAPLET_CAP_M2_TIMERS = 1u << 19,
   QAPLET_CAP_HOST_NOTIFY = 1u << 20,
   QAPLET_CAP_PROCESS = 1u << 22,
+  QAPLET_CAP_PROCESS_IO = 1u << 23,
   QAPLET_CAP_RESOURCE_LIMITS = 1u << 13,
   QAPLET_CAP_COOPERATIVE_STOP = 1u << 14,
   QAPLET_DIAGNOSTIC_TRUNCATED = 1u << 0
@@ -412,22 +413,22 @@ qaplet_code qaplet_quiesce(qaplet_runtime *, uint64_t max_wait_ms,
  * REPLACE_ENV makes env a complete KEY=VALUE mapping, including an empty one;
  * otherwise the M2 factory's environment snapshot is used. Strings reject NUL.
  * Relative path/cwd resolve against the immutable Runtime cwd.
- * PIPE (the default) is explicitly UNSUPPORTED until the pipe capability exists.
+ * PIPE (the default) creates an owned endpoint exposed by PROCESS_IO.
  * INHERIT borrows Host C descriptors 0/1/2; IGNORE uses a null endpoint.
  * Windows duplicates those descriptor handles independently of GetStdHandle.
  * Spawn copies input before acceptance. Ordinary OS errors preserve the entry
  * result and leave the Runtime OPEN. Native errors are returned in status.
  * Exit/reap, owner delivery and physical helper-thread exit are separate facts.
  * get_status observes native facts and performs nonblocking native retirement;
- * only owner drive hands completion over and disarms its default ref. Pure C
+ * only owner drive hands completion over; its ref also covers managed pipe end. Pure C
  * handoff creates no JS execution; an active entry keeps its cumulative ledger.
- * release is BUSY until reaped; completed records retain process capacity until
+ * release is BUSY until reaped and managed stdio ends; records retain capacity until
  * release or close, and physical cleanup retains capacity until helper join.
  * Helpers share the finite instance helper/stack/handle/registration budgets.
  * Close initiates force termination/reap of direct children. Host must not reap
  * SDK children or enable automatic child reaping. If native identity is lost,
  * SDK never signals that retired PID and retains cleanup error/BUSY ownership.
- * No process-tree, graceful-signal or pipe/EOF contract is implied. */
+ * No process-tree or graceful-signal contract is implied. */
 typedef enum { QAPLET_PROCESS_PIPE, QAPLET_PROCESS_INHERIT, QAPLET_PROCESS_IGNORE } qaplet_process_stdio;
 enum { QAPLET_PROCESS_REPLACE_ENV = 1u << 0 };
 typedef struct {
@@ -481,6 +482,83 @@ qaplet_code qaplet_process_set_ref(qaplet_runtime *, const qaplet_process *, uin
 qaplet_code qaplet_process_release(qaplet_runtime *, const qaplet_process *, qaplet_diagnostic *);
 /* Thread-safe POD query, including CLOSED. */
 qaplet_code qaplet_get_process_snapshot(qaplet_runtime *, qaplet_process_snapshot *, qaplet_diagnostic *);
+
+/* Owned process byte pipes. Independent versioned tokens never expose native
+ * descriptors. get_stdio/read/write/finish/close/copy/release are owner-only,
+ * outside drives and callbacks. stream is 0=stdin, 1=stdout, 2=stderr; inherited
+ * or ignored streams have no endpoint (UNSUPPORTED). A process release is BUSY
+ * until managed endpoints ended and their completion handoffs finished.
+ * One physical operation per endpoint; another request returns BUSY. A read
+ * PENDING means temporarily unavailable; a successful zero-byte EOF is explicit.
+ * Read returns currently available bytes without filling the requested size.
+ * Blocks are bounded by io_block_bytes and share Work's operation/data quotas.
+ * Write copies its entire input before acceptance. Its stable result preserves
+ * bytes actually written even on failure/cancel; OS acceptance is not consumption.
+ * finish stops new writes and closes stdin after its accepted write completes.
+ * close immediately requests cancellation and endpoint shutdown; it never means
+ * physical I/O or helper exit has already happened. EOF closes a read endpoint.
+ * Process cancellation alone leaves remaining output available to drain.
+ * ref lasts through child reap, managed pipe end and owner completion handoff.
+ * Unread output stays in finite OS buffers; SDK never collects without a read. */
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t runtime_id, slot, generation;
+} qaplet_io_endpoint;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t runtime_id, slot, generation;
+} qaplet_io_operation;
+typedef enum { QAPLET_IO_PENDING, QAPLET_IO_SUCCEEDED, QAPLET_IO_FAILED, QAPLET_IO_CANCELLED } qaplet_io_state;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_io_state state;
+  qaplet_code code;
+  uint32_t error_domain;
+  int32_t error;
+  uint64_t length;
+  uint32_t eof, physical_pending, pending_handoff, helper_active;
+} qaplet_io_status;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  qaplet_io_state state;
+  qaplet_code code;
+  uint32_t error_domain;
+  int32_t error;
+  void *buffer;
+  size_t capacity, length;
+  uint32_t eof, reserved;
+} qaplet_io_result;
+typedef struct {
+  uint32_t struct_size, abi_version;
+  uint64_t endpoints, operations, data_bytes, retained_results, pending_handoffs;
+  uint64_t shared_operations, shared_operations_peak, shared_data_bytes, shared_data_bytes_peak;
+  uint64_t helper_threads, helper_stack_bytes, accepted, completed, cancelled, transferred_bytes;
+  uint32_t start_error_domain;
+  int32_t start_error;
+} qaplet_io_snapshot;
+#define QAPLET_IO_ENDPOINT_INIT {sizeof(qaplet_io_endpoint),QAPLET_ABI_VERSION,0,0,0}
+#define QAPLET_IO_OPERATION_INIT {sizeof(qaplet_io_operation),QAPLET_ABI_VERSION,0,0,0}
+#define QAPLET_IO_STATUS_INIT {sizeof(qaplet_io_status),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0}
+#define QAPLET_IO_RESULT_INIT {sizeof(qaplet_io_result),QAPLET_ABI_VERSION,0,0,0,0,NULL,0,0,0,0}
+#define QAPLET_IO_SNAPSHOT_INIT {sizeof(qaplet_io_snapshot),QAPLET_ABI_VERSION,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+qaplet_code qaplet_process_get_stdio(qaplet_runtime *,const qaplet_process *,uint32_t,qaplet_io_endpoint *,qaplet_diagnostic *);
+qaplet_code qaplet_io_read(qaplet_runtime *,const qaplet_io_endpoint *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
+qaplet_code qaplet_io_write(qaplet_runtime *,const qaplet_io_endpoint *,const void *,size_t,qaplet_io_operation *,qaplet_diagnostic *);
+qaplet_code qaplet_io_finish(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
+qaplet_code qaplet_io_close(qaplet_runtime *,const qaplet_io_endpoint *,qaplet_diagnostic *);
+/* Any thread, no JS. Cancellation wins once under the native publication lock;
+ * repeated retained cancellation is OK, a published result ALREADY_COMPLETED.
+ * Queries copy POD only. Like every SDK entry, HostNotify reentry is BUSY.
+ * Released/stale/cross-Runtime/CLOSED tokens return INVALID_HANDLE. */
+qaplet_code qaplet_io_cancel(qaplet_runtime *,const qaplet_io_operation *,qaplet_diagnostic *);
+qaplet_code qaplet_get_io_status(qaplet_runtime *,const qaplet_io_operation *,qaplet_io_status *,qaplet_diagnostic *);
+/* Copy is BUSY until physical I/O ends, so actual bytes are stable. Short buffers
+ * report required length with no partial copy. For writes buffer is unused.
+ * Release accepts logical terminal state and invalidates immediately; physical
+ * use, helper join and pending handoff still retain all storage/capacity. */
+qaplet_code qaplet_io_copy_result(qaplet_runtime *,const qaplet_io_operation *,qaplet_io_result *,qaplet_diagnostic *);
+qaplet_code qaplet_io_release(qaplet_runtime *,const qaplet_io_operation *,qaplet_diagnostic *);
+qaplet_code qaplet_get_io_snapshot(qaplet_runtime *,qaplet_io_snapshot *,qaplet_diagnostic *);
 
 /* Named native work, M2 only. Declarations and names are copied atomically.
  * Zero byte/concurrency fields inherit the finite instance defaults. No
