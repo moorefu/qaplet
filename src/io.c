@@ -320,6 +320,9 @@ qaplet_code qaplet_stdio_attach(qaplet_runtime *r,uint32_t stream,qaplet_io_endp
   qaplet_stdio_classify(stream,&value,&source,&source_handle,&quota);
   memcpy((char *)info+8,(char *)&value+8,sizeof(value)-8);
   if(!value.supported)return qaplet_report(d,QAPLET_UNSUPPORTED);
+  pthread_mutex_lock(&r->mutex);
+  int full=r->native_handles>=r->m2_limits.native_handles || r->reactor_registrations>=r->m2_limits.reactor_registrations;
+  pthread_mutex_unlock(&r->mutex);if(full)return qaplet_report(d,QAPLET_RESOURCE_LIMIT);
   code=storage(r,0);if(code){if(qaplet_get_lifecycle(r)==QAPLET_FAILED)qaplet_process_shutdown(r);return qaplet_report(d,code);}
   qaplet_io_pool *p=r->io_pool;uint64_t index=0;io_endpoint *e=NULL;
   pthread_mutex_lock(&r->mutex);
