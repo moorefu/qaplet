@@ -268,7 +268,7 @@ CLI_CASES = (
     ("eval-background-error", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{Promise.resolve().then(()=>{});throw Error('background')});return 'ENTRY'})"], 1, "", "qaplet: code=7 "),
     ("eval-background-budget", ["--max-dispatches", "600", "eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{function again(){Promise.resolve().then(again)}again()});return 'ENTRY'})"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
     ("eval-unref-done", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setTimeout(()=>{throw Error('unref ran')},60000).unref();return 42})"], 0, "42\n", ""),
-    ("eval-stdio-entry-copy", ["eval", "--source", "import('qaplet:stdio').then(s=>{s.stdout.write(new Uint8Array([66,0,90]));return 'entry\\0中'})"], 0, "B\0Zentry\0中\n", ""),
+    ("eval-stdio-api", ["eval", "--source", "import('qaplet:stdio').then(s=>typeof s.acquireTerminal==='function'&&(s.stdout===null||['pipe','file','tty','console'].includes(s.stdout.kind)))"], 0, "true\n", ""),
     ("eval-interval-entry", ["eval", "--source", "import('qaplet:timers').then(({setInterval})=>new Promise(resolve=>{let n=0;let t=setInterval(()=>{if(++n===3){t.cancel();resolve(42)}return new Promise(()=>{})},1)}))"], 0, "42\n", ""),
     ("eval-immediate-result", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>{setImmediate(()=>{setImmediate(()=>{})});return 42})"], 0, "42\n", ""),
     ("eval-immediate-unref", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>new Promise(resolve=>setImmediate(()=>resolve(42)).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),

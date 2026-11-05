@@ -126,6 +126,7 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
     for name,arguments,code,stdout,stderr in sdk.CLI_CASES:
         execute(args,report,directory,name,[*loader,cli,*[s.replace("{modules}",str(modules)) for s in arguments]],code,
                 stdout.encode(),stderr.encode(),error_contains=bool(stderr))
+    execute(args,report,directory,"file-entry-copy",[*loader,cli,"eval","--source","import('qaplet:stdio').then(s=>{s.stdout.write(new Uint8Array([66,0,90]));return 'entry\\0中'})"],0,"B\0Zentry\0中\n".encode())
     data=bytes(range(256))*257
     put="async function put(out,bytes){for(;;){try{return await out.write(bytes).promise}catch(e){if(e.code!==24||e.bytesWritten)throw e;await new Promise(resolve=>t.setImmediate(resolve))}}}"
     source="Promise.all([import('qaplet:stdio'),import('qaplet:timers')]).then(([s,t])=>{"+put+"(async()=>{for(;;){let r=await s.stdin.read(65536).promise;if(r.eof)break;await Promise.all([put(s.stdout,r.bytes),put(s.stderr,r.bytes)]);r.bytes.fill(7)}})();return 'ENTRY'})"
@@ -155,6 +156,10 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
         else:
             command,_,_=run(report,directory,"terminal-"+mode,argv,args.timeout,work,expected=None)
             passed=command["exit_code"]==0 and not command["timed_out"]
+            raw=(work/"cli-pty.stdout.log").read_bytes() if (work/"cli-pty.stdout.log").is_file() else b""
+        expected_error=b"qaplet: code=7 " if mode=="error" else b"qaplet: code=18 DISPATCH_LIMIT" if mode=="budget" else None
+        passed=passed and (expected_error in raw if expected_error else b"qaplet: code=" not in raw)
+        passed=passed and b"native cleanup incomplete" not in raw and b"standard stream restoration incomplete" not in raw
         record=work/"cli-terminal.ndjson";rows=[json.loads(line) for line in record.read_text().splitlines()] if record.is_file() else []
         groups={stage:[{k:v for k,v in row.items() if k!="stage"} for row in rows if row["stage"]==stage] for stage in ("before","modified","restored")}
         restored=len(rows)==9 and groups["before"]==groups["restored"] and groups["before"]!=groups["modified"]
