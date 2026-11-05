@@ -8,6 +8,9 @@
 typedef struct work_handler work_handler;
 typedef struct work_task work_task;
 typedef struct work_worker work_worker;
+/* Only POD lives in the JS wrapper. The native slot owns Promise capabilities
+ * until owner delivery; workers never access any of those owner-only fields. */
+typedef struct { qaplet_work_task token; unsigned refs; int terminal; qaplet_code code; } work_js;
 struct work_handler {
   work_handler *next;
   qaplet_work_function function;
@@ -26,6 +29,8 @@ struct work_task {
   uint32_t error_domain;
   int32_t error;
   int active, physical, cancelled, handoff, released;
+  work_js *js;
+  JSValue resolve, reject;
 };
 struct work_worker {
   qaplet_runtime *runtime;
@@ -224,12 +229,13 @@ static qaplet_code start_worker_locked(qaplet_runtime *runtime) {
   peak(runtime->work_snapshot.worker_stack_bytes,&runtime->work_snapshot.worker_stack_bytes_peak);
   return QAPLET_OK;
 }
-qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t name_length,
-                               const void *input,size_t input_length,qaplet_work_task *output,qaplet_diagnostic *diagnostic) {
+static qaplet_code submit(qaplet_runtime *runtime,const char *name,size_t name_length,
+    const void *input,size_t input_length,qaplet_work_task *output,work_js *js,JSValue *capabilities,qaplet_diagnostic *diagnostic) {
   qaplet_code code=qaplet_check_diagnostic(diagnostic);
   if (code) return code;
   if (!valid_name(name,name_length) || (!input && input_length) || !output) code=QAPLET_INVALID_ARGUMENT;
-  if (!code) code=open_owner(runtime);
+  if (!code && !js) code=open_owner(runtime);
+  if (!code && js && (!runtime->m2_enabled || qaplet_get_lifecycle(runtime)!=QAPLET_OPEN)) code=QAPLET_BAD_STATE;
   if (code) return qaplet_report(diagnostic,code);
   work_handler *handler=find_handler(runtime->work_pool,name,name_length);
   if (!handler) return qaplet_report(diagnostic,QAPLET_NO_HANDLER);
@@ -272,8 +278,10 @@ qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t n
     runtime->host_registration_locked=1;
     uint64_t generation=task->generation+1;
     *task=(work_task){.generation=generation,.sequence=++pool->sequence,.handler=handler,
-      .data=data,.input_length=input_length,.data_size=bytes,.state=QAPLET_WORK_QUEUED,.active=1,.handoff=1};
+      .data=data,.input_length=input_length,.data_size=bytes,.state=QAPLET_WORK_QUEUED,.active=1,.handoff=1,
+      .js=js,.resolve=js ? capabilities[0] : JS_UNDEFINED,.reject=js ? capabilities[1] : JS_UNDEFINED};
     *output=(qaplet_work_task){runtime->runtime_id,slot,generation};
+    if (js) {js->token=*output;++js->refs;}
     ++runtime->work_snapshot.operations; ++runtime->work_snapshot.queued; ++runtime->work_snapshot.pending_handoffs;
     runtime->work_snapshot.data_bytes+=bytes;
     peak(runtime->work_snapshot.operations,&runtime->work_snapshot.operations_peak);
@@ -289,6 +297,10 @@ qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t n
 rejected:
   if (code) { pthread_mutex_lock(&runtime->mutex); increment(&runtime->work_snapshot.rejected); pthread_mutex_unlock(&runtime->mutex); }
   return qaplet_report(diagnostic,code);
+}
+qaplet_code qaplet_work_submit(qaplet_runtime *runtime,const char *name,size_t name_length,
+    const void *input,size_t input_length,qaplet_work_task *output,qaplet_diagnostic *diagnostic) {
+  return submit(runtime,name,name_length,input,input_length,output,NULL,NULL,diagnostic);
 }
 static work_task *lookup(qaplet_runtime *runtime,const qaplet_work_task *token) {
   qaplet_work_pool *pool=runtime->work_pool;
@@ -415,8 +427,38 @@ qaplet_code qaplet_get_work_snapshot(qaplet_runtime *runtime,qaplet_work_snapsho
 int qaplet_work_ready_locked(qaplet_runtime *runtime) {
   qaplet_work_pool *pool=runtime->work_pool;
   if (pool && pool->tasks) for (uint64_t i=0;i<runtime->m2_limits.operations;++i)
-    if (pool->tasks[i].active && pool->tasks[i].handoff && terminal(&pool->tasks[i])) return 1;
+    if (pool->tasks[i].active && pool->tasks[i].handoff==1 && terminal(&pool->tasks[i])) return 1;
   return 0;
+}
+static JSValue work_error(JSContext *context,qaplet_code code,uint32_t domain,int32_t native) {
+  JSValue error=JS_NewError(context);
+  if (JS_IsException(error)) return error;
+  if (JS_DefinePropertyValueStr(context,error,"code",JS_NewInt32(context,code),JS_PROP_C_W_E)<0 ||
+      JS_DefinePropertyValueStr(context,error,"errorDomain",JS_NewUint32(context,domain),JS_PROP_C_W_E)<0 ||
+      JS_DefinePropertyValueStr(context,error,"error",JS_NewInt32(context,native),JS_PROP_C_W_E)<0 ||
+      JS_DefinePropertyValueStr(context,error,"message",JS_NewString(context,"Work operation failed"),JS_PROP_C_W_E)<0) {
+    JS_FreeValue(context,error);return JS_EXCEPTION;
+  }
+  return error;
+}
+static void release_js(qaplet_runtime *runtime,work_task *task) {
+  JS_FreeValue(runtime->context,task->resolve);JS_FreeValue(runtime->context,task->reject);
+  task->resolve=task->reject=JS_UNDEFINED;
+  if (task->js && !--task->js->refs) js_free(runtime->context,task->js);
+  task->js=NULL;
+}
+void qaplet_work_checkpoint(qaplet_runtime *runtime) {
+  qaplet_work_pool *pool=runtime->work_pool;
+  if (!pool || !pool->tasks) return;
+  for (uint64_t i=0;i<runtime->m2_limits.operations;++i) {
+    work_task *task=&pool->tasks[i];
+    if (!task->active || task->handoff!=2) continue;
+    release_js(runtime,task);
+    pthread_mutex_lock(&runtime->mutex);
+    task->handoff=0;task->released=1;--runtime->work_snapshot.pending_handoffs;
+    if (!task->physical) retire_task(runtime,task);
+    pthread_mutex_unlock(&runtime->mutex);
+  }
 }
 unsigned qaplet_work_handoff(qaplet_runtime *runtime,uint64_t maximum) {
   unsigned count=0;
@@ -424,17 +466,61 @@ unsigned qaplet_work_handoff(qaplet_runtime *runtime,uint64_t maximum) {
   qaplet_work_pool *pool=runtime->work_pool;
   if (pool && pool->tasks) for (uint64_t i=0;i<runtime->m2_limits.operations && count<maximum;++i) {
     work_task *task=&pool->tasks[i];
-    if (!task->active || !task->handoff || !terminal(task)) continue;
+    if (!task->active || task->handoff!=1 || !terminal(task)) continue;
+    if (task->js && !runtime->execution_active) {
+      pthread_mutex_unlock(&runtime->mutex);
+      qaplet_execution_budget budget;
+      qaplet_code code=qaplet_execution_prepare(runtime,NULL,&budget);
+      if (!code) code=qaplet_execution_begin(runtime,&budget);
+      if (!code) runtime->module_execution=0;
+      pthread_mutex_lock(&runtime->mutex);
+      if (code) break;
+    }
     /* A native-only handoff creates no JS execution. An existing entry still
      * owns its cumulative dispatch/deadline ledger across this completion. */
     if (runtime->execution_active && qaplet_execution_dispatch_locked(runtime)) break;
-    task->handoff=0; --runtime->work_snapshot.pending_handoffs; ++count;
+    ++count;
+    if (task->js) {
+      task->handoff=2;task->js->terminal=1;task->js->code=task->code;
+      pthread_mutex_unlock(&runtime->mutex);
+      JSContext *context=runtime->context;
+      JSValue value;
+      if (task->code) value=work_error(context,task->code,task->error_domain,task->error);
+      else {
+        JSValue buffer=JS_NewArrayBufferCopy(context,task->data+task->input_length,task->length);
+        JSValue arguments[]={buffer,JS_UNDEFINED,JS_UNDEFINED};
+        value=JS_IsException(buffer) ? JS_EXCEPTION : JS_NewTypedArray(context,3,arguments,JS_TYPED_ARRAY_UINT8);
+        JS_FreeValue(context,buffer);
+      }
+      JSValue settled=JS_IsException(value) ? JS_EXCEPTION : JS_Call(context,task->code ? task->reject : task->resolve,JS_UNDEFINED,1,&value);
+      JS_FreeValue(context,value);
+      if (JS_IsException(settled)) {
+        JSValue exception=JS_GetException(context);
+        if (!qaplet_execution_check(runtime) && !runtime->execution_code) {
+          qaplet_capture_exception(runtime,exception);
+          runtime->execution_code=qaplet_module_exception_code(runtime,exception);
+        }
+        JS_FreeValue(context,exception);
+      }
+      JS_FreeValue(context,settled);
+      pthread_mutex_lock(&runtime->mutex);
+    } else {task->handoff=0;--runtime->work_snapshot.pending_handoffs;}
     if (task->released && !task->physical) retire_task(runtime,task);
   }
   pthread_mutex_unlock(&runtime->mutex);
   return count;
 }
 void qaplet_work_shutdown(qaplet_runtime *runtime) {
+  /* Owner-only JS teardown precedes any native retirement. STOPPED/FAILED
+   * never run the remaining Promise callbacks, including finally handlers. */
+  qaplet_work_pool *owner_pool=runtime->work_pool;
+  if (owner_pool && owner_pool->tasks) for(uint64_t i=0;i<runtime->m2_limits.operations;++i) {
+    work_task *task=&owner_pool->tasks[i];
+    if (task->active && task->js) {
+      release_js(runtime,task);
+      pthread_mutex_lock(&runtime->mutex);task->released=1;pthread_mutex_unlock(&runtime->mutex);
+    }
+  }
   pthread_mutex_lock(&runtime->mutex);
   qaplet_work_pool *pool=runtime->work_pool;
   if (pool && runtime->snapshot.lifecycle==QAPLET_CLOSED) pool->closing=1;
@@ -493,4 +579,94 @@ void qaplet_work_reap_locked(qaplet_runtime *runtime) {
   --runtime->native_retained;
   if (!runtime->native_retained && !runtime->notify_inflight && !runtime->native_handles && !runtime->native_uncertain_handles && runtime->loop_closed)
     runtime->native_state=QAPLET_NATIVE_QUIESCENT;
+}
+
+static JSClassID work_class;
+static pthread_once_t work_class_once=PTHREAD_ONCE_INIT;
+static void allocate_work_class(void) {JS_NewClassID(&work_class);}
+static void work_finalizer(JSRuntime *engine,JSValue value) {
+  work_js *handle=JS_GetOpaque(value,work_class);
+  if (handle && !--handle->refs) js_free_rt(engine,handle);
+}
+static JSValue throw_work(JSContext *context,qaplet_code code) {
+  JSValue error=work_error(context,code,0,0);
+  return JS_IsException(error) ? error : JS_Throw(context,error);
+}
+static JSValue work_method(JSContext *context,JSValueConst self,int argc,JSValueConst *argv) {
+  (void)argc;(void)argv;
+  qaplet_runtime *runtime=JS_GetContextOpaque(context);
+  work_js *handle=JS_GetOpaque(self,work_class);
+  if (!handle) return throw_work(context,QAPLET_INVALID_HANDLE);
+  qaplet_code code=handle->terminal ? (handle->code==QAPLET_CANCELLED ? QAPLET_OK : QAPLET_ALREADY_COMPLETED) :
+    qaplet_work_cancel(runtime,&handle->token,NULL);
+  return code ? throw_work(context,code) : JS_UNDEFINED;
+}
+/* Borrow a strict Uint8Array span only during synchronous acceptance. The
+ * saved intrinsic getter avoids user properties and handles resized views. */
+static qaplet_code input_bytes(qaplet_runtime *runtime,JSValueConst value,JSValue *buffer,unsigned char **bytes,size_t *length) {
+  JSContext *context=runtime->context;
+  if (!JS_IsObject(value) || JS_GetClassID(value)!=runtime->uint8_array_class) return QAPLET_VALUE_TYPE_UNSUPPORTED;
+  size_t offset,ignored,element,backing;
+  *buffer=JS_GetTypedArrayBuffer(context,value,&offset,&ignored,&element);
+  if (JS_IsException(*buffer)) {JS_FreeValue(context,JS_GetException(context));*buffer=JS_UNDEFINED;return QAPLET_VALUE_TYPE_UNSUPPORTED;}
+  if (JS_GetClassID(*buffer)!=runtime->array_buffer_class) return QAPLET_VALUE_TYPE_UNSUPPORTED;
+  JSValue size=JS_Call(context,runtime->typed_array_byte_length,value,0,NULL);
+  double count=0;
+  if (JS_IsException(size) || JS_ToFloat64(context,&count,size)) {JS_FreeValue(context,size);return QAPLET_MEMORY_LIMIT;}
+  JS_FreeValue(context,size);
+  if (count>runtime->m2_limits.work_input_bytes) return QAPLET_VALUE_TOO_LARGE;
+  *bytes=JS_GetArrayBuffer(context,&backing,*buffer);*length=(size_t)count;
+  if (offset>backing || *length>backing-offset || (!*bytes && *length)) return QAPLET_VALUE_TYPE_UNSUPPORTED;
+  if (*length) *bytes+=offset;
+  return QAPLET_OK;
+}
+static JSValue js_submit(JSContext *context,JSValueConst self,int argc,JSValueConst *argv) {
+  (void)self;
+  qaplet_runtime *runtime=JS_GetContextOpaque(context);
+  if (argc!=2 || !JS_IsString(argv[0])) return throw_work(context,QAPLET_INVALID_ARGUMENT);
+  size_t name_length,length=0;
+  const char *name=JS_ToCStringLen(context,&name_length,argv[0]);
+  if (!name) return JS_EXCEPTION;
+  JSValue buffer=JS_UNDEFINED;unsigned char *bytes=NULL;
+  qaplet_code code=input_bytes(runtime,argv[1],&buffer,&bytes,&length);
+  JSValue handle=JS_UNDEFINED,capabilities[]={JS_UNDEFINED,JS_UNDEFINED};
+  if (!code) {
+    handle=JS_NewObjectClass(context,work_class);
+    if (JS_IsException(handle)) code=QAPLET_MEMORY_LIMIT;
+  }
+  work_js *token=NULL;
+  if (!code) {
+    token=js_mallocz(context,sizeof(*token));
+    if (!token) code=QAPLET_MEMORY_LIMIT;
+    else {token->refs=1;JS_SetOpaque(handle,token);}
+  }
+  if (!code) {
+    JSValue promise=JS_NewPromiseCapability(context,capabilities);
+    if (JS_IsException(promise) || JS_DefinePropertyValueStr(context,handle,"promise",promise,JS_PROP_ENUMERABLE)<0) code=QAPLET_MEMORY_LIMIT;
+  }
+  if (!code) code=submit(runtime,name,name_length,bytes,length,&token->token,token,capabilities,NULL);
+  JS_FreeCString(context,name);JS_FreeValue(context,buffer);
+  if (code) {
+    JS_FreeValue(context,capabilities[0]);JS_FreeValue(context,capabilities[1]);JS_FreeValue(context,handle);
+    if (JS_HasException(context)) return JS_EXCEPTION;
+    return throw_work(context,code);
+  }
+  return handle;
+}
+static int initialize_work(JSContext *context,JSModuleDef *module) {
+  return JS_SetModuleExport(context,module,"submit",JS_NewCFunction(context,js_submit,"submit",2));
+}
+JSModuleDef *qaplet_work_load(qaplet_runtime *runtime) {
+  pthread_once(&work_class_once,allocate_work_class);
+  JSClassDef definition={"QapletWorkTask",.finalizer=work_finalizer};
+  if (JS_NewClass(runtime->engine,work_class,&definition)<0) return NULL;
+  JSValue prototype=JS_NewObject(runtime->context);
+  if (JS_IsException(prototype)) return NULL;
+  if (JS_SetPropertyStr(runtime->context,prototype,"cancel",JS_NewCFunction(runtime->context,work_method,"cancel",0))<0) {
+    JS_FreeValue(runtime->context,prototype);return NULL;
+  }
+  JS_SetClassProto(runtime->context,work_class,prototype);
+  JSModuleDef *module=JS_NewCModule(runtime->context,"qaplet:work",initialize_work);
+  if (module && JS_AddModuleExport(runtime->context,module,"submit")<0) return NULL;
+  return module;
 }

@@ -914,7 +914,42 @@ static int cancel_limits_contract(void) {
   puts("M2 work cancel limits: actual default 128 operations and 8MiB copied/reserved data within 16MiB total; cancel/release waits for owner and physical use; saturation atomic; physical bytes remain charged; ordinary capacity recovers: pass");
   return 0;
 }
+static int js_file_contract(void) {
+  qaplet_config base=QAPLET_CONFIG_INIT;qaplet_m2_config config=QAPLET_M2_CONFIG_INIT;
+  config.limits.operations=1;
+  qaplet_runtime *runtime=NULL;CHECK(qaplet_create_m2(&base,&config,&runtime,NULL)==QAPLET_OK);
+  qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;
+  h.name="read";h.name_length=4;h.function=read_file;h.output_bytes=4;
+  CHECK(qaplet_register_work_handler(runtime,&h,NULL)==QAPLET_OK);
+  char path[]="./qaplet-js-work-XXXXXX";int fd=mkstemp(path);
+  unsigned char expected[]={0,255,17,42,99};
+  CHECK(fd>=0 && write(fd,expected,sizeof(expected))==sizeof(expected) && !close(fd));
+  char source[2048];
+  /* A literal byte path avoids any text encoding or native pointer bridge. */
+  char encoded[512]={0};size_t used=0;
+  for(size_t i=0;i<=strlen(path);++i) used+=snprintf(encoded+used,sizeof(encoded)-used,"%s%u",i?",":"",(unsigned char)path[i]);
+  snprintf(source,sizeof(source),"import('qaplet:work').then(async ({submit})=>{"
+    "globalThis.submit=submit;let input=new Uint8Array([%s]);"
+    "let task=submit('read',input);input.fill(63);globalThis.savedTask=task;"
+    "let bytes=await task.promise;globalThis.savedBytes=bytes;"
+    "if(!(bytes instanceof Uint8Array)||String(bytes)!=='0,255,17,42')throw Error('bytes');return 42;})",encoded);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(runtime,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  qaplet_result result=QAPLET_RESULT_INIT;
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  qaplet_work_snapshot stats=QAPLET_WORK_SNAPSHOT_INIT;
+  CHECK(qaplet_get_work_snapshot(runtime,&stats,NULL)==QAPLET_OK && !stats.operations && !stats.data_bytes && !stats.pending_handoffs);
+  snprintf(source,sizeof(source),"submit('read',new Uint8Array([%s])).promise.then(b=>b[3])",encoded);
+  CHECK(qaplet_eval(runtime,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(runtime,&drive,NULL)==QAPLET_OK);
+  CHECK(qaplet_get_result(runtime,&result,NULL)==QAPLET_OK && result.number==42);
+  CHECK(!unlink(path) && !finish(runtime));
+  puts("M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass");
+  return 0;
+}
 int sdk_work(const char *mode) {
+  if (!strcmp(mode,"--m2-work-js-file")) return js_file_contract();
   if (!strcmp(mode,"--m2-work-cancel-limits")) return cancel_limits_contract();
   if (!strcmp(mode,"--m2-work-cancel-file")) return cancel_file_contract();
   if (!strcmp(mode,"--m2-work-cancel-permissions")) return cancel_permissions_contract();
