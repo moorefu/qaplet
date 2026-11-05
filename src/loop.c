@@ -482,7 +482,7 @@ static qaplet_code drive(qaplet_runtime *runtime, uint64_t wait, int continuous,
   for (;;) {
     code = qaplet_pump_ready(runtime, &progress, diagnostic, entry_only ? 2 : continuous);
     progressed |= progress.progressed;
-    if (code) { qaplet_process_shutdown(runtime); reason = code == QAPLET_EXECUTION_STOPPED ? QAPLET_DRIVE_STOPPED : QAPLET_DRIVE_ERROR; break; }
+    if (code) { if(qaplet_get_lifecycle(runtime)!=QAPLET_OPEN)qaplet_process_shutdown(runtime); reason = code == QAPLET_EXECUTION_STOPPED ? QAPLET_DRIVE_STOPPED : QAPLET_DRIVE_ERROR; break; }
     if (entry_only && progress.phase == QAPLET_PHASE_DONE) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (!continuous && progress.progressed) { reason = QAPLET_DRIVE_PROGRESS; break; }
     if (JS_IsJobPending(runtime->engine) || qaplet_events_pending(runtime)) continue;
