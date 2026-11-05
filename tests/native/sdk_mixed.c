@@ -5,10 +5,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #include "libc/dce.h"
@@ -50,6 +52,31 @@ static unsigned probe_cancel(mixed_gate *g) { pthread_mutex_lock(&g->mutex);++g-
 static void release_work(mixed_gate *g) { pthread_mutex_lock(&g->mutex);g->released=1;pthread_cond_broadcast(&g->condition);pthread_mutex_unlock(&g->mutex); }
 typedef struct { unsigned calls;FILE *resource; } mixed_binding;
 static unsigned forbidden_calls;
+static double milliseconds(void);
+/* The force-stop child must outlive managed stdin shutdown. READY is an
+ * independent native channel: stdout remains empty for the pending IO read. */
+static int mixed_child_ready(pid_t parent,pid_t child) {
+  char path[128],temporary[160];
+  snprintf(path,sizeof(path),"mixed-child-%d.ready",parent);
+  snprintf(temporary,sizeof(temporary),"%s.%d.partial",path,child);
+  FILE *record=fopen(temporary,"wb");CHECK(record);
+  CHECK(fprintf(record,"%d %d\n",child,parent)>0 && !fclose(record) && !rename(temporary,path));
+  return 0;
+}
+static int mixed_child_live(pid_t parent) {
+  char path[128];snprintf(path,sizeof(path),"mixed-child-%d.ready",parent);
+  double until=milliseconds()+5000;int child=-1,claimed_parent=-1;
+  do {
+    FILE *record=fopen(path,"rb");
+    if(record) { int fields=fscanf(record,"%d %d",&child,&claimed_parent);CHECK(!fclose(record) && fields==2);break; }
+    sched_yield();
+  } while(milliseconds()<until);
+  CHECK(child>1 && claimed_parent==parent);
+  int status=0;pid_t observed=waitpid(child,&status,WNOHANG);int wait_error=observed<0 ? errno : 0;
+  FILE *record=fopen("mixed-child.json","wb");CHECK(record);
+  CHECK(fprintf(record,"{\"pid\":%d,\"ppid\":%d,\"owner_pid\":%d,\"native_ready\":true,\"owned_live_child_waitpid_nohang\":%d,\"wait_errno\":%d,\"wait_raw_status\":%d,\"stdout_ready_bytes\":0}\n",child,claimed_parent,parent,observed,wait_error,status)>0 && !fclose(record));
+  CHECK(observed==0 && !unlink(path));return 0;
+}
 static qaplet_code mark(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
   (void)r;(void)call;(void)argc;(void)argv;mixed_binding *binding=opaque;++binding->calls;
   return fputc('B',binding->resource)!=EOF ? QAPLET_OK : QAPLET_HOST_ERROR;
@@ -194,9 +221,15 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
   if(IsWindows()) { args[1]=(qaplet_string){"--hang",6};o.argc=2; } else o.argc=3;
   o.path=(qaplet_string){path,strlen(path)};o.argv=args;
   qaplet_process child=QAPLET_PROCESS_INIT;qaplet_process_status child_state=QAPLET_PROCESS_STATUS_INIT;
+  if(!IsWindows()) { char ready[128];snprintf(ready,sizeof(ready),"mixed-child-%d.ready",getpid());CHECK(!unlink(ready) || errno==ENOENT); }
   CHECK(qaplet_process_spawn(r,&o,&child,&child_state,NULL)==QAPLET_OK);
   qaplet_io_endpoint out=QAPLET_IO_ENDPOINT_INIT;CHECK(qaplet_process_get_stdio(r,&child,1,&out,NULL)==QAPLET_OK);
   qaplet_io_operation read=QAPLET_IO_OPERATION_INIT;CHECK(qaplet_io_read(r,&out,1,&read,NULL)==QAPLET_OK);
+  if(!IsWindows()) {
+    CHECK(!mixed_child_live(getpid()));
+    qaplet_io_status pending=QAPLET_IO_STATUS_INIT;
+    CHECK(qaplet_get_io_status(r,&read,&pending,NULL)==QAPLET_OK && pending.state==QAPLET_IO_PENDING);
+  }
   if(races)CHECK(!mixed_races(r,&g));
   uint64_t prior_cancelled=races ? 1 : 0;
   CHECK(!evaluate(r,"for(let i=0;i<2;++i)w.submit('held',new Uint8Array([17])).promise.then(()=>h.forbidden(),()=>h.forbidden()).finally(()=>h.forbidden());e.onEvent(()=>h.forbidden());t.setTimeout(()=>h.forbidden(),60000);42"));
@@ -270,7 +303,10 @@ static int stop_mixed(const char *self,const char *loader,const char *native_chi
   return mixed_success("M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass");
 }
 int sdk_mixed(int argc,char **argv) {
-  if(argc==2 && !strcmp(argv[1],"--m2-mixed-child")) { char byte;while(read(0,&byte,1)<0 && errno==EINTR){};return 0; }
+  if(argc==2 && !strcmp(argv[1],"--m2-mixed-child")) {
+    CHECK(!mixed_child_ready(getppid(),getpid()));
+    for(;;)pause();
+  }
   if(argc!=5)return 2;
   const char *modes[]={"--m2-mixed-stop","--m2-mixed-tty","--m2-mixed-races","--m2-mixed-tty-races","--m2-mixed-nonreturning","--m2-mixed-tty-nonreturning","--m2-mixed-notify","--m2-mixed-tty-notify","--m2-mixed-uncertain","--m2-mixed-tty-uncertain","--m2-mixed-initialization","--m2-mixed-wait-budget"};
   unsigned i;for(i=0;i<sizeof(modes)/sizeof(*modes);++i)if(!strcmp(argv[1],modes[i]))break;
