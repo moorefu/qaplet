@@ -586,6 +586,7 @@ qaplet_code qaplet_process_spawn(qaplet_runtime *r,const qaplet_process_options 
     peak(r->native_handles,&r->native_handles_peak); peak(r->reactor_registrations,&r->reactor_registrations_peak); ++r->process_snapshot.helper_threads;
     r->process_snapshot.helper_stack_bytes+=r->m2_limits.helper_stack_bytes;
     ++r->helper_threads; r->helper_stack_bytes+=r->m2_limits.helper_stack_bytes;
+    peak(r->helper_threads,&r->helper_threads_peak); peak(r->helper_stack_bytes,&r->helper_stack_bytes_peak);
     peak(r->process_snapshot.helper_threads,&r->process_snapshot.helper_threads_peak); peak(r->process_snapshot.helper_stack_bytes,&r->process_snapshot.helper_stack_bytes_peak);
   }
   pthread_mutex_unlock(&r->mutex);

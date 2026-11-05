@@ -1,5 +1,14 @@
 # Qaplet Embed SDK
 
+M2 hosts may query `qaplet_get_resource_snapshot` from any thread, including
+after CLOSED, for shared Work/I/O count/data and I/O endpoint/operation/data
+current values and persistent peaks, plus combined Process/file/Console helper
+count and requested stack bytes with peaks. This independent versioned POD keeps
+existing snapshot layouts unchanged. Queries neither collect results nor run JS;
+separate calls are separate samples. Operation data is inside native storage,
+while requested thread stacks and external OS buffers are separate from SDK heap
+and RSS. Hosts must withdraw and join callers before destroy.
+
 M2 JavaScript can call a Host's pre-registered WorkPool handler with
 `import { submit } from 'qaplet:work'` and
 `const task = submit('handlerName', new Uint8Array(inputBytes))`.

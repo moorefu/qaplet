@@ -30,6 +30,8 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_aggregate.c", "host-aggregate.c", "aggregate-host.o", "aggregate-host-compile"),
+    ("tests/native/sdk_aggregate_faults.c", "aggregate-faults.c", None, None),
     ("tests/native/sdk_tty.c", "host-tty.c", "tty-host.o", "tty-host-compile"),
     ("tests/native/sdk_tty_faults.c", "tty-faults.c", None, None),
     ("tests/native/sdk_stdio_faults.c", "stdio-faults.c", None, None),
@@ -91,6 +93,11 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-aggregate-diagnostics", ["--m2-aggregate-diagnostics"], "M2 aggregate diagnostics: public short-prefix POD/canary and HostNotify refusals preserve caller diagnostics; no resource acceptance: pass\n"),
+    ("m2-aggregate-pod", ["--m2-aggregate-pod"], "M2 aggregate POD: versioned short/zero-tail/nonzero-tail canaries; foreign thread 1000 OPEN and 1000 CLOSED samples of nine pure POD queries; JS state preserved; old instance unsupported: pass\n"),
+    ("m2-aggregate-metrics", ["--m2-aggregate-metrics"], "M2 aggregate metrics: mixed Work/file IO share small count/data; cancelled physical and C results retain capacity; real helper/worker requested stacks and persistent peaks; cleanup and Host handle: pass\n"),
+    ("m2-aggregate-counts", ["--m2-aggregate-counts", "{self}", "{launcher}"], "M2 aggregate counts: timer/token/handler/process small limits coexist with Work and stdio; helper shared across real process and file IO; metadata/environment, handles/registrations and retained control charged; atomic refusals recover after actual reap/join: pass\n"),
+    ("m2-aggregate-native", ["--m2-aggregate-native"], "M2 aggregate native budget: mixed retained Work plus file IO hit 8MiB data subquota inside 16MiB; separate 10MiB total includes real 4MiB event store and metadata/environment before data quota; ordinary atomic refusal and cleanup: pass\n"),
     ("m2-tty-validation", ["--m2-tty-validation"], "M2 TTY validation: strict version/size/unknown flags/reserved/tail; wrong owner and invalid identity; no accepted resource; old factory remains unsupported: pass\n"),
     ("m2-process-js-cycles", ["--m2-process-js-cycles", "{self}", "{launcher}"], "M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass\n"),
     ("m2-process-js-liveness", ["--m2-process-js-liveness", "{self}", "{launcher}"], "M2 process JS liveness: unref natural idle; ref restores keepalive; discarded Process survives bounded cyclic GC pressure; explicit owner drive observes natural exit and closure: pass\n"),
@@ -366,12 +373,14 @@ def package_consume(args, report, directory):
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "js-process-build", output, js_faults=True)
         compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output, faults=True)
+        compile_aggregate_consumer(args, report, directory, tree, helpers, external / "sdk", external / "aggregate-build", output, faults=True)
     else:
         compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
         compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
         compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
         compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output)
         compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output)
+        compile_aggregate_consumer(args, report, directory, tree, helpers, external / "sdk", external / "aggregate-build", output)
     measured_host(args, report, directory)
     loader = select_loader(args, report)
     if args.operation == "fault-consume":
@@ -487,6 +496,7 @@ def package_consume(args, report, directory):
             "actual":{"exit_code":executed["exit_code"],"stdout":stdout,"stderr":stderr,"timed_out":executed["timed_out"]},
             "artifact":identity(artifact),"sdk_sha256":producer["sdk"]["sha256"],"controlled_system_fixture":args.operation=="fault-consume",
             "reason":"Standard stream public C/JS Host compiled outside source checkouts from sealed supplied SDK"})
+    aggregate_cases(args, report, directory, output, loader, faults=args.operation == "fault-consume")
     check_package(producer, external, check_archive=False)
     verify_inputs(args, report, directory, stage="after")
     recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
@@ -756,6 +766,48 @@ def compile_stdio_consumer(args,report,directory,tree,helpers,sdk,work,output,fa
     link_portable(args,report,directory,tree,helpers,name,[work/"host.o",sdk/"lib/libqaplet.a"],work/(name+".com"),work,environment,libraries=(*("-Wl,--wrap="+s for s in symbols),"-lm","-lpthread"))
     publish_ape(work,output,name,helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose("build",args.controlled_probe)))
     artifact=audit(args,report,directory,tree,name,output);artifact["build_commands"]=identity(output/(name+".build-commands.log"));report["artifacts"].append(artifact)
+
+
+AGGREGATE_FAULT_STDOUT = "M2 aggregate controlled faults: eight mixed Work/timer/token cases; stop/control and stop/actual allocation ordered both ways; accepted work survives wake fault; core clock/wait and caught engine allocation terminate; deadline first survives late CLOSED cleanup fault; first cause and real join retained: pass\n"
+
+
+def compile_aggregate_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False):
+    (work / "tmp").mkdir(parents=True)
+    name = "qaplet-aggregate-faults" if faults else "qaplet-aggregate-host"
+    source = sdk / ("aggregate-faults.c" if faults else "host-aggregate.c")
+    symbols = ("calloc", "malloc", "send", "clock_gettime", "poll") if faults else ()
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    report["aggregate_controlled_system_fixture" if faults else "external_aggregate_consumer"] = {
+        "source": identity(source), "public_consumer": identity(sdk / "host-aggregate.c"),
+        "include_directories": [str(sdk / "include")], "archive": identity(sdk / "lib/libqaplet.a"),
+        "private_headers": False, "wrapped_symbols": list(symbols)}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        *([] if faults else ["-DQAPLET_AGGREGATE_STANDALONE"]), "-I" + str(sdk / "include"),
+        "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / (name + ".com"), work, environment,
+        libraries=(*("-Wl,--wrap=" + symbol for symbol in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(), consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log")); report["artifacts"].append(artifact)
+
+
+def aggregate_cases(args, report, directory, output, loader, faults=False):
+    artifact = output / ("qaplet-aggregate-faults.com" if faults else "qaplet-aggregate-host.com")
+    cases = [("system-boundary", [], AGGREGATE_FAULT_STDOUT)] if faults else [row for row in HOST_CASES if row[0].startswith("m2-aggregate-")]
+    for suffix, arguments, expected in cases:
+        arguments = [value.replace("{self}", str(artifact)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
+        executed, stdout, stderr = run(report, directory, artifact.stem + "." + suffix,
+            [*loader, artifact, *arguments], args.timeout, expected=None)
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": artifact.stem + "." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "commands": [executed],
+            "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+            "artifact": identity(artifact), "sdk_sha256": report["sdk"]["sha256"],
+            "controlled_system_fixture": faults, "reason": "Public aggregate consumer compiled outside both checkouts from the sealed supplied SDK"})
 
 
 def example_cases(args, report, directory, artifact, modules, loader):

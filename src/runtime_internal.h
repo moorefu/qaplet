@@ -58,7 +58,8 @@ struct qaplet_runtime {
   uint64_t native_uncertain_handles;
   /* Shared auxiliary-thread capacity, including physical exit and requested
    * stacks. Process and future stdio helpers use this same instance ledger. */
-  uint64_t helper_threads, helper_stack_bytes;
+  uint64_t helper_threads, helper_stack_bytes, helper_threads_peak, helper_stack_bytes_peak;
+  uint64_t io_endpoints_peak, io_operations_peak, io_data_bytes_peak;
   qaplet_process_pool *process_pool;
   qaplet_process_snapshot process_snapshot;
   uint64_t keepalive_tokens, keepalive_tokens_peak, wake_requests, wake_signals, wait_calls;
