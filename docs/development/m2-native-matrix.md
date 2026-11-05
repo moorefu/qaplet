@@ -2,7 +2,7 @@
 
 `python scripts/m2_native_matrix.py inventory --report FILE` emits all five
 mandatory native targets and every case name for the public ordinary SDK,
-package examples, CLI, signal sender/strong gate, controlled faults, TTY, mixed
+package examples, CLI, signal sender/strong gate/queue/mixed/budget/late targets, controlled faults, TTY, mixed
 cleanup, four OS backend probes and the separate M2 lifecycle/mixed counters.
 Missing targets remain `not_run`; a selected target with missing scopes is
 `blocked`. `release_ready` is always false. A guest or translated process cannot
@@ -11,7 +11,7 @@ the separate M2 lifecycle scope.
 
 `evaluate --selection FILE --report NEW_FILE` is read-only. Selection schema 1
 uses profile `m2-native-matrix`, explicit `producer_report`, `distribution_root`,
-`loader_dir`, `path_mappings`, and a `native` array. Each native entry names one
+`loader_dir`, `signal_fixture_producer`, `path_mappings`, and a `native` array. Each native entry names one
 target and a `reports` mapping keyed by the inventory's scopes. Each report is
 an explicit path or path/SHA/size identity. Provider files and selected raw logs
 are protected against output collisions. Reports retain the measured host,
@@ -35,6 +35,24 @@ same accepted public CLI contract's case names and expected bytes. This is an
 expectation oracle; the new SDK/CLI execution, raw stdout/stderr, terminal/child
 readback and overlapped-native protocol are independently checked. Old success
 scores do not become new product executions.
+
+The current signal inventory contains sixteen POSIX cases (sender eight, strong
+two, queue two, mixed two, cumulative budget one, late target one) and nine
+Windows cases (four, one, one, one, one, one). Queue cases consume the public C
+Host relay fixture; the other specialized groups name their controlled CLI
+derivatives explicitly. Windows mixed stop records native close reason/reap/
+quiesce/destroy and actual entry Console restoration; its empty standalone
+stderr is not presented as diagnostic bytes or pre-CRT restoration. The budget
+cases retain incomplete cleanup `false` and prove one cumulative five-second
+SDK-plus-relay active wait, including real repeated signals during the exit hold.
+
+`fault-run` and `mixed-run` consume an explicitly selected auxiliary producer.
+Their original SDK identity stays intact. A separate target-component binding
+replays all actual C/transitive include/public header/dual archives/compiler/
+flags/loader/link/packing inputs against the target SDK before a new native
+execution. This permits byte-identical independently compiled fixtures to be
+used with a later SDK without retagging their producer or old executions.
+TTY's current two-artifact producer is checked by the same closure reader.
 
 Cleanup is not one blanket boolean. Expected incomplete mixed/fault/CLI cases
 retain their actual false/null scope, metadata/argument cases remain inapplicable,

@@ -75,11 +75,31 @@
       ],
       "signal-sender": [
         "linux-SIGINT-wait",
-        "linux-SIGTERM-wait"
+        "linux-SIGINT-execute",
+        "linux-SIGINT-output",
+        "linux-SIGINT-help",
+        "linux-SIGTERM-wait",
+        "linux-SIGTERM-execute",
+        "linux-SIGTERM-output",
+        "linux-SIGTERM-help"
       ],
       "signal-strong": [
         "strong-owned-child-SIGINT",
         "strong-owned-child-SIGTERM"
+      ],
+      "signal-queue": [
+        "linux-SIGINT-queue",
+        "linux-SIGTERM-queue"
+      ],
+      "signal-mixed": [
+        "SIGINT-mixed",
+        "SIGTERM-mixed"
+      ],
+      "signal-budget": [
+        "budget-linux"
+      ],
+      "signal-late": [
+        "late-linux"
       ]
     },
     "Windows": {
@@ -158,10 +178,25 @@
         "qaplet-cli.overlapped-unknown-completion"
       ],
       "signal-sender": [
-        "windows-Ctrl+C-wait"
+        "windows-Ctrl+C-wait",
+        "windows-Ctrl+C-execute",
+        "windows-Ctrl+C-async-output",
+        "windows-Ctrl+C-sync-output"
       ],
       "signal-strong": [
         "strong-owned-child-Ctrl+C"
+      ],
+      "signal-queue": [
+        "windows-Ctrl+C-queue"
+      ],
+      "signal-mixed": [
+        "windows-Ctrl+C-mixed"
+      ],
+      "signal-budget": [
+        "budget-windows"
+      ],
+      "signal-late": [
+        "late-windows"
       ]
     }
   }

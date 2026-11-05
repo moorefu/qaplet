@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 TARGETS = (("linux-x86_64", "Linux", "x86_64"), ("windows-x86_64", "Windows", "x86_64"),
            ("macos-x86_64", "Darwin", "x86_64"), ("macos-aarch64", "Darwin", "aarch64"),
            ("linux-aarch64", "Linux", "aarch64"))
-MANDATORY = ("normal", "examples", "cli", "signal-sender", "signal-strong", "fault", "tty", "mixed",
+MANDATORY = ("normal", "examples", "cli", "signal-sender", "signal-strong", "signal-queue", "signal-mixed", "signal-budget", "signal-late", "fault", "tty", "mixed",
              "backend-waker", "backend-process", "backend-stdio", "backend-tty", "m2-lifecycle", "m2-mixed-cycles")
 ACCEPTED_23 = "14e3ba4cb74bc08a1a4ca28297c975764fc12785ad3df52fca56345240f2825a"
 SCOPES = {
@@ -51,9 +51,12 @@ def inventory():
                     "m2-lifecycle": ["m2-lifecycle"], "m2-mixed-cycles": ["m2-mixed"]}
         catalogs["examples"] = [value for value in catalogs["normal"] if value.startswith(("qaplet-example.", "qaplet-m2-example."))]
         catalogs.update(names["platforms"]["Windows" if windows else "POSIX"])
-        rows.append({"target": name, "os": system, "arch": arch, "status": "not_run",
-                     "mandatory": {scope: {"status": "not_run", "reason": "No selected actual current evidence",
-                                            "case_ids": catalogs[scope]} for scope in MANDATORY}})
+        scopes = {}
+        for scope in MANDATORY:
+            optional = ["qaplet-host.module-symlinks"] if windows and scope == "normal" else []
+            scopes[scope] = {"status": "not_run", "reason": "No selected actual current evidence", "case_ids": catalogs[scope],
+                             "optional_case_ids": optional, "required_case_ids": [value for value in catalogs[scope] if value not in optional]}
+        rows.append({"target": name, "os": system, "arch": arch, "status": "not_run", "mandatory": scopes})
     return rows
 
 
@@ -94,6 +97,44 @@ def tty_catalog(windows):
 
 def command_for(case):
     return case.get("command") or case.get("commands", [None])[0]
+
+
+def auxiliary_units(group):
+    def unit(*names, wraps=()):
+        return {"units": ["sdk/" + name for name in names], "wrapped_symbols": list(wraps), "sdk_archive": True}
+    if group == "mixed":
+        return {"qaplet-mixed-host": unit("host-mixed.c"), "qaplet-mixed-faults": unit("mixed-faults.c", wraps=("socket", "close", "write", "pthread_cond_timedwait"))}
+    return {
+        "qaplet-m2-faults": unit("m2-faults.c", wraps=("pthread_mutex_init", "pthread_mutex_destroy", "pthread_condattr_init", "pthread_condattr_destroy", "pthread_condattr_setclock", "pthread_cond_init", "pthread_cond_destroy", "clock_gettime", "socket", "accept", "close", "poll", "send", "recv")),
+        "qaplet-work-faults": unit("work-faults.c", "host-work.c", wraps=("calloc", "pthread_create", "pthread_tryjoin_np", "send", "mkstemp")),
+        "qaplet-process-faults": unit("process-faults.c", wraps=("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send")),
+        "qaplet-io-faults": unit("io-faults.c", wraps=("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject")),
+        "qaplet-js-process-faults": unit("host-process.c", wraps=("pthread_create", "sys_waitid")),
+        "qaplet-stdio-faults": unit("stdio-faults.c", wraps=("read", "ReadFile", "write", "WriteFile", "pthread_create", "calloc")),
+        "qaplet-aggregate-faults": unit("aggregate-faults.c", wraps=("calloc", "malloc", "send", "clock_gettime", "poll"))}
+
+
+def local_mappings():
+    import os
+    from workflow_support import workspace
+    main = str(Path(workspace(ROOT)["main_checkout"]).resolve()).replace("\\", "/")
+    if os.name == "nt" and main[1:3] == ":/":
+        return [{"source": "/mnt/" + main[0].lower() + main[2:], "root": main}]
+    if main.startswith("/mnt/") and len(main) > 7 and main[6] == "/":
+        return [{"source": main[5].upper() + ":" + main[6:], "root": main}]
+    return []
+
+
+def bind_for_run(args, producer, consumer, group, report):
+    from build_ape import identity
+    from core_gate import Evidence
+    from m2_fixture_binding import bind_auxiliary
+    evidence = Evidence({"path_mappings": local_mappings()}, ROOT)
+    artifacts = bind_auxiliary(evidence, consumer, producer, auxiliary_units(group), report)
+    report["target_component_binding"] = {"origin_auxiliary_report": identity(args.consumer),
+        "target_producer": identity(args.producer), "artifacts": artifacts,
+        "scope": "Exact actual compiler/link/packing closure equality; unchanged origin producer, new native execution"}
+    report["binding_evidence_index"] = list(evidence.index.values())
 
 
 def verify_static_cases(incoming, expected, evidence):
@@ -278,6 +319,107 @@ def validate_signal(incoming, strong, windows, evidence, names):
     return len(cases)
 
 
+def signal_auxiliary_units():
+    import sdk_signal
+    return {name: {"units": ([] if name in ("signal-arm", "signal-host") else ["recipe:src/cli.c"]) + ["sdk/" + source],
+                   "wrapped_symbols": list(wraps), "sdk_archive": name != "signal-arm"}
+            for name, (source, wraps) in sdk_signal.MODES.items()}
+
+
+def validate_signal_special(incoming, mode, windows, evidence, path, names):
+    from core_gate import require, unique
+    root = path.parent / (path.stem + "-raw")
+    rows = incoming.get("cases", [incoming])
+    expected = ({"queue": ["windows-Ctrl+C-queue"], "mixed": ["windows-Ctrl+C-mixed"],
+                 "budget": ["windows-Ctrl+C-wait"], "late": ["windows-Ctrl+C-wait"]}[mode] if windows else
+                {"queue": ["linux-SIGINT-queue", "linux-SIGTERM-queue"],
+                 "mixed": ["SIGINT-mixed", "SIGTERM-mixed"], "budget": [None], "late": [None]}[mode])
+    require(len(rows) == len(names) and [row.get("case") for row in rows] == expected,
+            "Complete current signal-special inventory required")
+    for row in rows:
+        require(row["status"] == "pass" and not row["supervisor_timeout"] and
+                row.get("ready_accepted", row.get("native", {}).get("ready_accepted")), "Signal-special ready/exit incomplete")
+        if windows:
+            native = row["native"]
+            directory = root / ("wait" if mode in ("budget", "late") else mode)
+            require(json.loads(evidence.read(str(directory / "ctrl-result.json"))) == native and
+                    row["launcher_exit"] == 0 and native["exit_code"] == 1 and native["target_in_same_console"] and
+                    native["sender_pid"] != native["target_pid"] and native["group"] == 0 and native["event"] == 0 and
+                    not native["supervisor_timeout"] and native["sender_received"] >= 1,
+                    "Real Console Ctrl+C target/retirement differs")
+            stderr = evidence.read(str(directory / "cli.stderr"))
+            evidence.read(str(directory / "host.stdout"));evidence.read(str(directory / "host.stderr"))
+        else:
+            directory = root / (str(row["real_os_signal"]) if mode == "mixed" else
+                                str(row["real_os_signal"]) + "-queue") if mode in ("queue", "mixed") else root
+            if mode == "mixed":
+                # Python 3.10 IntEnum str differs from 3.11; accept only the two exact declared forms.
+                candidates = [directory, root / ("Signals.SIGINT" if row["real_os_signal"] == 2 else "Signals.SIGTERM")]
+                available = [item for item in candidates if item.is_dir()]
+                require(len(available) == 1, "Unique actual mixed raw directory required")
+                directory = available[0]
+            require(row["exit_code"] == 1, "Signal-special owner exit differs")
+            deliveries = row.get("signals", [row.get("signal_delivery")])
+            require(deliveries and all(item and item["errno"] == 0 and item["target_pid"] == row["pid"] and
+                    item["sender_pid"] != row["pid"] and item["signal"] in (2, 15) for item in deliveries),
+                    "Actual process-directed signal differs")
+            stderr = evidence.read(row["stderr"]) if "stderr" in row else evidence.read(str(directory / "terminal.bin"))
+            if "stdout" in row:
+                require(b"AFTER" not in evidence.read(row["stdout"]), "JS continued after accepted stop")
+        if not (windows and mode == "mixed"):
+            require(b"EXECUTION_STOPPED" in stderr, "Actual signal diagnostic missing")
+        if mode == "queue":
+            queue = json.loads(evidence.read(str(directory / "queue-result.json")))
+            require(queue == row["queue_result"] and queue["queue_full"] and queue["owner_stopped"] and
+                    queue["sdk_destroyed"] and queue["user_marks"] == 0 and queue["events_dropped"] == 2 and
+                    (windows or queue["sdk_unix_dispositions_preserved"]) and row["native_cleanup_complete"] is True,
+                    "C Host queue boundary differs; this is not a stock CLI claim")
+        else:
+            filename = {"mixed": "signal-native.ndjson", "budget": "signal-fault.ndjson", "late": "signal-late.ndjson"}[mode]
+            records = [json.loads(line) for line in evidence.read(str(directory / filename)).decode().splitlines()]
+            require(records == row["raw_records"], "Signal-special raw native facts differ")
+            if mode == "mixed":
+                groups = {}
+                for record in records:groups.setdefault(record["operation"], []).append(record)
+                child = json.loads(evidence.read(str(directory / "direct-child.json")))
+                require(child == row["direct_child"] and len(groups.get("native-child-reaped", [])) == 1 and
+                        groups["native-child-reaped"][0]["pid"] == child["pid"] and
+                        groups["mixed-tty-read-accepted"][-1]["processes"] == 1 and
+                        groups["mixed-tty-read-accepted"][-1]["operations"] >= 1 and
+                        groups["mixed-tty-read-accepted"][-1]["io_endpoints"] >= 4 and
+                        groups["owner-close"][-1]["code"] == 0 and groups["owner-close"][-1]["termination_reason"] == 23 and
+                        groups["native-quiesce"][-1]["code"] == 0 and groups["native-quiesce"][-1]["reason"] == 6 and
+                        groups["runtime-destroy"][-1]["code"] == 0 and not evidence.resolve(str(directory / "forbidden-js")).exists() and
+                        row["native_cleanup_complete"] is True, "Mixed stop physical reap/quiesce/destroy differs")
+                if windows:
+                    modes = json.loads(evidence.read(str(directory / "mixed-modes.json")))
+                    require(modes == row["terminal_modes"] and modes["full_modes_restored"] and
+                            modes["actual_entry_baseline"] == modes["restored"] != modes["modified"] and
+                            modes["pre_CRT_restore_claimed"] is False and "native-force-accepted" in groups and
+                            groups["native-child-reaped"][0]["exit_code"] == 53261, "Native Console entry mode/reap differs")
+                else:
+                    require(row["full_modes_and_flags_restored"] and row["before"] == row["restored"] != row["modified"] and
+                            row["flags"][0] == row["flags"][2] != row["flags"][1] and
+                            groups["native-child-reaped"][0]["signal"] == 9, "PTY full modes/flags or force reap differs")
+            elif mode == "budget":
+                waits = [record["duration_ns"] / 1e9 for record in records if record["operation"] == "active-cond-wait"]
+                require(waits == row["active_condition_waits_seconds"] and abs(sum(waits) - row["cumulative_observed_active_wait_seconds"]) < 1e-9 and
+                        4.5 <= sum(waits) < 5.5 and sum(value > .5 for value in waits) >= 2 and
+                        4.5 <= (native["elapsed_seconds"] if windows else row["elapsed_seconds"]) < 6.5 and
+                        (native["native_thread_exit_held"] and native["sender_received"] >= 6 and native["repeated_after_held"] == 5
+                         if windows else row["native_thread_exit_held"] and len(row["signals"]) == 6) and
+                        row["native_cleanup_complete"] is False and b"native cleanup incomplete" in stderr,
+                        "Cumulative SDK+relay five-second active budget or retained-negative fact differs")
+            else:
+                late = [record for record in records if record["operation"] == "post-destroy-late-entry"]
+                require(len(late) == 1 and late[0]["destroy_code"] == 0 and late[0]["original_target_identity_preserved"] and
+                        late[0]["replacement_identity_reused"] is False and late[0]["late_entry_completed"] and
+                        late[0]["replacement_objects_untouched"] and late[0]["future_entry_delivered"] and
+                        row["native_cleanup_complete"] is True, "Post-destroy asynchronous target identity differs")
+        if mode != "budget":require(b"cleanup incomplete" not in stderr, "Unexpected native incomplete diagnostic")
+    return len(rows)
+
+
 def validate_mixed(incoming, evidence):
     import sdk_mixed
     from core_gate import require, unique
@@ -298,6 +440,9 @@ def validate_mixed(incoming, evidence):
                 "Mixed retained-negative cleanup fact differs")
         require([row["requested_active_wait_ms"] for row in case["wait_observations"]] == [0, 5, 5],
                 "Mixed finite public quiesce observations differ")
+        waits = str(Path(case["marker"]["path"]).parent / "mixed-waits.ndjson")
+        require([json.loads(line) for line in evidence.read(waits).decode().splitlines()] == case["wait_observations"],
+                "Mixed active waits differ from actual original records")
         if "tty" in name:
             terminal = case["terminal_readback"]
             require(terminal["complete_restore"] is True, "Mixed terminal readback missing")
@@ -316,10 +461,11 @@ def fault_run(args, report):
     producer = json.loads(args.producer.read_text(encoding="utf-8"))
     consumer = json.loads(args.consumer.read_text(encoding="utf-8"))
     sdk.check_package(producer, args.supplied.resolve())
-    if consumer["status"] != "pass" or consumer["sdk"] != producer["sdk"] or consumer["scope"] != "fault-consume":
+    if consumer["status"] != "pass" or consumer["scope"] != "fault-consume":
         raise BuildError("Actual current Ubuntu fault-consumer producer required")
     report.update(host=host_facts(), ci=None, scope="fault-run", sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"],
                   producer_report=identity(args.producer), consumer_report=identity(args.consumer), commands=[], cases=[], artifacts=[])
+    bind_for_run(args, producer, consumer, "fault", report)
     directory = args.report.resolve().parent / "evidence" / report["report_id"]
     directory.mkdir(parents=True)
     measured_host(args, report, directory)
@@ -366,6 +512,37 @@ def fault_run(args, report):
             "cleanup_scope": "Per-contract physical retirement/retained-negative facts are in the authoritative raw output; no blanket whole-process cleanup claim"})
     report.update(status="pass" if all(row["status"] == "pass" for row in report["cases"]) else "fail",
                   reason="Native same-byte replay of all platform-applicable current public controlled-system contracts")
+
+
+def mixed_run(args, report):
+    import sdk
+    import sdk_mixed
+    from build_ape import identity, BuildError
+    from foundation import host_facts, sha256
+    from startup import measured_host, select_loader
+    producer = json.loads(args.producer.read_text(encoding="utf-8"))
+    consumer = json.loads(args.consumer.read_text(encoding="utf-8"))
+    sdk.check_package(producer, args.supplied.resolve())
+    if consumer["status"] != "pass" or consumer["scope"] != "mixed-consume":
+        raise BuildError("Actual mixed auxiliary producer required")
+    report.update(report_kind="qaplet-sdk-mixed", scope="run", host=host_facts(), ci=None,
+        sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.producer),
+        consumer_report=identity(args.consumer), cases=[], commands=[], artifacts=[])
+    bind_for_run(args, producer, consumer, "mixed", report)
+    directory = args.report.resolve().parent / "evidence" / report["report_id"]
+    directory.mkdir(parents=True)
+    root = args.artifact_dir.resolve()
+    for artifact in consumer["artifacts"]:
+        current = root / Path(artifact["path"]).name
+        if sha256(current) != artifact["sha256"] or artifact["audit"]["status"] != "pass":
+            raise BuildError("Actual mixed artifact differs from its audited original producer")
+        report["artifacts"].append(identity(current))
+    if sha256(root / "process-child.exe") != consumer["mixed_native_child"]["sha256"]:
+        raise BuildError("Mixed native child differs")
+    measured_host(args, report, directory);loader = select_loader(args, report)
+    sdk_mixed.run_supplied(args, report, directory, root, loader)
+    report.update(status="pass" if all(row["status"] == "pass" for row in report["cases"]) else "fail",
+                  reason="New target SDK native mixed execution; exact auxiliary origin closure retained separately")
 
 
 def evaluate(args, report):
@@ -434,6 +611,8 @@ def evaluate(args, report):
             from core_gate import normalized
             accepted_files = {normalized(row["path"]): row for row in accepted_inventory["files"]}
         seen = set()
+        signal_supply = None
+        bindings = {}
         for entry in selection.get("native", []):
             target = entry["target"]
             require(target not in seen, "Duplicate selected native target")
@@ -474,8 +653,23 @@ def evaluate(args, report):
                 if not signal:
                     interval(incoming)
                 if signal:
-                    cli = next(row for row in producer["artifacts"] if row["name"] == "qaplet")
-                    require(same(incoming["cli"], cli), "Signal command must consume the exact selected current CLI")
+                    if signal_supply is None:
+                        from m2_fixture_binding import bind_auxiliary
+                        signal_supply = evidence.json(selection["signal_fixture_producer"])
+                        require(signal_supply["status"] == "pass" and signal_supply["sdk"] == producer["sdk"] and
+                                signal_supply["sdk_recipe"] == producer["sdk_recipe"], "Current signal fixture producer required")
+                        report["signal_fixture_binding"] = bind_auxiliary(evidence, signal_supply, producer, signal_auxiliary_units(), report)
+                    cli_name = {"signal-queue": "signal-host", "signal-mixed": "signal-observer",
+                                "signal-budget": "signal-fault", "signal-late": "signal-late"}.get(scope)
+                    cli = next(row for row in (signal_supply if cli_name else producer)["artifacts"] if row["name"] == (cli_name or "qaplet"))
+                    require(same(incoming["cli"], cli), "Signal actual CLI/C Host/observer artifact differs from its declared scope")
+                    evidence.read(incoming["cli"])
+                    for retained in incoming["consumer_identity"]["files"]:
+                        require(same(retained["original"], retained["retained"]), "Signal consumer source changed before capture")
+                        evidence.read(retained["retained"])
+                    if incoming.get("host_artifact"):
+                        require(same(incoming["host_artifact"], next(row for row in signal_supply["artifacts"] if row["name"] == "signal-host")),
+                                "Signal Console/direct-child Host differs")
                 elif not scope.startswith("backend-"):
                     require(incoming["sdk"] == producer["sdk"] and incoming["sdk_recipe"] == producer["sdk_recipe"],
                             "Selected SDK/recipe differs: " + scope)
@@ -519,14 +713,36 @@ def evaluate(args, report):
                     require(any(same(row["report"], identity(oracle_path)) for row in oracle_receipt["selected_reports"]),
                             "Public CLI contract oracle was not accepted")
                     count = validate_cli(incoming, json.loads(evidence.read(oracle_ref)), evidence)
+                elif signal and scope not in ("signal-sender", "signal-strong"):
+                    count = validate_signal_special(incoming, scope.removeprefix("signal-"), slot["os"] == "Windows", evidence, path,
+                                                    slot["mandatory"][scope]["case_ids"])
                 elif signal:
                     count = validate_signal(incoming, scope == "signal-strong", slot["os"] == "Windows", evidence,
                                             slot["mandatory"][scope]["case_ids"])
                 elif scope == "fault":
+                    key = incoming["consumer_report"]["sha256"]
+                    if key not in bindings:
+                        from m2_fixture_binding import bind_auxiliary
+                        bindings[key] = bind_auxiliary(evidence, evidence.json(incoming["consumer_report"]), producer, auxiliary_units("fault"), report)
+                    require(bindings[key] == incoming["target_component_binding"]["artifacts"], "Actual auxiliary fault closure binding differs")
                     count = verify_static_cases(incoming, fault_catalog(slot["os"] == "Windows"), evidence)
                 elif scope == "tty":
+                    from m2_fixture_binding import bind_auxiliary
+                    auxiliary = incoming if incoming.get("scope") == "tty-consume" else evidence.json(incoming["producer_report"])
+                    key = "tty-" + auxiliary["report_id"]
+                    if key not in bindings:
+                        bindings[key] = bind_auxiliary(evidence, auxiliary, producer, {
+                            "qaplet-tty-host": {"units": ["sdk/host-tty.c"], "wrapped_symbols": []},
+                            "qaplet-tty-faults": {"units": ["sdk/tty-faults.c"], "wrapped_symbols":
+                                ["tcsetattr", "SetConsoleMode", "WriteConsole", "poll", "pthread_create", "read"]}}, report)
+                    report["tty_fixture_binding"] = bindings[key]
                     count = verify_static_cases(incoming, tty_catalog(slot["os"] == "Windows"), evidence)
                 elif scope == "mixed":
+                    key = incoming["consumer_report"]["sha256"]
+                    if key not in bindings:
+                        from m2_fixture_binding import bind_auxiliary
+                        bindings[key] = bind_auxiliary(evidence, evidence.json(incoming["consumer_report"]), producer, auxiliary_units("mixed"), report)
+                    require(bindings[key] == incoming["target_component_binding"]["artifacts"], "Actual auxiliary mixed closure binding differs")
                     count = validate_mixed(incoming, evidence)
                 elif scope.startswith("backend-"):
                     module = __import__("m2_" + scope.removeprefix("backend-"))
@@ -590,8 +806,12 @@ def evaluate(args, report):
                     "host": signal_host or observed, "native_host_anchor": host if signal_host else None,
                     "reuse": "accepted-ticket23-exact-scope" if reuse else None,
                     "case_ids": slot["mandatory"][scope]["case_ids"],
-                    "cleanup_false": [row.get("case_id", row.get("case")) for row in incoming.get("cases", []) if row.get("native_cleanup_complete", True) is False],
-                    "cleanup_null": [row.get("case_id", row.get("case")) for row in incoming.get("cases", []) if "native_cleanup_complete" in row and row["native_cleanup_complete"] is None]}
+                    "required_case_ids": slot["mandatory"][scope]["required_case_ids"],
+                    "optional_case_ids": slot["mandatory"][scope]["optional_case_ids"],
+                    "cleanup_false": [row.get("case_id", row.get("case", scope)) for row in incoming.get("cases", [incoming])
+                        if (scope != "examples" or row.get("case_id", "").startswith(("qaplet-example.", "qaplet-m2-example."))) and row.get("native_cleanup_complete", True) is False],
+                    "cleanup_null": [row.get("case_id", row.get("case", scope)) for row in incoming.get("cases", [incoming])
+                        if (scope != "examples" or row.get("case_id", "").startswith(("qaplet-example.", "qaplet-m2-example."))) and "native_cleanup_complete" in row and row["native_cleanup_complete"] is None]}
                 report["selected_inputs"].append(identity(path))
             slot["host"] = host
             slot["status"] = "pass" if all(row["status"] == "pass" for row in slot["mandatory"].values()) else "blocked"
@@ -614,7 +834,7 @@ def main():
     from foundation import now
     from workflow_support import guard_evidence_outputs, write_evidence_report
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("inventory", "evaluate", "fault-run"))
+    parser.add_argument("operation", choices=("inventory", "evaluate", "fault-run", "mixed-run"))
     parser.add_argument("--selection", type=Path)
     parser.add_argument("--producer", type=Path)
     parser.add_argument("--consumer", type=Path)
@@ -636,8 +856,8 @@ def main():
     try:
         if args.operation == "inventory":
             report.update(status="blocked", coverage=inventory(), reason="No actual native reports selected")
-        elif args.operation == "fault-run":
-            fault_run(args, report)
+        elif args.operation in ("fault-run", "mixed-run"):
+            {"fault-run": fault_run, "mixed-run": mixed_run}[args.operation](args, report)
         else:
             if not args.selection:
                 raise ValueError("Explicit selection required")
