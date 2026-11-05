@@ -214,6 +214,7 @@ qaplet_code qaplet_execution_checkpoint(qaplet_runtime *runtime,
   }
   if (!JS_IsJobPending(runtime->engine)) {
     qaplet_work_checkpoint(runtime);
+    qaplet_js_io_checkpoint(runtime);
     if (runtime->rejections && !runtime->execution_code) {
       qaplet_capture_exception(runtime, runtime->rejections->reason);
       runtime->execution_code = qaplet_module_exception_code(runtime, runtime->rejections->reason);

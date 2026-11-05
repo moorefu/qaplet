@@ -508,6 +508,7 @@ void qaplet_io_collect(qaplet_runtime *r) {
   pthread_mutex_unlock(&r->mutex);
 }
 void qaplet_io_shutdown(qaplet_runtime *r,int closing) {
+  qaplet_js_io_shutdown(r);
   pthread_mutex_lock(&r->mutex);qaplet_io_pool *p=r->io_pool;
   if(p){
     if(closing)p->closing=1;
