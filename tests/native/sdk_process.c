@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -444,6 +445,79 @@ typedef struct {
   qaplet_process process,stale;
   _Atomic int ready,error,notifications,notify_error;
 } process_observer;
+typedef struct { qaplet_runtime *runtime; qaplet_process process; qaplet_code code; } process_canceller;
+static void *cancel_running(void *opaque) {
+  process_canceller *c=opaque;
+  c->code=qaplet_process_cancel(c->runtime,&c->process,NULL);
+  return NULL;
+}
+static int cancellation(void) {
+  qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT; m.limits.processes=1;
+  qaplet_runtime *r=NULL,*other=NULL;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK && qaplet_create_m2(&b,&m,&other,NULL)==QAPLET_OK);
+  qaplet_process invalid=QAPLET_PROCESS_INIT; invalid.struct_size=8;
+  CHECK(qaplet_process_cancel(NULL,&invalid,NULL)==QAPLET_ABI_MISMATCH && qaplet_process_cancel(r,NULL,NULL)==QAPLET_INVALID_ARGUMENT);
+  qaplet_progress progress=QAPLET_PROGRESS_INIT; CHECK(qaplet_eval(r,"42",2,&progress,NULL)==QAPLET_OK);
+  qaplet_process p=QAPLET_PROCESS_INIT; int gate=hanging(r,&p); CHECK(gate>=0);
+  qaplet_process stale=p; ++stale.generation;
+  CHECK(qaplet_process_cancel(other,&p,NULL)==QAPLET_INVALID_HANDLE && qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  process_canceller c={r,p,QAPLET_BAD_STATE}; pthread_t thread;
+  CHECK(!pthread_create(&thread,NULL,cancel_running,&c) && !pthread_join(thread,NULL) && c.code==QAPLET_OK);
+  CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+  qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_IDLE);
+  qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
+  CHECK(qaplet_process_get_status(r,&p,&status,NULL)==QAPLET_OK && status.code==QAPLET_CANCELLED && status.exited && status.reaped && status.delivered && !status.referenced);
+  CHECK(IsWindows() ? status.native_exit_code==0xD00D && !status.native_signal : !status.native_exit_code && status.native_signal==SIGKILL);
+  CHECK(!status.error_domain && !status.error && qaplet_process_cancel(r,&p,NULL)==QAPLET_OK);
+  double until=milliseconds()+5000;
+  do { CHECK(qaplet_process_get_status(r,&p,&status,NULL)==QAPLET_OK); if (!status.helper_active) break; sched_yield(); } while (milliseconds()<until);
+  CHECK(!status.helper_active);
+  CHECK(!close(gate)); stale=p;
+  CHECK(qaplet_process_release(r,&p,NULL)==QAPLET_OK && qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  gate=hanging(r,&p); CHECK(gate>=0);
+  CHECK(qaplet_process_cancel(r,&stale,NULL)==QAPLET_INVALID_HANDLE);
+  CHECK(qaplet_get_process_status(r,&p,&status,NULL)==QAPLET_OK && !status.exited && !status.code);
+  CHECK(!close(gate) && !observed_exit(r,&p,&status));
+  CHECK(qaplet_process_cancel(r,&p,NULL)==QAPLET_ALREADY_COMPLETED);
+  CHECK(!completed(r,&p,37));
+  qaplet_result result=QAPLET_RESULT_INIT; CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.number==42);
+  CHECK(!finish(r) && !finish(other));
+  puts("M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass"); return 0;
+}
+static qaplet_code cleanup_mark(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *argv,void *opaque) {
+  (void)r; (void)call; (void)argc; (void)argv; ++*(unsigned *)opaque; return QAPLET_OK;
+}
+static int terminal_cleanup(void) {
+  for (unsigned mode=0;mode<4;++mode) {
+    qaplet_config b=QAPLET_CONFIG_INIT; qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;
+    qaplet_runtime *r=NULL; CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+    unsigned marks=0;
+    qaplet_host_export item=QAPLET_HOST_EXPORT_INIT; item.name="mark"; item.name_length=4; item.kind=QAPLET_HOST_FUNCTION; item.function=cleanup_mark; item.userdata=&marks;
+    qaplet_host_module module=QAPLET_HOST_MODULE_INIT; module.name="host:process-cleanup"; module.name_length=20; module.exports=&item; module.export_count=1;
+    CHECK(qaplet_register_host_module(r,&module,NULL)==QAPLET_OK);
+    qaplet_progress progress=QAPLET_PROGRESS_INIT;
+    const char setup[]="import('host:process-cleanup').then(h=>{globalThis.h=h})";
+    CHECK(qaplet_eval(r,setup,sizeof(setup)-1,&progress,NULL)==QAPLET_OK);
+    while (progress.phase==QAPLET_PHASE_PENDING) CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK);
+    qaplet_process p=QAPLET_PROCESS_INIT; int gate=hanging(r,&p); CHECK(gate>=0);
+    if (mode==1) CHECK(qaplet_eval(r,"throw Error()",13,&progress,NULL)==QAPLET_JS_EXCEPTION);
+    const char pending[]="Promise.resolve().then(()=>1).then(()=>h.mark()).finally(()=>h.mark());new Promise(()=>{})";
+    qaplet_execution_options options=QAPLET_EXECUTION_OPTIONS_INIT; if (mode==3) options.max_dispatches=1;
+    CHECK(qaplet_eval_with_options(r,pending,sizeof(pending)-1,&options,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
+    if (mode==2 || mode==3) {
+      if (mode==2) CHECK(qaplet_request_stop(r,NULL)==QAPLET_OK);
+      CHECK(qaplet_pump(r,&progress,NULL)==(mode==2 ? QAPLET_EXECUTION_STOPPED : QAPLET_DISPATCH_LIMIT));
+      qaplet_process_status s=QAPLET_PROCESS_STATUS_INIT; double until=milliseconds()+5000;
+      do { CHECK(qaplet_process_get_status(r,&p,&s,NULL)==QAPLET_OK); if (s.reaped) break; sched_yield(); } while (milliseconds()<until);
+      CHECK(s.code==QAPLET_CANCELLED && s.reaped && (IsWindows() ? s.native_exit_code==0xD00D : s.native_signal==SIGKILL));
+      qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;
+      CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==(mode==2 ? QAPLET_STOPPED : QAPLET_FAILED) && snapshot.termination_reason==(mode==2 ? QAPLET_EXECUTION_STOPPED : QAPLET_DISPATCH_LIMIT));
+    }
+    CHECK(!marks && !finish(r) && !marks && !close(gate));
+  }
+  puts("M2 process terminal cleanup: PENDING/ordinary-error close; owner STOPPED/FAILED force/reap before close; first cause retained; queued jobs/finally never run; native cleanup drained: pass"); return 0;
+}
 static void query_notify(void *opaque) {
   process_observer *o=opaque;
   qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;
@@ -451,6 +525,7 @@ static void query_notify(void *opaque) {
    * rejects the otherwise thread-safe POD entry before acquiring a lock. */
   if (qaplet_get_process_status(o->runtime,&o->process,&status,NULL)!=QAPLET_BUSY)
     o->notify_error=1;
+  if (qaplet_process_cancel(o->runtime,&o->process,NULL)!=QAPLET_BUSY) o->notify_error=1;
   ++o->notifications;
 }
 static void *query_running(void *opaque) {
@@ -577,7 +652,7 @@ int sdk_process(int argc,char **argv) {
   if (IsWindows()) { strcpy(source,self); char *slash=strrchr(source,'/'); if (!slash) slash=strrchr(source,'\\'); CHECK(slash); strcpy(slash+1,"sdk/process-child.exe"); }
   else strcpy(source,launcher);
   CHECK(!copy_file(source,executable));
-  int result=!strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
+  int result=!strcmp(argv[1],"--m2-process-terminal") ? terminal_cleanup() : !strcmp(argv[1],"--m2-process-cancel") ? cancellation() : !strcmp(argv[1],"--m2-process-query") ? query() : !strcmp(argv[1],"--m2-process-inputs") ? inputs() : !strcmp(argv[1],"--m2-process-errors") ? errors() : !strcmp(argv[1],"--m2-process-inherit") ? inherit() : !strcmp(argv[1],"--m2-process-limits") ? limits() : !strcmp(argv[1],"--m2-process-ledger") ? ledger() : !strcmp(argv[1],"--m2-process-scheduling") ? scheduling() : !strcmp(argv[1],"--m2-process-liveness") ? liveness() : !strcmp(argv[1],"--m2-process-identity") ? identity() : cleanup();
   CHECK(!unlink(executable)); CHECK(!rmdir(cwd)); return result;
 }
 #ifdef SDK_STANDALONE

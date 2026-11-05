@@ -6,7 +6,9 @@
 
 **Status:** claimed
 
-**Execution state:** in_progress；本地Linux/Windows阶段，完整Cross deferred。
+**Execution state:** local_complete_pending_merge；本地Linux/Windows实施与验证完成，待独立合并；完整Cross deferred。
+
+**Local implementation/validation:** complete；正式 Local development 放行由独立 merger 合入后登记。
 
 **Execution prerequisites:** 13的Local development已完成；按用户[本地开发指示](../local-development.md)放行本地实施，保留未完成的跨平台验收。
 
@@ -18,11 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] 取消使用已验证强制终止并回收，保留实际 exit/signal/error，不承诺温和信号、宽限期或整树清理。
-- [ ] 取消与正常退出、创建完成及重复回收有确定顺序，不把 logical CANCELLED 当成已 reap。
-- [ ] owner 确认 stop/FAILED 即启动终止，不等待 close 才开始；未回收期间 native pending/destroy BUSY 可见。
-- [ ] 跨 Runtime/代次、迟到退出和复用原生句柄不误投新进程，必要记录和容量保留到真实回收。
-- [ ] 正常、错误、STOPPED/FAILED、PENDING close 及 quiesce 重试不运行用户 JS 或提前释放原生数据。
+以下勾选限定于已执行的本地 Linux/Windows；其他原生平台、完整 Cross/Full 与父规格组合长测仍未验收。
+
+- [x] 取消使用已验证强制终止并回收，保留实际 exit/signal/error，不承诺温和信号、宽限期或整树清理。
+- [x] 取消与正常退出、创建完成及重复回收有确定顺序，不把 logical CANCELLED 当成已 reap。
+- [x] owner 确认 stop/FAILED 即启动终止，不等待 close 才开始；未回收期间 native pending/destroy BUSY 可见。
+- [x] 跨 Runtime/代次、迟到退出和复用原生句柄不误投新进程，必要记录和容量保留到真实回收。实际 HANDLE 复用在 Windows 的受控 OS 交接执行；POSIX 另验证失去 PID 身份后不再发送信号。
+- [x] 正常、错误、STOPPED/FAILED、PENDING close 及 quiesce 重试不运行用户 JS 或提前释放原生数据。
 
 ## Blocking details
 
@@ -53,4 +57,8 @@
 ## Comments
 
 2026-11-03：用户明确回复“按 27 张发布”，确认 27 张纵向任务及 38 条直接阻塞边；本票按已确认提案独立发布为 ready-for-agent，尚未领取或实施。父规格保持不变。
+
+2026-11-05：本地公开取消、终止即回收、确定性 helper/TLS 物理保留、真实 native error/wake 故障与 Windows HANDLE 复用均通过。正常供应 Linux 172pass、Windows 171pass+既有可选 symlink 限制1；包外两端各58pass；独立故障 Linux12/Windows9pass；devcheck380=180pass+200条件skip，C bootstrap通过。详见[本票验证记录](../14-process-cancel-validation.md)。保持 claimed，不提前关闭 full ticket/父M2，不 push/触发 CI；待独立 merger 合入后登记本地依赖放行。
+
+2026-11-05（融合12）：已融合实际integration 3d03f85，保留JS Work7项及Process cancel/terminal/包外路径。15真实IO gate发现的Windows child已exit/helper未pub竞争由14唯一提交5724f4e修复；旧供应cancel/close两序实际red，新组合正式fault均green，活child真实native5仍保留。新normal Linux179pass/Win178pass+optional1，package两端65pass，fault Linux12/Win10pass，相关SDKNative三项pass/0skip；不重复380。旧sourceout冻结，新原件独占主out/qaplet-m2/14-fusion-js12，见[融合验证](../14-fusion-js12-validation.md)。继续待独立merger放行本地开发，不改变claimed/fullCross deferred。
 

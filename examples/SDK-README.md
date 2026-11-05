@@ -90,3 +90,21 @@ system-boundary fixture, never part of the normal product Host. On Ubuntu,
 links this public-only consumer with explicit syscall wrappers, audits its APE
 and records four initialization refusals/resource retirement and whole-drive
 reentry checks separately from normal runtime evidence.
+
+For M2 direct children, `qaplet_process_cancel(runtime, &process, diagnostic)`
+is an any-thread native control operation. Success records `QAPLET_CANCELLED`
+in process status and starts forced termination of that direct child. Repeated
+cancellation is successful; native completion published first returns
+`QAPLET_ALREADY_COMPLETED`. Query actual `exited`, `reaped`, exit code, signal
+and native error independently. Cancellation does not report a fake reap, close
+managed output streams, or release a still-running helper's storage.
+`qaplet_process_release` remains BUSY before reap. STOPPED/FAILED owner
+confirmation starts the same termination path before close. After close,
+retry bounded `qaplet_quiesce`; destroy remains BUSY until physical cleanup.
+The Host must never reap SDK children itself.
+
+`package-consume` also builds and runs `host-process.c` using only the sealed
+SDK outside the checkout. `fault-consume` separately builds `process-faults.c`
+with recorded OS wrappers for deterministic helper/TLS handoffs, real native
+errors and accepted wake failure. These controlled fixtures are distinct from
+normal product evidence.
