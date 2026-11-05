@@ -17,6 +17,12 @@ create/close/quiesce/destroy 1000 次及混合100次。公开正负、真实 bac
 不以guest、旧M1循环或本地两槽位签发五原生/正式Cross/Full/release-ready。
 范围、失败历史和精确原件见[24本地验证](../24-native-matrix-validation.md)。
 
+**Independent local reception:** 已由fresh merger独立no-ff合入`dd9e700b`，source
+`e1d483f4`与合并tree相同；7092原件/外部闭包合前合后逐项核验、两次只读strict
+重放及合后Ubuntu预检通过。Local development: complete，正式状态仍claimed /
+local_complete / cross_deferred；三缺失native仍not_run，不放行27或父M2验收。
+主收据为`out/qaplet-m2/merge-24-native-matrix/handoff.json`。
+
 **Spec stories:** 1、99、100、101、102、103、104、105、106、107、108、109、110。
 
 **Confirmed decisions:** Q14、Q24、Q25、Q26、Q31、Q34、Q36、Q37、Q41、Q42、Q43、Q45、Q46、Q48、Q49、Q50、Q51、Q52。
@@ -65,6 +71,10 @@ create/close/quiesce/destroy 1000 次及混合100次。公开正负、真实 bac
 的mandatory inventory和Linux/Windows本地矩阵。优先复用同SKU3已封存原件，补足当前
 特殊合同及真正M2 create/close/quiesce/destroy和混合循环；M1的1000循环不改贴为M2。
 与25/26只协调公共验证fixture，不增加依赖边。正式其余原生、CI及全范围验收仍待实测。
+
+2026-11-06：最终clean source `e1d483f4d53fc32dff81fc31c0f95b20762031b4`已独立
+本地接收为no-ff `dd9e700b2baa740bdc9a5b537773413bf90e4aeb`；当前18组两端通过，
+其余三原生保留not_run。原父规格、Blocked by及五条AC不改，仍claimed/cross_deferred。
 
 2026-11-06：本地可完成范围已收口为local_complete / cross_deferred，仍claimed、上述
 正式AC不勾选。公共C9生命周期/持久Runtime工具以独立slice供25/26复用；24不接管

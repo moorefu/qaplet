@@ -1,6 +1,6 @@
 # 24 · 原生合同矩阵：本地验证
 
-本票为 `local_complete / cross_deferred`，仍 `claimed`，待独立接收。
+本票已独立本地接收，为 `local_complete / cross_deferred`，仍 `claimed`。
 正式五原生AC未勾选，`release_ready=false`。Linux x64与Windows x64的18个
 mandatory分组均有当前实际原件；macOS x64/ARM64及Linux ARM64原生为`not_run`。
 实际64K guest、10000次/一小时、正式CI与最终M2门禁由25/26/27分别负责，不在本票
@@ -98,3 +98,26 @@ baseline无增长准则、新reader实现红、UTF-8预检红和所有旧SKU3sco
 实际缺少三个原生宿主完整适用公开合同/backend/1000+100，当前本地不能签发五原生或
 正式M2验收。CI/Full、实际64K、10000次及一小时、最终strict gate分别保持独立责任；
 无push/main/tag/release/billing，也未执行正式Standards/Spec两轴审查。
+
+## 独立本地接收
+
+2026-11-06，fresh merger从实际integration `8a0badb36c03baed79f74b88f651e7e095ea0dc4`
+独立no-ff合入最终clean source `e1d483f4d53fc32dff81fc31c0f95b20762031b4`；合并
+`dd9e700b2baa740bdc9a5b537773413bf90e4aeb`的tree与source同为
+`a5366e62b9391ce2764fb23b5aaa018f9690167e`。主收据位于
+`out/qaplet-m2/merge-24-native-matrix/HANDOFF.md`及`handoff.json`。
+
+最终7092项原件及显式外部闭包（669108535字节）合前/合后逐项核验通过；两端
+canonical各2694项实际输入、64份评估器输入和30个parent导入身份分别重核。当前
+115项产品RECIPE、210份供应raw、SKU4原ZIP/公开头/双archive、C9及历史失败均保留
+原身份。独立合前/合后只读重放18组×2，均local pass、overall blocked，三缺失
+native仍not_run；Windows普通228 pass与optional blocked1不改成229次通过。
+原件内两端1000完整M2生命周期及100混合（34完成/33取消/33错误）已核；各scope的
+cleanup false、null及未证实范围分别保留，不汇总成全SDK cleanup=true。
+
+合后Ubuntu实际普通用户UID/GID1000、x86_64/4096、主物理`.cache`预检通过
+（61解析/58编码）。103份历史Markdown raw与冻结收据逐字相等，命令级
+`core.autocrlf=input`仅用于已有精确EOL差异；未重写文件或配置。父spec raw、原
+27票/38边/135AC及4份冻结构建文件保持不变。merger产品执行/重编/重复suite为0，
+未修改25/26原件或控制其会话；27、三缺失native、正式Cross/CI/Full/64K/长测、最终两轴
+Review、父M2及发布门禁仍待验，本地接收不放行27。
