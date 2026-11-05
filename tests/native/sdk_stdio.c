@@ -10,6 +10,7 @@
 #include <sched.h>
 #include <time.h>
 #include <termios.h>
+#include <pthread.h>
 #include "libc/nt/console.h"
 #include <unistd.h>
 #include "libc/dce.h"
@@ -202,6 +203,7 @@ static int js_bytes(void){
     "if((await write.promise).bytesWritten!==3)throw Error('written');m.stdout.finish();await m.stdout.closed;"
     "const err=m.stderr.write(new Uint8Array([9,0,8]));m.stderr.finish();if((await err.promise).bytesWritten!==3)throw Error('stderr');await m.stderr.closed;"
     "const last=await m.stdin.read(32).promise;if(!last.eof||last.bytes.length)throw Error('eof');await m.stdin.closed;"
+    "try{m.stdin.finish();throw Error('closed read finish accepted')}catch(e){if(e.code!==5)throw e}"
     "m.stdout.finish();m.stderr.close();await Promise.all([m.stdout.closed,m.stderr.closed]);return 6})";
   qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_code code=qaplet_eval(r,source,strlen(source),&progress,NULL);
   CHECK(code==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING);
@@ -214,6 +216,55 @@ static int js_bytes(void){
   for(unsigned i=1;i<3;++i)CHECK(lseek(f[i].fd,0,SEEK_SET)==0 && read(f[i].fd,output,3)==3 && !memcmp(output,expected[i-1],3));
   for(unsigned i=0;i<3;++i)CHECK(!restore_file(&f[i]));
   puts("M2 stdio JS bytes: explicit Host streams; strict input/BUSY/cancel; Promise byte/NUL/EOF and independent copied writes; closed promises; standalone IO keeps awaited entry alive without timers: pass");return 0;
+}
+typedef struct {pthread_t owner;unsigned calls;int wrong_owner;} close_trace;
+static qaplet_code close_mark(qaplet_runtime *r,uint64_t call,size_t argc,const qaplet_value *args,void *opaque){
+  (void)r;(void)call;(void)argc;(void)args;close_trace *trace=opaque;++trace->calls;trace->wrong_owner|=!pthread_equal(trace->owner,pthread_self());return QAPLET_OK;
+}
+static int close_scenario(int mode){
+  int unref=mode==1,barrier=mode==2;file_fixture fixture;CHECK(!install_file(&fixture,1));
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
+  if(!unref)b.limits.pump_jobs=1;
+  CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  close_trace trace={.owner=pthread_self()};qaplet_host_export export=QAPLET_HOST_EXPORT_INIT;export.name="mark";export.name_length=4;export.kind=QAPLET_HOST_FUNCTION;export.function=close_mark;export.userdata=&trace;
+  qaplet_host_module host=QAPLET_HOST_MODULE_INIT;host.name="host:stdio-close";host.name_length=strlen(host.name);host.exports=&export;host.export_count=1;CHECK(qaplet_register_host_module(r,&host,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;CHECK(qaplet_stdio_attach(r,1,&ep,&info,NULL)==QAPLET_OK);
+  if(unref)CHECK(qaplet_io_set_ref(r,&ep,0,NULL)==QAPLET_OK);
+  const char *source="Promise.all([import('qaplet:stdio'),import('host:stdio-close')]).then(([m,h])=>m.stdout.closed.then(()=>41).then(v=>{h.mark();return v+1}))";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY && !trace.calls);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.operations && !io.accepted && !io.data_bytes);
+  CHECK(qaplet_io_close(r,&ep,NULL)==QAPLET_OK && !trace.calls);
+  if(!unref){
+    CHECK(qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_PENDING && !trace.calls);
+    CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.pending_handoffs==1 && !io.operations && !io.data_bytes);
+  }
+  if(!barrier){
+    if(unref)CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_UNSETTLED_ENTRY && !trace.calls && qaplet_pump(r,&progress,NULL)==QAPLET_OK && progress.phase==QAPLET_PHASE_DONE);
+    else CHECK(qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE);
+    qaplet_result result=QAPLET_RESULT_INIT;CHECK(trace.calls==1 && !trace.wrong_owner && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+    CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs);
+  }
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
+  CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.operations && !io.data_bytes && !io.endpoints && !io.pending_handoffs && qaplet_destroy(r,NULL)==QAPLET_OK);
+  CHECK((!barrier || !trace.calls) && !restore_file(&fixture));return 0;
+}
+static int c_close_js(void){
+  for(int mode=0;mode<3;++mode)CHECK(!close_scenario(mode));
+  puts("M2 stdio C-close JS observation: no IO task; bounded completion/ref through full jobs; unref explicit pump; Runtime close suppresses pending user jobs; original handles and cleanup preserved: pass");return 0;
+}
+static int js_errors(void){
+  file_fixture fixture;CHECK(!install_file(&fixture,0));CHECK(write(fixture.fd,"abcdef",6)==6 && lseek(fixture.fd,0,SEEK_SET)==0);
+  qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
+  qaplet_io_endpoint ep=QAPLET_IO_ENDPOINT_INIT;qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;CHECK(qaplet_stdio_attach(r,0,&ep,&info,NULL)==QAPLET_OK);
+  const char *source="import('qaplet:stdio').then(async m=>{await m.stdin.read(32).promise;throw Error('ordinary-stdio')})";
+  qaplet_progress progress=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_JS_EXCEPTION);
+  qaplet_snapshot state=QAPLET_SNAPSHOT_INIT;qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;
+  CHECK(qaplet_get_snapshot(r,&state,NULL)==QAPLET_OK && state.lifecycle==QAPLET_OPEN && !state.termination_reason && qaplet_get_io_endpoint_status(r,&ep,&status,NULL)==QAPLET_OK && !status.ended);
+  source="import('qaplet:stdio').then(async m=>(await m.stdin.read(1).promise).eof?42:0)";
+  CHECK(qaplet_eval(r,source,strlen(source),&progress,NULL)==QAPLET_OK && qaplet_run(r,&drive,NULL)==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE);
+  qaplet_result result=QAPLET_RESULT_INIT;CHECK(qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42);
+  CHECK(qaplet_close(r,NULL)==QAPLET_OK && qaplet_quiesce(r,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT && qaplet_destroy(r,NULL)==QAPLET_OK && !restore_file(&fixture));
+  puts("M2 stdio ordinary JS error: callback code7 preserves OPEN and attached streams; later JS consumes EOF and returns42; terminal cleanup remains explicit: pass");return 0;
 }
 static int terminal_kind(void){
   int saved=-1,master=-1,slave=-1;int64_t original=0,console=0;struct termios before={0},after={0};uint32_t mode=0,mode_after=0;
@@ -281,6 +332,8 @@ int sdk_stdio(int argc,char **argv) {
   if(argc>1 && !strcmp(argv[1],"--js-bytes"))return js_bytes();
   if(argc>1 && !strcmp(argv[1],"--terminal"))return terminal_kind();
   if(argc>1 && !strcmp(argv[1],"--backpressure"))return pipe_backpressure();
+  if(argc>1 && !strcmp(argv[1],"--c-close-js"))return c_close_js();
+  if(argc>1 && !strcmp(argv[1],"--js-errors"))return js_errors();
   qaplet_abi abi=QAPLET_ABI_INIT;
   CHECK(qaplet_query_abi(&abi)==QAPLET_OK);
   CHECK(abi.capabilities & (1u<<24));

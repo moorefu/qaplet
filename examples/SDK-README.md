@@ -105,6 +105,16 @@ invalidates that attachment and starts safe native retirement; attach again only
 after coordinating the Host endpoint. `finish` closes the SDK write endpoint
 after its current write, while `close` requests immediate cancellation. Both
 preserve the Host original and already-written side effects.
+
+When a Host closes a JS-wrapped endpoint through the C API without an IO task,
+owner driving observes native POD status and queues the endpoint's already
+reserved close notice in the normal completion category. `closed` settles on
+the owner, with the same dispatch budget and full jobs checkpoint. Unref notices
+wait for explicit driving. `qaplet_get_io_snapshot().pending_handoffs` includes
+these close notices through that checkpoint, while operation/data counts stay
+unchanged. Runtime close drops the pending JS work and completes native cleanup.
+Ordinary JS callback errors keep an OPEN Runtime and its streams usable; only
+terminal lifecycle transitions initiate shutdown.
 The M2-runtime bit covers the explicit lifecycle and ready-work drive. Timers,
 OS waiting, named work, direct children and owned process pipes have independent
 capability bits. Host standard streams are not implicitly taken over.

@@ -88,6 +88,8 @@ RUNTIME_METADATA = {"abi_version": 1, "capabilities": 33521663, "defaults": {
     "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
 EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
 HOST_CASES = (
+    ("m2-stdio-c-close-js", ["--m2-stdio-c-close-js"], "M2 stdio C-close JS observation: no IO task; bounded completion/ref through full jobs; unref explicit pump; Runtime close suppresses pending user jobs; original handles and cleanup preserved: pass\n"),
+    ("m2-stdio-js-errors", ["--m2-stdio-js-errors"], "M2 stdio ordinary JS error: callback code7 preserves OPEN and attached streams; later JS consumes EOF and returns42; terminal cleanup remains explicit: pass\n"),
     ("m2-stdio-classify", ["--m2-stdio-classify"], "M2 stdio inspect: default untouched; real stdin pipe/file/invalid classification; separate attach support: pass\n"),
     ("m2-stdio-file", ["--m2-stdio-file"], "M2 stdio file: explicit borrowed stdin; binary short read/EOF/BUSY; idle versus operation ref; Host original survives; quiescent cleanup: pass\n"),
     ("m2-stdio-pipe", ["--m2-stdio-pipe"], "M2 stdio pipe: real stdin redirection; unsafe blocking borrow refused without side effects; safe binary/NUL/short read/EOF/cancel/BUSY; shared flags and Host handle preserved: pass\n"),
