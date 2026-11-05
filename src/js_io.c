@@ -42,9 +42,14 @@ static void release_endpoint(JSContext *c,js_endpoint *e){if(!--e->refs)js_free(
 static void endpoint_finalizer(JSRuntime *engine,JSValue value){js_endpoint *e=JS_GetOpaque(value,endpoint_class);if(e && !--e->refs)js_free_rt(engine,e);}
 static void task_finalizer(JSRuntime *engine,JSValue value){js_io_task *t=JS_GetOpaque(value,task_class);if(t && !--t->refs)js_free_rt(engine,t);}
 static int promise_property(JSContext *c,JSValue object,const char *name,JSValue *resolve,JSValue *reject){JSValue callbacks[2],promise=JS_NewPromiseCapability(c,callbacks);if(JS_IsException(promise))return -1;*resolve=callbacks[0];*reject=callbacks[1];return JS_DefinePropertyValueStr(c,object,name,promise,JS_PROP_ENUMERABLE);}
-static void refresh_closed(qaplet_runtime *r,js_endpoint *e,unsigned delivering) {
+static void refresh_closed(qaplet_runtime *r,js_endpoint *e) {
   if(e->closed)return;qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;
-  if(qaplet_get_io_endpoint_status(r,&e->token,&status,NULL) || !status.ended || status.physical_pending || status.pending_handoffs>delivering)return;
+  unsigned delivered=0;
+  for(js_io_task *t=r->js_io_tasks;t;t=t->next)if(t->endpoint==e && t->terminal && t->checkpoint)++delivered;
+  /* Delivered tasks retain their native handoff until the surrounding jobs
+   * checkpoint. finish() invoked by one of those jobs can settle closure in
+   * that same execution, without creating user work during reclamation. */
+  if(qaplet_get_io_endpoint_status(r,&e->token,&status,NULL) || !status.ended || status.physical_pending || status.pending_handoffs>delivered)return;
   e->closed=1;e->checkpoint=1;settle(r,e->resolve,JS_UNDEFINED);
   if(r->io_js_closed)r->io_js_closed(r,&e->token);
 }
@@ -85,7 +90,7 @@ static JSValue endpoint_control(JSContext *c,JSValueConst self,int argc,JSValueC
   if(magic==4){qaplet_io_endpoint_status status=QAPLET_IO_ENDPOINT_STATUS_INIT;return JS_NewBool(c,!e->closed && !qaplet_get_io_endpoint_status(r,&e->token,&status,NULL) && status.referenced);}
   if(e->closed)return JS_UNDEFINED;
   r->bridge_active=1;qaplet_code code=magic==0 ? qaplet_io_close(r,&e->token,NULL) : magic==1 ? qaplet_io_finish(r,&e->token,NULL) : qaplet_io_set_ref(r,&e->token,magic==2,NULL);r->bridge_active=0;
-  if(!code)refresh_closed(r,e,0);return code ? fail(c,code) : JS_UNDEFINED;
+  if(!code)refresh_closed(r,e);return code ? fail(c,code) : JS_UNDEFINED;
 }
 static int deliver_io(qaplet_runtime *r,const qaplet_io_operation *token) {
   js_io_task *t=r->js_io_tasks;for(;t;t=t->next)if(t->token.slot==token->slot && t->token.generation==token->generation)break;if(!t)return 0;
@@ -108,7 +113,7 @@ static int deliver_io(qaplet_runtime *r,const qaplet_io_operation *token) {
     }
   }
   js_free(c,data);t->terminal=t->checkpoint=1;t->code=code ? code : result.code;
-  settle(r,t->code ? t->reject : t->resolve,value);refresh_closed(r,t->endpoint,1);return 1;
+  settle(r,t->code ? t->reject : t->resolve,value);refresh_closed(r,t->endpoint);return 1;
 }
 void qaplet_js_io_checkpoint(qaplet_runtime *r) {
   qaplet_io_js_checkpoint(r);
