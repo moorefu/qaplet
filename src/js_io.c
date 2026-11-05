@@ -34,6 +34,10 @@ static JSValue error_value(JSContext *c,qaplet_code code,uint32_t domain,int err
   return v;
 }
 static JSValue fail(JSContext *c,qaplet_code code){if(JS_HasException(c))return JS_EXCEPTION;JSValue v=error_value(c,code,0,0,0);return JS_IsException(v) ? v : JS_Throw(c,v);}
+static JSValue copied_bytes(JSContext *c,const unsigned char *data,size_t length) {
+  JSValue backing=JS_NewArrayBufferCopy(c,data,length),args[]={backing,JS_UNDEFINED,JS_UNDEFINED};
+  JSValue bytes=JS_IsException(backing) ? JS_EXCEPTION : JS_NewTypedArray(c,3,args,JS_TYPED_ARRAY_UINT8);JS_FreeValue(c,backing);return bytes;
+}
 static void settle(qaplet_runtime *r,JSValue function,JSValue value) {
   JSValue result=JS_IsException(value) ? JS_EXCEPTION : JS_Call(r->context,function,JS_UNDEFINED,1,&value);JS_FreeValue(r->context,value);
   if(JS_IsException(result)){JSValue exception=JS_GetException(r->context);if(!qaplet_execution_check(r) && !r->execution_code){qaplet_capture_exception(r,exception);r->execution_code=qaplet_module_exception_code(r,exception);}JS_FreeValue(r->context,exception);}JS_FreeValue(r->context,result);
@@ -102,13 +106,15 @@ static int deliver_io(qaplet_runtime *r,const qaplet_io_operation *token) {
   qaplet_io_result result=QAPLET_IO_RESULT_INIT;result.buffer=data;result.capacity=t->endpoint->writing ? 0 : status.length;
   r->bridge_active=1;code=qaplet_io_copy_result(r,token,&result,NULL);r->bridge_active=0;
   JSValue value;
-  if(code || result.code)value=error_value(c,code ? code : result.code,result.error_domain,result.error,result.length);
+  if(code || result.code){value=error_value(c,code ? code : result.code,result.error_domain,result.error,result.length);
+    if(!t->endpoint->writing && !JS_IsException(value)){JSValue bytes=copied_bytes(c,data,code ? 0 : result.length);
+      if(JS_IsException(bytes) || JS_DefinePropertyValueStr(c,value,"bytes",bytes,JS_PROP_C_W_E)<0){JS_FreeValue(c,value);value=JS_EXCEPTION;}}
+  }
   else {
     value=JS_NewObject(c);
     if(!JS_IsException(value) && t->endpoint->writing){if(JS_DefinePropertyValueStr(c,value,"bytesWritten",JS_NewFloat64(c,result.length),JS_PROP_C_W_E)<0){JS_FreeValue(c,value);value=JS_EXCEPTION;}}
     else if(!JS_IsException(value)){
-      JSValue backing=JS_NewArrayBufferCopy(c,data,result.length),args[]={backing,JS_UNDEFINED,JS_UNDEFINED};
-      JSValue bytes=JS_IsException(backing) ? JS_EXCEPTION : JS_NewTypedArray(c,3,args,JS_TYPED_ARRAY_UINT8);JS_FreeValue(c,backing);
+      JSValue bytes=copied_bytes(c,data,result.length);
       if(JS_IsException(bytes) || JS_DefinePropertyValueStr(c,value,"bytes",bytes,JS_PROP_C_W_E)<0 || JS_DefinePropertyValueStr(c,value,"eof",JS_NewBool(c,result.eof),JS_PROP_C_W_E)<0){JS_FreeValue(c,value);value=JS_EXCEPTION;}
     }
   }
