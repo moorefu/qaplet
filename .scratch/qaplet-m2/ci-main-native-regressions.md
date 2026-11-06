@@ -123,3 +123,17 @@ Host 中先进入 sdk_process 的另一套 child 协议，argc 不足而退出98
 独立协议回归在旧供应上失败，真实新供应需证明就绪后仍存活、EOF 后退出37。
 Windows 仍消费既有 process-child.exe，不改变路径、配额或取消必须成功并实际 reap 的断言。
 两个旧失败报告和 ZIP 均保留；新 Ubuntu 供应和对应执行另存，不追改旧成绩。
+
+## main 924359a：托管关闭与原生 join 的测试边界
+
+main Full `42175479197` 的 Windows `m2-process-js-lifetime` 出现零容量断言失败，
+本地相同供应定向循环在第127次复现。仅添加诊断的包外 Host 在第36次记录：
+code=OK、DONE、结果42、pending_handoffs=0、Process ref/result=0，但仍有1个操作/
+8字节预留。文档既有合同明确 Process.closed 与 helper exit/native quiescence 分开，
+物理执行未退出/join 继续计费；不能为了这个测试提前释放容量。
+
+修复只将三处 JS 用例的零操作/字节断言移至公共 finish() 的原有 close/quiesce
+屏障之后，同时核对 IO helper/stack 为零。JS返回值、owner交接、Process引用/结果、
+小额度峰值仍在原位置验证；5秒清理上限、实际QUIESCENT、其他句柄/环境/引擎归零
+及destroy断言保持。Runtime与产品API行为不变。新供应与定向循环、完整原生和CI
+另存；旧失败与诊断原件保留，不改写为成功。

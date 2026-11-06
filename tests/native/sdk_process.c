@@ -69,6 +69,8 @@ static int finish(qaplet_runtime *runtime) {
   qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
   CHECK(qaplet_close(runtime,NULL)==QAPLET_OK);
   CHECK(qaplet_quiesce(runtime,5000,&drive,NULL)==QAPLET_OK && drive.reason==QAPLET_DRIVE_QUIESCENT);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;
+  CHECK(qaplet_get_io_snapshot(runtime,&io,NULL)==QAPLET_OK && !io.pending_handoffs && !io.shared_operations && !io.shared_data_bytes && !io.helper_threads && !io.helper_stack_bytes);
   qaplet_process_snapshot p=QAPLET_PROCESS_SNAPSHOT_INIT; qaplet_m2_snapshot m=QAPLET_M2_SNAPSHOT_INIT;
   CHECK(qaplet_get_process_snapshot(runtime,&p,NULL)==QAPLET_OK && !p.processes && !p.helper_threads && !p.helper_stack_bytes && !p.environment_bytes);
   CHECK(qaplet_get_m2_snapshot(runtime,&m,NULL)==QAPLET_OK && !m.native_handles && !m.reactor_registrations && !m.native_uncertain_handles && !m.engine_current_bytes);
@@ -938,7 +940,9 @@ static int js_closed_case_limits(const char *mode,const char *source,int tiny) {
   if(code)fprintf(stderr,"JS contract code=%d diagnostic=%s\n",code,message);
   qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
   qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;
-  passed=passed && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs && !io.shared_operations && !io.shared_data_bytes && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.referenced && !ps.retained_results;
+  /* Managed closure and the jobs checkpoint do not prove helper join. finish()
+   * checks zero operation/data reservations after the native quiesce barrier. */
+  passed=passed && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs && qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.referenced && !ps.retained_results;
   if(tiny)passed=passed && io.shared_operations_peak==2 && io.shared_data_bytes_peak==8;
   int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);return 0;
 }
@@ -1011,7 +1015,7 @@ static int js_start_fault(void) {
     "if((await p.exited).exitCode!==37)throw Error('exit');await p.closed;return 42})",QAPLET_IO_ERROR,QAPLET_ERROR_DOMAIN_ERRNO,EAGAIN);
   char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
   qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);if(!code)code=qaplet_run(r,&drive,&d);if(code)fprintf(stderr,"JS IO start code=%d diagnostic=%s\n",code,message);
-  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.accepted==3 && !io.shared_operations && !io.shared_data_bytes;
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && io.accepted==3;
   int cleanup=finish(r);CHECK(!cleanup);CHECK(passed && !atomic_load(&js_fail_next_thread));
   puts("M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass");return 0;
 }
@@ -1145,7 +1149,7 @@ static int js_bytes(int after) {
   if(!code)code=qaplet_run(r,&drive,&d);if(code)fprintf(stderr,"JS bytes code=%d diagnostic=%s\n",code,message);
   qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
   if(!passed){int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);}
-  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs && !io.shared_operations && !io.shared_data_bytes);
+  qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;CHECK(qaplet_get_io_snapshot(r,&io,NULL)==QAPLET_OK && !io.pending_handoffs);
   qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;CHECK(qaplet_get_process_snapshot(r,&ps,NULL)==QAPLET_OK && !ps.referenced && !ps.retained_results);
   CHECK(!finish(r));puts("M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass");return 0;
 }
