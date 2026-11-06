@@ -159,6 +159,14 @@ class EfficiencyContract(unittest.TestCase):
             self.assertEqual(len(value["native_matrix"]["include"]), 5)
             self.assertFalse(value["release_ready"])
 
+    def test_cli_cross_selection_and_full_cannot_drop_cli(self):
+        for path in ('scripts/sdk_cli.py', 'src/cli_main.c', 'tests/native/sdk_cli_pipe_relay.c', 'scripts/m2_process_pe.py', 'tests/fixtures/modules/cli-terminal.mjs'):
+            with self.subTest(path=path):
+                self.assertTrue(self.plan([path], 'workflow_dispatch', inputs={'tier': 'cross'})['run_cli'])
+        self.assertFalse(self.plan(['docs/INDEX.md'])['run_cli'])
+        self.assertTrue(self.plan(['docs/INDEX.md'], 'schedule')['run_cli'])
+        self.assertTrue(self.plan(['tests/fixtures/modules/cli-terminal.mjs'], 'pull_request')['run_cli'])
+
 
 class RequiredGateContract(unittest.TestCase):
     def test_legacy_build_gate_rejects_selected_job_failure_skips_and_planner_failure(self):
@@ -169,7 +177,7 @@ class RequiredGateContract(unittest.TestCase):
                 with self.subTest(mode=mode):
                     results = {name: {"result": "skipped"} for name in ("fast", "portable-build", "native-startup", "page-plan",
                         "arm64-page-gaps", "startup-matrix", "full-core", "offline-rebuild")}
-                    outputs = {"run_fast": "true", "run_cross": "false", "run_full": "false"}
+                    outputs = {"run_fast": "true", "run_cross": "false", "run_full": "false", "run_cli": "false"}
                     results["tier-plan"] = {"result": "success", "outputs": outputs}
                     results["fast"]["result"] = "success"
                     if mode == "fast-fail": results["fast"]["result"] = "failure"
@@ -183,7 +191,7 @@ class RequiredGateContract(unittest.TestCase):
                         for name in ("native-startup", "startup-matrix"):
                             results[name]["result"] = "success"
                     if mode.startswith("full-"):
-                        outputs["run_full"] = "true"
+                        outputs.update(run_full="true", run_cli="true")
                         for name in ("native-startup", "startup-matrix", "page-plan", "full-core"):
                             results[name]["result"] = "success"
                         results["offline-rebuild"]["result"] = "failure" if mode == "full-offline-fail" else "success"

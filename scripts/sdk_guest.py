@@ -213,7 +213,7 @@ def consume(manifest, base, report, expected_commit=None, evidence=None, verifie
             scope_notes="ARM64 kernel supplementation only; native Cross, full M1/Core/offline and release gates remain independent")
     finally:
         report["evidence_index"] = list(evidence.index.values())
-        report["evaluator_sources"] = [identity(ROOT / "scripts" / name) for name in ("sdk_guest.py", "core_gate.py", "arm64_guest.py", "sdk.py", "sdk_m2_example.py")]
+        report["evaluator_sources"] = [identity(ROOT / "scripts" / name) for name in ("sdk_guest.py", "core_gate.py", "arm64_guest.py", "guest_observation.py", "sdk.py", "sdk_m2_example.py")]
 
 
 def main():

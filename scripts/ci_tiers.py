@@ -182,11 +182,16 @@ def plan(args):
                  {"id": "network-tls-security", "state": "not_implemented", "stage": "M4", "required": False},
                  {"id": "original-archive-retention", "state": "missing_resource", "stage": "release/06", "required": False, "required_for_release": True}]
     matrix = [row for row in NATIVE if not windows_only or row["os"] == "Windows"]
+    cli_paths = any(path.startswith(('src/', 'include/', 'examples/', 'scripts/sdk', 'scripts/m2_cli',
+                                     'tests/native/sdk_cli', 'tests/fixtures/modules/')) or path in ('scripts/m2_process_pe.py', 'tests/native/sdk_process_winchild.c')
+                    for path in paths)
+    run_cli = scopes['m0'] and tier in ('cross', 'full') and (tier == 'full' or cli_paths)
     return {"schema_version": 1, "report_kind": "ci-tier-plan", "status": "pass", "planned_at": now(),
             "evidence_verified": False, "tier": tier, "reason": reason, "event": name, "ref": ref,
             "commit": os.environ.get("GITHUB_SHA"), "changed_paths": paths, "sensitive_paths": sensitive,
             "run_fast": scopes["m0"] and tier == "fast",
             "run_cross": scopes["m0"] and tier in ("cross", "full"), "run_full": scopes["m0"] and tier == "full", "write_cache": trusted,
+            "run_cli": run_cli,
             "workflow_scope": scopes, "risk_reasons": risks,
             "native_matrix": {"include": matrix}, "contracts": contracts,
             "release_ready": False, "execution_status": "not_run",
@@ -404,7 +409,7 @@ def check_tier_transport(workflow):
     require(len(calls) == 1 and calls[0].get("id") == "plan" and calls[0]["run"] ==
         'python scripts/ci_tiers.py plan --event-name "$CI_EVENT_NAME" --event-json "$GITHUB_EVENT_PATH" --ref "$CI_REF" --github-output "$GITHUB_OUTPUT" --report out/tier/plan.json', "Workflow must call the shared tier planner")
     require("if" not in calls[0], "The required tier planner cannot be skipped")
-    for key in ("tier", "run_fast", "run_cross", "run_full", "write_cache", "native_matrix", "cache_key", "workflow_scope"):
+    for key in ("tier", "run_fast", "run_cross", "run_full", "run_cli", "write_cache", "native_matrix", "cache_key", "workflow_scope"):
         require(planning.get("outputs", {}).get(key) == "${{ steps.plan.outputs." + key + " }}", "Required shared planner output missing: " + key)
     cache_paths = ".cache/downloads/cosmocc.zip\n.cache/quickjs\n.cache/toolchains/cosmocc\n.cache/sources/ape-loader\n.cache/tools/zig/0.15.2"
     for name, job in jobs.items():
@@ -430,7 +435,7 @@ def check_tier_transport(workflow):
                 require(step.get("if") == reuse_condition if name == "fast" else "if" not in step, "Restored cache inputs must always be verified; cache-hit bypass refused")
     build = jobs["portable-build"]["steps"]
     require(all("if" not in step for step in build if "run" in step and not any(command in step["run"] for command in
-                ("sudo apt-get", "scripts/offline_integrity.py run", "scripts/ci_tiers.py seal-offline"))), "Required Fast input/compiler/probe commands cannot be skipped")
+                ("sudo apt-get", "scripts/offline_integrity.py run", "scripts/ci_tiers.py seal-offline", "scripts/sdk.py cli-consume"))), "Required Fast input/compiler/probe commands cannot be skipped")
     require(sum(step.get("uses", "").startswith("actions/cache/restore@") for step in build) == 1 and
             sum(step.get("uses", "").startswith("actions/cache/save@") for step in build) == 1, "Build requires split trusted cache restore/save")
     restore = next(i for i, step in enumerate(build) if step.get("uses", "").startswith("actions/cache/restore@"))
@@ -456,6 +461,7 @@ def check_tier_transport(workflow):
         "python scripts/sdk.py package-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --output-dir out/sdk/external --loader-dir out/m0/loaders --report out/sdk/package-consume.json",
         "python scripts/sdk.py fault-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --output-dir out/sdk/fault-artifacts --loader-dir out/m0/loaders --report out/sdk/fault-consume.json",
         "python scripts/sdk.py matrix --profile fast --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-report out/sdk/fast/run.json --report out/sdk/fast-matrix.json",
+        "python scripts/sdk.py cli-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --output-dir out/sdk/cli/artifacts --report out/sdk/cli/consumer.json",
     ]
     require([step["run"] for step in build if "scripts/sdk.py" in step.get("run", "")] == sdk_fast,
             "Fast must build, execute, externally consume and verify the complete SDK lifecycle contract")
@@ -472,6 +478,7 @@ def check_tier_transport(workflow):
             "Five existing native jobs must execute supplied SDK contracts on their measured host")
     require(any(step.get("if") == "${{ always() }}" and step.get("with", {}).get("name") == "m1-sdk-native-${{ matrix.runner }}-${{ github.sha }}"
                 for step in native), "Native SDK failures/raw logs must be uploaded")
+    check_cli_transport(workflow)
     sdk_matrix = [step for step in jobs["startup-matrix"]["steps"] if "scripts/sdk.py matrix" in step.get("run", "")]
     require(len(sdk_matrix) == 1 and sdk_matrix[0].get("if") == "${{ !cancelled() }}" and sdk_matrix[0]["run"] ==
             "python scripts/sdk.py matrix --profile cross --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --input-dir out/sdk-native --report out/sdk-matrix/matrix.json --target-plan out/tier/plan.json",
@@ -511,6 +518,26 @@ def check_tier_transport(workflow):
             "Every M0 run must retain an efficiency observation without cancelling evidence")
 
 
+def check_cli_transport(workflow):
+    jobs = workflow['jobs']
+    producer = [step for step in jobs['portable-build']['steps'] if 'scripts/sdk.py cli-consume' in step.get('run', '')]
+    consumer = [step for step in jobs['native-startup']['steps'] if 'scripts/sdk_cli.py ' in step.get('run', '')]
+    require(len(producer) == 1 and producer[0].get('if') == "${{ needs.tier-plan.outputs.run_cli == 'true' }}" and
+            not producer[0].get('continue-on-error'), 'CLI-selected Cross/Full requires Ubuntu CLI consumer production')
+    expected = ('python scripts/sdk_cli.py --producer out/sdk/build.json --consumer out/sdk/cli/consumer.json '
+                '--supplied-host out/sdk/artifacts/qaplet-host.com --artifact-dir out/sdk/cli/artifacts '
+                '--expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} '
+                '--report out/sdk-cli-native/${{ matrix.runner }}/run.json')
+    require(len(consumer) == 1 and consumer[0].get('run') == expected and
+            consumer[0].get('if') == "${{ !cancelled() && needs.tier-plan.outputs.run_cli == 'true' && matrix.os == 'Windows' }}" and
+            not consumer[0].get('continue-on-error'), 'Windows must consume the same Ubuntu CLI artifacts without compilation')
+    uploads = [step for step in jobs['native-startup']['steps'] if step.get('with', {}).get('name') == 'm2-cli-native-${{ matrix.runner }}-${{ github.sha }}']
+    require(len(uploads) == 1 and uploads[0].get('if') == "${{ always() && needs.tier-plan.outputs.run_cli == 'true' && matrix.os == 'Windows' }}" and
+            not uploads[0].get('continue-on-error') and uploads[0].get('uses', '').startswith('actions/upload-artifact@') and
+            uploads[0]['with'].get('path') == 'out/sdk-cli-native/${{ matrix.runner }}/' and
+            uploads[0]['with'].get('if-no-files-found') == 'error', 'Windows CLI failures and controlled raw traces must be retained')
+
+
 def required_gate(args):
     results = read_json(args.needs_json) if args.needs_json else json.loads(os.environ.get("CI_JOB_RESULTS", "null"))
     expected = {"tier-plan", "fast", "portable-build", "native-startup", "page-plan", "arm64-page-gaps",
@@ -518,9 +545,10 @@ def required_gate(args):
     require(isinstance(results, dict) and set(results) == expected, "Complete actual job results required")
     require(results["tier-plan"].get("result") == "success", "Tier/scope selection failed; product execution cannot be skipped into success")
     outputs = results["tier-plan"].get("outputs", {})
-    flags = [outputs.get(key) for key in ("run_fast", "run_cross", "run_full")]
+    flags = [outputs.get(key) for key in ("run_fast", "run_cross", "run_full", "run_cli")]
     require(all(value in ("true", "false") for value in flags) and
-            not (flags[0] == flags[1] == "true") and not (flags[2] == "true" and flags[1] != "true"), "Invalid selected tier outputs")
+            not (flags[0] == flags[1] == "true") and not (flags[2] == "true" and flags[1] != "true") and
+            not (flags[3] == 'true' and flags[1] != 'true') and not (flags[2] == 'true' and flags[3] != 'true'), "Invalid selected tier outputs")
     selected = ["fast"] if flags[0] == "true" else []
     if flags[1] == "true": selected += ["portable-build", "native-startup", "startup-matrix"]
     if flags[2] == "true":
@@ -572,7 +600,7 @@ def main():
                 result = collect_actions(args.output_dir.resolve(), args.commit)
         if args.operation == "plan" and args.github_output:
             with args.github_output.open("a", encoding="utf-8") as output:
-                for key in ("tier", "run_fast", "run_cross", "run_full", "write_cache", "native_matrix", "cache_key", "workflow_scope"):
+                for key in ("tier", "run_fast", "run_cross", "run_full", "run_cli", "write_cache", "native_matrix", "cache_key", "workflow_scope"):
                     value = result[key]
                     output.write(key + "=" + (json.dumps(value, separators=(",", ":")) if not isinstance(value, str) else value) + "\n")
                 for key, value in result["workflow_scope"].items():

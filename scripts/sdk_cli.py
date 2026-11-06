@@ -59,6 +59,24 @@ def digest(data):
     return {"sha256":hashlib.sha256(data).hexdigest(),"size_bytes":len(data)}
 
 
+def io_helpers():
+    # Delivered operations may retain physical capacity until their helper joins.
+    # Retry only atomic admission refusal, allowing the owner to collect first.
+    return ("async function put(out,bytes){for(;;){try{return await out.write(bytes).promise}catch(e){if(e.code!==24||e.bytesWritten)throw e;await new Promise(resolve=>t.setImmediate(resolve))}}}"
+            "async function take(input,n){for(;;){try{return await input.read(n).promise}catch(e){if(e.code!==24)throw e;await new Promise(resolve=>t.setImmediate(resolve))}}}")
+
+
+def dual_channel_source(childargs, controlled_read=False):
+    admission = ("let refused=0;function guarded(input){let first=true;return{read(n){if(first){first=false;refused++;throw Object.assign(Error('controlled atomic read refusal'),{code:24})}return input.read(n)}}}const inputs=[guarded(p.stdout),guarded(p.stderr)];"
+                 if controlled_read else "const inputs=[p.stdout,p.stderr];")
+    assertion = "if(refused!==2)throw Error('missing controlled refusal');" if controlled_read else ''
+    return ("Promise.all([import('qaplet:process'),import('qaplet:stdio'),import('qaplet:timers')]).then(([{spawn},s,t])=>{" +
+            io_helpers() + "const a=" + json.dumps(childargs) + ";const p=spawn(a[0],{argv:a});p.stdin.finish();" + admission +
+            "async function drain(input,output){for(;;){const r=await take(input,4096);if(r.eof)break;await put(output,r.bytes)}}" +
+            "Promise.all([drain(inputs[0],s.stdout),drain(inputs[1],s.stderr),p.exited]).then(v=>{" + assertion +
+            "if(v[2].exitCode!==37)throw Error('child exit')});return 'ENTRY'})")
+
+
 def execute(args, report, directory, name, argv, code, expected, stderr=b"", data=b"", pipes=False, error_contains=False, output_fault=None):
     work=directory/name;work.mkdir()
     (work/"stdin.bin").write_bytes(data)
@@ -149,8 +167,8 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
                 stdout.encode(),stderr.encode(),error_contains=bool(stderr))
     execute(args,report,directory,"file-entry-copy",[*loader,cli,"eval","--source","import('qaplet:stdio').then(s=>{s.stdout.write(new Uint8Array([66,0,90]));return 'entry\\0中'})"],0,"B\0Zentry\0中\n".encode())
     data=bytes(range(256))*257
-    put="async function put(out,bytes){for(;;){try{return await out.write(bytes).promise}catch(e){if(e.code!==24||e.bytesWritten)throw e;await new Promise(resolve=>t.setImmediate(resolve))}}}"
-    source="Promise.all([import('qaplet:stdio'),import('qaplet:timers')]).then(([s,t])=>{"+put+"(async()=>{for(;;){let r=await s.stdin.read(65536).promise;if(r.eof)break;await Promise.all([put(s.stdout,r.bytes),put(s.stderr,r.bytes)]);r.bytes.fill(7)}})();return 'ENTRY'})"
+    put=io_helpers()
+    source="Promise.all([import('qaplet:stdio'),import('qaplet:timers')]).then(([s,t])=>{"+put+"(async()=>{for(;;){let r=await take(s.stdin,65536);if(r.eof)break;await Promise.all([put(s.stdout,r.bytes),put(s.stderr,r.bytes)]);r.bytes.fill(7)}})();return 'ENTRY'})"
     execute(args,report,directory,"file-binary-background",[*loader,cli,"eval","--source",source],0,data+b"ENTRY\n",data,data)
     if not windows:execute(args,report,directory,"pipe-binary-background",[*loader,cli,"eval","--source",source],0,data+b"ENTRY\n",data,data,pipes=True)
     else:
@@ -160,9 +178,11 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
     for fault in ("broken","invalid"):
         execute(args,report,directory,"final-output-"+fault,[*loader,cli,"eval","--source","'saved中🙂'"],1,b"",b"qaplet: code=30 IO_ERROR",error_contains=True,output_fault=fault)
     childargs=[str(host),"--m2-cli-emit"] if windows else [str(loader[0]),str(host),"--m2-cli-emit"]
-    source="Promise.all([import('qaplet:process'),import('qaplet:stdio'),import('qaplet:timers')]).then(([{spawn},s,t])=>{"+put+"const a="+json.dumps(childargs)+";const p=spawn(a[0],{argv:a});p.stdin.finish();async function drain(input,output){for(;;){const r=await input.read(4096).promise;if(r.eof)break;await put(output,r.bytes)}}Promise.all([drain(p.stdout,s.stdout),drain(p.stderr,s.stderr),p.exited]).then(v=>{if(v[2].exitCode!==37)throw Error('child exit')});return 'ENTRY'})"
     emit=bytes(range(256))*512
-    execute(args,report,directory,"process-dual-channel",[*loader,cli,"eval","--source",source],0,emit+b"ENTRY\n",emit)
+    for controlled_read in (False, True):
+        source=dual_channel_source(childargs,controlled_read)
+        execute(args,report,directory,"process-read-backpressure" if controlled_read else "process-dual-channel",[*loader,cli,"eval","--source",source],0,emit+b"ENTRY\n",emit)
+        if controlled_read:report['cases'][-1]['controlled_application_refusal']='Each read adapter refuses once before delegation; actual supplied child/streams and exact bytes remain required'
     source="import('qaplet:process').then(({spawn})=>{try{spawn('qaplet-missing-explicit-path',{stdio:['ignore','ignore','ignore']})}catch(e){if(e.code===27&&e.errorDomain&&e.error)return 42;throw e}throw Error('missing refusal')})"
     execute(args,report,directory,"ordinary-process-error",[*loader,cli,"eval","--source",source],0,b"42\n")
     source="import('qaplet:timers').then(t=>{t.setImmediate(()=>{try{let a=[];for(;;)a.push(new Uint8Array(1048576))}catch(e){}});return 'ENTRY'})"

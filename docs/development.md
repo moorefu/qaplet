@@ -1,6 +1,6 @@
 # 开发与验证入口
 
-当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。当前产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的成功 Full `41542426189` 提供五个原生宿主、实际 64K 和独立当前 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收见[M1 索引](../.scratch/qaplet-m1/README.md)，已完成的独立审查、证据保存与清理后 98 项严格重放见[最终集成记录](../.scratch/qaplet-m1/final-review-validation.md)，旧 M0/对齐成绩保留原范围。后续产品配方变化必须重新验收；06 发布镜像由用户暂缓，`release_ready=false`。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。历史 M1 产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的成功 Full `41542426189` 提供五个原生宿主、实际 64K 和独立 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收见[M1 索引](../.scratch/qaplet-m1/README.md)，已完成的独立审查、证据保存与清理后 98 项严格重放见[最终集成记录](../.scratch/qaplet-m1/final-review-validation.md)，旧 M0/对齐成绩保留原范围。当前 M2 开发按[父规格](../.scratch/qaplet-m2/spec.md)推进；配方变化必须重新验收，历史成绩不晋级为当前成绩。06 发布镜像由用户暂缓，`release_ready=false`。
 
 构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
@@ -13,6 +13,8 @@
 | 任务 | 入口与含义 |
 | --- | --- |
 | 日常检查 | `python3 scripts/dev.py check`，先预检，再复用现有 `make check` |
+| DrvFS 权限相关检查 | `python3 scripts/dev.py check --native-fs --temp-root /tmp --output-dir out/check-NAME`；一次性原生文件系统快照，仅开发检查 |
+| 固定输入 SDK 构建 | `python3 scripts/dev.py build-sdk --source-ref FULL_SHA --output-dir out/sdk-NAME`；Ubuntu 独立提交快照与主仓库缓存 |
 | 相关功能快速检查 | `make check-fast` 或 `python3 scripts/dev.py check-fast --profile engine`；支持 loop/work/process/tty/ci，TTY profile 可复用供应SDK执行公开边界检查；[当前分层](plans/qaplet-v1.5-execution-optimization.md) |
 | 快速仓库预检 | `python3 scripts/dev.py preflight --report out/preflight.json` |
 | 完整证据回归 | `python3 scripts/check_evidence.py --config FILE --report out/evidence.json`，所需输入和测试均必须执行 |

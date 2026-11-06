@@ -24,6 +24,7 @@ from evidence import read_json
 from foundation import ROOT, host_facts, now, sha256
 from nightly_toolchain import write_json
 from startup import ci_facts
+from guest_observation import ResourceSampler, kernel_observation
 
 LOCK = ROOT / "guests/arm64.lock.json"
 
@@ -355,7 +356,13 @@ def execute(args, report, directory):
             "-append", "console=ttyAMA0 rdinit=/init panic=-1",
             "-chardev", "file,id=qaplet-evidence,path=" + str(journal).replace(",", ",,"),
             "-device", "virtio-serial-device", "-device", "virtserialport,chardev=qaplet-evidence,name=org.qaplet.evidence"]
-    executed, serial, errors = run(report, directory, "qemu-serial", argv, args.timeout, expected=None)
+    sampler = ResourceSampler(directory, args.qemu, args.timeout)
+    try:
+        with sampler:
+            executed, serial, errors = run(report, directory, "qemu-serial", argv, args.timeout, expected=None)
+    finally:
+        report['resource_observation'] = sampler.summary()
+        report['kernel_observation'] = kernel_observation((directory / 'qemu-serial.stdout.log', directory / 'qemu-evidence.log'))
     report["cleanup"] = {"qemu_exited": executed["exit_code"] is not None, "timed_out": executed["timed_out"],
                          "process_group_cleanup": "foundation.command terminates the QEMU process group on timeout",
                          "ram_only": True, "disks": [], "network": "none", "host_global_changes": False}
@@ -462,7 +469,8 @@ def main():
               "finished_at": None, "status": "not_run", "reason": "", "host": host_facts(), "guest": None, "qemu": None,
               "cases": [], "commands": [], "files": [], "inputs": [], "cleanup": None,
               "ci": ci_facts(),
-              "source": {"runner": identity(Path(__file__)), "lock": identity(LOCK)}}
+              "source": {"runner": identity(Path(__file__)), "lock": identity(LOCK),
+                         "resource_observer": identity(ROOT / 'scripts/guest_observation.py')}}
     try:
         if args.operation == "run":
             execute(args, report, directory)
