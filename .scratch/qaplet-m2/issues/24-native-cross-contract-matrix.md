@@ -6,9 +6,22 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred
 
-**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。当前SKU3仅Linux/Windows普通槽位通过，正式验收仍要求五原生完整适用合同及每目标M2生命周期1000次、混合异步100次，缺失宿主保留not_run。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足。领取时SKU3已有Linux/Windows普通槽位成绩；最终当前SKU4的两端普通及专项均另有实际执行。正式验收仍要求五原生完整适用合同及每目标M2生命周期1000次、混合异步100次，缺失宿主保留not_run。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+
+**Local validation:** 当前最终供应已转为共同祖先 `8a0badb3` 的 SKU4，Linux/Windows
+18 个明确 mandatory 分组均已实际执行并严格重放；两端分别完成真正 M2
+create/close/quiesce/destroy 1000 次及混合100次。公开正负、真实 backend、M1兼容、
+信号16/9项及false/null原始责任分别保存。macOS两原生及Linux ARM64原生仍not_run，
+不以guest、旧M1循环或本地两槽位签发五原生/正式Cross/Full/release-ready。
+范围、失败历史和精确原件见[24本地验证](../24-native-matrix-validation.md)。
+
+**Independent local reception:** 已由fresh merger独立no-ff合入`dd9e700b`，source
+`e1d483f4`与合并tree相同；7092原件/外部闭包合前合后逐项核验、两次只读strict
+重放及合后Ubuntu预检通过。Local development: complete，正式状态仍claimed /
+local_complete / cross_deferred；三缺失native仍not_run，不放行27或父M2验收。
+主收据为`out/qaplet-m2/merge-24-native-matrix/handoff.json`。
 
 **Spec stories:** 1、99、100、101、102、103、104、105、106、107、108、109、110。
 
@@ -58,4 +71,13 @@
 的mandatory inventory和Linux/Windows本地矩阵。优先复用同SKU3已封存原件，补足当前
 特殊合同及真正M2 create/close/quiesce/destroy和混合循环；M1的1000循环不改贴为M2。
 与25/26只协调公共验证fixture，不增加依赖边。正式其余原生、CI及全范围验收仍待实测。
+
+2026-11-06：最终clean source `e1d483f4d53fc32dff81fc31c0f95b20762031b4`已独立
+本地接收为no-ff `dd9e700b2baa740bdc9a5b537773413bf90e4aeb`；当前18组两端通过，
+其余三原生保留not_run。原父规格、Blocked by及五条AC不改，仍claimed/cross_deferred。
+
+2026-11-06：本地可完成范围已收口为local_complete / cross_deferred，仍claimed、上述
+正式AC不勾选。公共C9生命周期/持久Runtime工具以独立slice供25/26复用；24不接管
+实际64K、10000次/一小时及最终门禁的原有责任。产品core/API/default helper4未改，
+一次SDK4共同修正只涉及既有mixed/TTY正向fixture的受控交接。
 

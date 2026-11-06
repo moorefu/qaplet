@@ -520,3 +520,35 @@ claimed/local_complete/cross_deferred，不签发父M2、全原生/64K/Full长�
 公共验证fixture按接口协调，不新增依赖；产品与评估器身份分别绑定，避免无变化重复
 构建或长测。原父spec、27/38/135和全部产品/安全/正式验收合同不变，27继续等待
 24–26实际正式全范围，不push/CI/发布。
+
+## 24 · 独立本地接收
+
+2026-11-06，fresh merger从实际integration `8a0badb3`独立no-ff接收最终clean
+source `e1d483f4`，合并`dd9e700b`的tree `a5366e62`与source相同。最终7092项
+原件/外部闭包合前合后逐项重核，115 RECIPE、210供应raw、SKU4/C9和103历史raw
+身份保持；两端canonical各2694输入/64评估器源/30parent导入及实际失败历史已核。
+合前/合后独立只读reader的Linux/Windows各18组pass，overall blocked，三缺失
+native仍not_run。实际两端M2生命周期1000及混合100单独计数；cleanup false/null
+和原producer/执行context分别保存。合后普通用户Ubuntu预检61解析/58编码通过。
+merger产品执行/SDK重编/重复suite为0，未修改25/26原件或控制其会话；主收据为
+`out/qaplet-m2/merge-24-native-matrix/HANDOFF.md`、`handoff.json`，详见
+[24验证](24-native-matrix-validation.md#独立本地接收)。24 Local development: complete，
+保持claimed/local_complete/cross_deferred；27仍待原正式24–26前置。父spec、27票/
+38边/135AC、正式五原生/CI/Full/64K/长测/最终两轴Review、父M2和发布门禁不变。
+
+## 25 · 独立本地接收
+
+2026-11-06，fresh merger从实际integration `a7c507ea`独立no-ff接收最终clean source
+`459935e4`，合并`149985e3`的tree `ebc838a9`与source相同。最终选择matrix002及执行前
+冻结的70份current评估器源，合前4413、合后4506份显式原件逐项核验，六组只读重放均
+pass。实际完整系统ARM64/65536的319条命令、394条语义与1000/100循环分别计数，
+保留所有false/null；不占native ARM64槽位。210份供件raw、115 RECIPE、原ZIP/双archive、
+C9、15项实际编译链接闭包与103历史root raw保持，原producer与执行context不重标。
+
+合法LinuxFS完整444项检查/227optional及C bootstrap原件持久闭包已核；原DrvFS441及
+精确method两项30秒timeout、失败对照和不可回取的历史派生reader/audit限制均另列。
+合后Ubuntu普通用户预检70解析/63编码通过。merger产品执行/重编/guest/重复suite及
+peer写入或会话控制为0。主收据在`out/qaplet-m2/merge-25-64k-matrix/`，详见
+[25验证](25-actual64k-validation.md#独立本地接收)。25保持claimed/local_complete/
+cross_deferred；27、缺失native、正式CI/Cross/Full与长测、最终两轴Review、父M2及
+发布门禁仍待原要求，不降低27票/38边/135AC或父规格合同。
