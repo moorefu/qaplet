@@ -10,7 +10,7 @@
 
 **Local development:** complete
 
-**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；本票本地前置已满足。当前SKU4两端各10000真实混合及至少一小时持久RT已实际完成，双平台严格四原件重读与14实际合同零skip；独立接收待完成。旧23兼容循环与已拒绝的Linux02不替代当前Full，正式边与27前置保持。详见[26本地验证](../26-full-soak-validation.md)。
+**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；本票本地前置已满足。当前SKU4两端各10000真实混合及至少一小时持久RT已实际完成，双平台严格四原件重读与14实际合同零skip；已由独立merger以no-ff `d4dca9d2`完成本地接收。旧23兼容循环与已拒绝的Linux02不替代当前Full，正式边与27前置保持。详见[26本地验证](../26-full-soak-validation.md)。
 
 **Spec stories:** 5、15、42、47、49、58、63、64、70、76、77、79、80、84、85、86、87、88、89、90、91、92、93、100、101、102、110。
 
@@ -71,3 +71,16 @@ POD/OS/native cleanup通过，四原件双OS严格重读及14项实际合同零s
 新03全部3584核心样本及96个已分类非owner查询事件可取；原失败和未知不改写。
 详见[26验证](../26-full-soak-validation.md)。本票claimed/local_complete/cross_deferred，
 等待独立merger接收；父M2、27原正式前置与发布/最终Review门禁保持原范围。
+
+
+2026-11-06（独立接收）：最终source `b2223ef5` 从actualroot `1b8f6178` 独立no-ff合入
+`d4dca9d2`，候选tree `2fd7e23426d7cc4be427a09a350b871cd0a30d5c`与source完全相同。
+合前/合后1245个唯一文件、372355168字节及封闭out的523项原件逐项通过；SDK4原ZIP、
+C9/77编译快照、115配方/4冻结文件、15实际consumer导入和103历史root raw不变。
+四当前原件只选mixed01两份、Winsoak02、Linuxsoak03；执行17e/f44、consumer8e和最终
+b222分别绑定，旧Linux02的15条live缺测仍被拒绝，旧01退出/清理unknown不累加。
+合后普通用户Ubuntu预检71解析/64编码通过，独立strict重放通过；完整14项Windows
+合同零skip、正式guard单方法两OS六类变异按原日志核。merger无产品/编译/重复suite/
+guest/长测或peer写入/会话控制。主收据为`out/qaplet-m2/merge-26-full-soak/handoff.json`。
+仍claimed/local_complete/cross_deferred；缺三native、正式CI/Cross、27、父M2、整体
+两轴Review与release门禁不由本地Full外推。

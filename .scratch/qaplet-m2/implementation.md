@@ -44,7 +44,7 @@
 | 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | local_complete / cross_deferred（独立合并`6ab8b73c`；主接收`out/qaplet-m2/merge-23-sdk-delivery/handoff.json`；[验证](23-sdk-delivery-validation.md)） |
 | 24 | `codex/m2-24-native-matrix` | `.cache/worktrees/m2-24-native-matrix` | local_complete / cross_deferred；SKU4两端本地18组已独立合并`dd9e700b`、接收`a7c507ea`；三native仍not_run |
 | 25 | `codex/m2-25-64k-matrix` | `.cache/worktrees/m2-25-64k-matrix` | local_complete / cross_deferred；实际ARM64/65536当前SKU4合同/1000/100已独立合并`149985e3`、接收`1b8f6178`；guest不占native槽位 |
-| 26 | `codex/m2-26-full-soak` | `.cache/worktrees/m2-26-full-soak` | local_complete / cross_deferred；当前SKU4两端10000mixed+持久RT至少1h、双OS strict四原件join、14实际零skip；待独立接收 |
+| 26 | `codex/m2-26-full-soak` | `.cache/worktrees/m2-26-full-soak` | local_complete / cross_deferred；当前SKU4两端10000mixed+持久RT至少1h、双OS strict四原件join、14实际零skip；独立no-ff `d4dca9d2`；主接收`out/qaplet-m2/merge-26-full-soak/handoff.json` |
 | 27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 等待24–26实际正式全范围，本地完成标记不替代；原合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
@@ -572,3 +572,29 @@ worker/token与destroy、OS固定warm baseline无增长分别核验，不拿OS�
 及实现者out/m2-26-full-soak/HANDOFF。26 Local development: complete，交独立merger；
 保持claimed/local_complete/cross_deferred。SDK/API/115配方/default helper4、父spec、
 27票/38边/135AC、正式Blocked by及27前置不变；未push/CI/发布/正式两轴Review。
+
+
+## 26 · 独立本地接收
+
+2026-11-06，source `b2223ef53ac2b50cdc9446df4ae62e1efc133a9b`从actualroot
+`1b8f61789658ba336dbdce0a44d1454bce2a3014`独立no-ff合入`d4dca9d2`；候选tree与
+source同为`2fd7e23426d7cc4be427a09a350b871cd0a30d5c`。合前/合后1245唯一文件/
+372355168字节及全部523份封闭out原件逐项核，15实际导入、SDK4原ZIP/header/双库、
+C9/77首次编译输入/原packer、115配方、4冻结文件、103历史root raw保持。
+
+独立当前四Full重放通过，实际执行17e8347/f44a9fb、严格consumer8e7b9db及最终source
+分列；Linux测量phase466621与Windows109638不含各3轮OPEN warmup。Linux03全部
+3584核心样本/96个非owner事件及1 startup、owner真实等待、1200条全调用wait原件均
+独立核过；Windows3527原生OS样本与joined逐条相等，POD/join/reap/EOF和ConPTY清理
+分别核。RSS按实际首末20样本cohort增长，未造平坦或阈值；global线程下降不冒充SDK退出。
+
+原Windows完整14测试零skip、正式guard单方法两端六变异及双OS严格join按实际catalog/
+日志核，未重复suite。合后Ubuntu UID/GID1000、x86_64/4096、主物理.cache预检71解析/
+64编码通过。旧01中断退出/清理unknown、Linux02 15条live核心缺测、新旧reader红绿、
+CRLF外围误判和跨OS路径ERROR全部保留。派生post004追踪曾计入自身wrapper，旧报告
+保留，post005将wrapper分列并核实际15导入；无产品或peer变更。
+
+本次仅三MD接收记录；主收据为`out/qaplet-m2/merge-26-full-soak/handoff.json`。
+26保持claimed/local_complete/cross_deferred；未放行27、未完成父M2/正式三native/
+CI/Cross/整体两轴Review或release。merger产品/编译/guest/长测/重复suite/peer写入与
+session控制为0，无push/main/tag/release/billing及out/worktree清理。

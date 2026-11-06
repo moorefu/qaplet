@@ -56,7 +56,7 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 23 | 本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；正式Cross/Full待验 | Ubuntu完整SDK分发、包外纯C组合Host、双目标archive/旧新头/依赖、两端同字节消费、安全生命周期、Windows SDK child修复及consumer隔离/身份/保留闭包；[本票验证](23-sdk-delivery-validation.md) |
 | 24 | 本地完成并独立合并`dd9e700b`，接收`a7c507ea`；正式Cross/Full仍待缺失native | 当前SKU4 Linux/Windows各18 mandatory分组及M2生命周期1000/混合100；三native仍not_run；[本票记录](24-native-matrix-validation.md) |
 | 25 | 本地完成并独立合并`149985e3`，接收`1b8f6178`；正式Cross仍待验 | 实际完整系统ARM64/65536当前合同及M2生命周期1000/混合100已验，不占native槽位；[本票记录](25-actual64k-validation.md) |
-| 26 | 本地Full完成，待独立接收；claimed/local_complete/cross_deferred | Linux/Windows各10000真实混合生命周期及至少一小时持久RT，四原件双平台strict join、14实际合同零skip；[本票记录](26-full-soak-validation.md) |
+| 26 | 本地Full已独立no-ff合入`d4dca9d2`，主接收`out/qaplet-m2/merge-26-full-soak/handoff.json`；claimed/local_complete/cross_deferred | Linux/Windows各10000真实混合生命周期及至少一小时持久RT，四原件双平台strict join、14实际合同零skip；[本票记录](26-full-soak-validation.md) |
 | 27 | 等待24、25、26实际全范围验收 | 严格原件、身份、失败/缺项及最终矩阵判定；本地完成标记不能替代正式前置 |
 
 所有产品和SDK继续只在Ubuntu构建，Linux与Windows使用同一供应制品。本票新增行为按
@@ -113,3 +113,12 @@ TTY/工具/原件与失败边界见[19验证记录](19-aggregate-validation.md)�
 两槽位通过、其余三槽位缺失。6个显式false、6个metadata/arguments适用性null和3个
 strong全SDK清理未直接证实的null分别保留。既有M1的1000生命周期不当作M2循环，
 guest export不当实际64K。24/25/26现并行领取，正式原合同及27前置均不降低。
+
+
+2026-11-06：26已独立no-ff `d4dca9d2` 本地接收，tree与clean source `b2223ef5`完全相同。
+合前/合后完整1245文件/372355168字节、523项封闭out、四当前Full及实际15个导入闭包
+均通过；普通用户Ubuntu合后预检71/64通过。两端各10000生命周期/至少一小时持久RT
+保留实际phase/OS/POD/等待/清理原件；Linux03的96非owner事件与1 startup明确分类。
+原始RSS增长、Windows线程下降、旧01 unknown、旧Linux02 15条缺测及工具红绿另存。
+状态仍claimed/local_complete/cross_deferred；27原正式前置、三native缺口、正式CI/
+Cross、父M2、最终Review和发布门禁不降低。详细主收据在上述接收目录。
