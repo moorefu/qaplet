@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Observe supplied M2 Full workloads and replay their actual raw evidence."""
 import argparse
+import errno
 import json
 import math
 import os
@@ -18,23 +19,71 @@ from workflow_support import EvidencePaths, guard_evidence_outputs, identity, no
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def linux_resources(pid):
+class ResourceObservationError(Exception):
+    """An unavailable native query, with its actual path/field and raw inputs."""
+    def __init__(self, details):
+        self.details = details
+        super().__init__(details['reason'])
+
+
+def linux_resources(pid, owner_thread_id=None):
     """Read the target process, including actual kernel wait-channel samples."""
     root = Path('/proc') / str(pid)
-    status = dict(line.split(':', 1) for line in (root / 'status').read_text(encoding='ascii').splitlines())
-    stat = (root / 'stat').read_text(encoding='ascii').rsplit(')', 1)[1].split()
-    waits = []
-    for task in sorted((root / 'task').iterdir()):
-        try:
-            waits.append({'tid': int(task.name), 'wchan': (task / 'wchan').read_text(encoding='ascii').strip(),
-                          'state': (task / 'stat').read_text(encoding='ascii').rsplit(')', 1)[1].split()[0]})
-        except FileNotFoundError:
-            continue  # A sampled native thread really retired during inspection.
-    return {'source': '/proc/PID/stat,status,fd,task/TID/wchan',
-            'cpu_seconds': (int(stat[11]) + int(stat[12])) / os.sysconf('SC_CLK_TCK'),
-            'rss_bytes': int(status.get('VmRSS', '0 kB').split()[0]) * 1024,
-            'handles': len(list((root / 'fd').iterdir())),
-            'threads': int(status['Threads']), 'thread_waits': waits}
+    owner = pid if owner_thread_id is None else owner_thread_id
+    raw, field, query = {}, None, root / 'status'
+    try:
+        raw['status'] = query.read_text(encoding='ascii')
+        status = dict(line.split(':', 1) for line in raw['status'].splitlines())
+        field = 'VmRSS'
+        rss = status[field].split()
+        if len(rss) != 2 or rss[1] != 'kB':
+            raise ValueError('Required VmRSS has an unknown unit or layout')
+        rss_bytes = int(rss[0]) * 1024
+        field = 'Pid'
+        if int(status[field]) != pid:
+            raise ValueError('Native process status identity differs')
+        field = 'Threads'
+        threads = int(status[field])
+        field, query = None, root / 'stat'
+        raw['stat'] = query.read_text(encoding='ascii')
+        if int(raw['stat'].split('(', 1)[0]) != pid:
+            raise ValueError('Native process stat identity differs')
+        stat = raw['stat'].rsplit(')', 1)[1].split()
+        raw['clock_ticks_per_second'] = os.sysconf('SC_CLK_TCK')
+        cpu = (int(stat[11]) + int(stat[12])) / raw['clock_ticks_per_second']
+        starttime = int(stat[19])
+        query = root / 'fd'
+        raw['fd_entries'] = sorted(path.name for path in query.iterdir())
+        query = root / 'task'
+        tasks = sorted(query.iterdir())
+        raw['task_entries'] = [task.name for task in tasks]
+        waits, unavailable = [], []
+        for task in tasks:
+            tid = int(task.name)
+            try:
+                query = task / 'wchan'
+                wchan = query.read_text(encoding='ascii').strip()
+                query = task / 'stat'
+                native_stat = query.read_text(encoding='ascii')
+                waits.append({'tid': tid, 'wchan': wchan,
+                              'state': native_stat.rsplit(')', 1)[1].split()[0], 'raw_stat': native_stat})
+            except OSError as error:
+                if tid == owner or error.errno not in (errno.ENOENT, errno.ESRCH):
+                    raise
+                unavailable.append({'tid': tid, 'owner_thread_id': owner, 'path': str(query),
+                    'error_class': type(error).__name__, 'errno': error.errno, 'reason': str(error),
+                    'scope': 'Non-owner single native task query returned ENOENT/ESRCH; no process-exit inference'})
+        if not any(wait['tid'] == owner for wait in waits):
+            field, query = 'owner_thread_id', root / 'task' / str(owner)
+            raise ValueError('Verified owner native thread was not observed')
+        return {'source': '/proc/PID/stat,status,fd,task/TID/wchan', 'cpu_seconds': cpu,
+                'rss_bytes': rss_bytes, 'handles': len(raw['fd_entries']), 'threads': threads,
+                'thread_waits': waits, 'thread_queries_unavailable': unavailable,
+                'native_starttime_ticks': starttime, 'owner_thread_id': owner, 'raw_proc': raw}
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        raise ResourceObservationError({'path': str(query), 'field': field, 'errno': getattr(error, 'errno', None),
+            'error_class': type(error).__name__, 'reason': str(error), 'raw_proc': raw,
+            'source': '/proc target resource query', 'process_id': pid, 'owner_thread_id': owner}) from error
 
 
 def progress(path):
@@ -102,16 +151,22 @@ def observe_command(argv, cwd, directory, timeout, interval=1.0, *, target_progr
                         observations.write(json.dumps(row, sort_keys=True) + '\n')
                     consumed = len(rows)
                 else:
-                    row = {'elapsed_seconds': elapsed, 'process_id': child.pid,
+                    row = {'elapsed_seconds': elapsed, 'process_id': child.pid, 'os_sampler_version': 2,
                            'progress': progress(progress_path) if progress_path.exists() else {}}
-                    try:
-                        row['resources'] = linux_resources(child.pid)
-                    except PermissionError as error:
-                        row['sample_error'] = {'errno': error.errno, 'reason': str(error),
-                                               'source': '/proc target resource query'}
-                        row['progress_after_sample'] = progress(progress_path) if progress_path.exists() else {}
-                    except (FileNotFoundError, ProcessLookupError):
-                        row['process_exited_during_sample'] = True
+                    ready = next((json.loads(line) for line in complete_lines(progress_path)
+                                  if json.loads(line).get('type') == 'ready'), None)
+                    if target_progress and ready is None:
+                        row['observation_state'] = 'awaiting_native_ready'
+                    else:
+                        target_pid = ready['process_id'] if ready else child.pid
+                        owner = ready['owner_thread_id'] if ready else child.pid
+                        row['process_id'] = target_pid
+                        try:
+                            row['resources'] = linux_resources(target_pid, owner)
+                        except ResourceObservationError as error:
+                            row['sample_error'] = error.details
+                            row['progress_after_sample'] = progress(progress_path) if progress_path.exists() else {}
+                            row['process_exit_code_after_sample'] = child.poll()
                     observations.write(json.dumps(row, sort_keys=True) + '\n')
                 observations.flush()
                 try:
@@ -138,7 +193,8 @@ def observe_command(argv, cwd, directory, timeout, interval=1.0, *, target_progr
             'stdout_log': str(output), 'stderr_log': str(errors), 'samples_log': str(samples),
             'native_samples_log': str(native_samples) if sampler else None,
             'progress_log': str(progress_path), 'target_pid': target_pid or child.pid,
-            'sampler_argv': sampler_argv, 'sampler_exit_code': sampler.returncode if sampler else 0}
+            'sampler_argv': sampler_argv, 'sampler_exit_code': sampler.returncode if sampler else 0,
+            'os_sampler_version': 1 if os.name == 'nt' else 2}
 
 
 def console_child(args):
@@ -167,9 +223,18 @@ def sample_summary(command):
     rows = [json.loads(line) for line in complete_lines(command['samples_log'])]
     if any('sampler_error' in row for row in rows) or command['sampler_exit_code'] != 0:
         raise ValueError('OS sampler failed; raw failure remains in evidence')
-    unavailable = [row for row in rows if row.get('sample_error')]
-    if any(row.get('progress_after_sample', {}).get('type') != 'final' for row in unavailable):
-        raise ValueError('OS resource query unavailable before actual final cleanup')
+    unavailable, startup = [], []
+    observed_resources = False
+    for row in rows:
+        if row.get('resources'):
+            observed_resources = True
+            continue
+        if row.get('observation_state') == 'awaiting_native_ready' and not observed_resources and not row.get('progress'):
+            startup.append(row)
+            continue
+        if row.get('progress_after_sample', {}).get('type') != 'final':
+            raise ValueError('OS resource observation unavailable before actual final cleanup')
+        unavailable.append(row)
     active = [row for row in rows if row.get('resources')]
     if len(active) < 2:
         raise ValueError('At least two real OS samples required')
@@ -204,13 +269,42 @@ def sample_summary(command):
     for key in ('rss_bytes', 'handles', 'threads'):
         values = [row['resources'][key] for row in active]
         ranges[key] = {'first': values[0], 'last': values[-1], 'minimum': min(values), 'maximum': max(values)}
-    return {'sample_count': len(active), 'source': sorted({row['resources']['source'] for row in active}),
+    result = {'sample_count': len(active), 'source': sorted({row['resources']['source'] for row in active}),
             'terminal_unavailable_samples': unavailable,
             'owner_thread_id': owner, 'owner_wait_samples': owner_waits, 'owner_wait_kinds': wait_kinds,
             'first_elapsed_seconds': elapsed[0], 'last_elapsed_seconds': elapsed[-1],
             'cpu_seconds_delta': cpu[-1] - cpu[0], 'ranges': ranges, 'phases': phases,
             'performance_threshold': None,
             'scope': 'OS samples describe live process behavior; fixture post-destroy readback proves baseline return'}
+    if command.get('os_sampler_version') == 2:
+        if any(row.get('os_sampler_version') != 2 for row in rows):
+            raise ValueError('Current Linux sampler raw version is missing or contradictory')
+        for row in active:
+            resource = row['resources']
+            raw = resource['raw_proc']
+            status = dict(line.split(':', 1) for line in raw['status'].splitlines())
+            stat = raw['stat'].rsplit(')', 1)[1].split()
+            if int(status['Pid']) != row['process_id'] or int(status['VmRSS'].split()[0]) * 1024 != resource['rss_bytes'] or (
+                    int(status['Threads']) != resource['threads'] or len(raw['fd_entries']) != resource['handles'] or
+                    int(stat[19]) != resource['native_starttime_ticks'] or resource['owner_thread_id'] != owner or
+                    (int(stat[11]) + int(stat[12])) / raw['clock_ticks_per_second'] != resource['cpu_seconds']):
+                raise ValueError('Linux core observations contradict their original proc fields')
+            if not any(wait['tid'] == owner for wait in resource['thread_waits']):
+                raise ValueError('Verified owner native thread observation is missing')
+            for query in resource['thread_queries_unavailable']:
+                expected = str(Path('/proc') / str(row['process_id']) / 'task' / str(query['tid']))
+                if query['tid'] == owner or query['owner_thread_id'] != owner or query['errno'] not in (errno.ESRCH, errno.ENOENT) or (
+                        query['path'] not in (expected + '/stat', expected + '/wchan')):
+                    raise ValueError('An unavailable thread query is not a proven non-owner single-task race')
+        if len({row['resources']['native_starttime_ticks'] for row in active}) != 1:
+            raise ValueError('Linux native process identity changed while sampling')
+        result['os_sampler_version'] = 2
+        result['startup_unobserved_samples'] = startup
+        result['nonowner_thread_queries_unavailable'] = [dict(elapsed_seconds=row['elapsed_seconds'], **query)
+            for row in active for query in row['resources']['thread_queries_unavailable']]
+    elif startup:
+        raise ValueError('Startup applicability requires explicit current sampler protocol')
+    return result
 
 
 def validate_duration(command, final, minimum_seconds):

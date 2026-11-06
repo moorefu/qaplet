@@ -14,6 +14,33 @@ import sdk_m2_soak
 
 
 class FullObservationContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_THREAD_RACE_REPORT'), 'Actual Linux native-thread race report required')
+    def test_actual_nonowner_thread_races_keep_core_and_owner_observations(self):
+        report = json.loads(Path(os.environ['QAPLET_M2_THREAD_RACE_REPORT']).read_bytes())
+        self.assertEqual(len([row for row in report['errors'] if row['elapsed'] < 9]), 0)
+        self.assertGreater(report['successful_resource_queries'], 0)
+        self.assertEqual(report['owner_resource_queries'], report['successful_resource_queries'])
+        self.assertGreater(report['nonowner_queries_unavailable'], 0)
+        missing = report['zombie_missing_rss']
+        self.assertEqual(missing['field'], 'VmRSS')
+        self.assertIsNone(missing['errno'])
+        self.assertNotIn('\nVmRSS:', missing['raw_proc']['status'])
+        self.assertEqual(report['child_exit_code'], 0)
+        self.assertTrue(report['zombie_reaped'])
+
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_INCOMPLETE_SAMPLES_RUN'), 'Actual midlife missing OS rows required')
+    def test_actual_midlife_missing_resources_cannot_be_silently_accepted(self):
+        path = Path(os.environ['QAPLET_M2_INCOMPLETE_SAMPLES_RUN'])
+        report = json.loads(path.read_bytes())
+        mappings = ([{'source': '/mnt/d/Workspace/dairn/qaplet', 'root': 'D:/Workspace/dairn/qaplet'}]
+                    if os.name == 'nt' else [])
+        resolve = sdk_m2_soak.EvidencePaths({'path_mappings': mappings}, path.parent).resolve
+        command = copy.deepcopy(report['command'])
+        command['samples_log'] = str(resolve(command['samples_log']))
+        command['progress_log'] = str(resolve(command['progress_log']))
+        with self.assertRaisesRegex(ValueError, 'OS resource observation unavailable before actual final'):
+            sdk_m2_soak.sample_summary(command)
+
     @unittest.skipUnless(os.environ.get('QAPLET_M2_C9_CYCLE_REPORT'), 'Actual current C9 cycle soak required')
     def test_actual_c9_requires_identity_quiescent_counts_and_ref_wait_metadata(self):
         report = json.loads(Path(os.environ['QAPLET_M2_C9_CYCLE_REPORT']).read_text(encoding='utf-8'))
