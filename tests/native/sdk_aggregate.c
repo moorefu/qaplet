@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
+#include "sdk_temp.h"
 #include <unistd.h>
 #include <time.h>
 #include <stdatomic.h>
@@ -107,7 +108,7 @@ static int pod(void){
   puts("M2 aggregate POD: versioned short/zero-tail/nonzero-tail canaries; foreign thread 1000 OPEN and 1000 CLOSED samples of nine pure POD queries; JS state preserved; old instance unsupported: pass");return 0;
 }
 static int metrics(void) {
-  const unsigned char payload[]={0,1,127,128,255,10};char path[]="/tmp/qaplet-aggregate-XXXXXX";int fd=mkstemp(path),saved=-1;int64_t native=0,saved_native=0;
+  const unsigned char payload[]={0,1,127,128,255,10};char path[4096];int fd=sdk_temporary_file(path,sizeof(path),"qaplet-aggregate"),saved=-1;int64_t native=0,saved_native=0;
   CHECK(fd>=0 && write(fd,payload,sizeof(payload))==sizeof(payload) && lseek(fd,0,SEEK_SET)==0);
   if(IsWindows()){char16_t name[4096];CHECK(__mkntpath(path,name)>=0);native=CreateFile(name,0xc0000000u,7,NULL,3,0x80,0);CHECK(native!=-1);saved_native=GetStdHandle(-10);CHECK(SetStdHandle(-10,native));}
   else{saved=dup(0);CHECK(saved>=0 && dup2(fd,0)==0);}
@@ -156,7 +157,7 @@ static int metrics(void) {
 }
 static void never_timer(qaplet_runtime *r,const qaplet_timer *timer,void *opaque){(void)r;(void)timer;unsigned *calls=opaque;++*calls;}
 static int counts(const char *self,const char *launcher){
-  char path[]="/tmp/qaplet-counts-XXXXXX";int fd=mkstemp(path),saved=-1;int64_t native=0,saved_native=0;CHECK(fd>=0 && write(fd,"A",1)==1 && lseek(fd,0,SEEK_SET)==0);
+  char path[4096];int fd=sdk_temporary_file(path,sizeof(path),"qaplet-counts"),saved=-1;int64_t native=0,saved_native=0;CHECK(fd>=0 && write(fd,"A",1)==1 && lseek(fd,0,SEEK_SET)==0);
   if(IsWindows()){char16_t name[4096];CHECK(__mkntpath(path,name)>=0);native=CreateFile(name,0xc0000000u,7,NULL,3,0x80,0);CHECK(native!=-1);saved_native=GetStdHandle(-10);CHECK(SetStdHandle(-10,native));}else{saved=dup(0);CHECK(saved>=0 && dup2(fd,0)==0);}
   qaplet_config b=QAPLET_CONFIG_INIT;qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;qaplet_runtime *r=NULL;
   m.limits.worker_threads=1;m.limits.helper_threads=1;m.limits.work_handlers=1;m.limits.timers=1;m.limits.processes=1;m.limits.keepalive_tokens=1;m.limits.reactor_registrations=6;m.limits.native_handles=12;
@@ -197,7 +198,7 @@ static int counts(const char *self,const char *launcher){
   puts("M2 aggregate counts: timer/token/handler/process small limits coexist with Work and stdio; helper shared across real process and file IO; metadata/environment, handles/registrations and retained control charged; atomic refusals recover after actual reap/join: pass");return 0;
 }
 static int native_limits(void){
-  char path[]="/tmp/qaplet-data-XXXXXX";int fd=mkstemp(path),saved=-1;int64_t native=0,saved_native=0;CHECK(fd>=0 && write(fd,"A",1)==1 && lseek(fd,0,SEEK_SET)==0);
+  char path[4096];int fd=sdk_temporary_file(path,sizeof(path),"qaplet-data"),saved=-1;int64_t native=0,saved_native=0;CHECK(fd>=0 && write(fd,"A",1)==1 && lseek(fd,0,SEEK_SET)==0);
   if(IsWindows()){char16_t name[4096];CHECK(__mkntpath(path,name)>=0);native=CreateFile(name,0xc0000000u,7,NULL,3,0x80,0);CHECK(native!=-1);saved_native=GetStdHandle(-10);CHECK(SetStdHandle(-10,native));}else{saved=dup(0);CHECK(saved>=0 && dup2(fd,0)==0);}
   unsigned char *input=malloc(1048576);CHECK(input);memset(input,0x5a,1048576);
   for(unsigned total_first=0;total_first<2;++total_first){

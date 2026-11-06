@@ -32,6 +32,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_temp.h", "sdk_temp.h", None, None),
     ("tests/native/sdk_cli_signal_arm.c", "cli-signal-arm.c", None, None),
     ("tests/native/sdk_cli_signal.c", "cli-signal.c", None, None),
     ("tests/native/sdk_cli_signal_faults.c", "cli-signal-faults.c", None, None),
@@ -90,6 +91,7 @@ RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
+RECIPE += ("src/pipe_write.h",)
 RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
            "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")
 

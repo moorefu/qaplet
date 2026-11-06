@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
+#include "sdk_temp.h"
 #include <sched.h>
 #include <time.h>
 #include <termios.h>
@@ -48,7 +49,7 @@ static int classify(void) {
 }
 static int file_bytes(void) {
   const unsigned char payload[]={0,1,127,128,255,10};unsigned char bytes[32]={0};
-  char path[]="/tmp/qaplet-stdio-XXXXXX";int fd=mkstemp(path);CHECK(fd>=0 && write(fd,payload,sizeof(payload))==sizeof(payload) && lseek(fd,0,SEEK_SET)==0);
+  char path[4096];int fd=sdk_temporary_file(path,sizeof(path),"qaplet-stdio");CHECK(fd>=0 && write(fd,payload,sizeof(payload))==sizeof(payload) && lseek(fd,0,SEEK_SET)==0);
   int saved=-1;int64_t saved_handle=0,handle=0;
   if(IsWindows()){
     char16_t native[4096];CHECK(__mkntpath(path,native)>=0);
@@ -131,10 +132,10 @@ static int pipe_bytes(void) {
   else CHECK(fcntl(0,F_GETFL)==flags && dup2(saved,0)==0 && !close(saved) && !close(p[0]));
   puts("M2 stdio pipe: real stdin redirection; unsafe blocking borrow refused without side effects; safe binary/NUL/short read/EOF/cancel/BUSY; shared flags and Host handle preserved: pass");return 0;
 }
-typedef struct {char path[64];int fd,saved;int64_t handle,saved_handle;unsigned stream;} file_fixture;
+typedef struct {char path[4096];int fd,saved;int64_t handle,saved_handle;unsigned stream;} file_fixture;
 static int install_file(file_fixture *f,unsigned stream){
-  *f=(file_fixture){.fd=-1,.saved=-1,.stream=stream};strcpy(f->path,"/tmp/qaplet-stdio-XXXXXX");
-  f->fd=mkstemp(f->path);CHECK(f->fd>=0);
+  *f=(file_fixture){.fd=-1,.saved=-1,.stream=stream};
+  f->fd=sdk_temporary_file(f->path,sizeof(f->path),"qaplet-stdio");CHECK(f->fd>=0);
   if(IsWindows()){
     char16_t native[4096];CHECK(__mkntpath(f->path,native)>=0);
     f->handle=CreateFile(native,0xc0000000u,7,NULL,3,0x80,0);CHECK(f->handle!=-1);

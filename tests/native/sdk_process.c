@@ -176,7 +176,12 @@ static int pipe_write_failure(void) {
     struct sigaction current;CHECK(!sigaction(SIGPIPE,NULL,&current) && current.sa_handler==pipe_signal && !pipe_signals);
     CHECK(!pthread_sigmask(SIG_SETMASK,NULL,&after_mask));
     for(int signal=1;signal<NSIG;++signal)CHECK(sigismember(&expected_mask,signal)==sigismember(&after_mask,signal));
-    if(blocked){int got=0;CHECK(!sigpending(&pending_mask) && sigismember(&pending_mask,SIGPIPE) && !sigwait(&pipe_mask,&got) && got==SIGPIPE);}
+    if(blocked){
+      CHECK(!sigpending(&pending_mask) && sigismember(&pending_mask,SIGPIPE));
+      /* Drain our own fixture signal through its installed handler. The
+       * pinned libc's sigwait is unavailable on XNU as well. */
+      CHECK(!pthread_sigmask(SIG_UNBLOCK,&pipe_mask,NULL) && pipe_signals==1);
+    }
     CHECK(!pthread_sigmask(SIG_SETMASK,&original_mask,NULL) && signal(SIGPIPE,previous)!=SIG_ERR);
   }
   qaplet_snapshot snapshot=QAPLET_SNAPSHOT_INIT;CHECK(qaplet_get_snapshot(r,&snapshot,NULL)==QAPLET_OK && snapshot.lifecycle==QAPLET_OPEN && !snapshot.termination_reason);
@@ -915,12 +920,21 @@ static int js_issue(void) {
   int cleanup=finish(r);CHECK(!cleanup);CHECK(passed);
   puts("M2 process JS issue: IO accepted from a JS job issues before native wait without an auxiliary timer; actual write and reap: pass");return 0;
 }
+static _Atomic int js_quota_gate;
+static qaplet_code js_quota_work(qaplet_work_context *context,const void *input,size_t n,qaplet_work_output *out,void *userdata){
+  while(!atomic_load(&js_quota_gate))sched_yield();
+  return io_quota_work(context,input,n,out,userdata);
+}
 static int js_closed_case_limits(const char *mode,const char *source,int tiny) {
   qaplet_process_options o;prepare(&o,mode);qaplet_config b=QAPLET_CONFIG_INIT;b.argv=o.argv;b.argc=o.argc;
   qaplet_m2_config m=QAPLET_M2_CONFIG_INIT;if(tiny){m.limits.operations=2;m.limits.operation_data_bytes=8;m.limits.io_block_bytes=4;}else if(!strcmp(mode,"--partial-input"))m.limits.io_block_bytes=1048576;qaplet_runtime *r=NULL;CHECK(qaplet_create_m2(&b,&m,&r,NULL)==QAPLET_OK);
-  if(tiny){qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="quota";h.name_length=5;h.function=io_quota_work;h.input_bytes=3;h.output_bytes=1;CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);}
+  if(tiny){atomic_store(&js_quota_gate,0);qaplet_work_handler h=QAPLET_WORK_HANDLER_INIT;h.name="quota";h.name_length=5;h.function=js_quota_work;h.input_bytes=3;h.output_bytes=1;CHECK(qaplet_register_work_handler(r,&h,NULL)==QAPLET_OK);}
   char message[1024];qaplet_diagnostic d=QAPLET_DIAGNOSTIC_INIT;d.message=message;d.capacity=sizeof(message);qaplet_progress p=QAPLET_PROGRESS_INIT;
-  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;if(!code)code=qaplet_run(r,&drive,&d);
+  qaplet_code code=qaplet_eval(r,source,strlen(source),&p,&d);qaplet_drive_result drive=QAPLET_DRIVE_RESULT_INIT;
+  /* Force the cancelled IO's jobs checkpoint before Work completes. A test
+   * must attach rejection handlers before awaiting an independent worker. */
+  if(tiny){if(!code)code=qaplet_run_once(r,0,&drive,&d);atomic_store(&js_quota_gate,1);}
+  if(!code)code=qaplet_run(r,&drive,&d);
   if(code)fprintf(stderr,"JS contract code=%d diagnostic=%s\n",code,message);
   qaplet_result result=QAPLET_RESULT_INIT;int passed=code==QAPLET_OK && drive.phase==QAPLET_PHASE_DONE && qaplet_get_result(r,&result,NULL)==QAPLET_OK && result.type==QAPLET_VALUE_DOUBLE && result.number==42;
   qaplet_io_snapshot io=QAPLET_IO_SNAPSHOT_INIT;qaplet_process_snapshot ps=QAPLET_PROCESS_SNAPSHOT_INIT;
@@ -1026,8 +1040,9 @@ static int js_limits(void) {
   const char *source="Promise.all([import('qaplet:process'),import('qaplet:runtime'),import('qaplet:work')]).then(async ([{spawn},{argv},{submit}])=>{"
     "const p=spawn(argv[0],{argv:[...argv]});const w=submit('quota',new Uint8Array([65,66,67])),a=p.stdout.read(4);"
     "try{p.stdin.write(new Uint8Array([1]));throw Error('count')}catch(e){if(e.code!==24)throw e}"
-    "try{p.stdout.read(1);throw Error('busy')}catch(e){if(e.code!==4)throw e}a.cancel();p.cancel();"
-    "if((await w.promise)[0]!==87)throw Error('work');const errors=await Promise.all([a.promise.catch(e=>e),p.exited.catch(e=>e)]);if(errors.some(e=>e.code!==28))throw Error('cancel');"
+    "try{p.stdout.read(1);throw Error('busy')}catch(e){if(e.code!==4)throw e}"
+    "const observed=Promise.all([a.promise.catch(e=>e),p.exited.catch(e=>e)]);a.cancel();p.cancel();"
+    "if((await w.promise)[0]!==87)throw Error('work');const errors=await observed;if(errors.some(e=>e.code!==28))throw Error('cancel');"
     "p.stdin.close();p.stdout.close();p.stderr.close();await p.closed;return 42})";
   CHECK(!js_closed_case_limits("--hang",source,1));puts("M2 process JS limits: Work/IO share two operations/eight reserved bytes; atomic count/data refusal; BUSY priority; cancelled reservations retained through owner handoff then released: pass");return 0;
 }
