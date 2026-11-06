@@ -25,7 +25,12 @@ static ssize_t qaplet_pipe_write(int fd,const void *data,size_t n) {
   int error=pthread_sigmask(SIG_BLOCK,&blocked,&previous);if(error){errno=error;return -1;}
   int was_pending=sigpending(&pending)==0 && sigismember(&pending,SIGPIPE);
   ssize_t result=write(fd,data,n);int saved=errno;
-  if(result<0 && saved==EPIPE && !was_pending){struct timespec zero={0};while(sigtimedwait(&blocked,NULL,&zero)<0 && errno==EINTR){}}
+  /* A pipe write can accept a prefix and still generate SIGPIPE. Preserve its
+   * positive byte count while consuming only a signal newly pending here. */
+  if(!was_pending && ((result<0 && saved==EPIPE) || (result>0 && (size_t)result<n)) &&
+     !sigpending(&pending) && sigismember(&pending,SIGPIPE)){
+    struct timespec zero={0};while(sigtimedwait(&blocked,NULL,&zero)<0 && errno==EINTR){}
+  }
   error=pthread_sigmask(SIG_SETMASK,&previous,NULL);errno=error ? error : saved;return error ? -1 : result;
 }
 #endif

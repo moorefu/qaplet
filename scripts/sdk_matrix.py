@@ -84,6 +84,14 @@ def validate_mixed_child(case, producer, artifact_path, work, evidence):
     evidence.read(child['retained'])
 
 
+def validate_timeout(case_id, case, command):
+    require(type(command.get("timeout_seconds")) in (int, float) and 0 < command["timeout_seconds"] <= 300 and
+            command["timeout_seconds"] == case["timeout_seconds"], "Actual per-case execution deadline required")
+    if case_id in sdk.HOST_TIMEOUTS:
+        require(type(command['timeout_seconds']) is int and command['timeout_seconds'] == sdk.HOST_TIMEOUTS[case_id],
+                'Native explicit deadline differs from authoritative catalog')
+
+
 def validate_native(args, incoming, producer, selected, evidence, directory):
     consume_identity(incoming, {})
     check_ci_commit(producer, incoming)
@@ -134,8 +142,7 @@ def validate_native(args, incoming, producer, selected, evidence, directory):
                 "Native case/command timestamps disagree")
         require(interval(incoming)[0] <= interval(case)[0] <= interval(case)[1] <= interval(incoming)[1],
                 "Native command lies outside report interval")
-        require(type(command.get("timeout_seconds")) in (int, float) and 0 < command["timeout_seconds"] <= 300 and
-                command["timeout_seconds"] == case["timeout_seconds"], "Actual per-case execution deadline required")
+        validate_timeout(case_id, case, command)
         require(command.get("timed_out") is False and type(command.get("exit_code")) is int,
                 "Supervisor timeout/unexecuted native case cannot pass")
         require(isinstance(command.get("argv"), list) and all(isinstance(value, str) for value in command["argv"]) and command.get("cwd"),

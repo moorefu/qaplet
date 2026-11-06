@@ -12,7 +12,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-static int emulated_xnu,descriptor_flag,watched_fd=-1;
+static int emulated_xnu,descriptor_flag,watched_fd=-1,partial_signal;
 static volatile sig_atomic_t signals;
 static void handler(int signal){if(signal==SIGPIPE)++signals;}
 static int test_fcntl(int fd,int command,...){
@@ -23,6 +23,9 @@ static int test_fcntl(int fd,int command,...){
 }
 static ssize_t test_write(int fd,const void *data,size_t size){
   if(emulated_xnu && fd==watched_fd && descriptor_flag){errno=EPIPE;return -1;}
+  if(partial_signal && fd==watched_fd){
+    ssize_t n=write(fd,data,partial_signal==1 ? 1 : size);if(n>0)raise(SIGPIPE);return n;
+  }
   return write(fd,data,size);
 }
 static int test_sigtimedwait(const sigset_t *set,siginfo_t *info,const struct timespec *timeout){
@@ -50,8 +53,26 @@ static int check(int xnu,int blocked,int preset){
   if(blocked){CHECK(!pthread_sigmask(SIG_UNBLOCK,&mask,NULL) && signals==1);}
   CHECK(!pthread_sigmask(SIG_SETMASK,&before,NULL) && !close(fds[1]));return 0;
 }
+static int positive_write_signal(void){
+  int fds[2];CHECK(!pipe(fds));watched_fd=fds[1];emulated_xnu=0;signals=0;partial_signal=1;
+  /* Linux may return an accepted prefix and generate SIGPIPE when the reader
+   * closes during the write. Keep the real prefix; control that signal edge. */
+  CHECK(qaplet_pipe_write(fds[1],"xy",2)==1);
+  partial_signal=0;CHECK(!signals);char byte=0;CHECK(read(fds[0],&byte,1)==1 && byte=='x');
+  CHECK(!close(fds[0]) && !close(fds[1]));return 0;
+}
+static int successful_write_host_signal(void){
+  int fds[2];CHECK(!pipe(fds));watched_fd=fds[1];emulated_xnu=0;signals=0;partial_signal=2;
+  /* A full write cannot generate pipe failure. A concurrent Host SIGPIPE must
+   * retain its normal delivery, rather than being swallowed by this writer. */
+  CHECK(qaplet_pipe_write(fds[1],"xy",2)==2);
+  partial_signal=0;CHECK(signals==1);char bytes[2];CHECK(read(fds[0],bytes,2)==2 && !memcmp(bytes,"xy",2));
+  CHECK(!close(fds[0]) && !close(fds[1]));return 0;
+}
 int main(void){
   CHECK(signal(SIGPIPE,handler)!=SIG_ERR);
   for(int xnu=0;xnu<2;++xnu)for(int blocked=0;blocked<2;++blocked)for(int preset=0;preset<2;++preset)CHECK(!check(xnu,blocked,preset));
+  CHECK(!positive_write_signal());
+  CHECK(!successful_write_host_signal());
   puts("pipe writer: broken pipe preserves Host handler, mask, pending signal and Darwin descriptor flags: pass");return 0;
 }
