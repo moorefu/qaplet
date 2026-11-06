@@ -43,6 +43,16 @@ def compile_consumers(args, report, directory, tree, helpers, sdk, work, output)
     link_portable(args,report,directory,tree,helpers,'qaplet-cli-output-observer',[observed/'cli.o',observed/'observer.o',sdk/'lib/libqaplet.a'],observed/'qaplet-cli-output-observer.com',observed,env,libraries=(*('-Wl,--wrap='+s for s in symbols),'-lm','-lpthread'))
     publish_ape(observed,output,'qaplet-cli-output-observer',helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose('build',args.controlled_probe)))
     report['artifacts'].append(audit(args,report,directory,tree,'qaplet-cli-output-observer',output))
+    relay=work/'relay-retirement';(relay/'tmp').mkdir(parents=True)
+    env=dict(env,TMPDIR=str(relay/'tmp'),BUILDLOG=str(output/'qaplet-cli-relay-retirement.build-commands.log'))
+    symbols=('pthread_create','pthread_tryjoin_np','WaitForSingleObject','DuplicateHandle','CloseHandle')
+    report['controlled_cli_relay']={'scope':'Actual product-source CLI with native thread-return gates',
+        'cli_source':identity(ROOT/'src/cli.c'),'fixture_source':identity(sdk/'cli-relay-retirement.c'),
+        'wrapped_symbols':list(symbols),'controlled_system_fixture':True}
+    run(report,directory,'cli-relay-fixture-compile',[tree/'bin/cosmocc','-Os','-I'+str(sdk/'include'),'-c',sdk/'cli-relay-retirement.c','-o',relay/'fixture.o'],args.compile_timeout,relay,env)
+    link_portable(args,report,directory,tree,helpers,'qaplet-cli-relay-retirement',[observed/'cli.o',relay/'fixture.o',sdk/'lib/libqaplet.a'],relay/'qaplet-cli-relay-retirement.com',relay,env,libraries=(*('-Wl,--wrap='+s for s in symbols),'-lm','-lpthread'))
+    publish_ape(relay,output,'qaplet-cli-relay-retirement',helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose('build',args.controlled_probe)))
+    report['artifacts'].append(audit(args,report,directory,tree,'qaplet-cli-relay-retirement',output))
 
 
 def digest(data):
@@ -194,6 +204,9 @@ def run_supplied(args, report, directory, artifacts, loader, cli, modules):
     if windows:
         from m2_cli_output import append_cases
         append_cases(args,report,directory,cli,artifacts/'qaplet-cli-output-observer.com')
+        from m2_cli_relay import append_cases as relay_cases
+        help_bytes=next(stdout.encode() for name,_,_,stdout,_ in sdk.CLI_CASES if name=='help')
+        relay_cases(args,report,directory,artifacts/'qaplet-cli-relay-retirement.com',help_bytes)
     report["cli_artifact"]=identity(cli)
     report["actual_parent_imports"]=[{"module":name,**identity(Path(module.__file__).resolve())} for name,module in sorted(sys.modules.items())
         if getattr(module,"__file__",None) and Path(module.__file__).is_file() and Path(module.__file__).resolve().parent==Path(__file__).resolve().parent]
