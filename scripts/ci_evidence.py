@@ -678,6 +678,11 @@ def efficiency(args):
             seen.add(job["id"])
             inherited = bool(start and job.get("completed_at") and instant(job["completed_at"]) < instant(start))
             actual = bool(job.get("runner_id") and job.get("steps"))
+            a, b = instant(job.get("started_at")), instant(job.get("completed_at"))
+            reversed_interval = a is not None and b is not None and b < a
+            unstarted = not job.get("runner_id") and not job.get("steps")
+            if reversed_interval and not unstarted:
+                raise ValueError("Reversed API timing interval")
             phases = dict.fromkeys(("build_and_verify", "test", "evidence", "other"), 0)
             steps = []
             for step in job.get("steps", []):
@@ -685,18 +690,23 @@ def efficiency(args):
                 phase = ("evidence" if any(word in name for word in ("upload", "download", "retain", "collect", "seal", "aggregate")) else
                          "build_and_verify" if any(word in name for word in ("build", "compile", "acquire", "populate", "fetch")) else
                          "test" if any(word in name for word in ("execute", "run ", "test", "contract", "check")) else "other")
-                duration = seconds(step.get("started_at"), step.get("completed_at")) if actual else None
+                measured = seconds(step.get("started_at"), step.get("completed_at"))
+                duration = measured if actual else None
                 steps.append({"name": step["name"], "phase": phase, "seconds": duration, "conclusion": step.get("conclusion")})
                 if duration is not None:
                     phases[phase] += duration
-            if not inherited and job.get("completed_at"):
+            observation = None
+            timing_limitation = "Reversed nonexecuted API interval; duration unknown" if reversed_interval else None
+            if not actual and not inherited and not timing_limitation:
+                observation = seconds(job.get("started_at"), job.get("completed_at"))
+            if not inherited and not timing_limitation and job.get("completed_at"):
                 ends.append(job["completed_at"])
             rows.append({"id": job["id"], "workflow": run.get("name"), "job": job["name"],
                 "platform": None, "architecture": None, "runner_name": job.get("runner_name"), "labels": job.get("labels"),
                 "conclusion": job.get("conclusion"), "inherited_execution": inherited,
                 "execution_seconds": seconds(job.get("started_at"), job.get("completed_at")) if actual else None,
-                "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual else None,
-                "unexecuted_observation_seconds": seconds(job.get("started_at"), job.get("completed_at")) if not actual else None,
+                "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual and not inherited else None,
+                "unexecuted_observation_seconds": observation, "timing_limitation": timing_limitation,
                 **{key + "_seconds": value if actual else None for key, value in phases.items()}, "steps": steps})
     return {"status": "pass", "scope": "ci-efficiency-observation", "evidence_verified": False,
         "commit": run["head_sha"], "tier": args.tier, "run_id": run["id"], "run_attempt": run.get("run_attempt"),

@@ -45,7 +45,23 @@ def catalog(page):
             'argv': [loader, '/payload/qaplet-m2-example.com', *argv],
             'expected_exit_code': sdk_m2_example.expected(suffix)['exit_code'],
             **({'stderr_contains': 'usage: application-m2 MODE SELF LAUNCHER FILE\n'} if suffix == 'arguments' else {'expected_stderr': ''})})
+    # These 1100 actual process/Runtime cycles are lifecycle validation, not a
+    # 60-second TCG throughput promise. Keep all cycles and a finite watchdog.
+    for command in result:
+        if command['case_id'] in sdk.HOST_TIMEOUTS:
+            command['timeout_seconds'] = sdk.HOST_TIMEOUTS[command['case_id']]
     return result
+
+
+def verify_deadline(case, expected):
+    timeout = case['timeout_seconds']
+    declared = expected.get('timeout_seconds')
+    require(type(timeout) is int and 1 <= timeout <= (declared or 60), 'SDK guest timeout exceeds authoritative catalog')
+    if declared is not None:
+        require(timeout == declared, 'SDK guest explicit timeout differs from authoritative catalog')
+    start, end = interval(case)
+    require((end - start).total_seconds() <= timeout, 'SDK guest command exceeded deadline: ' + case['case_id'])
+    return start, end
 
 
 def producer(evidence, reference, distribution, report, expected_commit=None):
@@ -183,8 +199,7 @@ def consume(manifest, base, report, expected_commit=None, evidence=None, verifie
                 require(stdout == expected["expected_stdout"].encode("utf-8") and
                         (expected["stderr_contains"].encode("utf-8") in stderr if "stderr_contains" in expected else stderr == expected["expected_stderr"].encode("utf-8")),
                         "SDK guest raw output failed public contract: " + name)
-            start, end = interval(case)
-            require((end - start).total_seconds() <= case["timeout_seconds"], "SDK guest command exceeded deadline: " + name)
+            start, end = verify_deadline(case, expected)
             if name in ("qaplet.eval-unsettled", "qaplet.run-unsettled"):
                 require((end - start).total_seconds() < 2, "SDK guest unsettled CLI failed immediate-exit contract")
             selected_cases.append({"case_id": name, "status": "pass", "required": True,

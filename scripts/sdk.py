@@ -32,6 +32,7 @@ from workflow_support import guard_evidence_outputs, workspace, write_evidence_r
 # Source, public distribution name, object, recorded compile step. host-values.c
 # is included by host-contract.c, so it is shipped/hashed but not compiled twice.
 HOST_UNITS = (
+    ("tests/native/sdk_temp.h", "sdk_temp.h", None, None),
     ("tests/native/sdk_cli_signal_arm.c", "cli-signal-arm.c", None, None),
     ("tests/native/sdk_cli_signal.c", "cli-signal.c", None, None),
     ("tests/native/sdk_cli_signal_faults.c", "cli-signal-faults.c", None, None),
@@ -90,6 +91,7 @@ RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
+RECIPE += ("src/pipe_write.h",)
 RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
            "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")
 
@@ -114,6 +116,10 @@ M2_RUNTIME_METADATA = {"abi_version": RUNTIME_METADATA["abi_version"],
     "capabilities": RUNTIME_METADATA["capabilities"], "instance_capabilities": RUNTIME_METADATA["capabilities"],
     "defaults": RUNTIME_METADATA["defaults"], "m2_defaults": sdk_m2_example.M2_DEFAULTS}
 M2_EXAMPLE_CASES = sdk_m2_example.CASES
+# The full 1100 process cycles have a bounded validation budget, shared with
+# the guest catalog. Ordinary cases retain the caller's usual short timeout.
+HOST_TIMEOUTS = {"qaplet-host.m2-process-js-cycles": 300}
+
 HOST_CASES = (
     ("m2-process-cli-child", ["--m2-process-cli-child", "{cli}", "{launcher}"], "M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass\n"),
     ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
@@ -1129,6 +1135,7 @@ def consume(args, report, directory):
         m2_example_path.chmod(m2_example_path.stat().st_mode | 0o111)
     for suffix, arguments, expected in HOST_CASES:
         case_id = "qaplet-host." + suffix
+        timeout = HOST_TIMEOUTS.get(case_id, args.timeout)
         mixed = suffix in ("m2-mixed-stop", "m2-mixed-races", "m2-mixed-nonreturning")
         cwd = directory / case_id if mixed else ROOT
         child_evidence = None
@@ -1143,7 +1150,7 @@ def consume(args, report, directory):
             child_evidence = {'package_member': member, 'original': original, 'retained': retained}
         arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{child}", str(child_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
         executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
-                                      [*loader, host_path, *arguments], args.timeout, cwd, expected=None)
+                                      [*loader, host_path, *arguments], timeout, cwd, expected=None)
         if suffix == "facts":
             expected = json.dumps({"probe": "qaplet-host", "arch": report["host"]["execution_arch"],
                                    "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
@@ -1167,7 +1174,7 @@ def consume(args, report, directory):
             "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
             "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
             "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
-            "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
+            "timeout_seconds": timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
             "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else "", **mixed_evidence})
     for suffix, arguments, expected_exit, expected_stdout, stderr_contains in CLI_CASES:
         arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")) for value in arguments]

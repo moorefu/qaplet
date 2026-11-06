@@ -18,6 +18,7 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 #include <unistd.h>
 #include <time.h>
 #include "libc/dce.h"
+#include "pipe_write.h"
 #include "libc/nt/console.h"
 #include "libc/nt/events.h"
 #include "libc/nt/dll.h"
@@ -452,18 +453,13 @@ static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
     }
     return QAPLET_OK;
   }
-  /* Match the SDK byte writer's thread-local SIGPIPE discipline. Never change
-   * the Host's process disposition; consume only a signal produced by this
-   * failed output and preserve one that was already pending. */
-  sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);
-  if(pthread_sigmask(SIG_BLOCK,&blocked,&previous))return QAPLET_IO_ERROR;
-  int was_pending=!sigpending(&pending) && sigismember(&pending,SIGPIPE);
+  /* The SDK and CLI preserve the same Host signal and descriptor state. */
   int failed=0,flags=fcntl(stream,F_GETFL),changed=0;
   if(flags<0)failed=1;
   else if(!(flags&O_NONBLOCK)){if(fcntl(stream,F_SETFL,flags|O_NONBLOCK)<0)failed=1;else changed=1;}
   while(size && !failed){
     if(stream==1 && __atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){failed=1;break;}
-    ssize_t n=write(stream,data,size);
+    ssize_t n=qaplet_pipe_write(stream,data,size);
     if(n<0 && errno==EINTR)continue;
     if(n<0 && (errno==EAGAIN || errno==EWOULDBLOCK)){
       if(__atomic_load_n(&interrupted,__ATOMIC_SEQ_CST)){failed=1;break;}
@@ -477,10 +473,6 @@ static qaplet_code write_output(unsigned stream,const char *data,size_t size) {
     if(n<=0){failed=1;break;}data+=n;size-=n;
   }
   if(changed && fcntl(stream,F_SETFL,flags)<0)failed=1;
-  if(!was_pending && !sigpending(&pending) && sigismember(&pending,SIGPIPE)){
-    struct timespec zero={0};while(sigtimedwait(&blocked,NULL,&zero)<0 && errno==EINTR){}
-  }
-  if(pthread_sigmask(SIG_SETMASK,&previous,NULL))failed=1;
   return failed ? QAPLET_IO_ERROR : QAPLET_OK;
 }
 

@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import selectors
+import subprocess
 import sys
 import unittest
 import zipfile
@@ -14,6 +16,26 @@ import sdk_m2_example
 
 
 class M2SDKPackageContract(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'linux' and os.environ.get('QAPLET_SDK_ARTIFACT_DIR') and
+                         os.environ.get('QAPLET_SDK_LOADER_DIR'), 'Actual supplied Linux SDK and loader required')
+    def test_aggregate_child_dispatch_stays_alive_until_stdin_eof(self):
+        host = Path(os.environ['QAPLET_SDK_ARTIFACT_DIR']) / 'qaplet-host.com'
+        loader = Path(os.environ['QAPLET_SDK_LOADER_DIR']) / 'ape-x86_64.elf'
+        with subprocess.Popen([loader, host, '--m2-aggregate-child', '--hang'],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+            try:
+                with selectors.DefaultSelector() as ready:
+                    ready.register(child.stdout, selectors.EVENT_READ)
+                    self.assertTrue(ready.select(10), 'Aggregate child did not become ready')
+                self.assertEqual(child.stdout.read(1), b'R')
+                self.assertIsNone(child.poll(), 'Child exited while its input remained open')
+                output, errors = child.communicate(timeout=10)
+                self.assertEqual((child.returncode, output, errors), (37, b'', b''))
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.communicate(timeout=10)
+
     @unittest.skipUnless(os.environ.get('QAPLET_SDK_NATIVE_REPORT'), 'Actual supplied M2 SDK native report required')
     def test_native_m2_example_replays_raw_copies_and_rejects_false_reap_or_cleanup(self):
         report=json.loads(Path(os.environ['QAPLET_SDK_NATIVE_REPORT']).read_text(encoding='utf-8'))

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Transport preparation for the existing Core consumer; never replace its verdict."""
 import hashlib
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -180,8 +181,22 @@ def collect_actions(output, commit):
     with urllib.request.build_opener(NoRedirect()).open(request(api + "/runs/" + run_id + "/artifacts?per_page=100"), timeout=60) as response:
         listing = json.load(response)
     require(listing["total_count"] <= 100, "Artifact listing exceeds bounded collection")
+    # Failed-job reruns retain earlier originals with the same name. Select the
+    # newest provider record, even when its report failed; never fall back to
+    # an older success. Keep the complete catalog for independent replay.
+    write_json(output / 'provider-catalog.json', listing)
+    latest, seen = {}, set()
+    for artifact in listing['artifacts']:
+        name, number = artifact['name'], artifact['id']
+        require(type(number) is int and number > 0 and number not in seen, 'Duplicate or invalid provider artifact ID')
+        seen.add(number)
+        created = datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00'))
+        require(created.tzinfo is not None, 'Provider artifact timestamp requires a timezone')
+        key = (created, number)
+        if name not in latest or key > latest[name][0]:
+            latest[name] = (key, artifact)
     selection, metadata = [], []
-    for artifact in listing["artifacts"]:
+    for _, artifact in latest.values():
         name = artifact["name"]
         if not name.endswith("-" + commit) or not name.startswith(("m0-build-", "m0-offline-", "m0-startup-", "m0-io-", "m0-page-gap-", "m0-pages64k-native-")) or name.startswith("m0-startup-matrix-"):
             continue
