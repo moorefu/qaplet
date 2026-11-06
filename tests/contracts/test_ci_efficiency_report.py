@@ -37,7 +37,8 @@ class EfficiencyReportContract(unittest.TestCase):
                    "completed_at": "2026-11-01T00:01:05Z" if inherited else "2026-11-01T00:03:05Z",
                    "conclusion": conclusion, "steps": steps}
             if reversed_skip:
-                job.update(started_at='2026-11-01T00:02:06Z', completed_at='2026-11-01T00:02:05Z')
+                job.update(started_at='2026-11-01T00:01:06Z' if inherited else '2026-11-01T00:02:06Z',
+                           completed_at='2026-11-01T00:01:05Z' if inherited else '2026-11-01T00:02:05Z')
             for name, value in (("run", run), ("jobs", {"jobs": [job]})):
                 (work / (name + ".json")).write_text(json.dumps(value), encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/ci_evidence.py"), "efficiency",
@@ -105,6 +106,11 @@ class EfficiencyReportContract(unittest.TestCase):
 
     def test_assigned_runner_without_steps_cannot_use_unstarted_exception(self):
         self.report(12, [], reversed_skip=True, expected_code=1)
+
+    def test_inherited_records_cannot_bypass_reversed_execution_validation(self):
+        for runner, steps in ((0, [{'name': 'Old tests'}]), (12, [{'name': 'Old tests'}]), (12, [])):
+            with self.subTest(runner=runner, steps=steps):
+                self.report(runner, steps, inherited=True, reversed_skip=True, expected_code=1)
 
 
 if __name__ == "__main__":

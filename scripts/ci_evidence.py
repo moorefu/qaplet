@@ -678,6 +678,11 @@ def efficiency(args):
             seen.add(job["id"])
             inherited = bool(start and job.get("completed_at") and instant(job["completed_at"]) < instant(start))
             actual = bool(job.get("runner_id") and job.get("steps"))
+            a, b = instant(job.get("started_at")), instant(job.get("completed_at"))
+            reversed_interval = a is not None and b is not None and b < a
+            unstarted = not job.get("runner_id") and not job.get("steps")
+            if reversed_interval and not unstarted:
+                raise ValueError("Reversed API timing interval")
             phases = dict.fromkeys(("build_and_verify", "test", "evidence", "other"), 0)
             steps = []
             for step in job.get("steps", []):
@@ -690,13 +695,10 @@ def efficiency(args):
                 steps.append({"name": step["name"], "phase": phase, "seconds": duration, "conclusion": step.get("conclusion")})
                 if duration is not None:
                     phases[phase] += duration
-            observation, timing_limitation = None, None
-            if not actual and not inherited:
-                a, b = instant(job.get("started_at")), instant(job.get("completed_at"))
-                if not job.get("runner_id") and not job.get("steps") and a is not None and b is not None and b < a:
-                    timing_limitation = "Reversed nonexecuted API interval; duration unknown"
-                else:
-                    observation = seconds(job.get("started_at"), job.get("completed_at"))
+            observation = None
+            timing_limitation = "Reversed nonexecuted API interval; duration unknown" if reversed_interval else None
+            if not actual and not inherited and not timing_limitation:
+                observation = seconds(job.get("started_at"), job.get("completed_at"))
             if not inherited and not timing_limitation and job.get("completed_at"):
                 ends.append(job["completed_at"])
             rows.append({"id": job["id"], "workflow": run.get("name"), "job": job["name"],
