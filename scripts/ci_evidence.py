@@ -685,14 +685,15 @@ def efficiency(args):
                 phase = ("evidence" if any(word in name for word in ("upload", "download", "retain", "collect", "seal", "aggregate")) else
                          "build_and_verify" if any(word in name for word in ("build", "compile", "acquire", "populate", "fetch")) else
                          "test" if any(word in name for word in ("execute", "run ", "test", "contract", "check")) else "other")
-                duration = seconds(step.get("started_at"), step.get("completed_at")) if actual else None
+                measured = seconds(step.get("started_at"), step.get("completed_at"))
+                duration = measured if actual else None
                 steps.append({"name": step["name"], "phase": phase, "seconds": duration, "conclusion": step.get("conclusion")})
                 if duration is not None:
                     phases[phase] += duration
             observation, timing_limitation = None, None
             if not actual and not inherited:
                 a, b = instant(job.get("started_at")), instant(job.get("completed_at"))
-                if a is not None and b is not None and b < a:
+                if not job.get("runner_id") and not job.get("steps") and a is not None and b is not None and b < a:
                     timing_limitation = "Reversed nonexecuted API interval; duration unknown"
                 else:
                     observation = seconds(job.get("started_at"), job.get("completed_at"))

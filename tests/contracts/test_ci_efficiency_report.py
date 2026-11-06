@@ -97,6 +97,15 @@ class EfficiencyReportContract(unittest.TestCase):
         self.assertEqual(value['status'], 'fail')
         self.assertIn('Reversed API timing interval', value['reason'])
 
+    def test_runnerless_steps_still_reject_reversed_step_or_job_time(self):
+        reversed_step = {'name': 'Run actual tests', 'started_at': '2026-11-01T00:02:06Z',
+                         'completed_at': '2026-11-01T00:02:05Z'}
+        self.report(0, [reversed_step], expected_code=1)
+        self.report(0, [{'name': 'Run actual tests'}], reversed_skip=True, expected_code=1)
+
+    def test_assigned_runner_without_steps_cannot_use_unstarted_exception(self):
+        self.report(12, [], reversed_skip=True, expected_code=1)
+
 
 if __name__ == "__main__":
     unittest.main()
