@@ -96,6 +96,25 @@ class ObservationCLI(unittest.TestCase):
                     selected = self.invoke(repo, 'select-artifacts', *common, '--artifact-name', x64['name'], '--artifact-id', 3)
                     self.assertEqual(selected['artifacts'][0]['id'], 3)
 
+    def test_status_requires_complete_job_coverage_before_all_success(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            (repo / 'out').mkdir()
+            runs = self.save(repo, 'runs', {'workflow_runs': [{'id': 1, 'head_sha': 'a' * 40, 'name': 'Product',
+                'status': 'completed', 'conclusion': 'success'}]})
+            common = ['--commit', 'a' * 40, '--input-response', runs, '--workflow', 'Product']
+            value = self.invoke(repo, 'status', *common)
+            self.assertFalse(value['all_success'])
+            self.assertEqual(value['missing_job_run_ids'], [1])
+            job = {'id': 11, 'run_id': 1, 'name': 'build', 'status': 'completed', 'conclusion': 'success'}
+            jobs = self.save(repo, 'jobs', {'total_count': 2, 'jobs': [job]})
+            self.invoke(repo, 'status', *common, '--jobs-response', jobs, success=False)
+            self.save(repo, 'jobs', {'total_count': 1, 'jobs': [job]})
+            self.assertTrue(self.invoke(repo, 'status', *common, '--jobs-response', jobs)['all_success'])
+            job['conclusion'] = 'failure'
+            self.save(repo, 'jobs', {'jobs': [job]})
+            self.assertFalse(self.invoke(repo, 'status', *common, '--jobs-response', jobs)['all_success'])
+
     def test_final_receipt_requires_real_merge_tree_main_and_every_workflow_job(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)
@@ -103,7 +122,8 @@ class ObservationCLI(unittest.TestCase):
             repository(repo)
             (repo / '.github/workflows').mkdir(parents=True)
             for name in ('Product', 'Tools'):
-                (repo / '.github/workflows' / (name + '.yml')).write_text(json.dumps({'name': name, 'on': {'push': {}}}), encoding='utf-8')
+                filename = 'm0.yml' if name == 'Product' else 'tools.yml'
+                (repo / '.github/workflows' / filename).write_text(json.dumps({'name': name, 'on': {'push': {}}}), encoding='utf-8')
             git(repo, 'add', '.github')
             git(repo, 'commit', '-qm', 'base')
             git(repo, 'branch', '-M', 'main')
@@ -137,6 +157,12 @@ class ObservationCLI(unittest.TestCase):
             jobs[1]['conclusion'] = 'success'
             self.save(repo, 'jobs', {'jobs': jobs[:1]})
             self.invoke(repo, 'finalize', *common, success=False)
+            self.save(repo, 'jobs', {'jobs': jobs})
+            jobs[0]['conclusion'] = 'skipped'
+            jobs[1]['name'] = 'build'
+            self.save(repo, 'jobs', {'jobs': jobs})
+            self.invoke(repo, 'finalize', *common, success=False)
+            jobs[0]['conclusion'] = 'success'
             self.save(repo, 'jobs', {'jobs': jobs})
             self.save(repo, 'main', {'ref': 'refs/heads/main', 'object': {'sha': head}})
             self.invoke(repo, 'finalize', *common, success=False)

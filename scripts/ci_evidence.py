@@ -835,7 +835,7 @@ def main():
     if summary.get("failures"):
         terminal_summary["first_failure"] = summary["failures"][0]
     if args.operation in ('status', 'select-artifacts', 'finalize'):
-        terminal_summary.update({key: result[key] for key in ('all_success', 'changed_count', 'pending_run_ids', 'missing_workflows', 'main_fixed') if key in result})
+        terminal_summary.update({key: result[key] for key in ('all_success', 'changed_count', 'pending_run_ids', 'missing_workflows', 'missing_job_run_ids', 'main_fixed') if key in result})
         if result.get('changes'):
             terminal_summary['changes'] = result['changes'][:8]
     print(json.dumps({"status": result["status"], "report": str(args.report) if target_validated else None,

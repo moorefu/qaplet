@@ -160,11 +160,12 @@ class EfficiencyContract(unittest.TestCase):
             self.assertFalse(value["release_ready"])
 
     def test_cli_cross_selection_and_full_cannot_drop_cli(self):
-        for path in ('scripts/sdk_cli.py', 'src/cli_main.c', 'tests/native/sdk_cli_pipe_relay.c', 'scripts/m2_process_pe.py'):
+        for path in ('scripts/sdk_cli.py', 'src/cli_main.c', 'tests/native/sdk_cli_pipe_relay.c', 'scripts/m2_process_pe.py', 'tests/fixtures/modules/cli-terminal.mjs'):
             with self.subTest(path=path):
                 self.assertTrue(self.plan([path], 'workflow_dispatch', inputs={'tier': 'cross'})['run_cli'])
         self.assertFalse(self.plan(['docs/INDEX.md'])['run_cli'])
         self.assertTrue(self.plan(['docs/INDEX.md'], 'schedule')['run_cli'])
+        self.assertTrue(self.plan(['tests/fixtures/modules/cli-terminal.mjs'], 'pull_request')['run_cli'])
 
 
 class RequiredGateContract(unittest.TestCase):

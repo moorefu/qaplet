@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sys
 
-from workflow_support import git_read, identity, read_json
+from workflow_support import git_read, read_json
 
 
 def require(value, reason):
@@ -115,7 +115,10 @@ def status(args, inputs):
     known = {row['id'] for row in rows}
     jobs, seen = [], set()
     for path in args.jobs_response:
-        for job in inputs.read(path)['jobs']:
+        value = inputs.read(path)
+        require(isinstance(value.get('jobs'), list) and value.get('total_count', len(value['jobs'])) == len(value['jobs']),
+                'Complete job response required; retain all pages first')
+        for job in value['jobs']:
             require(job.get('run_id') in known and job['id'] not in seen, 'Job belongs to another run or is duplicated')
             seen.add(job['id'])
             jobs.append({'id': job['id'], 'run_id': job['run_id'], 'name': job['name'], 'status': job['status'],
@@ -127,10 +130,12 @@ def status(args, inputs):
     old.update({('run', row['id']): row for row in previous.get('runs', [])})
     changes = [{'kind': kind, **row} for kind, values in (('run', projected), ('job', jobs))
                for row in values if old.get((kind, row['id'])) != row]
+    missing_jobs = sorted(known - {job['run_id'] for job in jobs})
     return {'status': 'pass', 'scope': 'ci-status-observation', 'commit': args.commit, 'evidence_verified': False,
             'runs': projected, 'jobs': jobs, 'missing_workflows': missing,
-            'all_success': not missing and all(row['status'] == 'completed' and row.get('conclusion') == 'success' for row in rows) and
+            'all_success': not missing and not missing_jobs and all(row['status'] == 'completed' and row.get('conclusion') == 'success' for row in rows) and
                            all(job['status'] == 'completed' and job['conclusion'] in ('success', 'skipped') for job in jobs),
+            'missing_job_run_ids': missing_jobs,
             'pending_run_ids': [row['id'] for row in rows if row['status'] != 'completed'],
             'changes': changes, 'changed_count': len(changes), 'sources': inputs.sources, 'network_requests': 0}
 
@@ -167,6 +172,7 @@ def select_artifacts(args, inputs):
 
 
 def finalize(args, inputs):
+    require(re.fullmatch(r'[0-9a-f]{40}', args.commit), 'Exact merge commit SHA required')
     pull, branch = inputs.read(args.pull_response), inputs.read(args.main_response)
     head = pull.get('head', {}).get('sha') or pull.get('head_sha')
     require(pull.get('merged') is True and pull.get('state') == 'closed' and head == args.reviewed_head and
@@ -195,7 +201,12 @@ def finalize(args, inputs):
             seen.add(job['id']); covered.add(job['run_id'])
             jobs.append({key: job.get(key) for key in ('id', 'run_id', 'name', 'status', 'conclusion')})
     require(covered == known, 'Job observations missing for selected main workflow')
-    require(any(job['name'] == 'build' and job['conclusion'] == 'success' for job in jobs), 'Current required product/scope gate must succeed')
+    product = json.loads(git_read(args.repo, 'show', args.commit + ':.github/workflows/m0.yml'))
+    product_runs = [row['id'] for row in rows if row['name'] == product['name']]
+    require(len(product_runs) == 1, 'Committed product workflow run required')
+    product_run = product_runs[0]
+    gates = [job for job in jobs if job['run_id'] == product_run and job['name'] == 'build']
+    require(len(gates) == 1 and gates[0]['conclusion'] == 'success', 'Current required product/scope build gate must succeed in its own workflow')
     return {'status': 'pass', 'scope': 'post-merge-ci-completion', 'main_fixed': True, 'commit': args.commit,
             'reviewed_head': args.reviewed_head, 'main_ci': [{key: row.get(key) for key in ('id', 'name', 'run_attempt', 'status', 'conclusion', 'html_url')} for row in rows],
             'jobs': jobs, 'sources': inputs.sources, 'evidence_verified': False,

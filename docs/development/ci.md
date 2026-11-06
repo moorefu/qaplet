@@ -22,7 +22,8 @@ python scripts/ci_evidence.py finalize --commit MERGE_SHA --reviewed-head REVIEW
   --jobs-response out/api/workflow-2-jobs.json --report out/main-completion.json
 ```
 
-status 首次显示有限状态，后续只显示变化；待运行、失败和缺工作流保持可见。已完成
+status 首次显示有限状态，后续只显示变化；待运行、失败、缺工作流及缺 jobs 保持可见。
+只有完整覆盖所选 run 的 jobs 均结束且无失败才显示 all_success=true。已完成
 作业无需重复取大响应；仅待运行的 run 刷新 jobs。未变化可直接复用上次收据。
 制品精确按全名选择，歧义还需 `--artifact-id`；不使用平台前缀匹配。
 selection 可交给既有 fetch-actions，继续原 ZIP/provider/内容验证。

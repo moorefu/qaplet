@@ -183,7 +183,7 @@ def plan(args):
                  {"id": "original-archive-retention", "state": "missing_resource", "stage": "release/06", "required": False, "required_for_release": True}]
     matrix = [row for row in NATIVE if not windows_only or row["os"] == "Windows"]
     cli_paths = any(path.startswith(('src/', 'include/', 'examples/', 'scripts/sdk', 'scripts/m2_cli',
-                                     'tests/native/sdk_cli')) or path in ('scripts/m2_process_pe.py', 'tests/native/sdk_process_winchild.c')
+                                     'tests/native/sdk_cli', 'tests/fixtures/modules/')) or path in ('scripts/m2_process_pe.py', 'tests/native/sdk_process_winchild.c')
                     for path in paths)
     run_cli = scopes['m0'] and tier in ('cross', 'full') and (tier == 'full' or cli_paths)
     return {"schema_version": 1, "report_kind": "ci-tier-plan", "status": "pass", "planned_at": now(),
