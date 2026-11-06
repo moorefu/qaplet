@@ -695,8 +695,8 @@ def efficiency(args):
                 "platform": None, "architecture": None, "runner_name": job.get("runner_name"), "labels": job.get("labels"),
                 "conclusion": job.get("conclusion"), "inherited_execution": inherited,
                 "execution_seconds": seconds(job.get("started_at"), job.get("completed_at")) if actual else None,
-                "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual else None,
-                "unexecuted_observation_seconds": seconds(job.get("started_at"), job.get("completed_at")) if not actual else None,
+                "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual and not inherited else None,
+                "unexecuted_observation_seconds": seconds(job.get("started_at"), job.get("completed_at")) if not actual and not inherited else None,
                 **{key + "_seconds": value if actual else None for key, value in phases.items()}, "steps": steps})
     return {"status": "pass", "scope": "ci-efficiency-observation", "evidence_verified": False,
         "commit": run["head_sha"], "tier": args.tier, "run_id": run["id"], "run_attempt": run.get("run_attempt"),

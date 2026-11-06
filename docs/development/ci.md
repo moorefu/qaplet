@@ -110,6 +110,20 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 
 ## CI 查询与故障定位
 
+### 重跑与长周期命令
+
+失败作业重跑时，Core 收集保留完整 provider catalog；同一名称选择最新 created_at/ID
+的原 ZIP，不回退旧成功报告，过期、错 run/commit、坏摘要和新失败仍失败。
+效率观测保留继承作业的历史执行量，新增 queue/未执行观察区间记 null，避免将新 job
+记录的 created_at 与旧 execution 时间相减；不把继承执行再计入本轮 Runner 成本。
+
+guest 通用 `--command-timeout` 仍为 1–60 秒，整个 QEMU 最多 900 秒。显式命令 manifest
+可用整数 `timeout_seconds` 声明 1–300 秒的有界看门狗；实际 shell 和报告使用该值。
+SDK 权威 catalog 仅为 `qaplet-host.m2-process-js-cycles` 的真实 1000+100 周期声明
+300 秒，其他命令保持原限时。消费者核对声明与实际 budget，并拒绝报告自行扩大预算、
+超时、强杀、错误输出或未完成周期；Runtime 自身执行/清理期限不变。这是长循环的
+验证执行预算，不增加产品吞吐承诺。首次 60 秒失败原件保留，不追改为通过。
+
 1. 先按待验证的提交 SHA 找到对应 run，读取 status/conclusion。run 已 completed/success 即完成成功核验；将 SHA、run 链接和结果写回任务证据。
 2. run 失败时读取 job 摘要，定位失败步骤，再读该 job 的日志。日志只有 blocked/摘要时，从已上传的 artifact 读取具体 reason 和原始命令日志。
 3. 插件传输失败先做一次有限重试，仍失败就报告查询暂不可用。GitHub 404 与账号登录状态分别核验；读取当前身份和仓库可见范围后再判断是否需要用户重新授权。

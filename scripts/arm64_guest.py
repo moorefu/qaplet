@@ -148,6 +148,13 @@ def prepare(args, report, directory, lock, profile, selected):
     return image, files
 
 
+def command_timeout(item, default):
+    value = item.get('timeout_seconds', default)
+    if type(value) is not int or not 1 <= value <= 300:
+        raise BuildError('Command timeout_seconds must be an integer in 1..300')
+    return value
+
+
 def manifest(args, path=None):
     data = read_json(path or args.manifest)
     if data.get("schema_version") != 1 or data.get("page_size") != args.page_size:
@@ -177,6 +184,7 @@ def manifest(args, path=None):
             raise BuildError("Command requires string argv and a supplied executable")
         if type(item.get("expected_exit_code")) is not int or not 0 <= item["expected_exit_code"] <= 255:
             raise BuildError("Command expected_exit_code must be 0..255")
+        command_timeout(item, 60)
         for key in ("expected_stdout", "expected_stderr", "stderr_contains"):
             if key in item and not isinstance(item[key], str):
                 raise BuildError("Optional output assertions must be strings")
@@ -271,7 +279,7 @@ def init_script(data, token, timeout):
                   "export HOME=" + shlex.quote(temporary)]
         emit(prefix + " CWD", '"$(/bin/busybox pwd)"')
         emit(prefix + " START", '"$(/bin/busybox date -u +%Y-%m-%dT%H:%M:%SZ)"')
-        lines.append("/bin/busybox timeout -s KILL " + str(timeout) + " " + shlex.join(item["argv"]) + " >/tmp/stdout 2>/tmp/stderr")
+        lines.append("/bin/busybox timeout -s KILL " + str(command_timeout(item, timeout)) + " " + shlex.join(item["argv"]) + " >/tmp/stdout 2>/tmp/stderr")
         lines.append("rc=$?")
         emit(prefix + " EXIT", '"$rc"')
         emit(prefix + " STDOUT", '"$(/bin/busybox base64 /tmp/stdout | /bin/busybox tr -d \'\\n\')"')
@@ -409,7 +417,7 @@ def execute(args, report, directory):
         passed = passed and ("stderr_contains" not in item or item["stderr_contains"] in text_err)
         report["cases"].append({"case_id": item["case_id"], "status": "pass" if passed else "fail", "argv": item["argv"],
             "cwd": raw["CWD"],
-            "started_at": raw["START"], "finished_at": raw["END"], "timeout_seconds": args.command_timeout,
+            "started_at": raw["START"], "finished_at": raw["END"], "timeout_seconds": command_timeout(item, args.command_timeout),
             "guest_temporary_directory": "/tmp/command-" + item["case_id"],
             "expected": {key: value for key, value in item.items() if key.startswith("expected_") or key == "stderr_contains"}, "exit_code": code,
             "actual": {"stdout": text_out, "stderr": text_err, "exit_code": code},
