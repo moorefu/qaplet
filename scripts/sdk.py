@@ -39,6 +39,7 @@ HOST_UNITS = (
     ("tests/native/sdk_cli_signal_late.c", "cli-signal-late.c", None, None),
     ("tests/native/sdk_cli_signal_observer.c", "cli-signal-observer.c", None, None),
     ("tests/native/sdk_cli_output_observer.c", "cli-output-observer.c", None, None),
+    ("tests/native/sdk_cli_relay_retirement.c", "cli-relay-retirement.c", None, None),
     ("tests/native/sdk_cli.c", "host-cli.c", "cli-host.o", "cli-host-compile"),
     ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
     ("tests/native/sdk_mixed_faults.c", "mixed-faults.c", None, None),
@@ -91,6 +92,7 @@ RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
 RECIPE += ("scripts/sdk_mixed.py",)
 RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
+RECIPE += ("scripts/m2_cli_relay.py",)
 RECIPE += ("src/pipe_write.h",)
 RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
            "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")

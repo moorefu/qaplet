@@ -30,6 +30,7 @@ qaplet_code qaplet_drive_entry(qaplet_runtime *, qaplet_drive_result *, qaplet_d
 extern uint32_t GetFileType(int64_t);
 extern bool32 GetOverlappedResult(int64_t,struct NtOverlapped *,uint32_t *,bool32);
 extern bool32 CancelIoEx(int64_t,struct NtOverlapped *);
+extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
 
 /* Process-owned interrupt facilities deliberately survive until process exit.
  * Removing a handler cannot join an entry which already copied its fd/HANDLE.
@@ -40,6 +41,7 @@ static int interrupt_pipe[2]={-1,-1};
 static int64_t interrupt_event,relay_event;
 static unsigned interrupted,relay_shutdown,interrupt_error;
 static pthread_t relay_thread;
+static int64_t relay_native_handle;
 static pthread_mutex_t relay_mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t relay_condition;
 static int relay_started,relay_done;
@@ -88,6 +90,13 @@ static bool32 __msabi __attribute__((no_instrument_function,no_stack_protector))
 #endif
 static void *interrupt_relay(void *unused){
   (void)unused;
+  if(IsWindows()){
+    int64_t native=0;
+    if(!DuplicateHandle(-1,-2,-1,&native,0,0,2)){
+      __atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);goto done;
+    }
+    __atomic_store_n(&relay_native_handle,native,__ATOMIC_SEQ_CST);
+  }
   for(;;){
     if(IsWindows()){
       if(WaitForSingleObject(relay_event,0xffffffff)!=0){__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);break;}
@@ -102,6 +111,7 @@ static void *interrupt_relay(void *unused){
       if(runtime && qaplet_request_stop(runtime,NULL))__atomic_store_n(&interrupt_error,1,__ATOMIC_SEQ_CST);
     }
   }
+done:
   pthread_mutex_lock(&relay_mutex);relay_done=1;
   pthread_cond_broadcast(&relay_condition);pthread_mutex_unlock(&relay_mutex);return NULL;
 }
@@ -156,7 +166,22 @@ static int retire_relay(void){
   pthread_mutex_lock(&relay_mutex);
   int error=0,joined=0;
   for(;;){
-    if(relay_done){error=pthread_tryjoin_np(relay_thread,NULL);if(!error){joined=1;break;}if(error!=EBUSY)break;}
+    if(relay_done){
+      if(IsWindows()){
+        /* The function's notification precedes pthread/TLS retirement. Wait
+         * on the real thread, within the same monotonic cleanup deadline. */
+        int64_t native=__atomic_load_n(&relay_native_handle,__ATOMIC_SEQ_CST);
+        uint64_t current=0;
+        if(!native)break;
+        if(!clock_ns(&current) || current<before){cleanup_clock_failed=1;break;}
+        uint32_t timeout=current<deadline_ns ? (deadline_ns-current)/1000000 : 0;
+        pthread_mutex_unlock(&relay_mutex);
+        uint32_t waited=WaitForSingleObject(native,timeout);
+        error=waited==0 ? pthread_tryjoin_np(relay_thread,NULL) : ETIMEDOUT;
+        pthread_mutex_lock(&relay_mutex);joined=!error;break;
+      }
+      error=pthread_tryjoin_np(relay_thread,NULL);if(!error){joined=1;break;}if(error!=EBUSY)break;
+    }
     /* A done notification precedes actual pthread/TLS retirement. Never hide
      * an unbounded join behind it. A rare EBUSY waits the remaining deadline
      * without polling, then rechecks physical retirement once. */
@@ -165,7 +190,14 @@ static int retire_relay(void){
     if(error){if(error==ETIMEDOUT && relay_done)joined=!pthread_tryjoin_np(relay_thread,NULL);break;}
   }
   pthread_mutex_unlock(&relay_mutex);end_native_wait(before);
-  if(joined){relay_started=0;__atomic_store_n(&relay_runtime,NULL,__ATOMIC_SEQ_CST);}return joined;
+  if(joined){
+    relay_started=0;__atomic_store_n(&relay_runtime,NULL,__ATOMIC_SEQ_CST);
+    if(IsWindows()){
+      int64_t native=__atomic_load_n(&relay_native_handle,__ATOMIC_SEQ_CST);
+      if(!CloseHandle(native))return 0;
+      __atomic_store_n(&relay_native_handle,0,__ATOMIC_SEQ_CST);
+    }
+  }return joined;
 }
 
 typedef struct host_output_record {
@@ -179,7 +211,6 @@ typedef struct host_output_record {
 static host_output_record *retained_output;
 static int host_output_incomplete;
 static int interrupt_reported;
-extern bool32 DuplicateHandle(int64_t,int64_t,int64_t,int64_t *,uint32_t,bool32,uint32_t);
 
 static uint32_t output_wait(int64_t event){
   if(!interrupt_event)return WaitForSingleObject(event,0xffffffff);

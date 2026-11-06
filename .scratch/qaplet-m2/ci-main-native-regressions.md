@@ -137,3 +137,17 @@ code=OK、DONE、结果42、pending_handoffs=0、Process ref/result=0，但仍�
 小额度峰值仍在原位置验证；5秒清理上限、实际QUIESCENT、其他句柄/环境/引擎归零
 及destroy断言保持。Runtime与产品API行为不变。新供应与定向循环、完整原生和CI
 另存；旧失败与诊断原件保留，不改写为成功。
+
+## PR3 d6f076a：Windows CLI relay 实际退出等待
+
+PR3 Windows 的新失败是 qaplet.help，原 lifetime 已通过。帮助文本完整，但5.016秒
+后报告 Host output native cleanup incomplete。relay 的函数完成通知早于真实pthread/
+TLS退出；tryjoin首次BUSY后没有第二次condition通知，等到完整5秒才再检查，耗尽
+后续输出helper共享的清理预算。本地普通help1000次未复现，但真实原生线程门闩在
+旧CLI确定重现：5.008秒、退出1、相同完整输出和清理错误。
+
+Windows relay 现在保存自身的真实线程句柄，函数完成后在原monotonic累计截止点
+以内等待真实退出，再pthread join和关闭句柄；其他平台的路径保持。相同时序修复后
+0.109秒退出0；一直不放行的relay仍在5.007秒退出1并明确保留清理责任，不伪造成功。
+受控系统回归随SDK分发，并由包外CLI consumer在Windows执行放行/不放行两种情况。
+原始默认CLI失败、受控旧/新结果及预算原件均另存，不改动5秒预算或正式验收合同。
