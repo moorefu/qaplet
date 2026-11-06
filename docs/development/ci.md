@@ -4,6 +4,32 @@
 
 ## 小输出与可重放结果
 
+只读状态观察复用已保留的 API JSON，不自行联网或重跑作业。新增入口接受原 REST
+JSON、插件 structuredContent/content 包装以及单一 `-` stdin（最大 16 MiB）。
+stdin 原件另存为报告同目录的 `*-stdin.json`；只输入 API 元数据，不输入凭据或下载引用。
+所有新报告位于 out 下的新路径；输入原件不被覆盖。分页结果须先收全再合并，保留准确 total_count。
+
+```sh
+python scripts/ci_evidence.py status --commit FULL_SHA --event push --branch main \
+  --input-response out/api/runs.json --jobs-response out/api/jobs.json \
+  --previous-report out/status-OLD.json --report out/status-NEW.json
+python scripts/ci_evidence.py select-artifacts --commit FULL_SHA --run-id RUN_ID \
+  --manifest out/api/artifacts.json --artifact-name EXACT_PLATFORM_NAME \
+  --report out/artifacts-selected.json
+python scripts/ci_evidence.py finalize --commit MERGE_SHA --reviewed-head REVIEWED_SHA \
+  --pull-response out/api/pr.json --main-response out/api/main-ref.json \
+  --input-response out/api/main-runs.json --jobs-response out/api/workflow-1-jobs.json \
+  --jobs-response out/api/workflow-2-jobs.json --report out/main-completion.json
+```
+
+status 首次显示有限状态，后续只显示变化；待运行、失败和缺工作流保持可见。已完成
+作业无需重复取大响应；仅待运行的 run 刷新 jobs。未变化可直接复用上次收据。
+制品精确按全名选择，歧义还需 `--artifact-id`；不使用平台前缀匹配。
+selection 可交给既有 fetch-actions，继续原 ZIP/provider/内容验证。
+finalize 另需本地已取得合并提交，核对 reviewed head、双亲合并与相同 tree、main ref、
+提交所声明的全部 push 工作流和完整 jobs 响应。每个工作流 jobs 都要传入；取消、失败、
+缺失和必需 build 未成功均拒绝。收据只表示该 main 的 CI 收口，始终不签发正式 M2 或发布就绪。
+
 GitHub 插件取得 API 结果后先保留原始 JSON，仅将判定字段返回会话。`scripts/ci_evidence.py runs --input-response <saved-api.json> --commit <full-sha> --report out/ci-runs.json` 只过滤已保留结果，不发网络请求；输出不展开 repository/actor 等大对象。成功完成的 run 以该收据复用，状态变化或显式刷新才重新获取。
 
 `ci_evidence.py fetch --manifest <archives.json> --output-dir out/collected --report out/collected.json` 显式获取或导入归档；`verify` 用相同参数完全离线重核缓存与解包字节。manifest schema_version 为1，artifacts为非空数组，每项包含唯一的 id/name 和 archive：精确 sha256、size_bytes，以及缓存缺失时的 path或url（二选一）。url使用插件提供的下载地址；工具不读取Git凭据、不向重定向附加认证，收据不保存签名URL。输入选择文件应放在忽略的out下。
@@ -32,6 +58,11 @@ SDK (`qaplet-sdk`)、M1 gate (`qaplet-m1-evidence`) 和严格回归也支持小�
 collection 必须使用新报告路径，保存全部失败尝试。成功报告中的 `artifacts` / `local_manifest` 仅含已验本地 archive.path，可直接复用普通离线 verify；原 catalog 保留安全的 API 地址，签名下载 URL 和 token 不写入输出。测试允许显式 literal loopback HTTP API，始终不携带 token；生产 API 固定为 `https://api.github.com`。
 
 ## Fast / Cross / Full
+
+CLI 相关 Cross 和所有 Full 设置 run_cli：Ubuntu portable producer 执行现有
+`sdk.py cli-consume`（完整 Linux CLI 与受控正负回归），Windows 使用同包中的 CLI
+制品执行 `sdk_cli.py`，失败日志总是上传。共享 CI 合同拒绝缺失、跳过或容错接线；
+其它宿主继续原 SDK/产品矩阵。普通 Fast 的范围保持原约定。
 
 `m0.yml` 保留原 workflow 身份。共享 `scripts/ci_tiers.py plan` 从实际 event/ref 与 PR diff
 选择层级，并输出可重放的 JSON 与 GitHub outputs；计划中的 `status=pass` 只表示选择有效，
@@ -70,6 +101,11 @@ PR API head 与实际 merge commit 分别保留，消费者仍绑定实际测试
 root controller 显式运行对应 CLI 合同：实际 namespace preflight 与 `setpriv` 非 root receipt writer。
 
 ## 显式固定 guest 输入供给
+
+实际 guest 在既有期限内每秒记录有界宿主 load/memory/cgroup 和直接子 QEMU 进程样本，
+保留 `host-resources.ndjson` 及摘要。观察器缺权限/字段或输出失败只记录 limitations，
+不改变产品结论或 900 秒期限。尾部 kernel soft lockup 和最后开始的用例只作诊断；
+根因 Unknown，后续调查见[独立票 07](../../.scratch/qaplet-ci-retro/issues/07-kernel-soft-lockup.md)。
 
 实际 64K page job 可显式消费同仓库固定输入供给。`guests/ci-inputs.json` 绑定原
 `guests/arm64.lock.json` 的完整长度/SHA 与独立 data-only 提交；`guest_inputs.py plan`

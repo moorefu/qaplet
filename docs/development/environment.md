@@ -14,6 +14,22 @@
 
 ## WSL 入口与权限上下文
 
+`dev.py` 在执行前探测实际临时根可写和可用空间，默认最低 64 MiB，可用
+`--min-temp-free-bytes` 提高。`--temp-root` 仅设置此次子进程的 TMPDIR/TEMP/TMP，
+不修改全局环境。Windows C 盘临时空间不足时可显式选择 D 盘的 `out/.../temp`。
+该测量不推断 WSL VHD backing 盘空间，也不是完整构建峰值容量证明。
+
+`check --native-fs --temp-root /tmp --output-dir out/check-NAME` 先验证 POSIX 写权限位，
+再将当前已跟踪和未忽略的源文件逐字快照到一次性目录，执行原 `make check`，
+退出时复制报告并清理快照。源字节清单和日志留在新 out 目录；这不是 SDK 供应源。
+缓存参数仍指向主工作区物理 .cache。原始 DrvFS checkout 和挂载设置保持不变。
+
+长构建先收口源文件、提交并固定 head，再用
+`build-sdk --source-ref FULL_SHA --output-dir out/sdk-NAME`。入口在新目录独立检出
+该提交，保存并前后核对源文件清单；工作区后续编辑不进入供应。独立检出和产物均
+保留在 out，工具链/源码/中间缓存仍显式使用主工作区 .cache。需要构建的未提交改动
+应先提交；不能用 dirty 工作区配方或旧供应报告替代。输出目录和报告必须是新路径。
+
 Windows 默认优先使用已安装的 `%ProgramFiles%\WSL\wsl.exe`，再回退 PATH；`--wsl` 或 `make doctor WSL=...` 可显式指定入口。只读取快捷方式目标不足以判断发行版是否可用：MSI 广告快捷方式可能先指向 Installer 图标资源。
 
 诊断时先记录所用 exe、执行上下文、命令退出码和原始日志。查询失败的结论限定于当前进程可见范围。用户提供另一入口或说明已安装时，用该入口在可访问发行版的用户上下文只读复核，并保留两次观测。环境就绪的证据是实际 Linux kernel、执行架构和页大小；系统 C bootstrap 另行验证编译/执行。

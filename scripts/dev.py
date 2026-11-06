@@ -123,7 +123,7 @@ def planned(args, ctx, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("context", "preflight", "check", "check-fast", "build-ape", "offline", "check-evidence"))
+    parser.add_argument("operation", choices=("context", "preflight", "check", "check-fast", "build-ape", "build-sdk", "offline", "check-evidence"))
     parser.add_argument("--profile", choices=("all", "engine", "loop", "work", "process", "tty", "ci"), default="all")
     parser.add_argument("--supplier-report", type=Path)
     parser.add_argument("--supplier-dir", type=Path)
@@ -138,11 +138,16 @@ def main():
     parser.add_argument("--uid", type=int, default=1000)
     parser.add_argument("--gid", type=int, default=1000)
     parser.add_argument("--timeout", type=int, default=1800)
+    parser.add_argument("--temp-root", type=Path, help="Child-process temporary directory; global environment stays unchanged")
+    parser.add_argument("--min-temp-free-bytes", type=int, default=64 * 1024**2)
+    parser.add_argument("--native-fs", action="store_true", help="Run make check in a one-use POSIX filesystem snapshot")
+    parser.add_argument("--source-ref", help="Explicit committed input for frozen build-sdk")
     args = parser.parse_args()
     output = (args.output_dir or args.repo / "out/dev" / uuid.uuid4().hex).resolve()
     target = (args.report or output / "workflow.json").resolve()
     report = {"schema_version": 1, "report_kind": "workflow-command", "scope": "repository-workflow",
               "status": "fail", "started_at": now(), "reason": "", "commands": []}
+    target_validated = not (args.operation == 'build-sdk' or args.native_fs)
     try:
         if not 1 <= args.timeout <= 7200:
             raise ValueError("timeout must be 1–7200 seconds")
@@ -153,11 +158,34 @@ def main():
         ctx = context(args.repo)
         report["context"] = ctx
         repo = Path(ctx["checkout"])
+        special = args.operation == 'build-sdk' or args.native_fs
+        if special and (not output.is_relative_to(repo / 'out') or output.exists() or
+                        not target.is_relative_to(repo / 'out') or target.exists()):
+            raise ValueError('Use NEW execution directory and report under repository out/')
+        target_validated = True
+        if args.native_fs and args.operation != 'check':
+            raise ValueError('--native-fs is only available for check')
+        if args.source_ref and args.operation != 'build-sdk':
+            raise ValueError('--source-ref is only available for build-sdk')
         if args.operation != "context":
             report["preflight"] = preflight(repo, args.recipe_receipt)
+        from dev_execution import child_environment, frozen_sdk, native_check, temporary_root
+        selected_temp = (args.temp_root or Path(ctx['host']['temporary_directory'])).resolve()
+        if special and selected_temp.is_relative_to(output):
+            raise ValueError('Temporary root must be outside the new execution directory')
+        environment = child_environment(selected_temp)
+        if not args.plan and args.operation != 'context':
+            report['temporary_root'] = temporary_root(selected_temp, args.min_temp_free_bytes)
         commands = planned(args, ctx, output)
         report["planned_commands"] = commands
-        if args.plan:
+        if special:
+            if not args.plan and not ctx['build_allowed']:
+                raise ValueError('Frozen builds and native checks require Ubuntu')
+            if not args.plan:
+                output.mkdir(parents=True, exist_ok=False)
+            (frozen_sdk if args.operation == 'build-sdk' else native_check)(args, ctx, output, report, environment)
+            report.update(status='planned' if args.plan else 'pass', reason='Fixed-input development execution completed' if not args.plan else 'Plan only; no execution')
+        elif args.plan:
             report.update(status="planned", reason="Plan only; no build or probe commands executed")
         else:
             if args.operation in ("check", "build-ape", "offline") and not ctx["build_allowed"]:
@@ -166,7 +194,7 @@ def main():
             for index, argv in enumerate(commands):
                 write_json(output / "progress.json", {"phase": args.operation, "command": index + 1,
                                                       "total": len(commands), "updated_at": now()})
-                record, _, _ = command(argv, output, "command-" + str(index), args.timeout, cwd=repo)
+                record, _, _ = command(argv, output, "command-" + str(index), args.timeout, cwd=repo, env=environment)
                 report["commands"].append(record)
                 if record["exit_code"] != 0 or record["timed_out"]:
                     raise ValueError("Workflow command failed; see captured command logs")
@@ -174,7 +202,8 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, SyntaxError) as error:
         report["reason"] = str(error)
     report["finished_at"] = now()
-    write_json(target, report)
+    if target_validated:
+        write_json(target, report)
     print(json.dumps({"status": report["status"], "report": str(target), "reason": report["reason"][:300],
                       "cache_root": report.get("context", {}).get("cache_root")}))
     return 0 if report["status"] in ("pass", "planned") else 1

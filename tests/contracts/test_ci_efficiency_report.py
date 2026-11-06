@@ -1,5 +1,6 @@
 """Retained Actions API timing is observation, not a product pass."""
 import json
+import itertools
 from pathlib import Path
 import subprocess
 import sys
@@ -111,6 +112,19 @@ class EfficiencyReportContract(unittest.TestCase):
         for runner, steps in ((0, [{'name': 'Old tests'}]), (12, [{'name': 'Old tests'}]), (12, [])):
             with self.subTest(runner=runner, steps=steps):
                 self.report(runner, steps, inherited=True, reversed_skip=True, expected_code=1)
+
+    def test_timing_metadata_cartesian_contract(self):
+        for runner, has_steps, inherited, reversed_job, reversed_step in itertools.product((0, 12), (False, True), (False, True), (False, True), (False, True)):
+            with self.subTest(runner=runner, steps=has_steps, inherited=inherited, reversed_job=reversed_job, reversed_step=reversed_step):
+                minute = '01' if inherited else '02'
+                steps = [{'name': 'Tests', 'started_at': f'2026-11-01T00:{minute}:06Z',
+                          'completed_at': f'2026-11-01T00:{minute}:' + ('05Z' if reversed_step else '07Z')}] if has_steps else []
+                failed = (has_steps and reversed_step) or (reversed_job and bool(runner or has_steps))
+                value = self.report(runner, steps, inherited=inherited, reversed_skip=reversed_job, expected_code=int(failed))
+                if not failed:
+                    self.assertFalse(value['evidence_verified'])
+                    if inherited or not (runner or has_steps):
+                        self.assertEqual(value['runner_seconds'], 0)
 
 
 if __name__ == "__main__":

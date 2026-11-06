@@ -94,6 +94,7 @@ RECIPE += ("scripts/sdk_cli.py",)
 RECIPE += ("scripts/m2_cli_output.py",)
 RECIPE += ("scripts/m2_cli_relay.py",)
 RECIPE += ("src/pipe_write.h",)
+RECIPE += ("scripts/guest_observation.py",)
 RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
            "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")
 

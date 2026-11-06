@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "contexts": [
+    {"path": "AGENTS.md", "audience": "common", "kind": "reference"},
+    {"path": "GLOSSARY.md", "audience": "common", "kind": "reference"},
+    {"path": "docs/development.md", "audience": "standards", "kind": "reference"},
+    {"path": "docs/development/environment.md", "audience": "standards", "kind": "reference"},
+    {"path": "docs/development/ci.md", "audience": "standards", "kind": "reference"},
+    {"path": "docs/agents/review.md", "audience": "standards", "kind": "reference"},
+    {"path": "docs/agents/issue-tracker.md", "audience": "standards", "kind": "reference"},
+    {"path": ".gitattributes", "audience": "standards", "kind": "reference"},
+    {"path": ".scratch/qaplet-ci-retro/spec.md", "audience": "spec", "kind": "reference"}
+  ]
+}

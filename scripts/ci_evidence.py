@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def guard_report_target(args):
     target = args.report.resolve()
+    if args.operation in ('status', 'select-artifacts', 'finalize'):
+        from ci_observation import guard
+        guard(args)
+        return
     if args.operation == "efficiency-actions":
         if target.exists() or target.name in ("run.json", "jobs.json") or not args.output_dir.resolve().is_relative_to(ROOT / "out") or not target.is_relative_to(ROOT / "out"):
             raise ValueError("Use a new efficiency report/output under checkout out/")
@@ -793,6 +797,8 @@ def main():
     reusable.add_argument("--supplier-dir", type=Path)
     reusable.add_argument("--max-age-hours", type=int, choices=range(1, 169), default=24)
     reusable.add_argument("--report", type=Path, required=True)
+    from ci_observation import add_parsers
+    add_parsers(commands, ROOT)
     args = parser.parse_args()
     started = now()
     target_validated = False
@@ -800,7 +806,10 @@ def main():
     try:
         guard_report_target(args)
         target_validated = True
-        if args.operation == "summarize":
+        if args.operation in ('status', 'select-artifacts', 'finalize'):
+            from ci_observation import execute
+            result = execute(args)
+        elif args.operation == "summarize":
             result = summarize(args.input_report)
         elif args.operation == "runs":
             result = runs(args.input_response, args.commit)
@@ -825,6 +834,10 @@ def main():
                        "required_gaps_count", "optional_gaps_count", "reason") if key in summary}
     if summary.get("failures"):
         terminal_summary["first_failure"] = summary["failures"][0]
+    if args.operation in ('status', 'select-artifacts', 'finalize'):
+        terminal_summary.update({key: result[key] for key in ('all_success', 'changed_count', 'pending_run_ids', 'missing_workflows', 'main_fixed') if key in result})
+        if result.get('changes'):
+            terminal_summary['changes'] = result['changes'][:8]
     print(json.dumps({"status": result["status"], "report": str(args.report) if target_validated else None,
                       "artifacts": len(result.get("artifacts", [])), "runs": len(result.get("runs", [])),
                       "summary": terminal_summary,

@@ -43,6 +43,7 @@
       "outputs": {
         "tier": "${{ steps.plan.outputs.tier }}",
         "run_cross": "${{ steps.plan.outputs.run_cross }}",
+        "run_cli": "${{ steps.plan.outputs.run_cli }}",
         "run_full": "${{ steps.plan.outputs.run_full }}",
         "write_cache": "${{ steps.plan.outputs.write_cache }}",
         "native_matrix": "${{ steps.plan.outputs.native_matrix }}",
@@ -172,6 +173,11 @@
         {
           "name": "Ubuntu-build independent M2 waker and socket probes",
           "run": "python scripts/m2_waker.py build --output-dir out/m2-probes/waker/artifacts --report out/m2-probes/waker/build-info.json"
+        },
+        {
+          "name": "Build and verify complete CLI consumers on Ubuntu when selected",
+          "if": "${{ needs.tier-plan.outputs.run_cli == 'true' }}",
+          "run": "python scripts/sdk.py cli-consume --build-report out/sdk/build.json --artifact out/sdk/artifacts/qaplet-host.com --loader-dir out/m0/loaders --output-dir out/sdk/cli/artifacts --report out/sdk/cli/consumer.json"
         },
         {
           "name": "Ubuntu-build independent M2 pipe and borrowed stdio probes",
@@ -310,6 +316,22 @@
           "name": "Measure M2 native waker and socket facts using supplied bytes",
           "if": "${{ !cancelled() }}",
           "run": "python scripts/m2_waker.py run --build-report out/m2-probes/waker/build-info.json --artifact out/m2-probes/waker/artifacts/m2-waker.com --loader-dir out/m0/loaders --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/m2-probes-native/${{ matrix.runner }}/waker.json"
+        },
+        {
+          "name": "Execute supplied complete CLI contracts and controlled retirement on Windows",
+          "if": "${{ !cancelled() && needs.tier-plan.outputs.run_cli == 'true' && matrix.os == 'Windows' }}",
+          "run": "python scripts/sdk_cli.py --producer out/sdk/build.json --consumer out/sdk/cli/consumer.json --supplied-host out/sdk/artifacts/qaplet-host.com --artifact-dir out/sdk/cli/artifacts --expected-os ${{ matrix.os }} --expected-arch ${{ matrix.arch }} --runner-label ${{ matrix.runner }} --report out/sdk-cli-native/${{ matrix.runner }}/run.json"
+        },
+        {
+          "name": "Retain Windows CLI results and controlled raw traces",
+          "if": "${{ always() && needs.tier-plan.outputs.run_cli == 'true' && matrix.os == 'Windows' }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m2-cli-native-${{ matrix.runner }}-${{ github.sha }}",
+            "path": "out/sdk-cli-native/${{ matrix.runner }}/",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
         },
         {
           "name": "Measure M2 native pipe cancellation and safe borrowing facts",
