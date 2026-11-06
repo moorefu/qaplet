@@ -1,10 +1,14 @@
 # Qaplet M0 执行索引
 
-**Status:** implementation-in-progress / BOOT-01-resolved / ENV-01-resolved
+**Status:** resolved / tickets-01-through-12-resolved / Core-gate-passed / final-review-passed
 **Confirmed:** 2026-10-31；MIT、WSL2 Linux x64、命令行/结构化证据验收、完整Core矩阵与12张任务均已确认；最新调整为本地探索优先、CI持续回归；Linux ARM64先测原生runner页配置，QEMU仅补缺失组合。  
 **Baseline:** [总体计划 v1.4（App-first / 本地优先与原生页覆盖）](../../docs/plans/qaplet-v1-implementation-plan.md)，SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。
 
+**后续路线（2026-11-01）：** 本目录保持已完成 v1.4 M0 的原合同与证据；当前主线改用 [v1.5 实施修订](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)。新输入/新合同的差距由[独立对齐任务](../qaplet-v15-alignment/README.md)处理，不能将本目录 resolved 自动视为新 M0-A/B/C 已通过。服务专有成果继续保留作参考。
+
 ## 入口
+
+最终验收（2026-11-01）：12 张任务均已 resolved；修复后实际 Core 175 项、断网 16 项通过，Ubuntu 完整检查 149 tests / 0 failures / 19 explicit skips，Windows consumer 27/27。两路隔离上下文终审均为零遗留、零新增问题，见[最终审查与修复记录](final-review-validation.md)。下方规划快照和阶段记录继续保留，当前完成范围以本段和各票 Answer 为准；正式 Runtime/SDK 不在 M0 范围内。
 
 - [M0 spec](spec.md)：范围、验收、测试、资源与失败合同。
 - [术语](../../GLOSSARY.md)
@@ -39,6 +43,8 @@
 
 ## 资源前置与当前事实
 
+2026-11-01 实施更新：03 已完成实际 QuickJS 提交锁定、重新获取及 Windows / WSL 离线校验，见[源码验收](quickjs-source-validation.md)。04 已锁定官方 Nightly run `41169443573` 的原始 artifact（419652152 字节，SHA-256 `f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf`），完成编译器测量、断网校验、缓存恢复和损坏拒绝，见[工具链验收](nightly-toolchain-validation.md)。WSL 已安装 QEMU 6.2.0，并探索启动实际 64K ARM64 guest；持久 guest 锁及产品探针仍由 06/07 实施。服务探针按用户确认改用当前 Windows 宿主，实际 SCM 创建权限不足，既有 Job 归属已测；详见父规格执行更新。下表保留规划时历史状态，不替代新观测。
+
 | 资源 | 规划时状态 | 使用方与完成条件 |
 | --- | --- | --- |
 | 本机Windows x64 | 有C/构建工具，未跑产品探针 | 日常本地开发、普通原生探针 |
@@ -60,7 +66,7 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 01负责共享入口与CI骨架，02落实本地WSL/探测，05本地构建并支持CI重现，06接原生+补缺矩阵，07做64K深探针，08复用矩阵，11/12本地隔离VM探索并在CI回归。12张任务和Blocked by不变。
 
-当前无GitHub remote/workflow/probe实现；本轮只核查并修订方案，未触发CI或安装WSL。CI构建后分发同一摘要制品，失败也保留日志/串口/报告；Core/SVC继续独立判定。
+本段最初记录“无 GitHub remote/workflow/probe”的规划快照已被实际实现取代：完整 M0 CI `41271366261` 与独立 SCM CI `41271366311` 成功；Job 完成本地测量，远程仍未执行。CI 构建后分发同一摘要制品，失败也保留日志/串口/报告，Core/SVC 独立判定。
 
 ### BOOT-01 实施状态（2026-10-31）
 
@@ -74,23 +80,43 @@ Linux ARM64优先原生runner，job开始读取架构与页大小，QEMU只补�
 
 ## 状态和证据
 
+2026-11-01：12 的应用私有 Job 探针已在用户指定的当前 Windows 宿主完成受控父子/嵌套/拒绝/超时/清理验收，Ubuntu 构建并按同摘要消费；见[验收](job-object-validation.md)。首用 CreateProcessW +2 handle 增长未归因，owned handles 均关闭且重复基线稳定；不声明任意树安全或所有进程 handle 完全无泄漏。独立 Job CI 已接线但尚未远程执行，不改变 Core 门禁。
+
+2026-11-01：05 的固定输入 fat Hello/eval 构建、五项本地运行和双 CPU/map/import 审计已通过。WSLInterop 路由修正经原工具失败/派生 Linux 工具成功的同上下文对照验证。集成提交 `1b06a79` 的[真实 Ubuntu CI](https://github.com/moorefu/qaplet/actions/runs/41263354111) 完成精确工具链下载、共享构建及原字节分发，取回文件与本地 canonical SHA 完全一致；见[05 验收](fat-ape-build-validation.md)。06/07/08/09 和 11/12 的前置在该时已满足；后续完整 Core/跨宿主已通过10，正式SDK不在M0范围。
+
 Core完成由10的完整门禁判定。SCM/Job有独立artifact和结果；失败只阻断相应App能力。原始日志不能只保留成功项。必需用例blocked/not_run/skip时完整Core门禁不得通过。
 
-BOOT-01/ENV-01 命令、schema 和环境验收已实现；产品 probe 和完整 Core 门禁仍待对应任务。具体锁值、下载摘要、主机结果和产品能力必须来自实施测量，不在规划中填造。
+BOOT-01/ENV-01、固定输入、产品 probe 和完整 Core gate 均已有实现及真实测量。当前状态见[10 验收](core-evidence-gate-validation.md)，历史缺口/失败保留；不把 M0 探针外推为正式 Runtime/SDK。
 
-## 后续里程碑（本轮不生成详细spec或任务）
+07 的实际 Linux/AArch64/65536 完整 guest、12 项独立深度合同、source-built loader/
+packer 修正和 ARM64 full-pointer QuickJS overlay 已完成，见[64K 记录](arm64-64k-validation.md)。
+所有新 APE 有各自摘要；06/08/10 必须消费这些新身份重新验证，旧 16K/旧 QuickJS
+成功或失败均只属于历史记录。完整 Core 仍由 10 的矩阵门禁判定。
+
+11 的应用私有 SCM ABI 已在用户授权的当前 Windows 宿主完成真实生命周期，
+见[SCM 记录](scm-abi-validation.md)。Ubuntu 构建的独立 fat APE 在 Linux 普通入口、
+Windows export/layout、管理员 ServiceMain/HandlerEx/status 与 SCM 查询/重复 stop/删除
+均通过；普通 token 的 error 5 保留为 blocked。服务、受控进程与句柄清理及独立
+post-delete 查询通过；Core map/import 边界再审计通过。独立 SCM workflow run
+`41271366311` 已成功且原始字节/日志已核验；当前完整 Core 由10独立通过。
+
+## 后续里程碑（当前 v1.5 路线）
 
 | 阶段 | 目标与交接条件 |
 | --- | --- |
-| M1 | QuickJS Engine、基础CLI与通用Embed SDK；依据BOOT-04结果进入 |
+| v1.5 对齐 | 统一 v3 锁 → 目标 QuickJS 升级/补丁复核 → M0-A ESM/Promise 微型 Host；新输入另做跨宿主/ABI 回归 |
+| M1 | QuickJS Engine、基础 CLI 与最小通用 Embed SDK；有界 POD 队列及协作式停止，Linux Fast/主要宿主 Cross 验收 |
 | M2 | Loop/Reactor/WorkPool/Process及SDK事件桥；消费M0原生行为基线 |
-| M3 | Node基础兼容与真实CLI；并行启动服务应用JS配置/systemd Direct原型 |
+| M3 | Node 核心 API、ESM/CJS/package resolver、TTY 与精选通用 CLI/TUI 验证 |
 | M4 | 网络、TLS、HTTP/Fetch/SSE/WebSocket；独立安全验收 |
 | M5 | QJB格式、严格解析与按需资源加载 |
 | M6 | 普通App Compiler及通用自定义Native Host构建合同 |
 | M7 | 大资源ZIP64/STORE/对齐映射 |
-| M8 | qaplet-svc的JS业务、应用私有Native Host与系统适配完整交付 |
-| M9 | Core/App各自的兼容、安全、性能、供应链和发布证据 |
-| M10 | Runtime/SDK与Service App分别按已声明范围判定发布 |
+| M8 | 平台跨宿主质量、安全、离线重构、长期原 ZIP 镜像及供应链证据收口 |
+| M9 | 按实际能力与对应门禁判定 v1.0 发布 |
 
-详细内容继续引用总体计划；只有依赖事实就绪、即将实施的阶段再细化。
+历史 App-first/M10 路线仍在 v1.4 总体计划和 Git 历史中保留；具体服务应用不进入当前里程碑。当前细节以 v1.5 和对齐规格为准，M1 的具体接口与逐票分解在进入其执行 spec 时细化。
+
+2026-11-01：10 的完整 Core gate 通过六目标 startup/I/O、12项 deep、实际断网 pair/14 refusal 和 Core link/import 边界。三类 producer 与各自产品/derived helper 身份分别保留；许可/TLS未知项公开。独立 Job CI `41273469604` 在 `e17981c` 成功，首次 +2 handle 身份仍未归因，能力只限已测 owned fixtures。完整 manifest、报告、负向回归和边界见[10 验收](core-evidence-gate-validation.md)。全部12票已有 Answer，最终integration review另行执行。
+
+2026-11-01：09 已完成最终 producer 的两个真实断网 Ubuntu builds，六个二进制与额外 loader/packer 字节相同；14 个副本输入拒绝和精确 cache before/after inventory 通过。合入 `1129cd8` 后的 `make check` 107 tests / 0 failures / 15 explicit skips。测试 recipe 与随后 CI-only checker 变化的 raw fingerprint 分别保留，不宣称新 fingerprint 已重构。09 resolved，Core 完整门禁仍由 10 判定；见[断网最终验收](offline-integrity-validation.md)。

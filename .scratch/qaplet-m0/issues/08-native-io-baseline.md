@@ -4,7 +4,7 @@
 
 **Blocked by:** [05 · 构建 fat APE 与最小 QuickJS 探针](05-fat-ape-build.md)。
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Execution prerequisites:** 本地Windows/WSL/QEMU先探索，CI对应原生runner与缺失ARM64页配置的QEMU guest回归，区分native/emulated-system；TTY/PTY/ConPTY由fixture创建，无人值守runner缺少的交互设施显式记录。
 
@@ -26,11 +26,11 @@ native socket/pipe/process/TTY探针、宿主适配runner、行为基线矩阵�
 
 ## Acceptance criteria
 
-- [ ] 各类句柄/OS明确区分通过、受验证的限制、测试失败和未测；受验证限制有实际行为依据。
-- [ ] socket、pipe、TTY与进程至少覆盖成功、EOF/关闭和错误退出；有timeout防止探针无限挂住。
-- [ ] 进程路径/参数不借隐式shell规避问题，记录Unicode/空格路径结果。
-- [ ] 探针恢复终端、关闭fd/socket、回收受控子进程；未接入的必需宿主保持待验。
-- [ ] 矩阵为M2提供事实，不提前声明Node API或事件循环已实现。
+- [x] 各类句柄/OS明确区分通过、受验证的限制、测试失败和未测；受验证限制有实际行为依据。
+- [x] socket、pipe、TTY与进程至少覆盖成功、EOF/关闭和错误退出；有timeout防止探针无限挂住。
+- [x] 进程路径/参数不借隐式shell规避问题，记录Unicode/空格路径结果。
+- [x] 探针恢复终端、关闭fd/socket、回收受控子进程；未接入的必需宿主保持待验。
+- [x] 矩阵为M2提供事实，不提前声明Node API或事件循环已实现。
 
 ## Tests
 
@@ -55,6 +55,16 @@ EPIPE/半关闭、无效句柄、阻塞超时、子进程异常退出、TTY设�
 - [M0 执行规格](../spec.md)
 - [任务索引、资源前置与里程碑](../README.md)
 
+## Answer
+
+2026-11-01：真实 [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261) completed/success；Ubuntu 的独立 native-io producer 为 982754 字节、SHA `462a846fc6b9e2aa36a3587a5fc221dd464388ee63e457068b3432344798ef3e`。五个 native consumer 和真实 AArch64/65536 完整 guest 均消费该身份：Windows 21 项，其余各 20 项全部通过，包含受控终端、Unicode/空格进程、超时和资源清理。实际 OS/架构/页配置、原始返回值、已验证限制和 cleanup 保留在[验收记录](../native-io-validation.md)及原 CI artifacts；完整 Core 仍由 10 聚合，不声明 M2/Node 已实现。
+
 ## Comments
 
-尚未实施。
+2026-11-01：ticket08 implementer 在 `codex/m0-08-native-io` / `out/implement-spec/08` 认领；开工 HEAD `dc5c0c3` 与 integration 相同，已核验 ancestry。按用户确认的外部 CLI / 真实 OS / 结构化 evidence seam 使用 TDD；所有构建在 Ubuntu，共享实体缓存固定为主工作区 `.cache/`，其他宿主只执行同摘要制品。
+
+2026-11-01 实施就绪：独立 native-io fat APE / producer / samebytes consumer、20 个原生合同（Windows 另加 Console 关闭）、受控 Unix PTY / Windows ConPTY、Unicode/空格路径和 argv 的原生 spawn/wait、超时清理及 pthread/ZipOS 已实现。最终同摘要 `8d34081ddbff7ef2b0d705ebeae5ab75bc23c015f9267fb70d039ad87224aebe` 在 Windows x86_64 与 Ubuntu WSL x86_64 / 4096 页分别 21/21、20/20 通过。Ubuntu make check 通过 77 个合同，focused CLI 在两宿主均 9/9；失败样本与局限见[完整记录](../native-io-validation.md)。
+
+共享 native workflow 已加入 Ubuntu 单次 I/O producer 和五个同字节消费/独立失败 evidence 上传，尚未远程执行。所有必需 macOS / native ARM64 / 完整系统 ARM64 guest 仍待实际验收；07 负责 64K loader/packer 修复后重建新身份并重跑。保持 claimed，不由本地 native 成功关闭本票或完整 M0。
+
+2026-11-01 后续：07 的 64K producer/packer 修复已生成新身份 `b5576c3ae0e9391266f69dfd523039a3e5de6dc2664b9f03d3c3fef8b215ecb9`，同字节在本地 Linux/Windows 和 Unicode/空格路径的真实 AArch64 65536 字节页完整 guest 通过。08 增加 `guest-manifest` / `import-guest`，导出共享 guest payload 并用与 native 共用的 REQUIRED/EXPECTED/独立值检查消费实际全系统证据；15 个 CLI 合同在 Windows/Ubuntu 通过。缺 case、改运行后摘要、错误 EOF 却标 pass 均拒绝。原生 macOS / native ARM64 的 I/O 仍待新身份 CI，保持 claimed；已观测的既有 DrvFS full-check rename 失败与独立 suite 通过的差异另见完整记录，没有通过生产重试或放宽输入权限处理。

@@ -1,0 +1,100 @@
+# BOOT-07：Windows / Unix 原生 I/O 基线
+
+## 当前结论（2026-11-01）
+
+08 已 **resolved**。集成 `1129cd82059c3a8ea62515196516342205c96b82` 的 [M0 run 41271366261](https://github.com/moorefu/qaplet/actions/runs/41271366261) completed/success。Ubuntu 独立 producer 为 982754 字节，SHA `462a846fc6b9e2aa36a3587a5fc221dd464388ee63e457068b3432344798ef3e`；该批相同字节在五个 native 宿主和完整系统 Linux ARM64/65536 guest 全部通过。Windows 21 项，其余各 20 项；实际值、受控终端/Unicode 进程/超时清理和 OS 限制由原始报告保留，页配置及执行方式详见[六目标表](cross-host-startup-validation.md)。
+
+原 ZIP 的服务端摘要/长度、CRC、独立 producer 字节与日志路径均已复核，证据位于 `out/m0-integration/ci-m0-1129/`。各 `m0-io-<runner>-<commit>/io.json` 记录 native 宿主；`m0-page-gap-65536-<commit>/io.json` 记录完整 guest；producer 位于 `m0-build-<commit>/io/build-info.json`。同轮独立 deep probe 身份为 `c80197784669f748cff263cf364d8ae49f4b6eae8f53c3df3f84389ae05cf16e`，12 项通过。本轮采用这些 CI producer 身份，下文保留历史构建与失败。完整 Core 仍由 10 聚合，不声明 Node、Reactor、Runtime 或 Embed SDK 已实现。
+
+## 初始实施上下文
+
+`codex/m0-08-native-io` / `out/implement-spec/08` 开工基于 integration `dc5c0c3`，已核验 ancestry；交付前合入最新 integration。
+
+## 公共接口与身份
+
+`scripts/native_io.py build` 只在 Ubuntu 构建独立 `native-io.com`，使用 05 的原输入离线校验、官方派生 ELF helper、双 CPU 编译、headers/maps/symbols/PE imports 审计，以及构建后的原输入和派生目录复核。独立制品、sidecars、maps、BUILDLOG 与 `build-info.json` 保存在指定输出目录；编译中间文件只在主工作区 `.cache/build/<uuid>/`。不读取 QuickJS 源码，不将此探针身份当作 Hello/eval 身份。
+
+```sh
+python3 scripts/native_io.py build \
+  --toolchain-cache /mnt/d/Workspace/dairn/qaplet/.cache/toolchains/cosmocc \
+  --build-dir /mnt/d/Workspace/dairn/qaplet/.cache/build \
+  --output-dir out/ticket08-final/artifacts \
+  --report out/ticket08-final/build-info.json
+python3 scripts/native_io.py run \
+  --artifact out/ticket08-final/artifacts/native-io.com \
+  --build-report out/ticket08-final/build-info.json \
+  --loader-dir ../06/out/ticket06/loaders \
+  --expected-os Linux --expected-arch x86_64 \
+  --report out/ticket08-final/linux.json
+```
+
+消费端不会编译或填充输入缓存；先核对原制品 SHA-256/长度、producer scope/version、source/build 身份和双 CPU 审计，再执行相同字节。Linux/macOS 从 06 的 `helpers.json` 选择实际 OS/架构对应 helper，并核对摘要/长度；本地也可显式传入锁定的 `--loader`。Windows 直接执行 Ubuntu 制品。消费端将原字节复制到独立 evidence 下的 `进程 空格 fixture/native io.{com,exe}` 并复核摘要，以该路径执行/派生子进程；不用隐式 shell。结束后再核对原件、fixture 和 helper。
+
+`native-io` schema v1 的 `scope` 为 `build` 或 `host`。根级记录 source、toolchain、build、artifact、host、ci、qemu（本地 native 为 null）、producer、runner 当前文件摘要；每个 case 记录期望值、实际值、状态、开始/结束、deadline、退出码、artifact 和实际命令/原始日志。host 的 CPU/执行架构/kernel/页大小来自实际 OS API，C facts 另外断言执行架构/页大小一致；CI runner label 和 image/run 元信息分别保存，不用镜像名推断页大小。`required_cases` 是必需 case inventory，缺项生成 `not_run`，报告非通过；实测设施不可用为 `blocked`，失败为 `fail`。`limitation` 只允许有实际返回值和明确原因的观测，不等于未测；当前本地通过项不形成其他 OS 的支持声明。
+
+## 操作和清理合同
+
+| 类别 | 实际操作 |
+| --- | --- |
+| socket | TCP 127.0.0.1 临时端口；空 poll 50 ms、写入后可读、SHUT_WR 后 EOF、反向仍可传输、无效 fd 的 EBADF；关闭并用 F_GETFD/EBADF 复核全部三个 socket |
+| pipe | 空 poll、写入后读取、关闭 writer 后 EOF、忽略 SIGPIPE 后 write 返回 EPIPE；四个 fd 均关闭并复核 |
+| Unix TTY | 单独 pipe 的 isatty/tcgetattr 对照；posix_openpt/grantpt/unlockpt/ptsname + O_NOCTTY slave；实际检测、切换 ECHO、读取确认、恢复并比较 flags/control chars；关闭全部 fixture fd |
+| Windows Console | 无可见窗口的私有 ConPTY + 显式 CreateProcessW；子进程拥有独立 CONIN$ handle，实际 GetConsoleMode/SetConsoleMode 切换 ECHO、确认、完整恢复、CloseHandle 后验证无效；父进程回收子进程、关闭 ConPTY、四个 pipe handle、线程/进程 handle 并等待 drain thread |
+| process | 原生 posix_spawn + waitpid；同一 Unicode/空格路径、Unicode/空格/quote/backslash/shell 元字符 argv 校验，正常非零 exit 37；不存在程序的 ENOENT；观察挂起子进程仍存活，150 ms deadline 后 SIGKILL、wait、再次 wait 得到 ECHILD |
+| pthread / ZipOS | 新线程 TLS 初始 17、线程改为 99、parent 保持 7，pthread_join 完成；独立 append 的固定 ZIP 资源读取 18 字节及 EOF、写入打开 EROFS、关闭 fd |
+
+外层每条命令默认 30 秒，`--probe-mode hang --timeout 1` 是明确的负向 fixture：超时必须 `fail`，保留实际终止/回收退出码，不能生成成功。Unix 使用独立进程组，Windows 使用受控进程树清理；ConPTY 另有终止/等待和关闭/reader 的 cleanup deadline。没有宿主网络或全局 WSL/binfmt/mount 设置变更，没有应用私有 SCM/Job 操作。
+
+## TDD 与实际发现
+
+用户已确认 seam 为外部 CLI、实际 OS 和结构化 evidence。逐步红绿：缺 producer/制品从无报告到 blocked；真实 socket 先缺项后通过；pipe 的 EOF/EPIPE/清理先缺项后通过；TTY 先缺项，再保留真实失败后修复；process 先缺项后验证 Unicode 路径/argv 和 bounded cleanup；pthread/ZIP 先缺项后通过；外层 timeout 从未识别参数到实际 kill/reap 且 fail；CI 先能漏过 consumer 编译，再拒绝它。摘要篡改回归证明工具执行前拒绝，`commands` 为空。
+
+保留的失败与范围：
+
+- `out/ticket08-tty2/evidence/*/link.stderr.log`：两个 CPU 同时使用 common-page-size=65536 时 x86 real-mode PC16 relocation 超界。随后验证表明原 apelink 的 ARM64 16K repack 也不能由公开 flags 单独修正；07 负责共享 64K source-built loader/packer 修复。当前 native 基线保持官方默认布局，**没有宣称 ARM64 64K 可运行**。
+- `out/native-contracts/native-io-osuzby_0/` 等：最初 openpty slave 获得 controlling terminal；模式恢复完成后关闭 master 触发真实 SIGHUP（exit -1），缺 cleanup case。改为显式 O_NOCTTY 创建 master/slave 后，同一进程组清理路径通过。
+- `out/ticket08/conpty-control/` 和 `out/ticket08-tty3/`：ConPTY 存在不表示 GetStdHandle 指向 Console；父进程的重定向句柄可能继续存在。最终 fixture 独立打开其私有 CONIN$，另存 `standard_handle_console` 观测，避免把 pipe 当 Console。所有模式操作只针对这个私有 Console；结果写入独立文件，原始 terminal stream 仍保留。
+- `.yoink` 不受锁定 assembler 支持的编译失败保存在 `out/ticket08-resource/`。按工具链随附 README，普通 `open('/zip/...')` 已能使用 ZipOS；最终没有额外 linker 魔法或修改供应输入。
+
+开发 tracer 的完整工具链校验在 `out/ticket08/` 和 `out/ticket08-pipe/`；后续快速迭代明确标为 `development_rebuild`，引用先前已核验 native view，最终 producer 重新完整校验。所有这些报告、产品及原始日志均为 ignored `out/` / 主 `.cache/`，不提交生成物。
+
+## 本地 native 基线与最终交付
+
+本地 native producer：`out/ticket08-final/build-info.json`，report ID `1c6ac8db-6bd7-472a-a845-0922533653af`，status `pass`；原工具链前/后 verify、派生 helper 复核和双 CPU 审计均通过。独立 `native-io.com` 为 **884428 字节**，SHA-256 **`8d34081ddbff7ef2b0d705ebeae5ab75bc23c015f9267fb70d039ad87224aebe`**；build SHA-256 为 `8e40bc177f6d89d619bef574cb554280b88c2f5942c50ad11783bda4fd1eccc5`。Linux git 无法解析 Windows 创建 worktree 的 `D:/.../.git/worktrees/08` 指针，实际 query 失败日志保留在 producer evidence；`source.git_commit` 因此保持 null，源码/所有 recipe 的实际逐文件 SHA-256 和集合摘要完整保留，没有填造提交身份。分支 ancestry 由 Windows git 独立核验。
+
+| 报告 | 实测宿主 | 结果 |
+| --- | --- | --- |
+| `out/ticket08-final/linux.json` / `a2284cb6-3f90-4d55-9026-ddf01d82c236` | Linux / x86_64 / native / kernel 6.6.87.2-microsoft-standard-WSL2 / 4096 | 20/20 required cases pass，同摘要 fixture 与 helper 运行后复核一致 |
+| `out/ticket08-final/windows.json` / `ebcf612d-f292-4558-9728-f5e122f7db61` | Windows / x86_64 / native / kernel 10.0.22000 / 4096 | 21/21 pass，含独立 Console handle 关闭验证 |
+
+两个宿主的原生 wait 状态均为 9472，WEXITSTATUS 为 37；挂起子进程在 150 ms 观察边界后终止，raw wait status 为 9，第二次 wait 的 errno 为 ECHILD (10)。线程实际 TLS 为 initial 17 / child 99 / parent 7，pthread_join 成功。Windows 私有 Console mode 实际 503 → 499 → 503，关闭独立 CONIN$ 后 GetConsoleMode 失败 / Win32 error 6；ConPTY、reader、pipes、thread/process handles 均完成清理。`isatty(0)=0` / `standard_handle_console=0` 的实测值保留，不能从私有 Console 存在推导标准输入是 TTY。
+
+持久负向证据：`out/ticket08-final/timeout-linux.json` 为真实 1 秒 deadline、status fail、进程回收完成和原始终止退出码；`out/ticket08-final/corruption.json` 为末尾 ZIP 资源字节变更后，在任何工具执行前拒绝 SHA-256，commands 为空。Windows/Linux 全部 9 个 focused CLI contracts 均通过；Ubuntu `make check OUT=out/ticket08-final/check` 通过 77 个合同（6 个明确非本票/重型可选或平台 skip）、静态 CI 合同和实际系统 C bootstrap。完整检查后的共享 measured-host/loader 接入另经同一最终 artifact 的全部 focused contracts 及显式 bundle-consumer 命令复核。
+
+最终交付 producer 另从提交 `5d6b594` 对应的完整 recipe 重建并重新执行前后供应校验：`out/ticket08-delivery/build-info.json` / report ID `9c9cc788-8557-41a5-b547-0a206c898c54`，status pass。build SHA 为 `215c2524d3dc9ad0a8529c2f3d9bd66f66b5714f7d0b322be086d816553e4c53`，source/recipe 集合 SHA 为 `bd96fa00d2ec10c3d30a0a1a1b55a5d844f7fd286247c1d6649de87182079339`。独立复核全部记录源码/recipe 与当前字节相符，最终 APE 与上表基线 **完全相同 SHA-256/长度**。新 producer 又经 `out/ticket08-delivery/linux.json` 20/20、`windows.json` 21/21 实际通过；因此后续消费应使用 delivery producer，而历史 native/negative 报告继续保留。
+
+消费端随后增加一条 malformed producer identity 的红绿合同：匹配 artifact 摘要但 `source: null` 的输入原先触发 AttributeError 而无结构化报告；现在拒绝非对象 source/build 与非规范 SHA，并始终保留 fail evidence、commands 为空。此变更没有改变 C/APE 字节，两个宿主 focused contracts 增至 10/10。交付 producer 仍精确记录其 `5d6b594` 版本，host 报告的 runner 字段单列当前消费代码身份。
+
+随后 78 合同的完整复核保留一个既有 DrvFS 测试失败：`test_drvfs_cache_preserves_archive_modes_and_refuses_dirty_inputs_before_execution` 在 `/08/.cache/input-review-drvfs-r2uin60y/official-cache/` 将 `.candidate-u8nx7fw1` rename 为固定 fixture SHA 目录时返回 EACCES，堆栈定位既有 `test_nightly_toolchain.py:358`。之前 77 全检查通过；失败后独立 18 个工具链合同全部通过，但再次完整 78 复核在同一合同的初始 cache publish（`:314`）又出现 EACCES，目录为 `input-review-drvfs-8lf10xi1/cache/.candidate-9i1mg2a6`。**完整 run 可复现，独立 suite 未复现；根因未知，没有宣称修复或最终全检查通过**。所有 08 合同在两次 full run 均通过。没有修改生产重试、缓存权限策略或主固定输入缓存；该临时测试 fixture 由原合同自清理。最后 recorded full check 的退出 1、原始 stdout/stderr 与完整堆栈保存在 `out/ticket08-delivery/check-last/{command.json,make-check.stdout.log,make-check.stderr.log}`。该既有 04/05 验证问题单独交回 integration 处理，不以过滤此失败恢复绿色。
+
+消费端保留下载后权限语义：先验证原件与 Unicode fixture 的 SHA，再对私有 fixture 恢复 execute bit，记录 before/after mode 和 X_OK；POSIX 仍不可执行时 blocked。没有对未核对的原件运行 chmod，也不通过原生 helper 绕过 noexec 判定。
+
+## 07 修复后的新身份与完整系统 guest
+
+07 将 producer 接入共享 source-built loader / 保留 LOAD 对齐的 packer 后，生成独立新 APE：`../07/out/io-portable/artifacts/native-io.com`，982754 字节，SHA-256 `b5576c3ae0e9391266f69dfd523039a3e5de6dc2664b9f03d3c3fef8b215ecb9`。其 producer 为相邻 `build-info.json`；Linux / Windows 的旧 8d34081d 身份不用于证明这一新身份。新字节经 07 的本地 native Linux / ordinary Windows 和下面完整 guest 实际运行；08 当前 consumer 的全部 15 个公共 CLI 合同又在 Windows 和 Ubuntu 对此同一新身份通过。
+
+原始完整系统证据为 `../07/out/extended-unicode-guest-fixed.json`：Linux / AArch64 / kernel `6.8.0-147-generic-64k`，getconf 两个别名均 65536、smaps 64 KiB；QEMU 6.2.0 / TCG / `virt-6.2,gic-version=3` / cortex-a72。实际可执行路径为 `/payload/进程 空格/native io.com`，原生 posix_spawn 继续通过同一路径创建子进程，没有借 shell 变换 argv。guest lo/devpts/ptmx 与每条命令私有 TMPDIR 由 07 的通用 guest runner 创建、清理，08 没有重写 guest 基础设施。
+
+`native_io.py import-guest --build-report BUILD --artifact FILE --guest-report GUEST_JSON --report IO_JSON` 验证通用报告版本/通过状态、真实 guest 架构/三份页测量、完整系统 QEMU/TCG 和 kernel/config/rootfs/executable 身份、传输退出/清理、全部 payload 前后 SHA、同 producer 的程序/helper、Unicode/空格路径、无 shell 的确切 suite argv，以及原始 stdout/stderr 的长度/SHA/字节。随后与 native 消费端共用 REQUIRED / EXPECTED 和独立实际值判定；status 字符串本身不能把错误值变为通过。原始物理宿主保存在 host、guest 和 qemu 单列，`execution` 指向 emulated-system guest；importer 的 validation_host/validation_ci 与原执行分离，不把导入时间的 CI 身份写成 guest 执行身份。
+
+实际导入报告 `out/ticket08-guest/io-64k.json` / ID `b1694224-8f6c-4c8f-93c6-08e2dfeb1abb` 为 20/20 pass，原始 guest report SHA 为 `0467cdbecb163d51e29cfee96f932dd4f7d4df3a92c2430be80ba7acd9abce3e`。负向公开 CLI 合同对自洽 raw-log 副本删除 EOF case、篡改 guest 的运行后 SHA，以及将 `pipe.eof.actual.read` 改为 1 却保留 pass 标签，分别得到 not_run/fail/fail；没有执行 payload 或启动另一个 guest。
+
+`native_io.py guest-manifest --build-report BUILD --artifact FILE --loader ARM64_ELF --page-size 4096|65536 --manifest OUTPUT --report REPORT` 只导出 07 通用格式的两个文件和一个 `native-io.suite` 命令，核对原件/helper 摘要及目标页大小的 ARM64 LOAD congruence。scope 为 manifest、cases/commands 为空，成功只表示 payload 导出，不表示 guest 已执行。06 的自适应缺页调度将其与 startup/deep manifest 合并后运行同一个真实 guest。
+
+独立语义 checker 的实际红绿额外发现：Windows socket/pipe readiness 的原始 revents 为 256，Linux 为 1；不能把 Unix 的 POLLIN 数值固定用于 Windows。首次独立检查因此在 Windows 误报，原报告保留于 `out/native-contracts/native-io-cqi5zrf3/`；修正为 WinSock input mask 后，现有原始 native 结果与完整 guest 都通过。没有修改 C 程序、原始返回值或隐藏失败。
+
+## 尚待验收
+
+本地 Windows x86_64 与 WSL Ubuntu x86_64 为 native / 4096 字节页。正式同摘要 native CI 五个 runner 由共享 `.github/workflows/m0.yml` 编排：Ubuntu producer 构建一次；五个消费 job 运行 startup 和 I/O，分别上传失败/原始日志。I/O 即使 startup 先失败也尝试采集，不在消费 job 编译。
+
+macOS x86_64、macOS ARM64 与 Linux ARM64 原生实际页配置的 **I/O** 仍待同一新身份的 CI 实测；其他探针成功不能替代 I/O。ARM64 64K guest 的本地新身份结果已见上节，其他缺失页组合由 06 根据 native ARM 实际页大小补齐。完整 M0/08 在所需宿主、缺失页配置和聚合门禁完成前保持未关闭。

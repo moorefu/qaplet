@@ -1,95 +1,44 @@
-# 本地开发与 BOOT-01 报告
+# 开发与验证入口
 
-共享执行脚本位于 `scripts/`，系统 C 冒烟位于 `tests/native/`，命令合同测试位于 `tests/contracts/`；没有创建未实现的 Runtime、SDK 或应用目录占位。
+当前规划和迁移范围见[文档入口](INDEX.md)。[统一 v3 锁](development/input-lock.md)已晋级 `pinned`；正式 M1 的 Runtime、公开静态 SDK、最小 CLI 与纯 C 应用已实现。当前产品源码 `43193d6e9163aaccece5e3c30d96bcbabd3cd260` 的成功 Full `41542426189` 提供五个原生宿主、实际 64K 和独立当前 M0 Full；[M1 严格入口](development/evidence.md#正式-m1-严格入口)只读重放显式选择的原件和语义。逐票验收见[M1 索引](../.scratch/qaplet-m1/README.md)，已完成的独立审查、证据保存与清理后 98 项严格重放见[最终集成记录](../.scratch/qaplet-m1/final-review-validation.md)，旧 M0/对齐成绩保留原范围。后续产品配方变化必须重新验收；06 发布镜像由用户暂缓，`release_ready=false`。
 
-## 命令与 scope
+构建制品和SDK发行物统一在Ubuntu执行；其他平台消费同一字节制品和SDK。可复用输入和构建缓存使用主工作区物理 `.cache/`，报告与最终制品使用 `out/`；`toolchains/evidence/` 保持Git忽略。
 
-| 入口 | 报告 | 成功含义 |
-| --- | --- | --- |
-| `make check` | 复用下列检查及其报告 | 提交前串联 CI 静态检查、合同回归、真实 C bootstrap |
-| `make doctor` | `out/doctor.json` | 环境盘点；当前因 M0 前置未齐整体 blocked |
-| `make test-environment` | `out/environment.json` | ENV-01 Linux x64 工具、磁盘、目录、HTTPS/解包/摘要、系统 C 验收；须显式指定下载 URL |
-| `make test-bootstrap` | `out/bootstrap.json` | 系统 C 编译/执行通过，不是 APE 或 QuickJS 成绩 |
-| `make test-foundation` | `out/m0.json` | 当前始终非通过，列出输入、制品、六类宿主与必需探针缺口 |
-| `make test` | unittest 输出 | 命令合同回归通过，不是产品矩阵 |
-| `make check-ci` | `out/check-ci.json` | JSON/YAML 语法及项目编排合同通过，远程未运行 |
+## 当前构建与缓存约定
 
-这些 make recipe 与 CI 复用同一 Python CLI。也可直接执行：
+`python3 scripts/dev.py context --report out/context.json` 记录实际checkout、Git主工作区、缓存和宿主身份。linked worktree 的 `check`、`build-ape`、`offline` 入口自动传入主工作区缓存参数；构建入口要求Ubuntu。`--plan` 只生成命令计划，不能作为执行成绩。一次性POSIX权限fixture使用适合该行为的临时文件系统，默认临时目录与可复用缓存分开。
 
-```sh
-python scripts/foundation.py test-foundation --profile bootstrap --cc cc --timeout 30 --report out/bootstrap.json
-python scripts/foundation.py validate-report --input-report out/bootstrap.json
-```
+## 选择入口
 
-`validate-report` 消费 `compat/foundation-report.schema.json`，验证结构、版本、非空/唯一用例和基础状态不变量；它不验证外来报告是否真的执行，也不能代替任务 10 的完整证据门禁。`scripts/evidence.py` 只实现本 schema 使用的有限 JSON Schema 词汇，遇到不支持的词汇拒绝验证。扩展报告合同应同步版本和验证器。
-
-`tests/contracts/bootstrap-cases.json` 是当前唯一必需 bootstrap 用例清单。清单缺失、空、重复或含未知用例都失败；缺 C 源码或编译器为 blocked，编译失败、输出不符、非零退出或超时为 fail。冒烟编译/执行每条命令默认限时 30 秒，可设为 1–300 秒；doctor 版本查询限时 10 秒，WSL 查询限时 15 秒。Windows 超时尝试终止进程树并兜底终止直接子进程；Unix 使用独立进程组清理。BOOT-01 不运行安装服务、SCM 或 Job 的测试。
-
-## 身份与原始证据
-
-报告 v2 的公共上下文由根级 `source`、`host`、`ci`、`qemu` 供每个 case 继承；不同 case 的编译器、构建与制品身份在各自记录中保存。v2 新增 `environment` scope 及其通过时的必需验收清单；历史 v1 报告须用对应旧版本验证器验证，当前验证器拒绝混用版本。
-
-| 字段 | 内容 |
+| 任务 | 入口与含义 |
 | --- | --- |
-| `schema_version` / `report_id` / `scope` | 合同版本、唯一运行身份、验收范围 |
-| `started_at` / `finished_at` | UTC 时间，含时区；外部命令及用例也记录实际时间 |
-| `source` | 可查询时的 Git HEAD，以及当前构建/验证输入逐文件 SHA-256 和集合摘要；HEAD 不保证工作树干净 |
-| `host` | OS、CPU、Python 实际执行架构、kernel、OS API 实测页大小与执行方式；C 输出另行校验架构/页大小 |
-| `ci` | 本地为 null；CI 仅记录 run/attempt/workflow/commit、runner OS/架构/名称与 image 版本的允许列表 |
-| `qemu` | 本任务未运行 QEMU，为 null；后续真实 guest 需记录 host/guest 架构、QEMU/TCG/machine/CPU、kernel/config/rootfs 摘要 |
-| `cases[]` | case 身份、期望/实际值、退出码、时限、状态、原因与开始/结束时间 |
-| `commands[]` | argv 数组、cwd、时间、退出码、超时标记及 stdout/stderr 原始日志绝对路径 |
-| `toolchain` / `build` / `artifact` | 实测系统编译器路径/版本/摘要、构建命令/source 摘要、制品路径/大小/摘要；非构建用例为 null |
+| 日常检查 | `python3 scripts/dev.py check`，先预检，再复用现有 `make check` |
+| 相关功能快速检查 | `make check-fast` 或 `python3 scripts/dev.py check-fast --profile engine`；支持 loop/work/process/tty/ci，TTY profile 可复用供应SDK执行公开边界检查；[当前分层](plans/qaplet-v1.5-execution-optimization.md) |
+| 快速仓库预检 | `python3 scripts/dev.py preflight --report out/preflight.json` |
+| 完整证据回归 | `python3 scripts/check_evidence.py --config FILE --report out/evidence.json`，所需输入和测试均必须执行 |
+| 构建Hello/eval | `python3 scripts/dev.py build-ape`，复用已锁定构建脚本 |
+| 断网重构 | `sudo python3 scripts/dev.py offline`，先实际权限/namespace预检再运行双构建 |
+| 审查材料 | [按轴生成、验证和派发](agents/review.md) |
+| CI证据 | `python3 scripts/ci_evidence.py --help`，显式fetch、离线verify、typed summary |
+| 证据保存与迁移 | `scripts/evidence_store.py`、`scripts/evidence_selection.py`；[容量、归档与路径派生](development/evidence.md#证据保存与路径派生) |
 
-缺失的产品身份保持 null，并通过 case 的原因说明缺口，不填假 SHA 或成功结果。每次运行使用独立 `evidence/<uuid>/`，同名报告原子替换时保留旧日志。原始日志保持进程输出的字节编码；Windows WSL 可能使用 UTF-16LE。报告本身是 UTF-8 JSON，不序列化环境变量全集、凭据或 Git remote。
+`make check` 仍为原入口：CI合同、普通回归和真实系统C bootstrap；完整Core判定由显式consumer证据入口签发。CLI `--help` 是参数的权威列表。
 
-## WSL 入口与权限上下文
+## 按任务查阅
 
-Windows 默认优先使用已安装的 `%ProgramFiles%\WSL\wsl.exe`，再回退 PATH；`--wsl` 或 `make doctor WSL=...` 可显式指定入口。只读取快捷方式目标不足以判断发行版是否可用：MSI 广告快捷方式可能先指向 Installer 图标资源。
-
-诊断时先记录所用 exe、执行上下文、命令退出码和原始日志。查询失败的结论限定于当前进程可见范围。用户提供另一入口或说明已安装时，用该入口在可访问发行版的用户上下文只读复核，并保留两次观测。环境就绪的证据是实际 Linux kernel、执行架构和页大小；系统 C bootstrap 另行验证编译/执行。
-
-2026-10-31 的实际核验发现，受限 agent 进程与普通用户进程对 WSL 的可见结果不同：前者可能返回无发行版/拒绝访问，后者可进入 Ubuntu-22.04。doctor 因而只报告当前执行上下文的观测，保留每个入口的日志；不因 `wsl.exe` 存在就判定环境就绪，也不将受限查询失败外推为系统未安装。具体复核见[环境记录](../.scratch/qaplet-m0/environment-check.md)。
-
-Linux 下可直接在仓库根目录运行相同 make 入口。Windows 工作目录 `D:\Workspace\dairn\qaplet` 在此次 WSL 中映射为 `/mnt/d/Workspace/dairn/qaplet`，不假定其他机器盘符相同。ARM64 4K/64K 与此 WSL x64 4K 分开计数。
+| 当前工作 | 先读 |
+| --- | --- |
+| 环境诊断、compiler/cache选择、WSL/DrvFS权限 | [Ubuntu与缓存](development/environment.md) |
+| CI调整、查询或制品收集 | [CI与证据工具](development/ci.md) |
+| 报告路径、身份、严格回归或长验证 | [证据合同](development/evidence.md) |
+| 输入锁、APE、启动/I/O、ARM64 guest | [输入与产品探针](development/probes.md) |
+| v3 字段、迁移、状态、入口覆盖与兼容路径 | [统一构建输入锁](development/input-lock.md) |
+| 实施历史与已测限制 | [M0验收索引](../.scratch/qaplet-m0/README.md) |
 
 ## ENV-01 环境验收与目录
 
-复用现有 Ubuntu-22.04；不需要再次安装 WSL。以普通 Linux 用户在上述源码目录运行：
+详细命令、执行上下文和历史测量见[环境验收](development/environment.md#env-01-环境验收与目录)。
 
-```sh
-make test-environment OUT=out/env01/wsl-final \
-  ENV_BACKING_DIR=/mnt/c \
-  ENV_DOWNLOAD_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/dists/jammy/InRelease
-python3 scripts/foundation.py validate-report \
-  --input-report out/env01/wsl-final/environment.json \
-  --report out/env01/wsl-final/validated.json
-```
+## BOOT-09 · 完整 Core evidence consumer
 
-此 URL 仅作 HTTPS 下载探针，保存实际长度/摘要，不作为产品依赖锁。省略 URL 会得到 blocked；不自动联网。GitHub TLS 失败和软件源超时等原始记录也保留，不能由另一端点通过推断所有下载站点可达。
-
-默认构建与逐命令证据放在 Linux 用户的 `~/.cache/qaplet/environment/<uuid>/`（此次为 ext4），JSON 报告放在 Windows 可编辑源码树的 `OUT` 下。可用 `ENV_BUILD_DIR` 指定其他构建根目录；构建目录不可创建时在报告旁保留 blocked 证据。tar.gz 与 ZIP 对仓库 C 源码做真实创建、解包和 SHA-256 往返验证；HTTPS 下载另作独立用例。系统 C 输出的架构与 sysconf 页大小须与宿主测量一致。新 login shell 重新检查工具与两个目录；这不要求终止发行版或重启机器。
-
-验收默认要求源码盘、构建文件系统以及显式提供的 VHD 所在盘各至少 2 GiB 可用空间；CLI `--min-free-bytes` 可提高阈值。这是小型环境探针的下限，后续 Nightly/QuickJS/QEMU 任务应按实际归档、解包、缓存和构建峰值另算空间，不能据此保证任意产品构建容量。`ENV_BACKING_DIR` 来自实际 VHD 路径，不能从 ext4 显示的虚拟容量反推；此次 VHD 在 C 盘，所以测 `/mnt/c`。
-
-源码在 DrvFS（`/mnt/d`），构建在 ext4。两处的读写和直接执行分别实测；本次通过不表示 Windows ACL、chmod、符号链接或大小写语义完全一致。环境指纹与覆盖摘要见[ENV-01 验收记录](../.scratch/qaplet-m0/wsl2-environment-validation.md)及[本地覆盖记录](../.scratch/qaplet-m0/local-coverage.json)。WSL x64 4K 仅表示构建环境就绪，产品 APE 与 ARM64 仍未验收。
-
-## CI skeleton
-
-`.github/workflows/foundation.yml` 用 JSON 表达 YAML，便于在无第三方 Python 包的本地环境解析。`make check-ci` 检查触发器、只读权限、共享命令、失败时上传证据及禁用的产品槽位，并验证静态检查先于编译和合同测试；没有执行 Actions 服务端校验或 actionlint。
-
-提交前运行 `make check`。涉及 Windows/WSL 执行差异时，分别在普通 Windows 用户上下文和现有 WSL 运行同一入口，分别保存 `OUT`。受限上下文测试可补充失败证据，真实用户上下文负责核验可用环境。WSL 不可用负向用例用显式不存在的 `--wsl` 隔离；其回归已经位于 `tests/contracts/test_foundation.py`。
-
-托管 runner 的 compiler 配置使用 PATH 中的可执行文件名：Windows 为 `gcc`，其他 bootstrap 行为 `cc`。静态检查拒绝把开发机的编译器绝对路径放入该矩阵；本地 `CC` 仍可显式使用绝对路径。Windows 镜像预装 MSYS2 不代表已安装其 MinGW GCC；本任务使用 runner 提供的系统 GCC，不依赖 MSYS2 目录或安装步骤。
-
-启用的 `bootstrap` job 在已配置 runner 上做环境盘点、真实 C 冒烟和合同回归；doctor 的 blocked 允许继续，但测试失败不允许继续。报告与原始日志即使失败也上传。runner 页大小来自实际 OS 查询，不能从镜像名推断。该 workflow 名称和 artifact 均标为 bootstrap。
-
-禁用的 `m0-build-distribute`、`m0-native-pages`、`m0-qemu-page-gaps` 分别为锁定构建/同摘要制品分发、原生 ARM64 页探测和缺失页配置完整系统 TCG guest 预留位置。SCM 和 Job 分属 `svc-scm`/`svc-job`，使用独立应用制品，不进入 Core 门禁。启用这些位置之前须由对应任务接入可运行的共享脚本、输入与制品；当前不能从 disabled/skip 推出通过。首次远程 bootstrap 的实际结果及 Windows 配置修复见[验证记录](../.scratch/qaplet-m0/foundation-validation.md#首次远程-ci-与-windows-配置修复)。
-
-## CI 查询与故障定位
-
-1. 先按待验证的提交 SHA 找到对应 run，读取 status/conclusion。run 已 completed/success 即完成成功核验；将 SHA、run 链接和结果写回任务证据。
-2. run 失败时读取 job 摘要，定位失败步骤，再读该 job 的日志。日志只有 blocked/摘要时，从已上传的 artifact 读取具体 reason 和原始命令日志。
-3. 插件传输失败先做一次有限重试，仍失败就报告查询暂不可用。GitHub 404 与账号登录状态分别核验；读取当前身份和仓库可见范围后再判断是否需要用户重新授权。
-
-每次只返回判定所需字段和失败片段。保留已取得的 run/报告对象供后续解析；只有重新运行、状态尚未结束或用户要求刷新时才再次查询远程。
+完整manifest、路径映射、只读消费与scope边界见[Core evidence合同](development/evidence.md#boot-09--完整-core-evidence-consumer)。

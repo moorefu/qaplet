@@ -1,0 +1,735 @@
+{
+  "report_kind": "nightly-validation",
+  "schema_version": 1,
+  "status": "pass",
+  "reason": "Actual original ZIP restored and repeatedly verified with disconnected networking; missing cache and same-length one-byte corruption refused; authoritative lock unchanged",
+  "archive": {
+    "sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+    "size_bytes": 419652152
+  },
+  "lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+  "acquisition_report_sha256": "6bf1a137ffb96afca109aa7cd3c62fde3e87256d8083350189fa7242c0ae2a7d",
+  "experiments": [
+    {
+      "report_id": "6c3aa915-3cd6-4cd4-990b-60116398139d",
+      "operation": "fetch",
+      "started_at": "2026-10-31T23:40:04.941131+00:00",
+      "finished_at": "2026-10-31T23:40:12.135700+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "pass",
+      "reason": "Archive, full extracted content and compiler versions measured; product probes remain unexecuted",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "pass",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/github-import.json",
+      "source_report_sha256": "d76acd861b21b3e4603ffe4c2a4ef0727a4a1bedba21852168b3928ea31705b8",
+      "commands": [
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/.candidate-bc2haq03/tree/bin/cosmocc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:40:11.003710+00:00",
+          "started_at": "2026-10-31T23:40:10.998209+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-cosmocc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-cosmocc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/github-import-0-stdout.log",
+          "stdout_sha256": "28c6427dbb32f336721e42ea51b088967139651418342b54d14ed45825a00834",
+          "archived_stderr_log": "evidence/github-import-0-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/.candidate-bc2haq03/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/.candidate-bc2haq03/tree/bin/x86_64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:40:11.007946+00:00",
+          "started_at": "2026-10-31T23:40:11.003855+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-x86_64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-x86_64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/github-import-1-stdout.log",
+          "stdout_sha256": "514dbbb8cea82d341c0a445b3da0fd8204ff0e4e871df3b39f8f3e37459d5b37",
+          "archived_stderr_log": "evidence/github-import-1-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/.candidate-bc2haq03/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/.candidate-bc2haq03/tree/bin/aarch64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:40:11.017000+00:00",
+          "started_at": "2026-10-31T23:40:11.012921+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-aarch64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/6c3aa915-3cd6-4cd4-990b-60116398139d/version-aarch64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/github-import-2-stdout.log",
+          "stdout_sha256": "49b844d6ee9eefa8b3d8ffee3f9c8e8319542ae63099c3d844af1130a7aa1289",
+          "archived_stderr_log": "evidence/github-import-2-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "toolchain_lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "downloaded_archive": {
+        "sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+        "size_bytes": 419652152
+      },
+      "disk_checks": [
+        [
+          {
+            "free_bytes": 45082464256,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04"
+          },
+          {
+            "free_bytes": 1014681808896,
+            "minimum_free_bytes": 4294967296,
+            "path": "/home/moore/.cache/qaplet/toolchains/cosmocc"
+          },
+          {
+            "free_bytes": 18573746176,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/c"
+          }
+        ],
+        [
+          {
+            "free_bytes": 45082464256,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04"
+          },
+          {
+            "free_bytes": 1014262149120,
+            "minimum_free_bytes": 4294967296,
+            "path": "/home/moore/.cache/qaplet/toolchains/cosmocc"
+          },
+          {
+            "free_bytes": 18571890688,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/c"
+          }
+        ]
+      ],
+      "resolved_path": "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree"
+    },
+    {
+      "report_id": "3ee08988-33f1-4137-902b-3fc6bdf1b2e3",
+      "operation": "verify",
+      "started_at": "2026-10-31T23:41:05.165014+00:00",
+      "finished_at": "2026-10-31T23:41:07.472812+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "pass",
+      "reason": "Archive, full extracted content and compiler versions measured; product probes remain unexecuted",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "pass",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/offline-unshare.json",
+      "source_report_sha256": "725224f90173e2db9a96470e17d5b2112b406c3b59a370155c12717e9a3c726c",
+      "commands": [
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/cosmocc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:41:07.458104+00:00",
+          "started_at": "2026-10-31T23:41:07.452591+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-cosmocc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-cosmocc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/offline-unshare-0-stdout.log",
+          "stdout_sha256": "28c6427dbb32f336721e42ea51b088967139651418342b54d14ed45825a00834",
+          "archived_stderr_log": "evidence/offline-unshare-0-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/x86_64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:41:07.462547+00:00",
+          "started_at": "2026-10-31T23:41:07.458238+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-x86_64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-x86_64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/offline-unshare-1-stdout.log",
+          "stdout_sha256": "514dbbb8cea82d341c0a445b3da0fd8204ff0e4e871df3b39f8f3e37459d5b37",
+          "archived_stderr_log": "evidence/offline-unshare-1-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/aarch64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:41:07.469768+00:00",
+          "started_at": "2026-10-31T23:41:07.465694+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-aarch64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3ee08988-33f1-4137-902b-3fc6bdf1b2e3/version-aarch64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/offline-unshare-2-stdout.log",
+          "stdout_sha256": "49b844d6ee9eefa8b3d8ffee3f9c8e8319542ae63099c3d844af1130a7aa1289",
+          "archived_stderr_log": "evidence/offline-unshare-2-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "toolchain_lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "resolved_path": "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree"
+    },
+    {
+      "report_id": "946128f4-a05d-428a-84e1-6a5d9d416246",
+      "operation": "verify",
+      "started_at": "2026-10-31T23:42:19.040974+00:00",
+      "finished_at": "2026-10-31T23:42:19.073592+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "blocked",
+      "reason": "Locked cache is missing; no implicit download is allowed",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "blocked",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-cache-missing.json",
+      "source_report_sha256": "b690870192b1d623e3d3dc9280e4ef71e7c69428246c6e28b3cc30e74210dbc8",
+      "commands": [],
+      "toolchain_lock_sha256": null
+    },
+    {
+      "report_id": "a9c706f0-dfea-4f92-be54-767e67436e6c",
+      "operation": "fetch",
+      "started_at": "2026-10-31T23:42:19.603676+00:00",
+      "finished_at": "2026-10-31T23:42:20.226020+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "fail",
+      "reason": "Downloaded/imported archive differs from locked SHA-256/length; only explicit bump may change inputs",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "fail",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-damaged-archive.json",
+      "source_report_sha256": "253c5e0d579922374955a7c856fa322671cfb02fd929d8a07028c197e0072040",
+      "commands": [],
+      "toolchain_lock_sha256": null,
+      "downloaded_archive": {
+        "sha256": "c30b99969b82775b25f39c6bdceb9a604be3f8336ace1ee9d908b2c157db57c3",
+        "size_bytes": 419652152
+      },
+      "disk_checks": [
+        [
+          {
+            "free_bytes": 45078548480,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04"
+          },
+          {
+            "free_bytes": 1012454498304,
+            "minimum_free_bytes": 4294967296,
+            "path": "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/reject-cache"
+          },
+          {
+            "free_bytes": 17069563904,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/c"
+          }
+        ]
+      ]
+    },
+    {
+      "report_id": "2715a42f-e508-4edc-9b6c-88b6471a38d2",
+      "operation": "fetch",
+      "started_at": "2026-10-31T23:42:20.314420+00:00",
+      "finished_at": "2026-10-31T23:42:26.304356+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "pass",
+      "reason": "Archive, full extracted content and compiler versions measured; product probes remain unexecuted",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "pass",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-locked-restore.json",
+      "source_report_sha256": "b53a577ec67a42c49abb87aeb456d4ad6cde1aa57d3e16b407e3a572050e004f",
+      "commands": [
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/.candidate-8zc52s9i/tree/bin/cosmocc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:25.177710+00:00",
+          "started_at": "2026-10-31T23:42:25.172711+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-cosmocc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-cosmocc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-locked-restore-0-stdout.log",
+          "stdout_sha256": "28c6427dbb32f336721e42ea51b088967139651418342b54d14ed45825a00834",
+          "archived_stderr_log": "evidence/actual-locked-restore-0-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/.candidate-8zc52s9i/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/.candidate-8zc52s9i/tree/bin/x86_64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:25.181951+00:00",
+          "started_at": "2026-10-31T23:42:25.177881+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-x86_64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-x86_64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-locked-restore-1-stdout.log",
+          "stdout_sha256": "514dbbb8cea82d341c0a445b3da0fd8204ff0e4e871df3b39f8f3e37459d5b37",
+          "archived_stderr_log": "evidence/actual-locked-restore-1-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/.candidate-8zc52s9i/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/.candidate-8zc52s9i/tree/bin/aarch64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:25.191716+00:00",
+          "started_at": "2026-10-31T23:42:25.187592+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-aarch64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/2715a42f-e508-4edc-9b6c-88b6471a38d2/version-aarch64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-locked-restore-2-stdout.log",
+          "stdout_sha256": "49b844d6ee9eefa8b3d8ffee3f9c8e8319542ae63099c3d844af1130a7aa1289",
+          "archived_stderr_log": "evidence/actual-locked-restore-2-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "toolchain_lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "downloaded_archive": {
+        "sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+        "size_bytes": 419652152
+      },
+      "disk_checks": [
+        [
+          {
+            "free_bytes": 45078544384,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04"
+          },
+          {
+            "free_bytes": 1012454494208,
+            "minimum_free_bytes": 4294967296,
+            "path": "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache"
+          },
+          {
+            "free_bytes": 17067446272,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/c"
+          }
+        ],
+        [
+          {
+            "free_bytes": 45078544384,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04"
+          },
+          {
+            "free_bytes": 1012034834432,
+            "minimum_free_bytes": 4294967296,
+            "path": "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache"
+          },
+          {
+            "free_bytes": 17066377216,
+            "minimum_free_bytes": 4294967296,
+            "path": "/mnt/c"
+          }
+        ]
+      ],
+      "resolved_path": "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree"
+    },
+    {
+      "report_id": "64b57bb5-57c2-475a-9386-67de97d1e7e0",
+      "operation": "verify",
+      "started_at": "2026-10-31T23:42:26.425765+00:00",
+      "finished_at": "2026-10-31T23:42:27.967585+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "pass",
+      "reason": "Archive, full extracted content and compiler versions measured; product probes remain unexecuted",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "pass",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-restored-verify.json",
+      "source_report_sha256": "f8c97af02edf65fff609f75f6939ed8216b0203bd3d962490fb3ed3f41fa02cf",
+      "commands": [
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/cosmocc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:27.951474+00:00",
+          "started_at": "2026-10-31T23:42:27.944773+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-cosmocc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-cosmocc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-restored-verify-0-stdout.log",
+          "stdout_sha256": "28c6427dbb32f336721e42ea51b088967139651418342b54d14ed45825a00834",
+          "archived_stderr_log": "evidence/actual-restored-verify-0-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/x86_64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:27.956690+00:00",
+          "started_at": "2026-10-31T23:42:27.951609+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-x86_64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-x86_64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-restored-verify-1-stdout.log",
+          "stdout_sha256": "514dbbb8cea82d341c0a445b3da0fd8204ff0e4e871df3b39f8f3e37459d5b37",
+          "archived_stderr_log": "evidence/actual-restored-verify-1-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/aarch64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:27.964617+00:00",
+          "started_at": "2026-10-31T23:42:27.959726+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-aarch64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/64b57bb5-57c2-475a-9386-67de97d1e7e0/version-aarch64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-restored-verify-2-stdout.log",
+          "stdout_sha256": "49b844d6ee9eefa8b3d8ffee3f9c8e8319542ae63099c3d844af1130a7aa1289",
+          "archived_stderr_log": "evidence/actual-restored-verify-2-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "toolchain_lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "resolved_path": "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree"
+    },
+    {
+      "report_id": "3de3d4a2-f217-44ab-ab17-dad52073aa34",
+      "operation": "verify",
+      "started_at": "2026-10-31T23:42:28.101234+00:00",
+      "finished_at": "2026-10-31T23:42:30.417714+00:00",
+      "host": {
+        "cpu": "x86_64",
+        "execution_arch": "x86_64",
+        "execution_mode": "native",
+        "kernel": "6.6.87.2-microsoft-standard-WSL2",
+        "measurement": "Python platform + OS page-size API; C case records its own execution architecture",
+        "os": "Linux",
+        "page_size": 4096
+      },
+      "status": "pass",
+      "reason": "Archive, full extracted content and compiler versions measured; product probes remain unexecuted",
+      "implementation": {
+        "script_sha256": "a4b9457287668b92523da7de4f7c434cb9e794268ec48afb5694bf249ecc34cd"
+      },
+      "expected_status": "pass",
+      "source_report": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-repeated-offline.json",
+      "source_report_sha256": "f116abb5d0d2c03cb95c3b02ed83ff868b6552c6b5d237c2b405a2041f56caa8",
+      "commands": [
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/cosmocc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:30.402819+00:00",
+          "started_at": "2026-10-31T23:42:30.398117+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-cosmocc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-cosmocc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-repeated-offline-0-stdout.log",
+          "stdout_sha256": "28c6427dbb32f336721e42ea51b088967139651418342b54d14ed45825a00834",
+          "archived_stderr_log": "evidence/actual-repeated-offline-0-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/x86_64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:30.406473+00:00",
+          "started_at": "2026-10-31T23:42:30.402923+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-x86_64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-x86_64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-repeated-offline-1-stdout.log",
+          "stdout_sha256": "514dbbb8cea82d341c0a445b3da0fd8204ff0e4e871df3b39f8f3e37459d5b37",
+          "archived_stderr_log": "evidence/actual-repeated-offline-1-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "argv": [
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/ape-x86_64.elf",
+            "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree/bin/aarch64-linux-cosmo-gcc",
+            "--version"
+          ],
+          "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+          "exit_code": 0,
+          "finished_at": "2026-10-31T23:42:30.414185+00:00",
+          "started_at": "2026-10-31T23:42:30.409385+00:00",
+          "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-aarch64-linux-cosmo-gcc.stderr.log",
+          "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/evidence/3de3d4a2-f217-44ab-ab17-dad52073aa34/version-aarch64-linux-cosmo-gcc.stdout.log",
+          "timed_out": false,
+          "timeout_seconds": 30,
+          "archived_stdout_log": "evidence/actual-repeated-offline-2-stdout.log",
+          "stdout_sha256": "49b844d6ee9eefa8b3d8ffee3f9c8e8319542ae63099c3d844af1130a7aa1289",
+          "archived_stderr_log": "evidence/actual-repeated-offline-2-stderr.log",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "toolchain_lock_sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "resolved_path": "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/tree"
+    }
+  ],
+  "namespace_commands": [
+    {
+      "argv": [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--net",
+        "/usr/bin/python3",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/scripts/nightly_toolchain.py",
+        "verify",
+        "--lock",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/toolchains/cosmocc.lock.json",
+        "--report",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-cache-missing.json",
+        "--cache-dir",
+        "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/missing"
+      ],
+      "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+      "started_at": "2026-10-31T23:42:18.966668+00:00",
+      "finished_at": "2026-10-31T23:42:19.085920+00:00",
+      "exit_code": 2,
+      "timeout_seconds": 180,
+      "timed_out": false,
+      "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-cache-missing.stdout.log",
+      "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-cache-missing.stderr.log",
+      "archived_stdout_log": "evidence/network-namespace-0-stdout.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archived_stderr_log": "evidence/network-namespace-0-stderr.log",
+      "stderr_sha256": "c999a0f9f688a3996adf222e266fddc426d0866f52bb72b21aeafb2587f1bee3"
+    },
+    {
+      "argv": [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--net",
+        "/usr/bin/python3",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/scripts/nightly_toolchain.py",
+        "fetch",
+        "--lock",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/toolchains/cosmocc.lock.json",
+        "--report",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-damaged-archive.json",
+        "--cache-dir",
+        "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/reject-cache",
+        "--archive",
+        "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/damaged-original.zip",
+        "--backing-dir",
+        "/mnt/c"
+      ],
+      "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+      "started_at": "2026-10-31T23:42:19.521193+00:00",
+      "finished_at": "2026-10-31T23:42:20.238968+00:00",
+      "exit_code": 1,
+      "timeout_seconds": 180,
+      "timed_out": false,
+      "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-damaged-archive.stdout.log",
+      "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-damaged-archive.stderr.log",
+      "archived_stdout_log": "evidence/network-namespace-1-stdout.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archived_stderr_log": "evidence/network-namespace-1-stderr.log",
+      "stderr_sha256": "a5efbc2637f3f63365494b6c4fcbd02d8cefa8a9bbb954dbfb4329e146a1fde2"
+    },
+    {
+      "argv": [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--net",
+        "/usr/bin/python3",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/scripts/nightly_toolchain.py",
+        "fetch",
+        "--lock",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/toolchains/cosmocc.lock.json",
+        "--report",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-locked-restore.json",
+        "--cache-dir",
+        "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache",
+        "--archive",
+        "/home/moore/.cache/qaplet/toolchains/cosmocc/f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf/archive.zip",
+        "--backing-dir",
+        "/mnt/c"
+      ],
+      "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+      "started_at": "2026-10-31T23:42:20.242897+00:00",
+      "finished_at": "2026-10-31T23:42:26.343868+00:00",
+      "exit_code": 0,
+      "timeout_seconds": 180,
+      "timed_out": false,
+      "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-locked-restore.stdout.log",
+      "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-locked-restore.stderr.log",
+      "archived_stdout_log": "evidence/network-namespace-2-stdout.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archived_stderr_log": "evidence/network-namespace-2-stderr.log",
+      "stderr_sha256": "7461117b02ecffdac92f2b29a7c7e3c4c202519ad8ff0947b563be7031c2bcb5"
+    },
+    {
+      "argv": [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--net",
+        "/usr/bin/python3",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/scripts/nightly_toolchain.py",
+        "verify",
+        "--lock",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/toolchains/cosmocc.lock.json",
+        "--report",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-restored-verify.json",
+        "--cache-dir",
+        "/home/moore/.cache/qaplet/toolchains/experiments/nightly-integrity-6154qalv/restored-cache"
+      ],
+      "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+      "started_at": "2026-10-31T23:42:26.356746+00:00",
+      "finished_at": "2026-10-31T23:42:28.009945+00:00",
+      "exit_code": 0,
+      "timeout_seconds": 180,
+      "timed_out": false,
+      "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-restored-verify.stdout.log",
+      "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-restored-verify.stderr.log",
+      "archived_stdout_log": "evidence/network-namespace-3-stdout.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archived_stderr_log": "evidence/network-namespace-3-stderr.log",
+      "stderr_sha256": "7461117b02ecffdac92f2b29a7c7e3c4c202519ad8ff0947b563be7031c2bcb5"
+    },
+    {
+      "argv": [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--net",
+        "/usr/bin/python3",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/scripts/nightly_toolchain.py",
+        "verify",
+        "--lock",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/toolchains/cosmocc.lock.json",
+        "--report",
+        "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/actual-repeated-offline.json"
+      ],
+      "cwd": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04",
+      "started_at": "2026-10-31T23:42:28.025330+00:00",
+      "finished_at": "2026-10-31T23:42:30.456752+00:00",
+      "exit_code": 0,
+      "timeout_seconds": 180,
+      "timed_out": false,
+      "stdout_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-repeated-offline.stdout.log",
+      "stderr_log": "/mnt/d/Workspace/dairn/qaplet/out/implement-spec/04/out/nightly/real-validation-logs/actual-repeated-offline.stderr.log",
+      "archived_stdout_log": "evidence/network-namespace-4-stdout.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archived_stderr_log": "evidence/network-namespace-4-stderr.log",
+      "stderr_sha256": "7461117b02ecffdac92f2b29a7c7e3c4c202519ad8ff0947b563be7031c2bcb5"
+    }
+  ]
+}

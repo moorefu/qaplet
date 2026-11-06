@@ -20,6 +20,22 @@ _Avoid_: qaplet service 子命令、Core Service 模块
 供应用宿主嵌入 Qaplet 并使用其通用能力的开发接口。
 _Avoid_: Service SDK、SCM SDK
 
+**Qaplet Runtime**:
+可独立创建、运行与关闭的 Qaplet 嵌入实例，拥有自身的 JavaScript 执行状态。
+_Avoid_: 进程、沙箱（指 Runtime 时）
+
+**Qaplet Context**:
+Qaplet Runtime 内承载应用全局环境与模块状态的 JavaScript 上下文。
+_Avoid_: Runtime、权限隔离域（指 Context 时）
+
+**Qaplet Host Module**:
+由嵌入宿主为某个 Qaplet Runtime 声明的模块，提供宿主常量与函数。
+_Avoid_: 动态原生插件、Node addon（指 Host Module 时）
+
+**Qaplet Event**:
+宿主向 Qaplet Runtime 提交、由其 JavaScript 接收函数处理的应用事件；被接收与被交付是两个不同事实。
+_Avoid_: 已完成回调（指仅被接收的事件时）
+
 **应用私有 Native Host**:
 属于某个 Qaplet Application 的原生宿主，承载该应用必要的系统入口与原生约束。
 _Avoid_: 默认 Runtime 服务层、第二套服务框架

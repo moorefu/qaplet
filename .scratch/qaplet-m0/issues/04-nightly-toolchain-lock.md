@@ -4,7 +4,7 @@
 
 **Blocked by:** [01 · 工程骨架与环境诊断](01-foundation.md)、[02 · WSL2 Linux x64 构建环境就绪](02-wsl2-build-environment.md)。
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Execution prerequisites:** 已就绪 WSL2 Linux x64；首次显式访问官方 Nightly 通道所需网络与缓存空间。
 
@@ -26,11 +26,11 @@
 
 ## Acceptance criteria
 
-- [ ] 原归档 SHA-256、长度、获取时间、URL、版本输出和编译器二进制摘要均来自实际测量。
-- [ ] 若无法证明 libc 对应源码修订，明确记为未证明，不用当前 Cosmopolitan HEAD 冒充。
-- [ ] 已锁输入在命中缓存时可以断网校验和使用；摘要不符或缓存缺失必须失败。
-- [ ] 普通构建不隐式下载或升级；首次获取和 bump 都是独立显式动作。
-- [ ] 工具链版本/来源声明可追溯；占位摘要或未知编译器身份不能被标为已验证。
+- [x] 原归档 SHA-256、长度、获取时间、URL、版本输出和编译器二进制摘要均来自实际测量。
+- [x] 若无法证明 libc 对应源码修订，明确记为未证明，不用当前 Cosmopolitan HEAD 冒充。
+- [x] 已锁输入在命中缓存时可以断网校验和使用；摘要不符或缓存缺失必须失败。
+- [x] 普通构建不隐式下载或升级；首次获取和 bump 都是独立显式动作。
+- [x] 工具链版本/来源声明可追溯；占位摘要或未知编译器身份不能被标为已验证。
 
 ## Tests
 
@@ -57,4 +57,12 @@
 
 ## Comments
 
-尚未实施。
+2026-11-01: ticket 04 implementer claimed this work on `codex/m0-04-nightly`, based on integration `efeed76`. CLI, real external commands, and structured evidence are the confirmed seams. Implementation uses vertical red-green slices; source HEAD and bundled libc provenance remain separate facts.
+
+2026-11-01 progress: explicit acquisition, exact-lock cache restore, deliberate bump, immutable offline verification/path, acquisition receipts and 11 WSL CLI contracts implemented. Required WSL aggregate check passed (36 cases, one Windows-only skip). Local direct/proxy/Python TLS and the first hosted acquisition attempt failed to reach the official rolling archive; no production lock or compiler identity has been fabricated. The scoped acquisition workflow is an input transport fallback using the same CLI. [Validation and next acceptance step](../nightly-toolchain-validation.md).
+
+## Answer
+
+2026-11-01: implemented and validated against the original artifact from official Cosmopolitan Nightly run `41169443573`, artifact `13031425078`. Its original ZIP SHA-256 is `f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf`, length 419,652,152 bytes. This is a distinct official GitHub Nightly source; canonical cosmo.zip packaging identity is not assumed. All three measured compilers report GCC 14.1.0. The complete content/link/compiler lock and byte-preserved acquisition receipt are tracked under `toolchains/`; generated raw evidence under `toolchains/evidence/` remains local and Git-ignored per the user's later instruction.
+
+WSL true disconnected-network verification, exact empty-cache restoration, repeat verification and same-length actual archive corruption/missing-cache refusal passed without changing the lock or primary cache. Safe internal symlinks are recorded; escapes, cycles, link-parent writes, damaged inputs, writable caches and conflicting origin metadata are refused. Fourteen WSL Nightly contracts pass; final shared checks pass on Windows and WSL (50 total contracts plus each system-C bootstrap). The workflow run commit is recorded separately; bundled libc source mapping remains unproven/null. Product construction and full M0 acceptance are not claimed. See [complete validation and limitations](../nightly-toolchain-validation.md).

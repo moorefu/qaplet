@@ -1,0 +1,515 @@
+{
+  "schema_version": 1,
+  "contexts": [
+    {
+      "path": "AGENTS.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/adr/0002-pinned-build-inputs.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/adr/0004-v15-platform-baseline.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development/input-lock.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development/environment.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development/evidence.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development/ci.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/agents/review.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/agents/domain.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".gitattributes",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/01-unified-input-lock.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/spec.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/plans/qaplet-v1-implementation-plan-v1.5.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/review-context.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "Makefile",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/ape_helpers.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/build_ape.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/core_gate.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/dev.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/evidence.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/fetch_locked_toolchain.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/foundation.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/input_lock.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/native_io.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/native_toolchain.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/nightly_toolchain.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/offline_integrity.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/pages64k.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/quickjs_source.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/startup.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/startup_loaders.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/svc_job.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/svc_scm.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/input_fixtures.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_arm64_guest.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_input_lock.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_native_io.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_nightly_toolchain.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_quickjs_source.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_startup.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_svc_job.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_svc_scm.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "third_party/ape-helpers/source.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "third_party/quickjs/source.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "toolchains/cosmocc.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "toolchains/qaplet.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "toolchains/startup-loaders.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/unified-input-lock-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    },
+    {
+      "path": "docs/agents/issue-tracker.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/agents/triage-labels.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/development/probes.md",
+      "audience": "standards",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "docs/adr/0003-m0-ci-qemu-validation.md",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/arm64_guest.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/workflow_support.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/native/quickjs_eval.c",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "guests/arm64.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "guests/arm64-derived.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/quickjs-upgrade-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/02-quickjs-upgrade.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/03-m0-a-esm-promise.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/04-cross-host-revalidation.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/05-tiered-ci.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/issues/06-original-archive-retention.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".github/workflows/m0.yml",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/check_evidence.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/ci_full.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/ci_tiers.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_build_ape.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_ci_tiers.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_core_gate.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_core_gate_pages.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_cross_host_identity.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_guest_fetch.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_m0a_host.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_startup_guest.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "tests/contracts/test_workflow_tools.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "third_party/quickjs/history/e621135dc542e000e31038bedc52944aa0adaf1a.source.lock.json",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/cross-host-revalidation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/esm-promise-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/tiered-ci-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/README.md",
+      "audience": "spec",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": "scripts/ci_identity.py",
+      "audience": "common",
+      "kind": "reference",
+      "source": "git"
+    },
+    {
+      "path": ".scratch/qaplet-v15-alignment/review-fixes-validation.md",
+      "audience": "aggregate",
+      "kind": "report",
+      "source": "git"
+    }
+  ]
+}

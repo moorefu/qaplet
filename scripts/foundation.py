@@ -38,14 +38,14 @@ def decode(data):
     return data.decode("utf-16" if b"\x00" in data[:100] else "utf-8", errors="replace")
 
 
-def command(argv, directory, label, timeout=30):
+def command(argv, directory, label, timeout=30, *, cwd=ROOT, env=None):
     started = now()
     stdout_log = directory / (label + ".stdout.log")
     stderr_log = directory / (label + ".stderr.log")
     stdout, stderr, exit_code, timed_out = b"", b"", None, False
     try:
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-        with subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options) as proc:
+        with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options) as proc:
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -66,7 +66,7 @@ def command(argv, directory, label, timeout=30):
     stdout_log.write_bytes(stdout)
     stderr_log.write_bytes(stderr)
     return {
-        "argv": [str(arg) for arg in argv], "cwd": str(ROOT),
+        "argv": [str(arg) for arg in argv], "cwd": str(cwd),
         "started_at": started, "finished_at": now(),
         "exit_code": exit_code, "timeout_seconds": timeout, "timed_out": timed_out,
         "stdout_log": str(stdout_log), "stderr_log": str(stderr_log),
@@ -223,8 +223,8 @@ def case_record(case_id, status, reason, **fields):
 def pending_m0_cases():
     # BOOT-01 deliberately cannot verify product inputs or close the BOOT-09 gate.
     pending = {
-        "m0.inputs.quickjs": "QuickJS source lock/provenance verifier not implemented (task 03)",
-        "m0.inputs.cosmocc": "Pinned Nightly archive/cache verifier not implemented (task 04)",
+        "m0.inputs.quickjs": "Pinned QuickJS source verifier available (task 03); this report does not import its separate cache evidence",
+        "m0.inputs.cosmocc": "Nightly acquisition/cache verifier available; a measured official lock and verified cache are required (task 04)",
         "m0.artifacts": "Hello/eval fat APE build and identities not implemented (task 05)",
         "m0.host.linux-x64": "Same-artifact Linux x64 product probe not executed (task 06)",
         "m0.host.windows-x64": "Same-artifact Windows x64 product probe not executed (task 06)",
@@ -241,6 +241,12 @@ def pending_m0_cases():
 
 
 def smoke(args, report, directory):
+    try:
+        ubuntu = sys.platform == "linux" and platform.freedesktop_os_release().get("ID") == "ubuntu"
+    except (OSError, AttributeError):
+        ubuntu = False
+    if not ubuntu:
+        return case_record("bootstrap.c-smoke", "blocked", "Builds require Ubuntu; this host validates supplied artifacts and SDKs")
     compiler = shutil.which(args.cc)
     if not compiler:
         return case_record("bootstrap.c-smoke", "blocked", "C compiler not found: " + args.cc)
@@ -296,8 +302,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--input-report", type=Path, help="report for structural validation, without treating it as product execution")
-    parser.add_argument("--build-dir", type=Path, default=Path.home() / ".cache/qaplet/environment",
-                        help="environment evidence/build location; use a Linux filesystem in WSL")
+    parser.add_argument("--build-dir", type=Path, default=ROOT / ".cache/environment",
+                        help="environment build/cache location within this repository")
     parser.add_argument("--min-free-bytes", type=int, default=2 * 1024**3,
                         help="minimum free bytes on source and build filesystems (default 2 GiB)")
     parser.add_argument("--download-url", help="explicit HTTPS test download; omitted means environment acceptance is blocked")

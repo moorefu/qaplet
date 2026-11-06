@@ -1,0 +1,1294 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Build the Embed SDK on Ubuntu; run supplied Host bytes without rebuilding."""
+import argparse
+from datetime import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import sys
+import struct
+import m2_process_pe
+import sdk_m2_example
+import tempfile
+import uuid
+import zipfile
+
+import ape_helpers
+from build_ape import (BuildError, SOURCES, audit, headers, identity,
+                       native_toolchain, prepare_portable_helpers, publish_ape, run, verify_inputs)
+from sdk_link import link_portable
+from evidence import read_json
+from foundation import ROOT, host_facts, now, sha256
+from input_lock import component, consume_identity, consumption_purpose
+from native_toolchain import recheck
+from nightly_toolchain import write_json
+from startup import check_ci_commit, ci_facts, measured_host, select_loader
+from workflow_support import guard_evidence_outputs, workspace, write_evidence_report
+
+# Source, public distribution name, object, recorded compile step. host-values.c
+# is included by host-contract.c, so it is shipped/hashed but not compiled twice.
+HOST_UNITS = (
+    ("tests/native/sdk_cli_signal_arm.c", "cli-signal-arm.c", None, None),
+    ("tests/native/sdk_cli_signal.c", "cli-signal.c", None, None),
+    ("tests/native/sdk_cli_signal_faults.c", "cli-signal-faults.c", None, None),
+    ("tests/native/sdk_cli_signal_late.c", "cli-signal-late.c", None, None),
+    ("tests/native/sdk_cli_signal_observer.c", "cli-signal-observer.c", None, None),
+    ("tests/native/sdk_cli_output_observer.c", "cli-output-observer.c", None, None),
+    ("tests/native/sdk_cli.c", "host-cli.c", "cli-host.o", "cli-host-compile"),
+    ("tests/native/sdk_mixed.c", "host-mixed.c", "mixed-host.o", "mixed-host-compile"),
+    ("tests/native/sdk_mixed_faults.c", "mixed-faults.c", None, None),
+
+    ("tests/native/sdk_aggregate.c", "host-aggregate.c", "aggregate-host.o", "aggregate-host-compile"),
+    ("tests/native/sdk_aggregate_faults.c", "aggregate-faults.c", None, None),
+    ("tests/native/sdk_tty.c", "host-tty.c", "tty-host.o", "tty-host-compile"),
+    ("tests/native/sdk_tty_faults.c", "tty-faults.c", None, None),
+    ("tests/native/sdk_stdio_faults.c", "stdio-faults.c", None, None),
+    ("tests/native/sdk_stdio.c", "host-stdio.c", "stdio-host.o", "host-stdio-compile"),
+    ("tests/native/sdk_io_faults.c", "io-faults.c", None, None),
+    ("tests/native/sdk_process_faults.c", "process-faults.c", None, None),
+    ("tests/native/sdk_process.c", "host-process.c", "process-host.o", "host-process-compile"),
+    ("tests/native/sdk_work.c", "host-work.c", "work-host.o", "host-work-compile"),
+    ("tests/native/sdk_work_faults.c", "work-faults.c", None, None),
+    ("tests/native/sdk_timers.c", "host-timers.c", "timers-host.o", "host-timers-compile"),
+    ("tests/native/sdk_notify.c", "host-notify.c", "notify.o", "host-notify-compile"),
+    ("tests/native/sdk_wait.c", "host-wait.c", "wait.o", "host-wait-compile"),
+    ("tests/native/sdk_host.c", "host-contract.c", "embed.o", "host-compile"),
+    ("tests/native/sdk_promises.c", "host-promises.c", "promises.o", "host-promises-compile"),
+    ("tests/native/sdk_modules.c", "host-modules.c", "modules-host.o", "host-modules-compile"),
+    ("tests/native/sdk_budgets.c", "host-budgets.c", "budgets.o", "host-budgets-compile"),
+    ("tests/native/sdk_host_modules.c", "host-host-modules.c", "host-modules.o", "host-host-modules-compile"),
+    ("tests/native/sdk_events.c", "host-events.c", "events.o", "host-events-compile"),
+    ("tests/native/sdk_module_policy.c", "host-module-policy.c", "module-policy.o", "host-module-policy-compile"),
+    ("tests/native/sdk_runtime.c", "host-runtime.c", "runtime-host.o", "host-runtime-compile"),
+    ("tests/native/sdk_resources.c", "host-resources.c", "resources.o", "host-resources-compile"),
+    ("tests/native/sdk_stop.c", "host-stop.c", "stop.o", "host-stop-compile"),
+    ("tests/native/sdk_close.c", "host-close.c", "close.o", "host-close-compile"),
+    ("tests/native/sdk_m1_compat.c", "host-m1-compat.c", "m1-compat.o", "host-m1-compat-compile"),
+    ("tests/native/sdk_m2_faults.c", "m2-faults.c", None, None),
+    ("tests/fixtures/sdk/m1-qaplet.h", "m1-qaplet.h", None, None),
+    ("tests/native/sdk_m2_runtime.c", "host-m2-runtime.c", "m2-runtime.o", "host-m2-runtime-compile"),
+    ("tests/native/sdk_values.c", "host-values.c", None, None),
+)
+
+RECIPE = ("include/qaplet.h", "src/runtime_internal.h", "src/io_internal.h", "src/io.c", "src/stdio.c", "src/js_io.c", "src/js_io.h", "src/js_async.c", "src/runtime.c", "src/loop.c", "src/process.c", "src/work.c", "src/execution.c", "src/values.c", "src/modules.c", "src/host_module.c", "src/events.c", "src/timers.c",
+          "examples/embed.c", *(source for source, _, _, _ in HOST_UNITS),
+          "scripts/sdk.py", "scripts/sdk_link.py", "scripts/build_ape.py", "scripts/ape_helpers.py",
+          "scripts/native_toolchain.py", "scripts/foundation.py", "scripts/startup.py",
+          "scripts/evidence.py", "scripts/input_lock.py", "scripts/nightly_toolchain.py",
+          "scripts/quickjs_source.py", "scripts/workflow_support.py",
+          "tests/fixtures/modules/entry.mjs", "tests/fixtures/modules/dependency.js")
+RECIPE += tuple(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "tests/fixtures/modules").rglob("*"))
+                if path.is_file() and path.relative_to(ROOT).as_posix() not in RECIPE)
+RECIPE += ("src/cli.c", "tests/native/sdk_process_winchild.c", "scripts/m2_process_pe.py", "scripts/sdk_matrix.py", "scripts/sdk_guest.py")
+RECIPE += ("examples/application.c", "examples/application-m2.c", "examples/SDK-README.md", "scripts/sdk_m2_example.py")
+RECIPE += ("tests/fixtures/sdk/m2-example-input.bin",)
+RECIPE += ("scripts/sdk_tty.py", "scripts/m2_tty_terminal.py")
+RECIPE += ("scripts/sdk_mixed.py",)
+RECIPE += ("scripts/sdk_cli.py",)
+RECIPE += ("scripts/m2_cli_output.py",)
+RECIPE += ("scripts/sdk_signal.py", "scripts/m2_cli_signal.py", "scripts/m2_cli_signal_windows.py",
+           "scripts/m2_cli_signal_budget.py", "scripts/m2_cli_signal_mixed.py", "scripts/m2_cli_signal_strong.py")
+
+# Same public-process tuple as CLI_CASES; package consumers use this catalog too.
+EXAMPLE_CASES = (
+    ("abi", ["--abi"], 0, "package ABI: prefixes/short structures/zero tails/flags/reserved; independent worker diagnostics: pass\n", ""),
+    ("application", ["{modules}/application.mjs"], 0, "application: result=42; worker copied; stopped; closed; joined; resource released; destroyed\n", ""),
+    ("rejection", ["--reject", "{modules}/application.mjs"], 1, "", "application: code=7; closed; joined; resource released; destroyed\n"),
+    ("queue-full", ["--queue-full", "{modules}/application.mjs"], 1, "", "application: code=21; closed; joined; resource released; destroyed\n"),
+    ("deadline", ["--deadline", "{modules}/application-loop.mjs"], 1, "", "application: code=17; closed; joined; resource released; destroyed\n"),
+    ("missing", ["{modules}/application-absent.mjs"], 1, "", "application: code=14; closed; joined; resource released; destroyed\n"),
+    ("arguments", [], 2, "", "Usage: qaplet-example"),
+)
+RUNTIME_METADATA = {"abi_version": 1, "capabilities": 67076095, "defaults": {
+    "engine_heap_bytes": 67108864, "engine_stack_bytes": 1048576, "native_storage_bytes": 16777216,
+    "source_bytes": 4194304, "module_count": 256, "source_cache_bytes": 33554432,
+    "execution_timeout_ms": 30000, "execution_dispatches": 100000,
+    "event_queue_slots": 256, "event_payload_bytes": 1024, "bridge_value_bytes": 1048576,
+    "host_arguments": 32, "pump_jobs": 256, "pump_events": 32}}
+EXAMPLE_CASES += (("metadata", ["--metadata"], 0, json.dumps(RUNTIME_METADATA, separators=(",", ":")) + "\n", ""),)
+M2_RUNTIME_METADATA = {"abi_version": RUNTIME_METADATA["abi_version"],
+    "capabilities": RUNTIME_METADATA["capabilities"], "instance_capabilities": RUNTIME_METADATA["capabilities"],
+    "defaults": RUNTIME_METADATA["defaults"], "m2_defaults": sdk_m2_example.M2_DEFAULTS}
+M2_EXAMPLE_CASES = sdk_m2_example.CASES
+HOST_CASES = (
+    ("m2-process-cli-child", ["--m2-process-cli-child", "{cli}", "{launcher}"], "M2 process CLI child: factory environment snapshot; explicit path/argv; stdio whitelist; nested M2 creation, copied READY/EOF; actual exit/reap and quiescent cleanup: pass\n"),
+    ("m2-cli-results", ["--m2-cli-results"], "M2 CLI contrast: latest independent SDK result; rejected/idle preserved; background jobs settle; ordinary reuse; terminal first cause and safe cleanup: pass\n"),
+    ("m2-mixed-stop", ["--m2-mixed-stop", "{self}", "{launcher}", "{child}"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-races", ["--m2-mixed-races", "{self}", "{launcher}", "{child}"], "M2 mixed stop: DONE/IDLE distinct; full queue stop only publishes; owner cancels work/timer/IO and force-reaps child before close; no user jobs; CLOSED retains work through retry/BUSY; other resources retire; actual quiescence and joined producers: pass\n"),
+    ("m2-mixed-nonreturning", ["--m2-mixed-nonreturning", "{self}", "{launcher}", "{child}"], "M2 mixed nonreturning: work remains physically held at process exit; CLOSED engine zero; repeated zero/finite quiesce pending and destroy BUSY; child reaped, stdio/TTY restored and other IO retired; no native cleanup success claimed: pass\n"),
+
+    ("m2-aggregate-diagnostics", ["--m2-aggregate-diagnostics"], "M2 aggregate diagnostics: public short-prefix POD/canary and HostNotify refusals preserve caller diagnostics; no resource acceptance: pass\n"),
+    ("m2-aggregate-pod", ["--m2-aggregate-pod"], "M2 aggregate POD: versioned short/zero-tail/nonzero-tail canaries; foreign thread 1000 OPEN and 1000 CLOSED samples of nine pure POD queries; JS state preserved; old instance unsupported: pass\n"),
+    ("m2-aggregate-metrics", ["--m2-aggregate-metrics"], "M2 aggregate metrics: mixed Work/file IO share small count/data; cancelled physical and C results retain capacity; real helper/worker requested stacks and persistent peaks; cleanup and Host handle: pass\n"),
+    ("m2-aggregate-counts", ["--m2-aggregate-counts", "{self}", "{launcher}"], "M2 aggregate counts: timer/token/handler/process small limits coexist with Work and stdio; helper shared across real process and file IO; metadata/environment, handles/registrations and retained control charged; atomic refusals recover after actual reap/join: pass\n"),
+    ("m2-aggregate-native", ["--m2-aggregate-native"], "M2 aggregate native budget: mixed retained Work plus file IO hit 8MiB data subquota inside 16MiB; separate 10MiB total includes real 4MiB event store and metadata/environment before data quota; ordinary atomic refusal and cleanup: pass\n"),
+    ("m2-tty-validation", ["--m2-tty-validation"], "M2 TTY validation: strict version/size/unknown flags/reserved/tail; wrong owner and invalid identity; no accepted resource; old factory remains unsupported: pass\n"),
+    ("m2-process-js-cycles", ["--m2-process-js-cycles", "{self}", "{launcher}"], "M2 process JS lifecycle: 1000 actual create/spawn/reap/close/quiesce/destroy; 100 mixed binary IO/cancel/strict-error cycles; native resources returned each cycle: pass\n"),
+    ("m2-process-js-liveness", ["--m2-process-js-liveness", "{self}", "{launcher}"], "M2 process JS liveness: unref natural idle; ref restores keepalive; discarded Process survives bounded cyclic GC pressure; explicit owner drive observes natural exit and closure: pass\n"),
+    ("m2-process-js-terminal", ["--m2-process-js-terminal", "{self}", "{launcher}"], "M2 process JS terminal: owner stop/dispatch/caught allocation failure cancels child and IO before close; ordinary callback error recovers; no then/catch/finally after termination; CLOSED engine released; actual quiesce/destroy: pass\n"),
+    ("m2-process-js-limits", ["--m2-process-js-limits", "{self}", "{launcher}"], "M2 process JS limits: Work/IO share two operations/eight reserved bytes; atomic count/data refusal; BUSY priority; cancelled reservations retained through owner handoff then released: pass\n"),
+    ("m2-process-js-io-cancel", ["--m2-process-js-io-cancel", "{self}", "{launcher}"], "M2 process JS IO cancel: strict uncoerced byte endpoints; deterministic cancel-before-issue; copied read error bytes; no lost pipe data; actual child reap and closure: pass\n"),
+    ("m2-process-js-partial", ["--m2-process-js-partial", "{self}", "{launcher}"], "M2 process JS partial write: controlled 4096-byte consumer; stable native error and actual accepted byte count; completion-first cancel; ordinary error cleanup: pass\n"),
+    ("m2-process-js-backpressure", ["--m2-process-js-backpressure", "{self}", "{launcher}"], "M2 process JS backpressure: controlled producer; no implicit collection; independent stderr; ordered 1MiB binary pull; bounded chunks and EOF: pass\n"),
+    ("m2-process-js-lifetime", ["--m2-process-js-lifetime", "{self}", "{launcher}"], "M2 process JS lifetime: EOF before exit; cancel before actual reap; native facts; unread binary output after exit; ref through managed closure; repeated close/cancel: pass\n"),
+    ("m2-process-js-inputs", ["--m2-process-js-inputs", "{self}", "{launcher}"], "M2 process JS inputs: strict path/options/UTF-8; copied Unicode argv and cwd; complete environment mapping and factory snapshot; ordinary rejection cleanup: pass\n"),
+    ("m2-process-js-issue", ["--m2-process-js-issue", "{self}", "{launcher}"], "M2 process JS issue: IO accepted from a JS job issues before native wait without an auxiliary timer; actual write and reap: pass\n"),
+    ("m2-process-js-finish-after", ["--m2-process-js-finish-after", "{self}", "{launcher}"], "M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass\n"),
+    ("m2-process-js-bytes", ["--m2-process-js-bytes", "{self}", "{launcher}"], "M2 process JS bytes: default three pipes; copied binary write; concurrent stdout/stderr pull; BUSY; EOF; separate exit and close; automatic result retirement: pass\n"),
+    ("m2-process-js-basic", ["--m2-process-js-basic", "{self}", "{launcher}"], "M2 process JS basic: explicit spawn; owner exit/reap Promise; managed closure; result and cleanup: pass\n"),
+    ("m2-stdio-c-close-js", ["--m2-stdio-c-close-js"], "M2 stdio C-close JS observation: no IO task; bounded completion/ref through full jobs; unref explicit pump; Runtime close suppresses pending user jobs; original handles and cleanup preserved: pass\n"),
+    ("m2-stdio-js-errors", ["--m2-stdio-js-errors"], "M2 stdio ordinary JS error: callback code7 preserves OPEN and attached streams; later JS consumes EOF and returns42; terminal cleanup remains explicit: pass\n"),
+    ("m2-stdio-classify", ["--m2-stdio-classify"], "M2 stdio inspect: default untouched; real stdin pipe/file/invalid classification; separate attach support: pass\n"),
+    ("m2-stdio-file", ["--m2-stdio-file"], "M2 stdio file: explicit borrowed stdin; binary short read/EOF/BUSY; idle versus operation ref; Host original survives; quiescent cleanup: pass\n"),
+    ("m2-stdio-pipe", ["--m2-stdio-pipe"], "M2 stdio pipe: real stdin redirection; unsafe blocking borrow refused without side effects; safe binary/NUL/short read/EOF/cancel/BUSY; shared flags and Host handle preserved: pass\n"),
+    ("m2-stdio-output-limits", ["--m2-stdio-output-limits"], "M2 stdio output limits: independent stdout/stderr copied binary writes; bounded 3-byte advances; shared count/data include retained results; refusal atomic; physical cleanup returns capacity: pass\n"),
+    ("m2-stdio-backpressure", ["--m2-stdio-backpressure"], "M2 stdio backpressure: real stdout pipe slow consumer; finite 64KiB reservation; pending/BUSY without hidden collection; exact ordered binary drain and written count; original handle/flags survive: pass\n"),
+    ("m2-stdio-js-defaults", ["--m2-stdio-js-defaults"], "M2 stdio JS default: declared module; three null exports until explicit Host attachment; no implicit native takeover: pass\n"),
+    ("m2-stdio-js-bytes", ["--m2-stdio-js-bytes"], "M2 stdio JS bytes: explicit Host streams; strict input/BUSY/cancel; Promise byte/NUL/EOF and independent copied writes; closed promises; standalone IO keeps awaited entry alive without timers: pass\n"),
+    ("m2-process-pipe-lifetime", ["--m2-process-pipe-lifetime", "{self}", "{launcher}"], "M2 process pipe lifetime: EOF before child exit; stdin finish gates reap; process cancel preserves buffered binary output; native exit and managed EOF remain separate through ref handoff: pass\n"),
+    ("m2-process-pipe-backpressure", ["--m2-process-pipe-backpressure", "{self}", "{launcher}"], "M2 process pipe backpressure: no output demand allocates no collection buffer; independent stderr; ordered 1MiB binary pull; per-pump byte quota; bounded retained data; EOF and cleanup: pass\n"),
+    ("m2-process-pipe-shared-limits", ["--m2-process-pipe-shared-limits", "{self}", "{launcher}"], "M2 process pipe shared limits: Work and I/O share count and data; retained results and owner handoff keep reservations; ordinary saturation refuses atomically and recovers: pass\n"),
+    ("m2-process-pipe-control", ["--m2-process-pipe-control", "{self}", "{launcher}"], "M2 process pipe control: foreign cancel/POD; owner mutations; HostNotify BUSY; release invalidates while cancel/close retires physically; reused process endpoints reject stale tokens: pass\n"),
+    ("m2-process-pipe-write-failure", ["--m2-process-pipe-write-failure", "{self}", "{launcher}"], "M2 process pipe write failure: child closes stdin before ready; zero accepted bytes; Host SIGPIPE handler/mask/pending preserved; ordinary native error keeps Runtime OPEN; cleanup: pass\n"),
+    ("m2-process-pipe-bytes", ["--m2-process-pipe-bytes", "{self}", "{launcher}"], "M2 process pipe bytes: copied binary stdin; independent short stdout/stderr; BUSY; temporary unavailability; finish; exit before EOF retains ref; drain and release: pass\n"),
+    ("m2-process-pipe-defaults", ["--m2-process-pipe-defaults", "{self}", "{launcher}"], "M2 process pipe defaults: three owned pipes; direct child; close/quiesce cleanup: pass\n"),
+    ("m2-process-terminal", ["--m2-process-terminal", "{self}", "{launcher}"], "M2 process terminal cleanup: PENDING/ordinary-error close; owner STOPPED/FAILED force/reap before close; first cause retained; queued jobs/finally never run; native cleanup drained: pass\n"),
+    ("m2-process-cancel", ["--m2-process-cancel", "{self}", "{launcher}"], "M2 process cancel: any-thread acceptance; idempotent CANCELLED; actual force exit/reap; completion-first ALREADY_COMPLETED; stale/Runtime isolation; retained JS result: pass\n"),
+    ("m2-work-js-errors", ["--m2-work-js-errors"], "M2 work JS errors: strict uncoerced names/Uint8Array; atomic missing/oversized refusal; bounded output rejection; real errno domain/value; caught operation errors preserve OPEN and recover capacity: pass\n"),
+    ("m2-work-js-stop", ["--m2-work-js-stop"], "M2 work JS stop: owner confirmation cancels queued and running tasks; no then/catch/finally after stop; CLOSED releases engine but retains physical bytes/code/userdata; finite quiesce retries and actual native exit: pass\n"),
+    ("m2-work-js-ledgers", ["--m2-work-js-ledgers"], "M2 work JS ledgers: active entry and independent completion share cumulative jobs/dispatch budget across pumps; infinite jobs fail at exact limit; terminal task resources retire: pass\n"),
+    ("m2-work-js-cancel", ["--m2-work-js-cancel"], "M2 work JS cancel: queued never starts; both file side-effect orders and completion-first settle once; stable cancel/completed; JS/C share capacity; delivered cancellation retains physical bytes through CLOSED and finite quiesce: pass\n"),
+    ("m2-work-js-checkpoints", ["--m2-work-js-checkpoints"], "M2 work JS checkpoints: default ref through complete jobs; cross-pump quota blocks other categories; late catch; fair completion/timer/immediate/event; ordinary callback error recovers: pass\n"),
+    ("m2-work-js-liveness", ["--m2-work-js-liveness"], "M2 work JS liveness: unref-only run returns; ready unref remains for explicit drive; ref restores default; discarded handles survive cyclic GC; complete jobs release ref/result: pass\n"),
+    ("m2-work-js-file", ["--m2-work-js-file"], "M2 work JS file: named copied bytes; real bounded read; owner Promise; retained JS values release native result without GC; one-slot reuse: pass\n"),
+    ("m2-process-query", ["--m2-process-query", "{self}", "{launcher}"], "M2 process POD query: any-thread token status; no collection/delivery/JS; Runtime/generation/release isolation; HostNotify BUSY; closed cleanup: pass\n"),
+    ("m2-process-scheduling", ["--m2-process-scheduling", "{self}", "{launcher}"], "M2 process scheduling: 40 process and 16 work completions share 32 deliveries with timer/immediate/event; fair provider cursor; reliable saturated queue: pass\n"),
+    ("m2-process-liveness", ["--m2-process-liveness", "{self}", "{launcher}"], "M2 process liveness: referenced child permits ready unref timer/immediate; unref child returns naturally; explicit pump delivers; physical cleanup: pass\n"),
+    ("m2-process-identity", ["--m2-process-identity", "{self}", "{launcher}"], "M2 process identity: one-slot reuse; stale generation and cross-Runtime tokens refused; current child unaffected: pass\n"),
+    ("m2-process-ledger", ["--m2-process-ledger", "{self}", "{launcher}"], "M2 process ledger: native observation precedes owner handoff; pending entry cumulative dispatch; pure C preserves completed JS result: pass\n"),
+    ("m2-process-limits", ["--m2-process-limits", "{self}", "{launcher}"], "M2 process limits: independent process/helper/native handle/registration quotas; encoded bytes and simultaneous native total; ordinary refusal: pass\n"),
+    ("m2-process-inherit", ["--m2-process-inherit", "{self}", "{launcher}"], "M2 process inherit: binary authorized stdio; extra native descriptor excluded; actual exit/reap: pass\n"),
+    ("m2-process-inputs", ["--m2-process-inputs", "{self}", "{launcher}"], "M2 process inputs: explicit Unicode path; copied argv/env/cwd; factory snapshot and complete replacement; actual exit/reap: pass\n"),
+    ("m2-process-errors", ["--m2-process-errors", "{self}", "{launcher}"], "M2 process errors: strict UTF-8/NUL/limits; no PATH search; missing cwd/program native errors; result retained; safe rollback: pass\n"),
+    ("m2-process-cleanup", ["--m2-process-cleanup", "{self}", "{launcher}"], "M2 process cleanup: default ref; independent process/helper/handle limits; unref stays alive; stop force/reap; close/quiesce/destroy: pass\n"),
+    ("m2-timers-gc", ["--m2-timers-gc"], "M2 scheduling GC: discarded timer/immediate handles survive cyclic garbage collection under finite engine budget: pass\n"),
+    ("m2-timers-interval", ["--m2-timers-interval"], "M2 interval: strict minimum 1ms; repeated original schedule; ignored Promise; self cancel; cleanup: pass\n"),
+    ("m2-timers-immediate", ["--m2-timers-immediate"], "M2 immediate: asynchronous registration; FIFO; nested callback waits next pump; discarded handles retained; cancel; cleanup: pass\n"),
+    ("m2-timers-fairness", ["--m2-timers-fairness"], "M2 scheduling fairness: completion/timer/immediate/event share 32 deliveries; public bounded order within one pump: pass\n"),
+    ("m2-timers-checkpoints", ["--m2-timers-checkpoints"], "M2 scheduling checkpoints: jobs-only pumps preserve four-category cursor; public callback order and handoffs: pass\n"),
+    ("m2-timers-shared-limits", ["--m2-timers-shared-limits"], "M2 scheduling resource budget: timer/interval/immediate share finite slots; callback cancel retains slot; unref-only natural return and explicit pump; terminal cleanup: pass\n"),
+    ("m2-timers-errors", ["--m2-timers-errors"], "M2 scheduling errors: late handled rejection waits full cross-pump checkpoint; ordinary throw settles jobs then returns; next independent callback ledger recovers: pass\n"),
+    ("m2-timers-ledgers", ["--m2-timers-ledgers"], "M2 scheduling ledgers: active entry and independent idle callback accumulate jobs across pumps; infinite jobs terminate at exact dispatch limit: pass\n"),
+    ("m2-work-cancel", ["--m2-work-cancel"], "M2 work cancel: queued never starts; foreign accepted cancellation wins once; running side effect survives; repeat idempotent; owner handoff ends ref; release retains physical bytes; late result discarded: pass\n"),
+    ("m2-work-cancel-result", ["--m2-work-cancel-result"], "M2 work cancel result: native completion wins before owner; already-completed stable; short result retry never reruns; release invalidates immediately; complete jobs precede ref/capacity handoff: pass\n"),
+    ("m2-work-cancel-status", ["--m2-work-cancel-status"], "M2 work cancel status: versioned zero-tail POD; any-thread query/cancel wakes waiting owner; queued/running/logical/physical/ref distinct; instance and generation rejection; CLOSED invalidation; native retry: pass\n"),
+    ("m2-work-cancel-file", ["--m2-work-cancel-file"], "M2 work cancel file: real bounded binary read with copied path; cancellation before syscall and after bytes never rolls back; completion publication wins independently of owner; released physical buffers survive close and join: pass\n"),
+    ("m2-work-cancel-permissions", ["--m2-work-cancel-permissions"], "M2 work cancel permissions: owner callback controls and POD query allowed; owner result/release remain BUSY; HostNotify rejects both APIs through TLS guard; native lifetime joined: pass\n"),
+    ("m2-work-cancel-limits", ["--m2-work-cancel-limits"], "M2 work cancel limits: actual default 128 operations and 8MiB copied/reserved data within 16MiB total; cancel/release waits for owner and physical use; saturation atomic; physical bytes remain charged; ordinary capacity recovers: pass\n"),
+    ("m2-work-cancel-nonreturning", ["--m2-work-cancel-nonreturning"], "M2 work cancel nonreturning: gate remains held through process termination; CLOSED retains physical bytes/code/userdata; zero and finite quiesce retry pending; destroy BUSY; no cleanup success claimed: pass\n"),
+    ("m2-work-notify", ["--m2-work-notify"], "M2 work HostNotify: completion wakes real external Host condition; owner handoff and copied result; inflight lease survives close; nonblocking quiesce and BUSY destroy; joined code/userdata lifetime: pass\n"),
+    ("m2-work-registration", ["--m2-work-registration"], "M2 work registration: explicit capability; lazy threads; copied finite declarations; invalid ABI/flags/concurrency; duplicate/frozen rejection: pass\n"),
+    ("m2-work-fairness", ["--m2-work-fairness"], "M2 work fairness: two bounded workers; default handler serial; runnable handler bypasses blocked head; copied input; owner handoff; retained capacity: pass\n"),
+    ("m2-work-capacity", ["--m2-work-capacity"], "M2 work capacity: count/data reservations; atomic refusal; instance/generation isolation; retained results charged; output bound; JS result preserved; ordinary reuse: pass\n"),
+    ("m2-work-close", ["--m2-work-close"], "M2 work close: running native data/code retained; queued suppressed; stop starts cancellation; CLOSED engine gone; finite quiesce retry; destroy BUSY; physical join: pass\n"),
+    ("m2-work-ledger", ["--m2-work-ledger"], "M2 work ledger: active entry cumulative dispatch; absolute pending deadline; terminal native cancellation; no ledger reset: pass\n"),
+    ("m2-work-physical", ["--m2-work-physical"], "M2 work physical exit: callback return precedes blocked native TLS destructor; zero/finite quiesce never joins live thread; retained BUSY; actual exit joined: pass\n"),
+    ("m2-work-limits", ["--m2-work-limits"], "M2 work limits: real default 8MiB subquota within 16MiB total; simultaneous native metadata/data preflight; retained data charged; count independent; no permanent capacity failure: pass\n"),
+    ("m2-work-completion", ["--m2-work-completion"], "M2 work completion: explicit concurrency; saturated events retain native records; owner handoff retains ref; work permits ready unref timer; last handoff leaves unref timer idle; exact results: pass\n"),
+    ("m2-work-retention", ["--m2-work-retention"], "M2 work retention: STOPPED preserves terminal C results; logical release invalidates token while physical buffers stay charged; close retires only after native exit: pass\n"),
+    ("m2-work-scheduling", ["--m2-work-scheduling"], "M2 work scheduling: completion/timer/event bounded rotation; complete jobs before each handoff; persisted cursor across jobs-only pumps; all categories drain: pass\n"),
+    ("m2-work-stop-request", ["--m2-work-stop-request"], "M2 work stop request: cooperative marker observes accepted stop before owner drive; queued worker claim shares stop order; no late callback: pass\n"),
+    ("m2-work-file", ["--m2-work-file"], "M2 work file: copied declaration/input; real bounded bytes; independent completion; retry result; ordinary errno; release; joined cleanup: pass\n"),
+    ("m2-timers", ["--m2-timers"], "M2 timers: zero-delay asynchronous owner callback; exactly once; cleanup: pass\n"),
+    ("m2-timers-js", ["--m2-timers-js"], "M2 timer JS: registered callback advances entry Promise; cleanup: pass\n"),
+    ("m2-timers-tla", ["--m2-timers-tla", "{modules}"], "M2 timer TLA: real ESM entry waits and resumes; cleanup: pass\n"),
+    ("m2-timers-identity", ["--m2-timers-identity"], "M2 timer identity: Runtime/generation isolation; stale completion; ready/ref/deadline POD; cleanup: pass\n"),
+    ("m2-timers-liveness", ["--m2-timers-liveness"], "M2 timer liveness: DONE ref wait; unref run/pump/run_once; closest wait; stop retirement: pass\n"),
+    ("m2-timers-limits", ["--m2-timers-limits"], "M2 timer limits: count reuse; strict C delay; metadata total-storage precheck; rollback: pass\n"),
+    ("m2-timers-strict", ["--m2-timers-strict"], "M2 timer strict JS: finite safe integer only; no coercion hooks; deadline overflow; handle controls: pass\n"),
+    ("m2-timers-jobs", ["--m2-timers-jobs"], "M2 timer jobs: complete cross-pump checkpoints; ordinary error settles jobs; subsequent drive: pass\n"),
+    ("m2-timers-deadline", ["--m2-timers-deadline"], "M2 timer deadline: active entry absolute deadline bounds later timer; terminal retirement: pass\n"),
+    ("m2-timers-budget", ["--m2-timers-budget"], "M2 timer budget: active entry dispatch ledger accumulates across zero-wait drives; terminal cleanup: pass\n"),
+    ("m2-notify", ["--m2-notify"], "M2 HostNotify: real Host socket wait; producer hints; copied FIFO; coalesced and redundant hints preserve 128 events; owner pump; joined cleanup: pass\n"),
+    ("m2-notify-controls", ["--m2-notify-controls"], "M2 HostNotify controls: cross-thread stop wakes Host; silent hook cannot prevent internal wait/token release; independent instances; cleanup: pass\n"),
+    ("m2-notify-registration", ["--m2-notify-registration"], "M2 HostNotify registration: M1 disabled; copied one-time declaration; ABI/tails/flags; owner thread; execution freeze; independent POD: pass\n"),
+    ("m2-wait", ["--m2-wait"], "M2 wait: finite timeout; explicit keepalive; idle cleanup: pass\n"),
+    ("m2-wait-concurrent", ["--m2-wait-concurrent"], "M2 concurrent wait: copied events; last token; owner stop; real blocked interval; joined cleanup: pass\n"),
+    ("m2-wait-tokens", ["--m2-wait-tokens"], "M2 keepalive: finite capacity; Runtime/generation identity; stale/duplicate release; native handles; close invalidation: pass\n"),
+    ("m2-wait-deadline", ["--m2-wait-deadline"], "M2 wait deadline: pending entry keeps absolute execution ledger across waits; terminal cleanup starts before close: pass\n"),
+    ("m2-wait-budget", ["--m2-wait-budget"], "M2 wait budget: redundant cross-thread wakes preserve cumulative timeout; hints are not work; pump never waits: pass\n"),
+    ("m2-wait-events", ["--m2-wait-events"], "M2 waiting events: ready-first bounded drive; copied FIFO/rejections; last-token accepted work; complete jobs; idle result; full-queue stop: pass\n"),
+    ("m2-close", ["--m2-close"], "M2 close: STOP_REQUESTED/STOPPED/FAILED; first cause retained; CLOSED never revived; quiesce retry: pass\n"),
+    ("m1-frozen-header", ["--m1-compat", "{modules}"], "M1 frozen header: new SDK link; values/modules/events; pending close; old ABI/errors/reserved: pass\n"),
+    ("m2-drive", ["--m2-drive"], "M2 drive: ready jobs; independent progress/reason; idle result retained; unsettled entry; no implicit close: pass\n"),
+    ("m2-configuration", ["--m2-configuration"], "M2 configuration: explicit capabilities; finite copied defaults; sizes/version/tails; invalid combinations: pass\n"),
+    ("m2-owner", ["--m2-owner"], "M2 owner: foreign calls refused; pump/run_once/run guard; safe POD/control/setter; CLOSED query: pass\n"),
+    ("m2-creation", ["--m2-creation"], "M2 creation: 256 public heap/native budgets; allocation versus metadata precheck; null failures and complete rollback; fresh cleanup: pass\n"),
+    ("m2-diagnostics", ["--m2-diagnostics"], "M2 diagnostics: independent versioned POD; factory rollback; sizes/tails; bounded caller buffers; CLOSED cross-thread query: pass\n"),
+    ("m2-runtime", ["--m2-runtime"], "M2 runtime: explicit empty instance; idle drive; CLOSED/native quiescent; destroy: pass\n"),
+    ("close-states", ["--close-states"], "close states: normal/error/PENDING/STOP_REQUESTED/STOPPED/FAILED; reentry; raw cleanup; retained handle: pass\n"),
+    ("close-concurrent", ["--close-concurrent"], "close concurrent: producer overlap observed; post/snapshot/stop stable; CLOSED calls drained before destroy: pass\n"),
+    ("close-competition", ["--close-competition"], "close competition: actual allocation refusal and worker stop in both recorded orders; first cause survives close: pass\n"),
+    ("runtime", ["--runtime", "{modules}"], "runtime snapshot: fixed read-only argv/cwd; public factory: pass\n"),
+    ("cli-contract", ["--cli-contract", "{modules}"], "CLI contrast: shared Script/ESM/cache/rejection/results/budgets; SDK pending preserved: pass\n"),
+    ("resource-storage", ["--resource-storage"], "resource storage: actual SDK source-copy refusal permanent; bounded accounting; fresh recovery: pass\n"),
+    ("resource-configuration", ["--resource-configuration"], "resource configuration: all finite defaults; copied fixed capacities; overflow rejection: pass\n"),
+    ("resource-bridge", ["--resource-bridge"], "resource bridge: configured byte/argument limits; preflight reuse; copied exact boundary; larger finite arguments: pass\n"),
+    ("resource-slices", ["--resource-slices"], "resource slices: configured jobs/events quotas; fixed queue; public event accounting: pass\n"),
+    ("resource-refusals", ["--resource-refusals"], "resource refusals: metered rejections/registration; caught bridge/engine refusal; 32 factory limits and recovery: pass\n"),
+    ("stop", ["--stop"], "stop: queue-independent acceptance; immediate refusal; owner confirmation; raw jobs/events close: pass\n"),
+    ("stop-running", ["--stop-running"], "stop running: measured JS CPU loops; async interruption; C callback barrier; idle PENDING: pass\n"),
+    ("stop-ordering", ["--stop-ordering"], "stop ordering: claimed event in C; saturated acceptance barrier; unclaimed work dropped; no retry: pass\n"),
+    ("stop-causes", ["--stop-causes"], "stop causes: forced stop/deadline record orders; dispatch/allocation preserved; repeat FAILED/CLOSED: pass\n"),
+    ("events", ["--events"], "events: once-only registration; copied POD and independent exact JS values: pass\n"),
+    ("events-queue", ["--events-queue"], "event queue: finite defaults; full/oversize atomic refusal; FIFO wrap; raw close drop: pass\n"),
+    ("events-scheduling", ["--events-scheduling"], "event scheduling: jobs-first slices; ignored Promise return; checkpoint rejection; ordinary-error reuse: pass\n"),
+    ("events-threads", ["--events-threads"], "event threads: controlled producer FIFO; owner/callback barriers; post and snapshot reentry: pass\n"),
+    ("events-budgets", ["--events-budgets"], "event budgets: shared/idle cumulative ledgers; owner-wait deadline; allocation first cause; factory refusal: pass\n"),
+    ("events-entry", ["--events-entry", "{modules}"], "event entry: static builtin; no-progress TLA; worker copy; owner pump completion: pass\n"),
+    ("scalar", [], "scalar: 42; closed: true\n"),
+    ("state", ["--state"], "state: 40 -> 42 -> exception -> 43; fresh: true\n"),
+    ("lifetime", ["--lifetime"], "lifetime: closed twice; destroy ordering: pass; cycles: 1000\n"),
+    ("owner", ["--owner"], "owner: foreign operations rejected; snapshot allowed; JS unchanged\n"),
+    ("creation", ["--creation"], "creation: 128 bounded heap configurations; null failures; repeated recovery: pass\n"),
+    ("resources", ["--resources"], "resources: source precheck; heap failure permanent; stack exception reusable\n"),
+    ("abi", ["--abi"], "ABI: version/flags/tails/short structures; bounded diagnostics: pass\n"),
+    ("integers", ["--integers"], "integers: exact signed/unsigned 64-bit boundaries; oversized BigInt rejected\n"),
+    ("strings", ["--strings"], "strings: strict UTF-8 and NUL; copied retry; accepted/rejected result lifetime; byte limit\n"),
+    ("bytes", ["--bytes"], "bytes: copied Uint8Array views; resize/detach/brand/shared boundaries; no user coercion\n"),
+    ("diagnostics", ["--diagnostics"], "diagnostics: safe text; getter/Proxy/toString untouched; bounded independent caller buffers\n"),
+    ("value-limits", ["--value-limits"], "value limits: exact 1 MiB strings/bytes; independent copies; metered permanent allocation failure\n"),
+    ("promise-values", ["--promise-values"], "Promise values: exact/copied results; safe rejection diagnostics; first-error and handled checkpoints\n"),
+    ("promises", ["--promises"], "promises: explicit pump; bounded jobs; checkpoints; failure reuse; pending close: pass\n"),
+    ("modules", ["--modules", "{modules}"], "modules: real static graph; completed result: pass\n"),
+    ("module-async", ["--module-async", "{modules}"], "module async: static/dynamic imports; TLA; cycle; namespace then untouched: pass\n"),
+    ("module-identity", ["--module-identity", "{modules}"], "module identity: fixed cwd; first metadata; canonical reuse; explicit Script base: pass\n"),
+    ("module-limits", ["--module-limits", "{modules}"], "module limits: source precheck preserves result; count/cache bounded; close releases: pass\n"),
+    ("module-pending", ["--module-pending", "{modules}"], "module pending: unresolved TLA; no progress; BUSY; pending close: pass\n"),
+    ("module-budgets", ["--module-budgets", "{modules}"], "module budgets: cumulative TLA jobs; host-wait deadline; module loop interrupted; permanent failure: pass\n"),
+    ("module-nul", ["--module-nul", "{modules}"], "module NUL: computed/static names rejected; existing files intact; ordinary NUL strings preserved: pass\n"),
+    ("module-cache", ["--module-cache", "{modules}"], "module cache: source/load/parse/link/eval/TLA failures frozen; fresh repair; partial effects retained; accounting: pass\n"),
+    ("module-policy", ["--module-policy", "{modules}"], "module policy: URL/path/NUL/format refusals; real ordinary files only; no failed identities for invalid requests: pass\n"),
+    ("module-aliases", ["--module-aliases", "{modules}"], "module aliases: actual hardlink identities; native Windows drive and OS path case: pass\n"),
+    ("module-symlinks", ["--module-symlinks", "{modules}"], "module symlinks: canonical reuse; frozen retarget; fresh Runtime sees target; target format checked: pass\n"),
+    ("budgets", ["--budgets"], "budgets: defaults; deadlines/host wait; cumulative jobs; tightening; first cause; close: pass\n"),
+    ("host-modules", ["--host-modules", "{modules}"], "host modules: copied registration; synchronous typed callback; catchable errors; guarded lifetime: pass\n"),
+    ("facts", ["--facts"], None),
+)
+
+
+CLI_CASES = (
+    ("eval-background-error", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{Promise.resolve().then(()=>{});throw Error('background')});return 'ENTRY'})"], 1, "", "qaplet: code=7 "),
+    ("eval-background-budget", ["--max-dispatches", "600", "eval", "--source", "import('qaplet:timers').then(t=>{t.setImmediate(()=>{function again(){Promise.resolve().then(again)}again()});return 'ENTRY'})"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("eval-unref-done", ["eval", "--source", "import('qaplet:timers').then(t=>{t.setTimeout(()=>{throw Error('unref ran')},60000).unref();return 42})"], 0, "42\n", ""),
+    ("eval-stdio-api", ["eval", "--source", "import('qaplet:stdio').then(s=>typeof s.acquireTerminal==='function'&&(s.stdout===null||['pipe','file','tty','console'].includes(s.stdout.kind)))"], 0, "true\n", ""),
+    ("eval-interval-entry", ["eval", "--source", "import('qaplet:timers').then(({setInterval})=>new Promise(resolve=>{let n=0;let t=setInterval(()=>{if(++n===3){t.cancel();resolve(42)}return new Promise(()=>{})},1)}))"], 0, "42\n", ""),
+    ("eval-immediate-result", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>{setImmediate(()=>{setImmediate(()=>{})});return 42})"], 0, "42\n", ""),
+    ("eval-immediate-unref", ["eval", "--source", "import('qaplet:timers').then(({setImmediate})=>new Promise(resolve=>setImmediate(()=>resolve(42)).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("eval-timer-entry", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),20)))"], 0, "42\n", ""),
+    ("eval-timer-result", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>{setTimeout(()=>{},0);return 42})"], 0, "42\n", ""),
+    ("eval-timer-unref", ["eval", "--source", "import('qaplet:timers').then(({setTimeout})=>new Promise(resolve=>setTimeout(()=>resolve(42),0).unref()))"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("run-timer-tla", ["run", "{modules}/timer-tla.mjs"], 0, "", ""),
+    ("help", ["--help"], 0, "Usage: qaplet [--timeout-ms N] [--max-dispatches N] run <file> [-- args...]\n       qaplet [--timeout-ms N] [--max-dispatches N] eval --source <text>\n       qaplet --help | --version\nrun uses ESM; argv contains only args after --. eval uses Script.\neval prints scalar values, raw UTF-8 strings, or 0x-prefixed hex bytes, then a newline.\nZero budgets use finite SDK defaults. Exit: 0 success, 1 execution, 2 arguments.\n", ""),
+    ("version", ["--version"], 0, "qaplet 0.1.0 (Embed SDK ABI 1)\n", ""),
+    ("eval-number", ["eval", "--source", "6 * 7"], 0, "42\n", ""),
+    ("eval-undefined", ["eval", "--source", "undefined"], 0, "undefined\n", ""),
+    ("eval-null", ["eval", "--source", "null"], 0, "null\n", ""),
+    ("eval-bool", ["eval", "--source", "true"], 0, "true\n", ""),
+    ("eval-signed", ["eval", "--source", "-9223372036854775808n"], 0, "-9223372036854775808\n", ""),
+    ("eval-unsigned", ["eval", "--source", "18446744073709551615n"], 0, "18446744073709551615\n", ""),
+    ("eval-string-nul", ["eval", "--source", "'a\\0😀'"], 0, "a\0😀\n", ""),
+    ("eval-bytes", ["eval", "--source", "new Uint8Array([0,255,17])"], 0, "0x00ff11\n", ""),
+    ("eval-object", ["eval", "--source", "({toString(){throw new Error('conversion ran')}})"], 1, "", "qaplet: code=8 VALUE_TYPE_UNSUPPORTED"),
+    ("eval-thenable", ["eval", "--source", "({get then(){throw new Error('getter ran')}})"], 1, "", "qaplet: code=8 VALUE_TYPE_UNSUPPORTED"),
+    ("eval-script", ["eval", "--source", "var answer=40; answer+2"], 0, "42\n", ""),
+    ("eval-esm-refused", ["eval", "--source", "export const answer=42"], 1, "", "qaplet: code=7 "),
+    ("eval-promise", ["eval", "--source", "Promise.resolve(42)"], 0, "42\n", ""),
+    ("eval-rejection", ["eval", "--source", "Promise.reject(new Error('entry rejection'))"], 1, "", "qaplet: code=7 "),
+    ("eval-checkpoint", ["eval", "--source", "let bad=Promise.reject('handled');let p=Promise.resolve();for(let i=0;i<600;++i)p=p.then(()=>{});p.then(()=>{bad.catch(()=>{});return 42})"], 0, "42\n", ""),
+    ("eval-diagnostic-getter", ["eval", "--source", "throw Object.defineProperty(new Error(),'message',{get(){throw new Error('diagnostic getter ran')}})"], 1, "", "qaplet: code=7 JS_EXCEPTION"),
+    ("eval-unsettled", ["eval", "--source", "new Promise(()=>{})"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("eval-no-base", ["eval", "--source", "import('./entry.mjs')"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("eval-runtime", ["eval", "--source", "import('qaplet:runtime').then(m=>Object.isFrozen(m.argv)&&m.argv.length===0&&typeof m.cwd==='string'&&m.cwd[0]==='/')"], 0, "true\n", ""),
+    ("eval-unknown-builtin", ["eval", "--source", "import('qaplet:future')"], 1, "", "qaplet: code=6 UNSUPPORTED"),
+    ("run-argv", ["run", "{modules}/cli-runtime.mjs", "--", "first", "参数 空格", "--literal"], 0, "", ""),
+    ("run-cache-namespace", ["run", "{modules}/cli-cache.mjs"], 0, "", ""),
+    ("run-rejection", ["run", "{modules}/cli-reject.mjs"], 1, "", "qaplet: code=7 "),
+    ("run-unsettled", ["run", "{modules}/cli-unsettled.mjs"], 1, "", "qaplet: UNSETTLED_ENTRY"),
+    ("run-query", ["run", "{modules}/entry.mjs?refused"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("run-directory", ["run", "{modules}"], 1, "", "qaplet: code=15 MODULE_LOAD"),
+    ("run-missing", ["run", "{modules}/cli-absent.mjs"], 1, "", "qaplet: code=14 MODULE_RESOLVE"),
+    ("eval-dispatch-budget", ["--max-dispatches", "600", "eval", "--source", "let p=Promise.resolve();for(let i=0;i<1000;++i)p=p.then(()=>{});p"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("run-dispatch-budget", ["--max-dispatches", "600", "run", "{modules}/cli-jobs.mjs"], 1, "", "qaplet: code=18 DISPATCH_LIMIT"),
+    ("eval-deadline", ["--timeout-ms", "20", "eval", "--source", "for(;;){}"], 1, "", "qaplet: code=17 DEADLINE_EXCEEDED"),
+    ("run-deadline", ["--timeout-ms", "20", "run", "{modules}/cli-loop.mjs"], 1, "", "qaplet: code=17 DEADLINE_EXCEEDED"),
+    ("args-empty", [], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-implicit-source", ["eval", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-source", ["eval", "--source"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-source-tail", ["eval", "--source", "42", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-file", ["run"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-empty-file", ["run", ""], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-missing-separator", ["run", "{modules}/entry.mjs", "extra"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-invalid-budget", ["--timeout-ms", "-1", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
+    ("args-overflow-budget", ["--max-dispatches", "18446744073709551616", "eval", "--source", "42"], 2, "", "qaplet: INVALID_ARGUMENT"),
+)
+
+
+def recipe():
+    return [{"path": name, "sha256": sha256(ROOT / name), "size_bytes": (ROOT / name).stat().st_size}
+            for name in RECIPE]
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def consumer_contract():
+    names = (*RECIPE, "tests/contracts/test_sdk_native.py", "tests/contracts/test_sdk_retention.py",
+             "tests/contracts/test_m2_cli_signal_tools.py", "tests/contracts/test_sdk_m2_package.py")
+    files = [{"file": name, "sha256": sha256(ROOT / name), "size_bytes": (ROOT / name).stat().st_size}
+             for name in dict.fromkeys(names)]
+    value = {"version": 1, "files": files, "host_cases": HOST_CASES,
+             "cli_cases": CLI_CASES, "example_cases": EXAMPLE_CASES, "m2_example_cases": M2_EXAMPLE_CASES}
+    value = json.loads(json.dumps(value))
+    return {"sha256": digest(value), **value}
+
+
+def capture_consumer_inputs(report, directory):
+    """Freeze actual helper/source bytes and calling context before execution."""
+    contract = consumer_contract()
+    snapshots = []
+    for row in contract["files"]:
+        source, target = ROOT / row["file"], directory / "consumer-inputs" / row["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        saved = identity(target)
+        if any(saved[key] != row[key] for key in ("sha256", "size_bytes")):
+            raise BuildError("Consumer input changed while preserving it: " + row["file"])
+        snapshots.append({"file": row["file"], "original": identity(source), "retained": saved})
+    entrypoint = Path(sys.argv[0])
+    entrypoint_saved = None
+    if entrypoint.is_file():
+        saved = directory / "consumer-entrypoint.py"
+        shutil.copyfile(entrypoint, saved)
+        entrypoint_saved = {"original": identity(entrypoint), "retained": identity(saved)}
+    report["consumer_identity"] = {"contract": contract, "inputs": snapshots,
+        "invocation": {"argv": list(sys.argv), "cwd": str(Path.cwd()), "entrypoint": entrypoint_saved}}
+
+
+def recipe_identity(files, input_id, cflags=()):
+    """Pure portable SDK identity; execution/Git metadata is attached separately."""
+    value = {"version": 1, "files": [dict(row) for row in files], "input_id": input_id,
+             "compile_flags": ["-Os", "-fwrapv", "-D_GNU_SOURCE", "CONFIG_VERSION=locked", *cflags],
+             "link_flags": ["-Os", "-Wl,-z,max-page-size=65536", "-lm", "-lpthread"],
+             "archive_flags": "rcsD"}
+    return {**value, "sha256": digest(value)}
+
+
+def package_consume(args, report, directory):
+    if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
+        raise BuildError("SDK package compilation runs on Ubuntu only", "blocked")
+    capture_consumer_inputs(report, directory)
+    producer = read_json(args.build_report)
+    if not producer.get("package"):
+        raise BuildError("A sealed SDK package containing the complete public C application is required")
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
+    check_ci_commit(producer, report)
+    if producer.get("status") != "pass" or producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build":
+        raise BuildError("Successful SDK producer required")
+    supplied = args.artifact.resolve().parent
+    check_package(producer, supplied)
+    output = args.output_dir.resolve()
+    if output.exists() and any(output.iterdir()):
+        raise BuildError("External consumer output directory must be new or empty")
+    output.mkdir(parents=True, exist_ok=True)
+    # This is a one-use real application fixture, not a reusable input/cache.
+    external = Path(tempfile.mkdtemp(prefix="qaplet-sdk-consumer-"))
+    if external.is_relative_to(ROOT) or external.is_relative_to(Path(workspace(ROOT)["main_checkout"])):
+        raise BuildError("Package consumer must be outside the source tree")
+    report["external_consumer"] = {"directory": str(external), "package": identity(supplied / producer["package"]["file"]),
+        "include_directories": [str(external / "sdk/include")], "private_headers": False,
+        "archive": str(external / "sdk/lib/libqaplet.a"), "source": str(external / "sdk/application.c")}
+    with zipfile.ZipFile(supplied / producer["package"]["file"]) as archive:
+        archive.extractall(external)
+    check_package(producer, external, check_archive=False)
+    # Preserve exact extracted inputs before the first compiler/helper runs.
+    # Original paths still describe actual argv; each copy binds to one ZIP member.
+    snapshots = directory / "external-inputs"
+    retained = report["external_consumer"]["retained_inputs"] = []
+    for member in producer["package"]["members"]:
+        if not member["file"].startswith("sdk/"):
+            continue
+        source, target = external / member["file"], snapshots / member["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = identity(source)
+        shutil.copyfile(source, target)
+        saved = identity(target)
+        if any(before[key] != member[key] or saved[key] != member[key] for key in ("sha256", "size_bytes")):
+            raise BuildError("External compiler input differs from exact SDK ZIP member: " + member["file"])
+        retained.append({"package_member": {key: member[key] for key in ("file", "sha256", "size_bytes")},
+                         "original": before, "retained": saved})
+    original = verify_inputs(args, report, directory)
+    tree = native_toolchain(args, report, directory, original)
+    helpers = prepare_portable_helpers(args, report, directory, tree)
+    report.update(sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], producer_report=identity(args.build_report),
+                  package=producer["package"])
+    if args.operation == 'example-consume':
+        compile_example(args, report, directory, tree, helpers, external / 'sdk', external / 'm1-example-build', output)
+        compile_example(args, report, directory, tree, helpers, external / 'sdk', external / 'm2-example-build', output, m2=True)
+        measured_host(args, report, directory)
+        loader = select_loader(args, report)
+        example_cases(args, report, directory, output / 'qaplet-example.com', external / 'sdk/modules', loader)
+        sdk_m2_example.run_cases(args, report, directory, output / 'qaplet-m2-example.com', loader, M2_RUNTIME_METADATA)
+        check_package(producer, external, check_archive=False)
+        verify_inputs(args, report, directory, stage='after')
+        recheck(report['native_toolchain'], original, component('cosmocc', purpose=consumption_purpose('build', args.controlled_probe)))
+        report.update(status='pass' if all(case['status'] == 'pass' for case in report['cases']) else 'fail',
+                      reason='Both sealed SDK C creation examples compiled outside the checkout and executed; full package/native catalogs remain separate')
+        return
+    if args.operation in ("tty-consume", "mixed-consume", "cli-consume"):
+        if args.operation == "cli-consume":
+            from sdk_cli import compile_consumers, run_supplied
+        elif args.operation == "mixed-consume":
+            from sdk_mixed import compile_consumers, run_supplied
+        else:
+            from sdk_tty import compile_consumers, run_supplied
+        compile_consumers(args,report,directory,tree,helpers,external / "sdk",external / args.operation,output)
+        measured_host(args,report,directory)
+        loader=select_loader(args,report)
+        if args.operation == "cli-consume":
+            run_supplied(args,report,directory,output,loader,supplied / "qaplet.com",external / "sdk/modules")
+        else:run_supplied(args,report,directory,output,loader)
+        check_package(producer,external,check_archive=False)
+        verify_inputs(args,report,directory,stage="after")
+        recheck(report["native_toolchain"],original,component("cosmocc",purpose=consumption_purpose("build",args.controlled_probe)))
+        report.update(status="pass" if all(case["status"]=="pass" for case in report["cases"]) else "fail",reason="Outside-source sealed SDK public " + args.operation + " consumers and real native/fault fixtures")
+        return
+    if args.operation == "fault-consume":
+        compile_m2_faults(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_work_faults(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output, faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "io-build", output, faults=True, io_faults=True)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "js-process-build", output, js_faults=True)
+        compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output, faults=True)
+        compile_aggregate_consumer(args, report, directory, tree, helpers, external / "sdk", external / "aggregate-build", output, faults=True)
+    else:
+        compile_example(args, report, directory, tree, helpers, external / "sdk", external / "build", output)
+        compile_example(args, report, directory, tree, helpers, external / "sdk", external / "m2-example-build", output, m2=True)
+        compile_work_host(args, report, directory, tree, helpers, external / "sdk", external / "work-build", output)
+        compile_timer_host(args, report, directory, tree, helpers, external / "sdk", external / "timer-build", output)
+        compile_process_consumer(args, report, directory, tree, helpers, external / "sdk", external / "process-build", output)
+        compile_stdio_consumer(args, report, directory, tree, helpers, external / "sdk", external / "stdio-build", output)
+        compile_aggregate_consumer(args, report, directory, tree, helpers, external / "sdk", external / "aggregate-build", output)
+    measured_host(args, report, directory)
+    loader = select_loader(args, report)
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-m2-faults.com"
+        if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+        executed, stdout, stderr = run(report, directory, "qaplet-m2-faults.system-boundary",
+            [*loader, artifact], args.timeout, expected=None)
+        expected = ("controlled HostNotify: accepted event/close and CLOSED wake overlap; JS released; inflight retained; finite quiesce retry; destroy BUSY; producer joined; drained cleanup: pass\n"
+                    "controlled HostNotify reentry: deliberately invalid hook receives BUSY for SDK queries/control/drives/close; no JS or stop mutation: pass\n"
+                    "controlled M2: four system initialization refusals; resources balanced; PENDING/CLOSED whole-drive guard: pass\ncontrolled M2 wait: pre-sleep handoff; accepted send failure; poll/recv/clock faults; first cause; socket rollback; uncertain close retained; reused fd untouched: pass\ncontrolled M2 diagnostics: original setup/cleanup errors; incomplete unpublished rollback; fd reuse; independent published first cause: pass\n"
+                    "controlled M2 timers: deadline overflow; max-wait/timer/entry minimum; clock failure/backwards; terminal cleanup: pass\n"
+                    "controlled M2 scheduling: same deadline acceptance FIFO; interval skips late periods on original schedule without burst; self cancel: pass\n")
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": "qaplet-m2-faults.system-boundary", "status": "pass" if passed else "fail",
+            "required": True, "controlled_system_fixture": True, "command": executed,
+            "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
+        artifact = output / "qaplet-work-faults.com"
+        if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+        executed, stdout, stderr = run(report, directory, "qaplet-work-faults.system-boundary",
+            [*loader, artifact], args.timeout, expected=None)
+        expected = ("controlled M2 work JS allocation: actual SDK calloc refusal from caught JS submit remains permanent; no accepted task; first cause preserved; native and engine cleanup: pass\n" +
+                    next(expected for suffix, _, expected in HOST_CASES if suffix == "m2-work-file") +
+                    "controlled M2 work: pthread create errno refuses atomically and recovers; actual calloc refusal permanent; accepted submit/completion/cancel survives wake failure; join error independently retained CLOSED/BUSY without identity retry or false cleanup: pass\n")
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": "qaplet-work-faults.system-boundary", "status": "pass" if passed else "fail",
+            "required": True, "controlled_system_fixture": True, "command": executed,
+            "expected": {"stdout": expected, "stderr": "", "exit_code": 0}})
+    else:
+        example_cases(args, report, directory, output / "qaplet-example.com", external / "sdk/modules", loader)
+        sdk_m2_example.run_cases(args, report, directory, output / "qaplet-m2-example.com", loader, M2_RUNTIME_METADATA, M2_EXAMPLE_CASES)
+        artifact = output / "qaplet-work-host.com"
+        for suffix, arguments, expected in HOST_CASES:
+            if not suffix.startswith("m2-work-"):
+                continue
+            executed, stdout, stderr = run(report, directory, "qaplet-work-host." + suffix,
+                [*loader, artifact, *arguments], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": "qaplet-work-host." + suffix, "required": True,
+                "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "timeout_seconds": args.timeout, "reason": "Public WorkPool C Host compiled outside both source checkouts from sealed supplied SDK"})
+        artifact = output / "qaplet-timer-host.com"
+        for suffix, arguments, expected in HOST_CASES:
+            if not suffix.startswith("m2-timers"):
+                continue
+            arguments = [value.replace("{modules}", str(external / "sdk/modules")) for value in arguments]
+            executed, stdout, stderr = run(report, directory, "qaplet-timer-host." + suffix,
+                [*loader, artifact, *arguments], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": "qaplet-timer-host." + suffix, "required": True,
+                "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "commands": [executed], "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "timeout_seconds": args.timeout, "reason": "Public timer/scheduling C Host compiled outside both source checkouts from sealed supplied SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-process-faults.com"
+        cases = [(mode, [mode, str(output / "sdk/process-child.exe") if os.name == "nt" else "/bin/true"], expected, platforms)
+                 for mode, expected, platforms in PROCESS_FAULT_CASES if ("Windows" if os.name == "nt" else "POSIX") in platforms]
+    else:
+        artifact = output / "qaplet-process-host.com"
+        cases = [(suffix, [value.replace("{self}", str(artifact)).replace("{cli}", str(supplied / "qaplet.com")).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments], expected, ["Windows", "POSIX"])
+                 for suffix, arguments, expected in HOST_CASES if suffix.startswith("m2-process-")]
+    for suffix, arguments, expected, platforms in cases:
+        executed, stdout, stderr = run(report, directory, artifact.stem + "." + suffix,
+            [*loader, artifact, *arguments], args.timeout, expected=None)
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": artifact.stem + "." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "command": executed,
+            "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+            "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+            "controlled_system_fixture": args.operation == "fault-consume", "platforms": platforms,
+            "reason": "Process C consumer compiled outside both source checkouts from the sealed supplied SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-io-faults.com"
+        for mode, expected, platforms in IO_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-", output / "sdk/process-child.exe"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Owned Process pipe I/O system fixture compiled outside both source checkouts from sealed public SDK"})
+    if args.operation == "fault-consume":
+        artifact = output / "qaplet-js-process-faults.com"
+        for mode, expected, platforms in JS_PROCESS_FAULT_CASES:
+            if ("Windows" if os.name == "nt" else "POSIX") not in platforms:
+                continue
+            executed, stdout, stderr = run(report, directory, artifact.stem + "." + mode,
+                [*loader, artifact, mode, artifact, str(loader[0]) if loader else "-"], args.timeout, expected=None)
+            passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+            report["cases"].append({"case_id": artifact.stem + "." + mode, "required": True,
+                "status": "pass" if passed else "fail", "command": executed,
+                "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+                "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+                "artifact": identity(artifact), "sdk_sha256": producer["sdk"]["sha256"],
+                "controlled_system_fixture": True, "platforms": platforms,
+                "reason": "Public JS Process/IO system boundary, compiled outside source from the sealed SDK"})
+    artifact=output / ("qaplet-stdio-faults.com" if args.operation=="fault-consume" else "qaplet-stdio-host.com")
+    stdio_cases=STDIO_FAULT_CASES if args.operation=="fault-consume" else tuple((suffix,arguments,expected) for suffix,arguments,expected in HOST_CASES if suffix.startswith("m2-stdio-"))
+    for suffix,arguments,expected in stdio_cases:
+        executed,stdout,stderr=run(report,directory,artifact.stem+"."+suffix,[*loader,artifact,*arguments],args.timeout,expected=None)
+        passed=executed["exit_code"]==0 and not executed["timed_out"] and stdout==expected and not stderr
+        report["cases"].append({"case_id":artifact.stem+"."+suffix,"required":True,"status":"pass" if passed else "fail",
+            "commands":[executed],"expected":{"exit_code":0,"stdout":expected,"stderr":""},
+            "actual":{"exit_code":executed["exit_code"],"stdout":stdout,"stderr":stderr,"timed_out":executed["timed_out"]},
+            "artifact":identity(artifact),"sdk_sha256":producer["sdk"]["sha256"],"controlled_system_fixture":args.operation=="fault-consume",
+            "reason":"Standard stream public C/JS Host compiled outside source checkouts from sealed supplied SDK"})
+    aggregate_cases(args, report, directory, output, loader, faults=args.operation == "fault-consume")
+    check_package(producer, external, check_archive=False)
+    verify_inputs(args, report, directory, stage="after")
+    recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
+    report.update(status="pass" if all(case["status"] == "pass" for case in report["cases"]) else "fail",
+                  reason="Actual sealed package extracted outside source tree, compiled using supplied public header/archive, audited and executed")
+
+
+def relative_identity(path, root):
+    return {"file": path.relative_to(root).as_posix(), "sha256": sha256(path), "size_bytes": path.stat().st_size}
+
+
+def seal_package(report, output):
+    distribution = output / "sdk"
+    manifest = {"schema_version": 1, "name": "qaplet-embed-sdk", "version": "0.1.0", **M2_RUNTIME_METADATA,
+        "capability_names": ["lifecycle", "sync-script", "scalar-result", "owner-thread", "pod-snapshot", "resource-base",
+            "copied-values", "promise-jobs", "file-modules", "execution-budgets", "module-policy", "host-modules",
+            "pod-events", "resource-limits", "cooperative-stop", "runtime-snapshot", "m2-runtime", "m2-wait", "m2-timers", "host-notify", "process", "m2-work", "process-io", "stdio", "tty"],
+        "targets": [{"architecture": arch, **relative_identity(distribution / path, output)}
+            for arch, path in (("x86_64", "lib/libqaplet.a"), ("aarch64", "lib/.aarch64/libqaplet.a"))],
+        "input_id": report["input_lock"]["input_id"], "sdk_recipe_id": report["sdk_recipe"]["sha256"],
+        "source_commit": report["sdk_recipe"]["git_commit"], "engine": report["source"],
+        "toolchain_archive": report["toolchain"]["archive"],
+        "artifacts": [{"name": item["name"], "file": Path(item["path"]).name,
+                       "sha256": item["sha256"], "size_bytes": item["size_bytes"]} for item in report["artifacts"]],
+        "components": [relative_identity(path, output) for path in sorted(distribution.rglob("*")) if path.is_file()]}
+    write_json(distribution / "manifest.json", manifest)
+    members = [relative_identity(path, output) for path in sorted(output.rglob("*")) if path.is_file()]
+    path = output / "qaplet-sdk.zip"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in members:
+            entry = zipfile.ZipInfo(item["file"], date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o100644 << 16
+            archive.writestr(entry, (output / item["file"]).read_bytes())
+    report["package"] = {**relative_identity(path, output), "format": "zip", "members": members,
+                         "manifest": relative_identity(distribution / "manifest.json", output)}
+
+
+def check_package(producer, supplied, check_archive=True):
+    package = producer["package"]
+    members = package["members"]
+    expected = {item["file"]: item for item in members}
+    if len(expected) != len(members) or not members:
+        raise BuildError("Unique complete package members required")
+    if producer.get("distribution") and {item["file"]: {key: item[key] for key in ("file", "sha256", "size_bytes")}
+            for item in producer["distribution"] if item["file"] != "qaplet-sdk.zip"} != expected:
+        raise BuildError("Package inventory differs from delivered distribution")
+    if digest({key: value for key, value in producer["sdk_recipe"].items()
+               if key not in ("git_commit", "working_tree_dirty", "sha256")}) != producer["sdk_recipe"]["sha256"]:
+        raise BuildError("SDK package recipe identity is inconsistent")
+    sdk_components = [{key: item[key] for key in ("file", "sha256", "size_bytes")} for item in producer["sdk"]["components"]]
+    if sdk_components != [item for name, item in expected.items() if name.startswith("sdk/")] or digest(sdk_components) != producer["sdk"]["sha256"]:
+        raise BuildError("SDK package aggregate differs from supplied public components")
+    for name in expected:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name:
+            raise BuildError("Unsafe SDK package member")
+    if check_archive:
+        path = supplied / package["file"]
+        if package["file"] != "qaplet-sdk.zip" or relative_identity(path, supplied) != {key: package[key] for key in ("file", "sha256", "size_bytes")}:
+            raise BuildError("SDK package archive differs from producer")
+        with zipfile.ZipFile(path) as archive:
+            if archive.namelist() != list(expected) or archive.testzip() is not None:
+                raise BuildError("SDK package members differ from complete distribution")
+            for name, item in expected.items():
+                data = archive.read(name)
+                if len(data) != item["size_bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+                    raise BuildError("SDK package member differs from producer: " + name)
+    for name, item in expected.items():
+        if relative_identity(supplied / name, supplied) != item:
+            raise BuildError("Extracted SDK package member differs from producer: " + name)
+    manifest = read_json(supplied / "sdk/manifest.json")
+    if {key: manifest[key] for key in RUNTIME_METADATA} != RUNTIME_METADATA or manifest["sdk_recipe_id"] != producer["sdk_recipe"]["sha256"]:
+        raise BuildError("SDK manifest ABI/capabilities/defaults/recipe mismatch")
+    if {key: manifest[key] for key in M2_RUNTIME_METADATA} != M2_RUNTIME_METADATA:
+        raise BuildError("SDK manifest M2 instance capabilities/effective finite defaults mismatch")
+    if manifest["input_id"] != producer["input_lock"]["input_id"] or manifest["source_commit"] != producer["sdk_recipe"]["git_commit"] or manifest["engine"] != producer["source"] or manifest["toolchain_archive"] != producer["toolchain"]["archive"]:
+        raise BuildError("SDK manifest source/toolchain identity mismatch")
+    if manifest["components"] != [item for name, item in expected.items() if name.startswith("sdk/") and name != "sdk/manifest.json"]:
+        raise BuildError("SDK manifest public component inventory mismatch")
+    if manifest["artifacts"] != [{"name": item["name"], "file": item["name"] + ".com", "sha256": item["sha256"],
+                                  "size_bytes": item["size_bytes"]} for item in producer["artifacts"]]:
+        raise BuildError("SDK manifest executable identities mismatch")
+    if manifest["targets"] != [{"architecture": arch, **expected[name]} for arch, name in
+            (("x86_64", "sdk/lib/libqaplet.a"), ("aarch64", "sdk/lib/.aarch64/libqaplet.a"))]:
+        raise BuildError("Both target static archives must match manifest")
+
+
+def compile_m2_faults(args, report, directory, tree, helpers, sdk, work, output):
+    """Separate supplied-archive system fixture; never a normal product case."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "m2-faults.c"
+    symbols = ("pthread_mutex_init", "pthread_mutex_destroy", "pthread_condattr_init", "pthread_condattr_destroy",
+               "pthread_condattr_setclock", "pthread_cond_init", "pthread_cond_destroy", "clock_gettime",
+               "socket", "accept", "close", "poll", "send", "recv")
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-m2-faults.build-commands.log"))
+    report["external_consumer"]["source"] = str(source)
+    report["controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
+        "scope": "system initialization, deterministic wait handoff, HostNotify close overlap/reentry, accepted wake failure, clock/wait faults and whole-call guard; not native OS coverage"}
+    run(report, directory, "m2-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-m2-faults", [work / "faults.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-m2-faults.com", work, environment,
+        libraries=(*("-Wl,--wrap=" + name for name in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, "qaplet-m2-faults", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-m2-faults", output)
+    artifact["build_commands"] = identity(output / "qaplet-m2-faults.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_work_host(args, report, directory, tree, helpers, sdk, work, output):
+    """Run the public WorkPool seam in a real package-only C application."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "host-work.c"
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-work-host.build-commands.log"))
+    report["external_work_consumer"] = {"source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False}
+    run(report, directory, "work-host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "host.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-host", [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-work-host.com", work, environment)
+    publish_ape(work, output, "qaplet-work-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-work-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-work-host.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_timer_host(args, report, directory, tree, helpers, sdk, work, output):
+    """Public timer and checkpoint boundary from the sealed SDK only."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "host-timers.c"
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-timer-host.build-commands.log"))
+    report["external_timer_consumer"] = {"source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False}
+    run(report, directory, "timer-host-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-timer-host", [work / "host.o", sdk / "lib/libqaplet.a"],
+                  work / "qaplet-timer-host.com", work, environment)
+    publish_ape(work, output, "qaplet-timer-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-timer-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-timer-host.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+def compile_work_faults(args, report, directory, tree, helpers, sdk, work, output):
+    """Separate required WorkPool system seam inside existing fault consumption."""
+    (work / "tmp").mkdir(parents=True)
+    source = sdk / "work-faults.c"
+    symbols = ("calloc", "pthread_create", "pthread_tryjoin_np", "send", "mkstemp")
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-work-faults.build-commands.log"))
+    report["work_controlled_system_fixture"] = {"source": identity(source), "wrapped_symbols": list(symbols),
+        "file_consumer": identity(sdk / "host-work.c"),
+        "scope": "real absent global-tmp boundary through supplied file consumer, actual SDK allocation refusal, ordinary worker creation errno, accepted submit/completion wake failure and uncertain join; not native OS coverage"}
+    run(report, directory, "work-faults-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", source, "-o", work / "faults.o"], args.compile_timeout, work, environment)
+    run(report, directory, "work-faults-file-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", sdk / "host-work.c", "-o", work / "host-work.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet-work-faults", [work / "faults.o", work / "host-work.o", sdk / "lib/libqaplet.a"],
+        work / "qaplet-work-faults.com", work, environment,
+        libraries=(*("-Wl,--wrap=" + name for name in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, "qaplet-work-faults", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-work-faults", output)
+    artifact["build_commands"] = identity(output / "qaplet-work-faults.build-commands.log")
+    report["artifacts"].append(artifact)
+
+
+PROCESS_FAULT_SUCCESS = "M2 process system boundary: controlled failure/physical exit; retained capacity; safe close/quiesce/destroy: pass\n"
+PROCESS_FAULT_CASES = (
+    ("--exit-race", "M2 process exited-child race: real native exit37 before helper publication; cancel and close preserve actual exit without false terminate error; helper remains sole reap/close owner; retry quiesce drains: pass\n", ["Windows"]),
+    ("--cancel-wake", "M2 process cancel wake: cancellation remains accepted after real wake failure; CANCELLED and actual reap preserved; first control cause survives stop/close; physical cleanup drains: pass\n", ["Windows", "POSIX"]),
+    ("--cancel-physical", "M2 process cancel physical: accepted CANCELLED before reap; reap before helper TLS exit; release invalidates token while capacity retained; zero/finite quiesce and BUSY destroy; actual join releases resources: pass\n", ["Windows", "POSIX"]),
+    ("--cancel-error", "M2 process cancel native error: accepted cancellation preserves actual terminate error and natural exit; physical retention and cleanup diagnostic independent: pass\n", ["Windows", "POSIX"]),
+    ("--physical", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--thread-fail", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--alloc-fail", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--stop-create", PROCESS_FAULT_SUCCESS, ["Windows", "POSIX"]),
+    ("--fork-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
+    ("--read-fail", PROCESS_FAULT_SUCCESS, ["POSIX"]),
+    ("--lost-pid", "M2 process lost identity: stolen reap; retired PID never signalled; helper joined; slot retained; CLOSED cleanup error and BUSY destroy: pass\n", ["POSIX"]),
+)
+JS_PROCESS_FAULT_CASES = (
+    ("--m2-process-js-start-fault", "M2 process JS IO start failure: controlled pthread EAGAIN; synchronous Error preserves original domain/value; atomic refusal; next IO recovers; actual native cleanup: pass\n", ["Windows"]),
+    ("--m2-process-js-reap-fault", "M2 process JS uncertain reap: real stolen wait; rejected exit preserves ECHILD/unreaped facts; closed stays pending; ref requires explicit unref; CLOSED retains unknown ownership; quiesce pending/destroy BUSY; no cleanup success claimed: pass\n", ["POSIX"]),
+)
+IO_FAULT_CASES = (
+    ("--wait", "controlled I/O wait: event wait failure ends only the operation; native Win32 error preserved; pending kernel I/O cancelled and proven complete before event/buffer retirement; cleanup: pass\n", ["Windows"]),
+    ("--partial", "controlled I/O partial: real 1024-byte prefix then system write error; exact copied result and native domain; ordinary failure; native cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--allocation", "controlled I/O allocation: actual SDK refusal is permanent; owner starts child termination without another pump/close; first cause and physical cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--reuse", "controlled I/O reuse: real closed native descriptor/HANDLE reused; pending cancel/close and stale endpoint/operation tokens never target replacement; exact new child byte and cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--wake", "controlled I/O wake: accepted token survives actual wake failure; cancellation/release remain accepted; independent first cause and owner cleanup: pass\n", ["Windows", "POSIX"]),
+    ("--physical", "controlled I/O physical: cancelled syscall exits before gated helper TLS destruction; released token invalid; bytes/count retained CLOSED; finite retry and BUSY destroy; real join retires storage: pass\n", ["Windows"]),
+    ("--start", "controlled I/O start: real helper start refusal preserves native errno; no accepted token/count/bytes; ordinary failure retries and cleans up: pass\n", ["Windows"]),
+)
+
+
+def compile_process_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False, io_faults=False, js_faults=False):
+    """Public package-only Process application; wrapped OS fixture is separate."""
+    (work / "tmp").mkdir(parents=True)
+    name = "qaplet-js-process-faults" if js_faults else "qaplet-io-faults" if io_faults else "qaplet-process-faults" if faults else "qaplet-process-host"
+    source = sdk / ("io-faults.c" if io_faults else "process-faults.c" if faults else "host-process.c")
+    symbols = ("pthread_create", "sys_waitid") if js_faults else ("read", "ReadFile", "write", "WriteFile", "close", "CloseHandle", "GetExitCodeProcess", "calloc", "pthread_create", "send", "WaitForSingleObject") if io_faults else ("calloc", "pthread_create", "fork", "sys_waitid", "kill", "read", "clock_gettime", "mkntcmdline", "TerminateProcess", "CloseHandle", "GetExitCodeProcess", "send") if faults else ()
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    report["js_process_controlled_system_fixture" if js_faults else "io_controlled_system_fixture" if io_faults else "process_controlled_system_fixture" if faults else "external_process_consumer"] = {
+        "source": identity(source), "include_directories": [str(sdk / "include")],
+        "archive": identity(sdk / "lib/libqaplet.a"), "private_headers": False,
+        "wrapped_symbols": list(symbols), "scope": "public JS Process/IO with controlled pthread start failure" if js_faults else "real Process API, deterministic helper/TLS retention and OS error boundary" if faults else "public Process API only"}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-DSDK_STANDALONE", *(["-DSDK_JS_START_FAULT"] if js_faults else []),
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / (name + ".com"), work, environment,
+        libraries=(*("-Wl,--wrap=" + symbol for symbol in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(), consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log")); report["artifacts"].append(artifact)
+    (output / "sdk").mkdir(exist_ok=True)
+    shutil.copyfile(sdk / "process-child.exe", output / "sdk/process-child.exe")
+    report["process_child"] = identity(output / "sdk/process-child.exe")
+
+
+def compile_example(args, report, directory, tree, helpers, sdk, work, output, m2=False):
+    name = "qaplet-m2-example" if m2 else "qaplet-example"
+    source = "application-m2.c" if m2 else "application.c"
+    (work / "tmp").mkdir(parents=True)
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        "-I" + str(sdk / "include"), "-ffile-prefix-map=" + str(sdk) + "=sdk",
+        "-c", sdk / source, "-o", work / "application.o"], args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "application.o", sdk / "lib/libqaplet.a"],
+                  work / (name + ".com"), work, environment)
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log"))
+    report["artifacts"].append(artifact)
+
+
+STDIO_FAULT_CASES=(
+    ("js-start",["--js-start"],"controlled stdio JS start: real helper EAGAIN retains code/native domain/value; later bad arguments carry no stale OS error; accepted retry returns copied bytes; cleanup: pass\n"),
+    ("allocation",["--allocation"],"controlled stdio allocation: actual SDK attach storage refusal permanently fails; no token/duplicate/operation; Host original survives and native cleanup completes: pass\n"),
+    ("cancel",["--cancel"],"controlled stdio cancel: logical cancellation removes keepalive while syscall retains count/data/helper; copy BUSY until stable real bytes; single CANCELLED result then physical cleanup: pass\n"),
+    ("close",["--close"],"controlled stdio close: cancelled native file call retains bytes/count/helper through CLOSED; zero quiesce times out; destroy BUSY; actual exit/join returns capacity and preserves Host handle: pass\n"),
+    ("stop",["--stop"],"controlled stdio stop: owner confirms first stop and cancels in-flight file before close; physical data/helper retained through CLOSED/BUSY; actual native exit/join completes cleanup: pass\n"),
+    ("partial",["--partial"],"controlled stdio partial: real 2-byte prefix then native error; stable actual bytes and error domain; ordinary failure preserves OPEN; Host output preserved: pass\n"),
+    ("start",["--start"],"controlled stdio start: helper EAGAIN refuses atomically; no token/count/data/helper; stable errno; retry and real file cleanup: pass\n"),
+)
+def compile_stdio_consumer(args,report,directory,tree,helpers,sdk,work,output,faults=False):
+    (work/"tmp").mkdir(parents=True)
+    name="qaplet-stdio-faults" if faults else "qaplet-stdio-host"
+    source=sdk/("stdio-faults.c" if faults else "host-stdio.c")
+    symbols=("read","ReadFile","write","WriteFile","pthread_create","calloc") if faults else ()
+    environment=dict(os.environ,TMPDIR=str(work/"tmp"),SOURCE_DATE_EPOCH="0",LC_ALL="C",TZ="UTC",BUILDLOG=str(output/(name+".build-commands.log")))
+    report["stdio_controlled_system_fixture" if faults else "external_stdio_consumer"]={"source":identity(source),"include_directories":[str(sdk/"include")],"archive":identity(sdk/"lib/libqaplet.a"),"private_headers":False,"wrapped_symbols":list(symbols)}
+    run(report,directory,name+"-compile",[tree/"bin/cosmocc","-Os","-D_GNU_SOURCE","-DSDK_STANDALONE","-I"+str(sdk/"include"),"-ffile-prefix-map="+str(sdk)+"=sdk","-c",source,"-o",work/"host.o"],args.compile_timeout,work,environment)
+    link_portable(args,report,directory,tree,helpers,name,[work/"host.o",sdk/"lib/libqaplet.a"],work/(name+".com"),work,environment,libraries=(*("-Wl,--wrap="+s for s in symbols),"-lm","-lpthread"))
+    publish_ape(work,output,name,helpers,ape_helpers.source_cache(args.helper_source_cache.resolve(),consumption_purpose("build",args.controlled_probe)))
+    artifact=audit(args,report,directory,tree,name,output);artifact["build_commands"]=identity(output/(name+".build-commands.log"));report["artifacts"].append(artifact)
+
+
+AGGREGATE_FAULT_STDOUT = "M2 aggregate controlled faults: eight mixed Work/timer/token cases; stop/control and stop/actual allocation ordered both ways; accepted work survives wake fault; core clock/wait and caught engine allocation terminate; deadline first survives late CLOSED cleanup fault; first cause and real join retained: pass\n"
+
+
+def compile_aggregate_consumer(args, report, directory, tree, helpers, sdk, work, output, faults=False):
+    (work / "tmp").mkdir(parents=True)
+    name = "qaplet-aggregate-faults" if faults else "qaplet-aggregate-host"
+    source = sdk / ("aggregate-faults.c" if faults else "host-aggregate.c")
+    symbols = ("calloc", "malloc", "send", "clock_gettime", "poll") if faults else ()
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / (name + ".build-commands.log")))
+    report["aggregate_controlled_system_fixture" if faults else "external_aggregate_consumer"] = {
+        "source": identity(source), "public_consumer": identity(sdk / "host-aggregate.c"),
+        "include_directories": [str(sdk / "include")], "archive": identity(sdk / "lib/libqaplet.a"),
+        "private_headers": False, "wrapped_symbols": list(symbols)}
+    run(report, directory, name + "-compile", [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE",
+        *([] if faults else ["-DQAPLET_AGGREGATE_STANDALONE"]), "-I" + str(sdk / "include"),
+        "-ffile-prefix-map=" + str(sdk) + "=sdk", "-c", source, "-o", work / "host.o"],
+        args.compile_timeout, work, environment)
+    link_portable(args, report, directory, tree, helpers, name, [work / "host.o", sdk / "lib/libqaplet.a"],
+        work / (name + ".com"), work, environment,
+        libraries=(*("-Wl,--wrap=" + symbol for symbol in symbols), "-lm", "-lpthread"))
+    publish_ape(work, output, name, helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(), consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, name, output)
+    artifact["build_commands"] = identity(output / (name + ".build-commands.log")); report["artifacts"].append(artifact)
+
+
+def aggregate_cases(args, report, directory, output, loader, faults=False):
+    artifact = output / ("qaplet-aggregate-faults.com" if faults else "qaplet-aggregate-host.com")
+    cases = [("system-boundary", [], AGGREGATE_FAULT_STDOUT)] if faults else [row for row in HOST_CASES if row[0].startswith("m2-aggregate-")]
+    for suffix, arguments, expected in cases:
+        arguments = [value.replace("{self}", str(artifact)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
+        executed, stdout, stderr = run(report, directory, artifact.stem + "." + suffix,
+            [*loader, artifact, *arguments], args.timeout, expected=None)
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        report["cases"].append({"case_id": artifact.stem + "." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "commands": [executed],
+            "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+            "artifact": identity(artifact), "sdk_sha256": report["sdk"]["sha256"],
+            "controlled_system_fixture": faults, "reason": "Public aggregate consumer compiled outside both checkouts from the sealed supplied SDK"})
+
+
+def example_cases(args, report, directory, artifact, modules, loader):
+    if os.name != "nt": artifact.chmod(artifact.stat().st_mode | 0o111)
+    for suffix, arguments, expected_exit, expected_stdout, stderr_contains in EXAMPLE_CASES:
+        arguments = [value.replace("{modules}", str(modules)) for value in arguments]
+        executed, _, _ = run(report, directory, "qaplet-example." + suffix,
+                             [*loader, artifact, *arguments], args.timeout, expected=None)
+        stdout = Path(executed["stdout_log"]).read_bytes()
+        stderr = Path(executed["stderr_log"]).read_bytes()
+        passed = executed["exit_code"] == expected_exit and not executed["timed_out"] and stdout == expected_stdout.encode() and (
+            stderr_contains.encode() in stderr if stderr_contains else not stderr)
+        report["cases"].append({"case_id": "qaplet-example." + suffix, "required": True,
+            "status": "pass" if passed else "fail", "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+            "expected": {"exit_code": expected_exit, "stdout": expected_stdout, "stderr_contains": stderr_contains},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout.decode(), "stderr": stderr.decode(), "timed_out": executed["timed_out"]},
+            "commands": [executed], "artifact": identity(artifact), "sdk_sha256": report["sdk"]["sha256"],
+            "timeout_seconds": args.timeout, "reason": "Complete public-only C application consumed supplied SDK"})
+
+
+def build(args, report, directory):
+    if report["host"]["os"] != "Linux" or platform.freedesktop_os_release().get("ID") != "ubuntu":
+        raise BuildError("SDK distributions are built on Ubuntu only", "blocked")
+    capture_consumer_inputs(report, directory)
+    report['build_input_snapshot'] = report.pop('consumer_identity')
+    original = verify_inputs(args, report, directory)
+    tree = native_toolchain(args, report, directory, original)
+    helpers = prepare_portable_helpers(args, report, directory, tree)
+    source = Path(report["source"]["path"])
+    engine_inputs = []
+    for path in sorted({*(source / name for name in SOURCES), *source.glob('*.h'), source / 'VERSION'}):
+        retained = directory / 'engine-inputs' / path.name
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, retained)
+        if sha256(path) != sha256(retained):
+            raise BuildError('Engine compiler input changed while preserving it: ' + path.name)
+        engine_inputs.append({'original': identity(path), 'retained': identity(retained)})
+    report['engine_input_snapshot'] = engine_inputs
+    output = args.output_dir.resolve()
+    if output.exists() and any(output.iterdir()):
+        raise BuildError("Output directory must be new or empty")
+    work = args.build_dir.resolve() / report["report_id"]
+    work.mkdir(parents=True)
+    (work / "tmp").mkdir()
+    output.mkdir(parents=True, exist_ok=True)
+    distribution = output / "sdk"
+    (distribution / "include").mkdir(parents=True)
+    (distribution / "lib/.aarch64").mkdir(parents=True)
+    shutil.copyfile(ROOT / "include/qaplet.h", distribution / "include/qaplet.h")
+    shutil.copyfile(ROOT / "examples/embed.c", distribution / "embed.c")
+    shutil.copyfile(ROOT / "examples/application.c", distribution / "application.c")
+    shutil.copyfile(ROOT / "examples/application-m2.c", distribution / "application-m2.c")
+    shutil.copyfile(ROOT / "tests/fixtures/sdk/m2-example-input.bin", distribution / "m2-example-input.bin")
+    shutil.copyfile(ROOT / "examples/SDK-README.md", distribution / "README.md")
+    for source_name, delivered, _, _ in HOST_UNITS:
+        shutil.copyfile(ROOT / source_name, distribution / delivered)
+    shutil.copytree(ROOT / "tests/fixtures/modules", distribution / "modules")
+    shutil.copyfile(ROOT / "third_party/quickjs/LICENSE", distribution / "QUICKJS-LICENSE")
+    shutil.copyfile(ROOT / "tests/native/sdk_process_winchild.c", distribution / "process-child.c")
+    shutil.copyfile(ROOT / "LICENSE", distribution / "LICENSE")
+    files = recipe()
+    flags = ["-Os", "-fwrapv", "-D_GNU_SOURCE", '-DCONFIG_VERSION="' + (source / "VERSION").read_text().strip() + '"',
+             "-I" + str(source), "-I" + str(ROOT / "include"), "-I" + str(ROOT / "src"),
+             "-ffile-prefix-map=" + str(ROOT) + "=qaplet", "-ffile-prefix-map=" + str(source) + "=quickjs",
+             "-ffile-prefix-map=" + str(work) + "=build", *args.cflag]
+    report["build_directory"] = str(work)
+    _, revision, _ = run(report, directory, "git-revision", ["git", "rev-parse", "HEAD"], 10)
+    _, dirty, _ = run(report, directory, "git-status", ["git", "status", "--porcelain"], 10)
+    report["sdk_recipe"] = {**recipe_identity(files, report["input_lock"]["input_id"], args.cflag), "git_commit": revision.strip(),
+                            "working_tree_dirty": bool(dirty.strip())}
+    # The SDK recipe is additive. It does not mutate or extend the frozen M0 lock.
+    report["build"] = {"flags": flags, "recipe_files": files, "sdk_recipe_id": report["sdk_recipe"]["sha256"],
+                       "quickjs_sources": list(SOURCES), "portable_helpers_sha256": helpers["sha256"],
+                       "native_helpers_sha256": report["native_toolchain"]["helper_set_sha256"],
+                       "libc_source": report["toolchain"]["libc_source"], "source_date_epoch": 0}
+    report["build"]["sha256"] = digest(report["build"])
+    environment = dict(os.environ, TMPDIR=str(work / "tmp"), SOURCE_DATE_EPOCH="0", LC_ALL="C", TZ="UTC",
+                       BUILDLOG=str(output / "qaplet-host.build-commands.log"))
+    objects = []
+    for index, path in enumerate([ROOT / "src/runtime.c", ROOT / "src/loop.c", ROOT / "src/process.c", ROOT / "src/io.c", ROOT / "src/stdio.c", ROOT / "src/js_io.c", ROOT / "src/js_async.c", ROOT / "src/work.c", ROOT / "src/execution.c", ROOT / "src/values.c", ROOT / "src/modules.c", ROOT / "src/host_module.c", ROOT / "src/events.c", ROOT / "src/timers.c", *(source / name for name in SOURCES)]):
+        obj = work / (path.stem + ".o")
+        run(report, directory, "sdk-compile-" + str(index), [tree / "bin/cosmocc", *flags, "-c", path, "-o", obj],
+            args.compile_timeout, work, environment)
+        objects.append(obj)
+    child_flags = ["-Os", "-mcmodel=large", "-mabi=ms", "-ffreestanding", "-fno-builtin", "-fno-stack-protector", "-fno-pie", "-fno-asynchronous-unwind-tables", "-mno-red-zone"]
+    run(report, directory, "process-child-compile", [tree / "bin/x86_64-linux-cosmo-gcc", *child_flags, "-c", distribution / "process-child.c", "-o", work / "process-child.o"], args.compile_timeout, work, environment)
+    run(report, directory, "process-child-link", [tree / "bin/x86_64-linux-cosmo-ld", "-Ttext=0x140001000", "-e", "entry", *m2_process_pe.link_flags(), work / "process-child.o", "-o", work / "process-child.elf"], args.compile_timeout, work, environment)
+    run(report, directory, "process-child-binary", [tree / "bin/x86_64-linux-cosmo-objcopy", "-O", "binary", "-j", ".text", "-j", ".rodata", work / "process-child.elf", work / "process-child.bin"], args.compile_timeout, work, environment)
+    entry = struct.unpack_from("<Q", (work / "process-child.elf").read_bytes(), 24)[0]
+    m2_process_pe.package(work / "process-child.bin", distribution / "process-child.exe", entry - m2_process_pe.BASE - 0x1000)
+    archive = distribution / "lib/libqaplet.a"
+    run(report, directory, "sdk-archive", [tree / "bin/cosmoar", "rcsD", archive, *objects], args.compile_timeout, work, environment)
+    # Compile only against the distributed public header and link the supplied archive.
+    host_objects = []
+    for _, delivered, object_name, step in HOST_UNITS:
+        if object_name is None:
+            continue
+        obj = work / object_name
+        run(report, directory, step, [tree / "bin/cosmocc", "-Os", "-D_GNU_SOURCE", "-I" + str(distribution / "include"),
+            "-c", distribution / delivered, "-o", obj], args.compile_timeout, work, environment)
+        host_objects.append(obj)
+    link_portable(args, report, directory, tree, helpers, "qaplet-host", [*host_objects, archive],
+                  work / "qaplet-host.com", work, environment)
+    publish_ape(work, output, "qaplet-host", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    artifact = audit(args, report, directory, tree, "qaplet-host", output)
+    artifact["build_commands"] = identity(output / "qaplet-host.build-commands.log")
+    report["artifacts"].append(artifact)
+    cli_work = work / "cli"
+    (cli_work / "tmp").mkdir(parents=True)
+    cli_environment = dict(environment, TMPDIR=str(cli_work / "tmp"), BUILDLOG=str(output / "qaplet.build-commands.log"))
+    run(report, directory, "cli-compile", [tree / "bin/cosmocc", "-Os", "-I" + str(distribution / "include"),
+        "-c", ROOT / "src/cli.c", "-o", cli_work / "cli.o"], args.compile_timeout, cli_work, cli_environment)
+    link_portable(args, report, directory, tree, helpers, "qaplet", [cli_work / "cli.o", archive],
+                  cli_work / "qaplet.com", cli_work, cli_environment)
+    publish_ape(cli_work, output, "qaplet", helpers, ape_helpers.source_cache(args.helper_source_cache.resolve(),
+                consumption_purpose("build", args.controlled_probe)))
+    cli_artifact = audit(args, report, directory, tree, "qaplet", output)
+    cli_artifact["build_commands"] = identity(output / "qaplet.build-commands.log")
+    report["artifacts"].append(cli_artifact)
+    compile_example(args, report, directory, tree, helpers, distribution, work / "example", output)
+    compile_example(args, report, directory, tree, helpers, distribution, work / "m2-example", output, m2=True)
+    seal_package(report, output)
+    report["sdk"] = {"abi_version": 1, "recipe_id": report["sdk_recipe"]["sha256"],
+        "components": [{"file": path.relative_to(output).as_posix(), **identity(path)}
+                       for path in sorted(distribution.rglob("*")) if path.is_file()]}
+    report["sdk"]["sha256"] = digest([{key: value for key, value in item.items() if key != "path"}
+                                       for item in report["sdk"]["components"]])
+    # Bind all delivered APE sidecars, CPU maps, notices, loader and SDK bytes.
+    report["distribution"] = [{"file": path.relative_to(output).as_posix(), **identity(path)}
+                              for path in sorted(output.rglob("*")) if path.is_file()]
+    verify_inputs(args, report, directory, stage="after")
+    recheck(report["native_toolchain"], original, component("cosmocc", purpose=consumption_purpose("build", args.controlled_probe)))
+    if recipe() != files:
+        raise BuildError("SDK recipe/source changed during build")
+    report.update(status="pass", reason="Static SDK ZIP and audited CLI/C Host/application fat APEs built on Ubuntu; runtime evidence is separate")
+
+
+def consume(args, report, directory):
+    capture_consumer_inputs(report, directory)
+    if not args.build_report or not args.artifact:
+        raise BuildError("Supplied Ubuntu producer report and Host artifact are required", "blocked")
+    producer = read_json(args.build_report)
+    consume_identity(producer, report, consumption_purpose("build", args.controlled_probe))
+    check_ci_commit(producer, report)
+    if producer.get("report_kind") != "qaplet-sdk" or producer.get("scope") != "build" or producer.get("status") != "pass":
+        raise BuildError("Successful qaplet-sdk producer required")
+    selected = producer["artifacts"]
+    if len(selected) != 4 or {item["name"] for item in selected} != {"qaplet-host", "qaplet", "qaplet-example", "qaplet-m2-example"} or any(item["audit"]["status"] != "pass" for item in selected):
+        raise BuildError("Audited public C Host, CLI, M1 and M2 example artifacts required")
+    artifact = {**next(item for item in selected if item["name"] == "qaplet-host"), "path": str(args.artifact.resolve())}
+    cli_path = args.cli_artifact.resolve() if args.cli_artifact else args.artifact.resolve().parent / "qaplet.com"
+    cli_artifact = {**next(item for item in selected if item["name"] == "qaplet"), "path": str(cli_path)}
+    if sha256(args.artifact) != artifact["sha256"] or args.artifact.stat().st_size != artifact["size_bytes"]:
+        raise BuildError("Supplied Host bytes differ from producer")
+    if cli_path.parent != args.artifact.resolve().parent:
+        raise BuildError("Supplied CLI and Host must share the delivered distribution")
+    if sha256(cli_path) != cli_artifact["sha256"] or cli_path.stat().st_size != cli_artifact["size_bytes"]:
+        raise BuildError("Supplied CLI bytes differ from producer")
+    def check_distribution():
+        delivered = producer.get("distribution")
+        if not delivered or len({item["file"] for item in delivered}) != len(delivered):
+            raise BuildError("Unique complete delivered distribution identities required")
+        for item in delivered:
+            name = Path(item["file"])
+            if name.is_absolute() or ".." in name.parts:
+                raise BuildError("Distribution component must stay within its supplied directory")
+            path = args.artifact.resolve().parent / name
+            if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+                raise BuildError("Supplied distribution component differs from producer: " + item["file"])
+    check_distribution()
+    check_package(producer, args.artifact.resolve().parent)
+    example_path = args.artifact.resolve().parent / "qaplet-example.com"
+    example_artifact = {**next(item for item in selected if item["name"] == "qaplet-example"), "path": str(example_path)}
+    if sha256(example_path) != example_artifact["sha256"] or example_path.stat().st_size != example_artifact["size_bytes"]:
+        raise BuildError("Supplied example bytes differ from producer")
+    m2_example_path = args.artifact.resolve().parent / "qaplet-m2-example.com"
+    m2_example_artifact = {**next(item for item in selected if item["name"] == "qaplet-m2-example"), "path": str(m2_example_path)}
+    if sha256(m2_example_path) != m2_example_artifact["sha256"] or m2_example_path.stat().st_size != m2_example_artifact["size_bytes"]:
+        raise BuildError("Supplied M2 example bytes differ from producer")
+    # Validate supplied SDK bytes independently, even on hosts which do not compile.
+    for item in producer["sdk"]["components"]:
+        name = Path(item["file"])
+        if name.is_absolute() or ".." in name.parts or name.parts[0] != "sdk":
+            raise BuildError("SDK component must stay within supplied sdk directory")
+        path = args.artifact.parent / item["file"]
+        if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+            raise BuildError("Supplied SDK component differs from producer: " + item["file"])
+    if digest([{key: value for key, value in item.items() if key != "path"}
+               for item in producer["sdk"]["components"]]) != producer["sdk"]["sha256"]:
+        raise BuildError("SDK aggregate identity differs from its components")
+    if producer["sdk"]["recipe_id"] != producer["sdk_recipe"]["sha256"] or digest({
+            key: value for key, value in producer["sdk_recipe"].items()
+            if key not in ("git_commit", "working_tree_dirty", "sha256")}) != producer["sdk_recipe"]["sha256"]:
+        raise BuildError("SDK recipe identity is inconsistent")
+    headers(args.artifact, [args.artifact.with_suffix(".com.dbg"), args.artifact.with_suffix(".aarch64.elf")])
+    headers(cli_path, [cli_path.with_suffix(".com.dbg"), cli_path.with_suffix(".aarch64.elf")])
+    headers(example_path, [example_path.with_suffix(".com.dbg"), example_path.with_suffix(".aarch64.elf")])
+    headers(m2_example_path, [m2_example_path.with_suffix(".com.dbg"), m2_example_path.with_suffix(".aarch64.elf")])
+    report.update(source=producer["source"], toolchain=producer["toolchain"], build=producer["build"],
+                  sdk=producer["sdk"], sdk_recipe=producer["sdk_recipe"], distribution=producer["distribution"], package=producer["package"], producer_report=identity(args.build_report), artifacts=[artifact, cli_artifact, example_artifact, m2_example_artifact])
+    measured_host(args, report, directory)
+    loader = [str(Path(path).resolve()) for path in select_loader(args, report)]
+    # Resolve against the caller's original context before entering a per-case
+    # directory. Fixed-name mixed markers must never share a report/host cwd.
+    host_path = args.artifact.resolve()
+    modules_path = host_path.parent / "sdk/modules"
+    child_path = (host_path.parent / 'sdk/process-child.exe').resolve()
+    if os.name != "nt":
+        args.artifact.chmod(args.artifact.stat().st_mode | 0o111)
+        cli_path.chmod(cli_path.stat().st_mode | 0o111)
+        m2_example_path.chmod(m2_example_path.stat().st_mode | 0o111)
+    for suffix, arguments, expected in HOST_CASES:
+        case_id = "qaplet-host." + suffix
+        mixed = suffix in ("m2-mixed-stop", "m2-mixed-races", "m2-mixed-nonreturning")
+        cwd = directory / case_id if mixed else ROOT
+        child_evidence = None
+        if mixed:
+            cwd.mkdir()
+            member = next(row for row in producer['package']['members'] if row['file'] == 'sdk/process-child.exe')
+            child_copy = cwd / 'process-child.exe'
+            shutil.copyfile(child_path, child_copy)
+            original, retained = identity(child_path), identity(child_copy)
+            if any(item[key] != member[key] for item in (original, retained) for key in ('sha256', 'size_bytes')):
+                raise BuildError('Mixed child input changed before execution')
+            child_evidence = {'package_member': member, 'original': original, 'retained': retained}
+        arguments = [value.replace("{modules}", str(modules_path)).replace("{self}", str(host_path)).replace("{cli}", str(cli_path)).replace("{child}", str(child_path)).replace("{launcher}", str(loader[0]) if loader else "-") for value in arguments]
+        executed, stdout, stderr = run(report, directory, "qaplet-host." + suffix,
+                                      [*loader, host_path, *arguments], args.timeout, cwd, expected=None)
+        if suffix == "facts":
+            expected = json.dumps({"probe": "qaplet-host", "arch": report["host"]["execution_arch"],
+                                   "page_size": report["host"]["page_size"]}, separators=(",", ":")) + "\n"
+        passed = executed["exit_code"] == 0 and not executed["timed_out"] and stdout == expected and not stderr
+        mixed_evidence = {}
+        if mixed:
+            marker, waits = cwd / "mixed-result.txt", cwd / "mixed-waits.ndjson"
+            records = [json.loads(line) for line in waits.read_text(encoding="utf-8").splitlines()] if waits.is_file() else []
+            passed = passed and marker.is_file() and marker.read_bytes() == expected.encode("utf-8") and [row["requested_active_wait_ms"] for row in records] == [0, 5, 5]
+            mixed_evidence = {"marker": identity(marker) if marker.is_file() else None,
+                "process_child": child_evidence,
+                "wait_trace": identity(waits) if waits.is_file() else None, "wait_observations": records,
+                "native_cleanup_complete": suffix != "m2-mixed-nonreturning" if passed else False}
+        required = not (suffix == "module-symlinks" and report["host"]["os"] == "Windows")
+        # This supplied Cosmopolitan PE reports exit(77) as 19712 on the measured
+        # Windows host; retain its actual exit and explicit fixture limitation.
+        unavailable = not required and executed["exit_code"] in (77, 77 << 8) and not executed["timed_out"] and not stdout and stderr.startswith("file-symlink fixture unavailable: errno=")
+        status = "pass" if passed else "blocked" if unavailable else "fail"
+        report["cases"].append({"case_id": "qaplet-host." + suffix, "status": status, "required": required,
+            "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+            "expected": {"exit_code": 0, "stdout": expected, "stderr": ""},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout, "stderr": stderr, "timed_out": executed["timed_out"]},
+            "commands": [executed], "artifact": identity(args.artifact), "sdk_sha256": producer["sdk"]["sha256"],
+            "timeout_seconds": args.timeout, "reason": "Actual Windows file-symlink fixture unavailable; no symlink behavior pass claimed" if unavailable else "Actual public SDK consumer executed supplied APE bytes",
+            "scope_notes": "POSIX FIFO fixture executes on POSIX; Windows file and directory loading are covered without a FIFO" if suffix == "module-policy" and report["host"]["os"] == "Windows" else "", **mixed_evidence})
+    for suffix, arguments, expected_exit, expected_stdout, stderr_contains in CLI_CASES:
+        arguments = [value.replace("{modules}", str(args.artifact.parent.resolve() / "sdk/modules")) for value in arguments]
+        executed, _, _ = run(report, directory, "qaplet." + suffix, [*loader, cli_path, *arguments], args.timeout, expected=None)
+        # CLI strings are UTF-8 with explicit NUL bytes. The frozen M0 helper's
+        # decoding heuristic is unsuitable here; compare the preserved raw logs.
+        stdout = Path(executed["stdout_log"]).read_bytes()
+        stderr = Path(executed["stderr_log"]).read_bytes()
+        elapsed = (datetime.fromisoformat(executed["finished_at"]) - datetime.fromisoformat(executed["started_at"])).total_seconds()
+        immediate = suffix not in ("eval-unsettled", "run-unsettled") or elapsed < 2
+        passed = executed["exit_code"] == expected_exit and not executed["timed_out"] and immediate and stdout == expected_stdout.encode("utf-8") and (stderr_contains.encode("utf-8") in stderr if stderr_contains else not stderr)
+        report["cases"].append({"case_id": "qaplet." + suffix, "status": "pass" if passed else "fail", "required": True,
+            "started_at": executed["started_at"], "finished_at": executed["finished_at"],
+            "expected": {"exit_code": expected_exit, "stdout": expected_stdout, "stderr_contains": stderr_contains,
+                         "maximum_elapsed_seconds": 2 if suffix in ("eval-unsettled", "run-unsettled") else None},
+            "actual": {"exit_code": executed["exit_code"], "stdout": stdout.decode("utf-8"), "stderr": stderr.decode("utf-8"),
+                       "timed_out": executed["timed_out"], "elapsed_seconds": elapsed},
+            "commands": [executed], "artifact": identity(cli_path), "sdk_sha256": producer["sdk"]["sha256"],
+            "timeout_seconds": args.timeout, "reason": "Actual CLI process uses supplied public SDK, raw OS exit and raw UTF-8 logs"})
+    example_cases(args, report, directory, example_path, args.artifact.parent.resolve() / "sdk/modules", loader)
+    sdk_m2_example.run_cases(args, report, directory, m2_example_path, loader, M2_RUNTIME_METADATA, M2_EXAMPLE_CASES)
+    report["artifacts"][3]["sha256_after"] = sha256(m2_example_path)
+    if report["artifacts"][3]["sha256_after"] != m2_example_artifact["sha256"]:
+        raise BuildError("M2 example artifact changed during execution")
+    report["artifacts"][2]["sha256_after"] = sha256(example_path)
+    if report["artifacts"][2]["sha256_after"] != example_artifact["sha256"]:
+        raise BuildError("Example artifact changed during execution")
+    report["artifacts"][1]["sha256_after"] = sha256(cli_path)
+    if report["artifacts"][1]["sha256_after"] != cli_artifact["sha256"]:
+        raise BuildError("CLI artifact changed during execution")
+    report["artifacts"][0]["sha256_after"] = sha256(args.artifact)
+    if report["artifacts"][0]["sha256_after"] != artifact["sha256"]:
+        raise BuildError("Artifact changed during execution")
+    for item in producer["sdk"]["components"]:
+        path = args.artifact.parent / item["file"]
+        if sha256(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+            raise BuildError("Supplied SDK component changed during execution: " + item["file"])
+    if recipe() != producer["sdk_recipe"]["files"]:
+        raise BuildError("Consumer recipe differs from selected SDK producer")
+    check_distribution()
+    check_package(producer, args.artifact.resolve().parent)
+    report["required_cases"] = [item["case_id"] for item in report["cases"] if item["required"]]
+    report["unavailable_cases"] = [item["case_id"] for item in report["cases"] if item["status"] == "blocked"]
+    lifetime = next(item for item in report["cases"] if item["case_id"] == "qaplet-host.lifetime")
+    minimum = 1000 if (report["host"]["os"], report["host"]["execution_arch"]) == ("Linux", "x86_64") else 100
+    report["lifecycle"] = {"case_id": lifetime["case_id"], "minimum_cycles": minimum,
+        "completed_cycles": 1000 if lifetime["status"] == "pass" else 0,
+        "status": lifetime["status"], "measurement": "Actual public Host create/close/destroy loop; exact raw output checked"}
+    report.update(status="pass" if all(item["status"] == "pass" or not item["required"] and item["status"] == "blocked" for item in report["cases"]) else "fail",
+                  reason="Supplied SDK/CLI/Host application contracts and lifecycle loop checked; native matrix and Full remain separate")
+
+
+def main():
+    cache = Path(workspace(ROOT)["cache_root"])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=("build", "run", "package-consume", "example-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume", "matrix"))
+    parser.add_argument("--profile", choices=("fast", "cross"), default="cross")
+    parser.add_argument("--target-plan", type=Path, help="Explicit CI native target plan; never narrows Full")
+    parser.add_argument("--input-report", type=Path, action="append", default=[])
+    parser.add_argument("--input-dir", type=Path, action="append", default=[])
+    parser.add_argument("--source-cache", type=Path, default=cache / "quickjs")
+    parser.add_argument("--toolchain-cache", type=Path, default=cache / "toolchains/cosmocc")
+    parser.add_argument("--helper-source-cache", type=Path, default=cache / "sources/ape-loader")
+    parser.add_argument("--build-dir", type=Path, default=cache / "build/sdk")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "out/sdk/artifacts")
+    parser.add_argument("--report", type=Path, default=ROOT / "out/sdk/report.json")
+    parser.add_argument("--build-report", type=Path)
+    parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--cli-artifact", type=Path, help="Supplied qaplet.com beside Host (default: sibling qaplet.com)")
+    parser.add_argument("--loader-dir", type=Path)
+    parser.add_argument("--loader-manifest", type=Path)
+    parser.add_argument("--expected-os")
+    parser.add_argument("--expected-arch")
+    parser.add_argument("--runner-label", default="local")
+    parser.add_argument("--timeout", type=int, default=30)
+    parser.add_argument("--compile-timeout", type=int, default=300)
+    parser.add_argument("--cflag", action="append", default=[])
+    parser.add_argument("--controlled-probe", action="store_true",
+                        help="explicit candidate producer/consumer; ordinary SDK use requires pinned inputs")
+    args = parser.parse_args()
+    if not 1 <= args.timeout <= 300 or not 1 <= args.compile_timeout <= 900:
+        parser.error("Invalid execution/compile timeout")
+    directory = args.report.resolve().parent / "evidence" / str(uuid.uuid4())
+    if args.operation != "build":
+        try:
+            guard_evidence_outputs([args.report, directory, *([args.output_dir] if args.operation in ("package-consume", "example-consume", "fault-consume", "tty-consume", "mixed-consume", "cli-consume") else [])],
+                [args.build_report, args.loader_manifest, *args.input_report],
+                [*([args.artifact.resolve().parent] if args.artifact else []),
+                 *([args.loader_dir] if args.loader_dir else []), *args.input_dir],
+                [args.artifact, args.cli_artifact])
+        except ValueError as error:
+            parser.error(str(error))
+    directory.mkdir(parents=True)
+    report = {"schema_version": 1, "report_kind": "qaplet-sdk", "scope": args.operation, "report_id": directory.name,
+              "status": "not_run", "reason": "", "started_at": now(), "host": host_facts(), "ci": ci_facts(),
+              "commands": [], "cases": [], "artifacts": [], "input_reports": {}, "source": None, "toolchain": None,
+              "build": None, "native_toolchain": None, "evidence_directory": str(directory),
+              "controlled_probe": args.controlled_probe}
+    try:
+        if args.operation == "matrix":
+            from sdk_matrix import matrix
+            matrix(args, report, directory)
+        else:
+            {"build": build, "run": consume, "package-consume": package_consume, "example-consume": package_consume, "fault-consume": package_consume,"tty-consume":package_consume,"mixed-consume":package_consume,"cli-consume":package_consume}[args.operation](args, report, directory)
+    except BuildError as error:
+        report.update(status=error.status, reason=str(error))
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+        report.update(status="fail", reason=str(error))
+    report["finished_at"] = now()
+    try:
+        if args.operation == "build":
+            write_json(args.report, report)
+        else:
+            write_evidence_report(args.report, report)
+    except ValueError as error:
+        print(json.dumps({"status": "fail", "reason": str(error), "validation_reason": report["reason"],
+                          "report": str(args.report), "report_written": False}))
+        return 1
+    print(json.dumps({"status": report["status"], "reason": report["reason"], "report": str(args.report), "report_written": True}))
+    return {"pass": 0, "fail": 1, "blocked": 2}[report["status"]]
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,7 +1,13 @@
 {
   "name": "Foundation bootstrap (not the M0 product gate)",
-  "on": {"push": {}, "pull_request": {}, "workflow_dispatch": {}},
-  "permissions": {"contents": "read"},
+  "on": {
+    "push": {},
+    "pull_request": {},
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
   "jobs": {
     "bootstrap": {
       "name": "Bootstrap / ${{ matrix.os }}",
@@ -9,58 +15,156 @@
       "timeout-minutes": 15,
       "strategy": {
         "fail-fast": false,
-        "matrix": {"include": [
-          {"os": "ubuntu-24.04", "cc": "cc"},
-          {"os": "ubuntu-24.04-arm", "cc": "cc"},
-          {"os": "windows-2022", "cc": "gcc"},
-          {"os": "macos-14", "cc": "cc"}
-        ]}
+        "matrix": {
+          "include": [
+            {
+              "os": "ubuntu-24.04",
+              "cc": "cc"
+            },
+            {
+              "os": "ubuntu-24.04-arm",
+              "cc": "cc"
+            }
+          ]
+        }
       },
-      "env": {"CC": "${{ matrix.cc }}"},
+      "env": {
+        "CC": "${{ matrix.cc }}"
+      },
       "steps": [
-        {"uses": "actions/checkout@v7", "with": {"persist-credentials": false}},
-        {"uses": "actions/setup-python@v7", "with": {"python-version": "3.13"}},
-        {"name": "Static workflow check", "run": "python scripts/foundation.py check-ci"},
-        {"name": "Inventory actual host (M0 prerequisites may be blocked)", "run": "python scripts/foundation.py doctor", "continue-on-error": true},
-        {"name": "Compile and execute bootstrap C", "run": "python scripts/foundation.py test-foundation --profile bootstrap"},
-        {"name": "Contract regression tests", "run": "python -m unittest discover -s tests/contracts -v"},
-        {"name": "Preserve reports and raw logs even on failure", "if": "${{ always() }}", "uses": "actions/upload-artifact@v7", "with": {"name": "bootstrap-${{ matrix.os }}", "path": "out/", "if-no-files-found": "error"}}
-      ]
+        {
+          "uses": "actions/checkout@v7",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-python@v7",
+          "with": {
+            "python-version": "3.13"
+          }
+        },
+        {
+          "name": "Select affected contracts (plan only)",
+          "id": "scope",
+          "uses": "./.github/actions/ci-scope",
+          "with": {
+            "report": "out/scope/scope.json"
+          }
+        },
+        {
+          "name": "Static workflow check",
+          "run": "python scripts/foundation.py check-ci",
+          "if": "${{ steps.scope.outputs.foundation == 'true' }}"
+        },
+        {
+          "name": "Inventory actual host (M0 prerequisites may be blocked)",
+          "run": "python scripts/foundation.py doctor",
+          "continue-on-error": true,
+          "if": "${{ steps.scope.outputs.foundation == 'true' }}"
+        },
+        {
+          "name": "Compile and execute bootstrap C",
+          "run": "python scripts/foundation.py test-foundation --profile bootstrap",
+          "if": "${{ steps.scope.outputs.foundation == 'true' }}"
+        },
+        {
+          "name": "Contract regression tests",
+          "run": "python -m unittest discover -s tests/contracts -v",
+          "if": "${{ steps.scope.outputs.foundation == 'true' }}"
+        },
+        {
+          "name": "Preserve reports and raw logs even on failure",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "bootstrap-${{ matrix.os }}",
+            "path": "out/",
+            "if-no-files-found": "error"
+          }
+        }
+      ],
+      "outputs": {
+        "selected": "${{ steps.scope.outputs.foundation }}"
+      }
     },
     "m0-build-distribute": {
       "name": "RESERVED / locked build and same-artifact distribution (task 05)",
-      "if": "${{ false }}", "runs-on": "ubuntu-24.04",
+      "if": "${{ false }}",
+      "runs-on": "ubuntu-24.04",
       "steps": [
-        {"uses": "actions/upload-artifact@v7", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/", "if-no-files-found": "error"}}
+        {
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "m0-core-artifacts",
+            "path": "out/m0-core-artifacts/",
+            "if-no-files-found": "error"
+          }
+        }
       ]
     },
     "m0-native-pages": {
       "name": "RESERVED / measure native ARM64 architecture, kernel and page size (task 06)",
-      "if": "${{ false }}", "needs": "m0-build-distribute", "runs-on": "ubuntu-24.04-arm",
+      "if": "${{ false }}",
+      "needs": "m0-build-distribute",
+      "runs-on": "ubuntu-24.04-arm",
       "steps": [
-        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/"}}
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-core-artifacts",
+            "path": "out/m0-core-artifacts/"
+          }
+        }
       ]
     },
     "m0-qemu-page-gaps": {
       "name": "RESERVED / full-system TCG guest for missing 4K or 64K coverage (tasks 06/07)",
-      "if": "${{ false }}", "needs": "m0-native-pages", "runs-on": "ubuntu-24.04",
+      "if": "${{ false }}",
+      "needs": "m0-native-pages",
+      "runs-on": "ubuntu-24.04",
       "steps": [
-        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-core-artifacts", "path": "out/m0-core-artifacts/"}}
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-core-artifacts",
+            "path": "out/m0-core-artifacts/"
+          }
+        }
       ]
     },
     "svc-scm": {
       "name": "RESERVED / application private SCM ABI (task 11)",
-      "if": "${{ false }}", "runs-on": "windows-2022",
+      "if": "${{ false }}",
+      "runs-on": "windows-2022",
       "steps": [
-        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-svc-artifacts", "path": "out/m0-svc-artifacts/"}}
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-svc-artifacts",
+            "path": "out/m0-svc-artifacts/"
+          }
+        }
       ]
     },
     "svc-job": {
       "name": "RESERVED / application private Job Object (task 12)",
-      "if": "${{ false }}", "runs-on": "windows-2022",
+      "if": "${{ false }}",
+      "runs-on": "windows-2022",
       "steps": [
-        {"uses": "actions/download-artifact@v8", "with": {"name": "m0-svc-artifacts", "path": "out/m0-svc-artifacts/"}}
+        {
+          "uses": "actions/download-artifact@v8",
+          "with": {
+            "name": "m0-svc-artifacts",
+            "path": "out/m0-svc-artifacts/"
+          }
+        }
       ]
     }
+  },
+  "concurrency": {
+    "group": "${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'push' || github.event_name == 'pull_request' }}"
   }
 }

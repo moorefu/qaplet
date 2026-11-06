@@ -1,13 +1,21 @@
 # Qaplet M0：Core APE、工具链与原生风险探针
 
-**Status:** ready-for-agent  
+**Status:** resolved / M0-Core-gate-passed / M0-SVC-independent  
 **Baseline:** 总体计划 v1.4（App-first / 本地优先与原生页覆盖），2026-10-31；SHA-256 `C1A16D76C2453EF42BAFE9DCACE9673CCEA0FC1C95FBF6A9CFAA77C93A0E8237`。  
-**Execution state:** BOOT-01 已实现工程入口；ENV-01 复用 Ubuntu-22.04，完成工具、磁盘、目录、下载/解包/摘要及系统 C 环境验收（见[记录](wsl2-environment-validation.md)）。尚未下载产品依赖或执行产品探针；本文不声明任何产品宿主或 Runtime 能力已验证，其余 M0 任务保持待验。
+**Execution state:** 01–09 已完成实际输入、构建、六目标 startup/I/O、64K 与断网证据；10 的完整只读 Core gate 已通过，见[Core 验收](core-evidence-gate-validation.md)。SCM/Job 均已完成实际本地与独立 CI；Job 首次 handle-count +2 的 handle 身份仍未归因，能力限已测 owned fixtures。正式 Runtime、SDK 和后续产品 API 不在 M0 完成声明内；各票及原始失败保留可追溯历史。
 **Tracker:** 本地 Markdown，任务见[索引](README.md)。
+
+**历史范围说明（2026-11-01）：** 本规格及 resolved 状态继续描述 v1.4 原合同。当前路线为 [v1.5](../../docs/plans/qaplet-v1-implementation-plan-v1.5.md)；统一锁、目标 QuickJS 与 ESM/Promise 等新增前置另见[对齐规格](../qaplet-v15-alignment/spec.md)。旧成绩不外推到新输入，服务专有 probe 保留作参考，完整系统 QEMU 补缺政策继续适用。
+
+**Final review:** 四项审查问题及相对 guest CLI 问题已修复，实际新配方断网双构建与完整 Core 重新通过；固定合并提交 `fc1d718a4cdd178f560002c76a20562c2783a00a` 的两路隔离上下文终审均为零遗留、零新增问题，见[最终记录](final-review-validation.md)。
+
+**Execution override（2026-11-01，用户确认）：** 对后续 SCM / Job Object 探针，用户明确要求“直接使用本机”。因此 11/12 的本地执行改用当前 Windows 开发宿主，不再等待隔离 VM；只操作唯一命名的临时测试服务和受控 fixture 进程，执行有时限并保存清理结果。实际权限不足时记录 blocked，不把当前宿主标成隔离 VM。此确认覆盖下文及 ADR 0003 中针对本轮服务探针的本地隔离 VM 前置；Core/App 边界和独立验收不变。
+
+**Build/cache override（2026-11-01，用户确认）：** 用户要求“构建都在 Ubuntu 上，其他平台只做制品验证与 SDK 验证，需要缓存的东西统一放本目录 .cache 下”。主制品与 SDK 发行物由 Ubuntu 构建并分发相同字节，其他宿主仅消费验证；可复用输入、归档、guest 和构建中间文件以主工作区根目录 `.cache/` 为缓存根。此确认覆盖下文及历史记录中的 home/ext4 缓存偏好和 Windows/macOS 编译调度；报告及最终制品使用 `out/`。执行与权限事实见[开发说明](../../docs/development.md)。
 
 ## Problem Statement
 
-Qaplet 尚没有可执行工程、锁定构建输入或新项目的跨平台运行证据。后续 Runtime、Node API、SDK 和应用交付均依赖 APE/工具链与底层系统行为的可行性。需要以有限的原生探针建立可追溯的地基，并让服务应用的专有 ABI 风险独立于 Core。
+初始规划时 Qaplet 没有可执行工程、锁定构建输入或新项目的跨平台运行证据。后续 Runtime、Node API、SDK 和应用交付依赖 APE/工具链与底层系统行为的可行性。本轮以有限的原生探针建立可追溯地基，服务应用的专有 ABI 风险独立于 Core；当前实施结果见上方 Execution state。
 
 规划时曾因旧入口和受限进程观测判断 WSL 缺 kernel/发行版。实施时在普通用户上下文确认现有 Ubuntu-22.04 为 WSL2 Linux x64/4096 字节页，ENV-01 完整验收已通过。BOOT-01 已有提交及首次远程 bootstrap 结果；详见[环境记录](environment-check.md)与[CI 记录](foundation-validation.md)。Linux ARM64仍优先原生runner并用QEMU补缺，SCM/Job本地隔离VM探索、托管Windows VM持续回归；环境/bootstrap 结果不是产品运行成绩。
 
@@ -112,13 +120,13 @@ M0 Core完成必须满足其全部门槛；M0-SVC结果不进入Core阻断集合
 ### Completion criteria
 
 - [x] 基础工程、MIT、真实WSL2构建环境及环境报告就绪（01、02）。
-- [ ] 实际QuickJS源码与Nightly输入已锁定，provenance/补丁/许可可核验，无伪造占位值。
-- [ ] Hello和最小eval fat APE可构建，slice/header、构建命令和artifact身份齐备。
-- [ ] 六类Core目标有实际启动/eval证据；Linux ARM64优先使用原生页覆盖，QEMU仅补缺失组合，native/emulated-system明确，摘要一致。
-- [ ] Linux ARM64 64K深度探针（原生满足时直接测，不足时QEMU）及Windows/Unix I/O基线齐备。
-- [ ] 离线重构和输入损坏拒绝路径有实际结果。
-- [ ] Core结果可追溯，默认Core无服务专有导入，缺项/失败不能通过。
-- [ ] M0-SVC独立记录成功/失败/未执行及修复方向；Windows服务未验证时不声明支持。该项不改变Core完成判定。
+- [x] 实际QuickJS源码与Nightly输入已锁定，provenance/补丁/许可可核验，无伪造占位值。
+- [x] Hello和最小eval fat APE可构建，slice/header、构建命令和artifact身份齐备。
+- [x] 六类Core目标有实际启动/eval证据；Linux ARM64原生4096，QEMU仅补65536，native/emulated-system明确，同产品摘要一致。
+- [x] Linux ARM64 64K深度探针及Windows/Unix I/O基线齐备，完整CI实际证据由10消费。
+- [x] 两次真实断网重构和14个输入损坏拒绝有实际结果；测试/当前配方 fingerprint 分别保留。
+- [x] Core结果可追溯，默认Core无服务专有导入，缺项/失败不能通过。
+- [x] M0-SVC独立记录成功/失败/未执行及修复方向；SCM实际CI通过、Job本地探针与限制及独立远程状态单列，不改变Core完成判定。
 
 ## Out of Scope
 
@@ -126,7 +134,7 @@ M0 Core完成必须满足其全部门槛；M0-SVC结果不进入Core阻断集合
 
 ## Further Notes
 
-- 规划完成后的实施状态：01、02 已完成基础工程、MIT 和 WSL2 环境验收；产品构建工具链和 probe 仍待后续任务，详细结果以任务记录为准。
+- 规划时快照与后续失败记录保留；当前实施以 Execution state、各票 Answer 和实际 Core gate 报告为准。
 - 参考SHA、历史TLS版本说明和计划中的示例命令不是当前验证事实；实施时获取并记录真实输入。
 - 服务ABI发现失败可交付最小复现和独立修复建议，能力保持failed/unavailable；本地隔离VM/托管runner或所需权限不可用则相关任务尚未执行，不能假装已完成可行性调查。
 - 后续阶段只在[索引](README.md)保留里程碑；总体计划继续作为背景，不在本轮重写。

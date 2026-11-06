@@ -1,0 +1,217 @@
+{
+  "schema": "qaplet.toolchain-lock.v3",
+  "lock_state": "pinned",
+  "manifests": {
+    "quickjs": {
+      "path": "third_party/quickjs/source.lock.json",
+      "sha256": "f544d0cac9ee446210962bc38624f64653aca01ec7f6a8702592a92f4d5e6d25",
+      "size_bytes": 36842
+    },
+    "cosmocc": {
+      "path": "toolchains/cosmocc.lock.json",
+      "sha256": "0617d6536f4dcf027889c1bd8c191bf34944c89fb3dd227aee07e9bb3c3f8469",
+      "size_bytes": 706612
+    },
+    "ape_helpers": {
+      "path": "third_party/ape-helpers/source.lock.json",
+      "sha256": "5a1ebbd33f0620256d725b07099c23666222f9985fa0017033efdba9d97ec731",
+      "size_bytes": 16140
+    },
+    "startup_loaders": {
+      "path": "toolchains/startup-loaders.lock.json",
+      "sha256": "f11705c9860d06f997f6af7e411a52de1bc10df54bcd094bad715aec12524658",
+      "size_bytes": 1283
+    }
+  },
+  "metadata": [
+    {
+      "path": "third_party/ape-helpers/LICENSE",
+      "sha256": "188101f17152d898b65719a4c4fc501aa71c16649cc37ebab534bcb3511c6127",
+      "size_bytes": 759
+    },
+    {
+      "path": "third_party/ape-helpers/patches.json",
+      "sha256": "32d55e3602f6c1e2f2e8f50e5011e17a2cafd0e4e3ec25625bca552b0e8d319c",
+      "size_bytes": 730
+    },
+    {
+      "path": "third_party/ape-helpers/patches/0001-preserve-load-alignment.patch",
+      "sha256": "025bc3b7824d838373d52ba2468a3bcc98ae2d9bcaa6cb5250bd2de2b9f8fc37",
+      "size_bytes": 1107
+    },
+    {
+      "path": "third_party/quickjs/LICENSE",
+      "sha256": "598fd7fc928e4350abce36e337ba5a1346923c5c692f5be92c3d8e29ddd7c18d",
+      "size_bytes": 1130
+    },
+    {
+      "path": "third_party/quickjs/patches.json",
+      "sha256": "d418e131993e6539270055ac75c95973cc72159eb4de18d20864f33953d0c1f2",
+      "size_bytes": 1027
+    },
+    {
+      "path": "third_party/quickjs/patches/0001-arm64-full-pointer-values.patch",
+      "sha256": "6197ebf127147d917470759f603ff614f6eff68fe581a43f2a5dd37a2be26eff",
+      "size_bytes": 345
+    },
+    {
+      "path": "third_party/quickjs/patches/0002-module-name-no-nul.patch",
+      "sha256": "5c559b810cd1e280ec3426ad18f64f6ea49068a9edfd8712ed1e9b1ba1317b66",
+      "size_bytes": 1625
+    },
+    {
+      "path": "toolchains/cosmocc.acquisition.json",
+      "sha256": "6bf1a137ffb96afca109aa7cd3c62fde3e87256d8083350189fa7242c0ae2a7d",
+      "size_bytes": 20171
+    }
+  ],
+  "recipes": [
+    {
+      "path": "Makefile",
+      "sha256": "17e7db3f947e6f4c91c261ef90030a1efaa3fa72621d6b0fa45455ad28a12bcb",
+      "size_bytes": 2982
+    },
+    {
+      "path": "scripts/ape_helpers.py",
+      "sha256": "465b22aeb3de7ab13ec864db5c57f40979a4dca6e081031305d23c8f416edd82",
+      "size_bytes": 13883
+    },
+    {
+      "path": "scripts/build_ape.py",
+      "sha256": "e30b71d77dab83b8f11aa48337401a554d87da6bceeb2ab8116d13c1be06ca5a",
+      "size_bytes": 29509
+    },
+    {
+      "path": "scripts/evidence.py",
+      "sha256": "0276e5e556ffe827caf7e5b2f2ae462148c60918e924af4b953a6818d6d96f53",
+      "size_bytes": 7781
+    },
+    {
+      "path": "scripts/foundation.py",
+      "sha256": "e86e5eaabf356860a03a93e790548a7f6b91f38a2146f84c965dafcbe9a108ed",
+      "size_bytes": 22208
+    },
+    {
+      "path": "scripts/input_lock.py",
+      "sha256": "07675578edcb1fa04d81a64ec8aec4ab43cedf9d08c47fb4abc3ba5fa643cfb8",
+      "size_bytes": 23333
+    },
+    {
+      "path": "scripts/native_toolchain.py",
+      "sha256": "6d4c943b2c5c82bed925658f44dbf7886b9ef0ad6b053a5add508c401eb3658f",
+      "size_bytes": 10283
+    },
+    {
+      "path": "scripts/nightly_toolchain.py",
+      "sha256": "d8c9ee2ebf5b94d865d85484f42404ab6cc8fae4da895d954de6b2a0cdb0377e",
+      "size_bytes": 37356
+    },
+    {
+      "path": "scripts/quickjs_source.py",
+      "sha256": "c69eb098ec5c4c276cd2df2f063212902fa22aa07607da4c7d7579f8480ff1e1",
+      "size_bytes": 20870
+    },
+    {
+      "path": "scripts/startup_loaders.py",
+      "sha256": "b8a04f5577a3ffca4b05caef98bf2c23b0961b48804baa0e4c6a95d3ce3c8bdc",
+      "size_bytes": 15679
+    },
+    {
+      "path": "tests/native/ape_hello.c",
+      "sha256": "f3ac8d0018a27a3247fb16c0044144f969a0a6b948f39f34ee96178aac37a961",
+      "size_bytes": 374
+    },
+    {
+      "path": "tests/native/quickjs_eval.c",
+      "sha256": "b2418b6c94a3947803aeafd97ec7b538e87770b67f7e60e43279a0faaca750bd",
+      "size_bytes": 7481
+    }
+  ],
+  "selection": {
+    "quickjs": {
+      "repository": "https://github.com/bellard/quickjs.git",
+      "commit": "2833510432045f72915919cef680ba59e5153b16",
+      "git_tree_oid": "b2763aa1a9395672adc131322f17d7fad7383053",
+      "version_file": "2026-06-04",
+      "upstream_sha256": "8afcc7e394aae1ddae380ed63a1ca329d2bbeeb5c9ffdc08b50e0c65e111ac8f",
+      "source_sha256": "e4dee17eb0a1bb1c109b96f5236cf26f8ed346f9075c91d4ce3265f6ab85b805",
+      "patchset_sha256": "d418e131993e6539270055ac75c95973cc72159eb4de18d20864f33953d0c1f2"
+    },
+    "cosmocc": {
+      "archive": {
+        "sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+        "size_bytes": 419652152
+      },
+      "component_manifest_sha256": "7fb33fe4d27fdfe0297ec3ea2bc798e08e453649e889eaa355f60191e1481195",
+      "run": {
+        "artifact_expired": false,
+        "artifact_head_sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+        "artifact_id": 13031425078,
+        "artifact_metadata_sha256": "dcaf6335590ea3f316359769ec79740913e99ad857d92000c1f1a06e0bd121db",
+        "artifact_name": "cosmocc",
+        "artifact_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+        "artifact_size_bytes": 419652152,
+        "artifact_workflow_run_id": 41169443573,
+        "head_sha": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+        "repository": "jart/cosmopolitan",
+        "run_conclusion": "success",
+        "run_id": 41169443573,
+        "run_metadata_sha256": "6b59b5902477d11fdd4ed124e57918f85582babd19be54c3f0e47305064836ea",
+        "run_status": "completed",
+        "workflow_path": ".github/workflows/nightly-cosmocc.yml"
+      },
+      "libc_source": {
+        "commit": null,
+        "reason": "No verified mapping from this Nightly archive to a Cosmopolitan source commit",
+        "status": "unproven"
+      },
+      "signed_attestation": false
+    },
+    "ape_helpers": {
+      "commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+      "git_tree_oid": "39b98a5a1aca0ce501d3c8b5cc80c630468b3b63",
+      "component_manifest_sha256": "ff8ef45fbca33b1abca0cc126cdee072904c198a990905227e1c4ca78287417b",
+      "nightly_archive_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf"
+    },
+    "startup_loaders": {
+      "zig": {
+        "version": "0.15.2",
+        "url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+        "archive": "zig-x86_64-linux-0.15.2.tar.xz",
+        "tree": "zig-x86_64-linux-0.15.2",
+        "size_bytes": 53733924,
+        "sha256": "02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
+        "compiler_sha256": "2858dc89dbbfdd08cceda1b841e7fd0a793a1a67b49f150bc3d0d1de44ed7f51",
+        "license": "MIT; bundled components retain their own licenses in the original archive"
+      },
+      "source": {
+        "nightly_archive_sha256": "f2f984d3a9790674fc0da11c1c00a32d4fe3f8dafde99af74b0c6dc24a2a16cf",
+        "path": "bin/ape-m1.c",
+        "sha256": "78af79e20abbb3f99a97355959b59bd58949564064adb754f0302ebabb4bf7a3",
+        "upstream_file_commit": "aefad27c09ffda64c6ac64bd69f758e9f9c7b91d",
+        "libc_source_mapping": "unproven; this source file match does not establish full libc identity"
+      },
+      "recipe": {
+        "target": "aarch64-macos.11.0",
+        "flags": [
+          "-O",
+          "-fno-sanitize=undefined",
+          "-rtlib=none"
+        ],
+        "product_ape_mutation": false,
+        "signing": "Zig Mach-O linker emits an ad-hoc signature on the separate helper; never sign or assimilate product APEs"
+      }
+    },
+    "native_toolchain_recipe": "official-assimilate-linux-x86_64-v1"
+  },
+  "policy": {
+    "network_during_build": false,
+    "allow_rolling_nightly_fallback": false,
+    "preserve_original_artifact_zip": true
+  },
+  "archive_retention": {
+    "status": "pending",
+    "release_ready": false,
+    "task": "06-original-archive-retention"
+  }
+}

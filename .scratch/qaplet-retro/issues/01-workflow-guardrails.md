@@ -1,0 +1,21 @@
+# 01: 固化 M0 复盘中的验证与审查工作流
+
+**Status:** resolved
+**What to build:** 可重放的证据回归、按轴隔离的审查材料、受控 CI 证据收集、主工作区缓存执行入口、长验证前预检和按需开发文档。
+**Blocked by:** None
+
+- [x] 严格证据入口检查所需输入，复用真实 consumer 回归，缺输入或必需测试 skip 时失败。
+- [x] 审查材料固定 base/head，按标注隔离两轴与聚合报告，生成可校验的独立快照。
+- [x] 证据工具校验归档摘要、CRC 和解包路径；按 report_kind 汇总，默认输出小摘要。
+- [x] worktree 执行入口自动使用主工作区物理 `.cache/`，编译入口要求 Ubuntu。
+- [x] 长验证前执行便宜的配方字节、输出跟踪和实际权限预检。
+- [x] 开发说明保留短入口，按环境、CI、证据和产品探针分支查阅。
+- [x] Ubuntu 完成 CLI 合同回归与真实证据回放；原 M0 证据及三个用户未跟踪文件保持不变。
+
+## Decisions
+
+复用既有 public CLI / 实际 OS / structured evidence seams。新增工具、独立 CI 与文档位于构建配方闭包外；既有 Makefile 和 22 个已测配方输入不改写。严格证据验证只消费明确选中的已有记录，不运行 Windows 服务，不以示例数据声明 OS 能力。
+
+## Answer
+
+六项已落实，代码终审固定于 `4113ced7ca637ff5196698e343450d8516216a83`。严格真实证据回归32/32、零skip；最终Ubuntu普通检查165 tests / 0 failures / 50明确平台或数据opt-in skips。独立两轴原发现（Standards一项P3、Spec一项P2）均已修复，终审无遗留。入口、实际验证与限制见[实施验收](../validation.md)。

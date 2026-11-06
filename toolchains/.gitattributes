@@ -1,0 +1,2 @@
+*.sh text eol=lf
+cosmocc.acquisition.json -text
