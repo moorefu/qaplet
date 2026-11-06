@@ -227,6 +227,8 @@ def sample_summary(command):
     observed_resources = False
     for row in rows:
         if row.get('resources'):
+            if any(key in row for key in ('sample_error', 'sampler_error', 'process_exited_during_sample')):
+                raise ValueError('A resource row also claims a failed or exited native observation')
             observed_resources = True
             continue
         if row.get('observation_state') == 'awaiting_native_ready' and not observed_resources and not row.get('progress'):
@@ -284,6 +286,9 @@ def sample_summary(command):
             raw = resource['raw_proc']
             status = dict(line.split(':', 1) for line in raw['status'].splitlines())
             stat = raw['stat'].rsplit(')', 1)[1].split()
+            rss = status['VmRSS'].split()
+            if len(rss) != 2 or rss[1] != 'kB' or int(raw['stat'].split('(', 1)[0]) != row['process_id']:
+                raise ValueError('Raw native PID or VmRSS unit contradicts the observation')
             if int(status['Pid']) != row['process_id'] or int(status['VmRSS'].split()[0]) * 1024 != resource['rss_bytes'] or (
                     int(status['Threads']) != resource['threads'] or len(raw['fd_entries']) != resource['handles'] or
                     int(stat[19]) != resource['native_starttime_ticks'] or resource['owner_thread_id'] != owner or
@@ -292,9 +297,10 @@ def sample_summary(command):
             if not any(wait['tid'] == owner for wait in resource['thread_waits']):
                 raise ValueError('Verified owner native thread observation is missing')
             for query in resource['thread_queries_unavailable']:
-                expected = str(Path('/proc') / str(row['process_id']) / 'task' / str(query['tid']))
+                expected = '/proc/' + str(row['process_id']) + '/task/' + str(query['tid'])
                 if query['tid'] == owner or query['owner_thread_id'] != owner or query['errno'] not in (errno.ESRCH, errno.ENOENT) or (
-                        query['path'] not in (expected + '/stat', expected + '/wchan')):
+                        query['path'] not in (expected + '/stat', expected + '/wchan') or
+                        str(query['tid']) not in raw['task_entries']):
                     raise ValueError('An unavailable thread query is not a proven non-owner single-task race')
         if len({row['resources']['native_starttime_ticks'] for row in active}) != 1:
             raise ValueError('Linux native process identity changed while sampling')

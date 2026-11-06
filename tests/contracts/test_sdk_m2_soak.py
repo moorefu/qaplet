@@ -14,6 +14,50 @@ import sdk_m2_soak
 
 
 class FullObservationContract(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('QAPLET_M2_LINUX_OBSERVER_RUN'), 'Actual complete Linux v2 observer run required')
+    def test_actual_linux_raw_boundaries_reject_contradictory_observations(self):
+        path = Path(os.environ['QAPLET_M2_LINUX_OBSERVER_RUN'])
+        report = json.loads(path.read_bytes())
+        mappings = ([{'source': '/mnt/d/Workspace/dairn/qaplet', 'root': 'D:/Workspace/dairn/qaplet'}]
+                    if os.name == 'nt' else [])
+        resolve = sdk_m2_soak.EvidencePaths({'path_mappings': mappings}, path.parent).resolve
+        command = copy.deepcopy(report['command'])
+        command['samples_log'] = str(resolve(command['samples_log']))
+        command['progress_log'] = str(resolve(command['progress_log']))
+        self.assertGreater(sdk_m2_soak.sample_summary(command)['sample_count'], 2)
+        rows = [json.loads(line) for line in Path(command['samples_log']).read_bytes().splitlines()]
+        first = next(index for index, row in enumerate(rows) if row.get('resources'))
+        mutations = []
+        for flag in ('sample_error', 'process_exited_during_sample'):
+            changed = copy.deepcopy(rows)
+            changed[first][flag] = True
+            mutations.append((flag, changed))
+        changed = copy.deepcopy(rows)
+        resource = changed[first]['resources']
+        tid = max(int(value) for value in resource['raw_proc']['task_entries']) + 1000000
+        resource['thread_queries_unavailable'].append(dict(tid=tid, owner_thread_id=resource['owner_thread_id'],
+            path='/proc/'+str(changed[first]['process_id'])+'/task/'+str(tid)+'/stat', errno=3))
+        mutations.append(('unlisted_nonowner_tid', changed))
+        changed = copy.deepcopy(rows)
+        raw = changed[first]['resources']['raw_proc']
+        raw['status'] = '\n'.join(line.replace('kB', 'MB') if line.startswith('VmRSS:') else line
+                                  for line in raw['status'].splitlines())+'\n'
+        mutations.append(('rss_unit', changed))
+        changed = copy.deepcopy(rows)
+        raw = changed[first]['resources']['raw_proc']
+        raw['stat'] = str(changed[first]['process_id']+1)+' '+raw['stat'].partition(' ')[2]
+        mutations.append(('native_stat_pid', changed))
+        changed = copy.deepcopy(rows)
+        changed[-1].pop('resources', None)
+        changed[-1].update(observation_state='awaiting_native_ready', progress={})
+        mutations.append(('startup_after_live_observations', changed))
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary)/'changed.ndjson'
+            for label, changed in mutations:
+                target.write_bytes(('\n'.join(json.dumps(row) for row in changed)+'\n').encode())
+                with self.subTest(mutation=label), self.assertRaises(ValueError):
+                    sdk_m2_soak.sample_summary(dict(command, samples_log=str(target)))
+
     @unittest.skipUnless(os.environ.get('QAPLET_M2_THREAD_RACE_REPORT'), 'Actual Linux native-thread race report required')
     def test_actual_nonowner_thread_races_keep_core_and_owner_observations(self):
         report = json.loads(Path(os.environ['QAPLET_M2_THREAD_RACE_REPORT']).read_bytes())
