@@ -54,9 +54,9 @@ claimed/cross_deferred。16与17的真实开发前置均已满足，可并行实
 | 21 | 本地完成并独立合入`13abf9ac`，接收`fe8a17d`；正式Cross/Full待验 | 最小CLI异步、入口副本、真实标准路由/字节与0/1/2，真实overlapped Host输出及未知完成保留；保留固定CRT启动限制，见[21记录](21-cli-validation.md) |
 | 22 | 本地完成并独立合入`b8b9f572`，接收`6cca6f9b`；正式Cross/Full待验 | 实际 SIGINT/SIGTERM/Ctrl+C、SDK/relay累计5s、最终Host输出、迟到入口保留、真实TTY/child回收；[本地验证](22-cli-signal-validation.md)，外层timeout仍记失败 |
 | 23 | 本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；正式Cross/Full待验 | Ubuntu完整SDK分发、包外纯C组合Host、双目标archive/旧新头/依赖、两端同字节消费、安全生命周期、Windows SDK child修复及consumer隔离/身份/保留闭包；[本票验证](23-sdk-delivery-validation.md) |
-| 24 | 23真实前置已满足，已领取并行实施 | 五原生完整合同及每目标至少1000次M2 create/close/quiesce/destroy、100混合异步；缺失宿主保留not_run |
-| 25 | 23真实前置已满足，已领取并行实施 | 实际ARM64 64K的新产品完整合同及至少1000次M2生命周期、100混合异步；旧制品成绩与export不替代执行 |
-| 26 | 23真实前置已满足，已领取并行实施 | Linux/Windows各10000真实混合生命周期及1小时交替长测，保存真实时长、资源与清理事实 |
+| 24 | 本地完成并独立合并`dd9e700b`，接收`a7c507ea`；正式Cross/Full仍待缺失native | 当前SKU4 Linux/Windows各18 mandatory分组及M2生命周期1000/混合100；三native仍not_run；[本票记录](24-native-matrix-validation.md) |
+| 25 | 本地完成并独立合并`149985e3`，接收`1b8f6178`；正式Cross仍待验 | 实际完整系统ARM64/65536当前合同及M2生命周期1000/混合100已验，不占native槽位；[本票记录](25-actual64k-validation.md) |
+| 26 | 本地Full完成，待独立接收；claimed/local_complete/cross_deferred | Linux/Windows各10000真实混合生命周期及至少一小时持久RT，四原件双平台strict join、14实际合同零skip；[本票记录](26-full-soak-validation.md) |
 | 27 | 等待24、25、26实际全范围验收 | 严格原件、身份、失败/缺项及最终矩阵判定；本地完成标记不能替代正式前置 |
 
 所有产品和SDK继续只在Ubuntu构建，Linux与Windows使用同一供应制品。本票新增行为按

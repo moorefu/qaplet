@@ -6,9 +6,11 @@
 
 **Status:** claimed
 
-**Execution state:** implementing_local
+**Execution state:** local_complete / cross_deferred
 
-**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收提交`a5439c9d`；本票开发前置已满足，已领取。Linux/Windows各10000真实混合生命周期与1小时交替长测仍需实际执行，23的普通目录及M1兼容循环不能替代。验证范围及正式欠项见[本地开发方式](../local-development.md#2026-11-05剩余开发前置与验证范围)。
+**Local development:** complete
+
+**Execution prerequisites:** 23已本地完成并独立合入`6ab8b73c`，接收`a5439c9d`；本票本地前置已满足。当前SKU4两端各10000真实混合及至少一小时持久RT已实际完成，双平台严格四原件重读与14实际合同零skip；独立接收待完成。旧23兼容循环与已拒绝的Linux02不替代当前Full，正式边与27前置保持。详见[26本地验证](../26-full-soak-validation.md)。
 
 **Spec stories:** 5、15、42、47、49、58、63、64、70、76、77、79、80、84、85、86、87、88、89、90、91、92、93、100、101、102、110。
 
@@ -18,11 +20,11 @@
 
 ## Acceptance criteria
 
-- [ ] 两种原生目标分别完成并记录 10,000 次混合生命周期，不能以空实例循环替代真实资源创建/完成/取消/关闭。
-- [ ] 每目标至少 1 小时 idle、负载和取消交替长测，任务、timer、stdio/TTY 及直接子进程覆盖适用场景。
-- [ ] 操作资源计数回到基线、共享容量不随次数累积，无 UAF/死锁/无界队列；计数与实际 OS 清理事实对应。
-- [ ] 无工作时进入真实系统等待，记录 idle CPU/RSS/延迟和宿主来源，不先编造统一性能阈值。
-- [ ] 原始进度、实际时长/次数、失败和超时完整，24 小时及网络发布长测仍归 M8/后续阶段。
+- [x] 两种原生目标分别完成并记录 10,000 次混合生命周期，不能以空实例循环替代真实资源创建/完成/取消/关闭。
+- [x] 每目标至少 1 小时 idle、负载和取消交替长测，任务、timer、stdio/TTY 及直接子进程覆盖适用场景。
+- [x] 操作资源计数回到基线、共享容量不随次数累积，无 UAF/死锁/无界队列；计数与实际 OS 清理事实对应。
+- [x] 无工作时进入真实系统等待，记录 idle CPU/RSS/延迟和宿主来源，不先编造统一性能阈值。
+- [x] 原始进度、实际时长/次数、失败和超时完整，24 小时及网络发布长测仍归 M8/后续阶段。
 
 ## Blocking details
 
@@ -59,3 +61,13 @@ Full。先协调公共fixture及固定SDK/APE身份，再开始昂贵验证；�
 次数、时长、OS/POD基线与安全清理均保留原件。与24/25并行开发，不新增依赖边；
 不以空实例、outer timeout、进程退出或强制设施清理冒充SDK原生quiescent。
 
+
+
+2026-11-06：本地Full实际完成，公开SDK4/C9原字节不变，执行source17e8347/f44a9fb与
+consumer8e7b9db分别绑定。当前两端各10000混合、一个OPEN RT至少1h、真实系统等待/
+POD/OS/native cleanup通过，四原件双OS严格重读及14项实际合同零skip。Linux总466624、
+测量phase466621；Windows总109641、测量phase109638；各3轮OPEN warmup不凑小时。
+两soak01中断的native退出/清理unknown，Linux02旧observer缺15条live core被拒绝，
+新03全部3584核心样本及96个已分类非owner查询事件可取；原失败和未知不改写。
+详见[26验证](../26-full-soak-validation.md)。本票claimed/local_complete/cross_deferred，
+等待独立merger接收；父M2、27原正式前置与发布/最终Review门禁保持原范围。
