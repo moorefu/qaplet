@@ -108,3 +108,18 @@ bootstrap 成功。旧 SDK 供应因 consumer recipe 不符被正确拒绝，未
 本机默认临时输入拷贝阶段另有 errno112 失败，观测 C 盘仅约60MB；未把它作为产品
 Process 功能失败处理。同字节 SDK4 使用仓库 out 下新的一次性临时根后 Windows
 228项及1000生命周期通过、另有既有optional1；不修改全局环境，失败报告保留。
+
+## 6261d8a 运行暴露的新边界
+
+push Full `42166904114` 的产品 gate 全部成功；push/PR 效率观察均因新 skipped job
+的 started_at 比 completed_at 晚1秒而失败。这不是继承 execution。保存的 API 离线
+重放先失败；现在仅未执行观察记 null 和明确 limitation，并从 span 排除该无效端点。
+真实执行/步骤的反向区间仍拒绝，未启动项不增加 Runner 成本。
+
+PR Full `42166909965` 的64K aggregate-counts 取消断言失败。它启动的 argv 在正常
+Host 中先进入 sdk_process 的另一套 child 协议，argc 不足而退出98；owner 取消与这个
+意外退出竞争。aggregate 原有的同名 child handler 实际不可达。改为 aggregate 自己的
+私有 child 入口，子进程写就绪字节后等待 stdin EOF；parent 保持该管道直到取消。
+独立协议回归在旧供应上失败，真实新供应需证明就绪后仍存活、EOF 后退出37。
+Windows 仍消费既有 process-child.exe，不改变路径、配额或取消必须成功并实际 reap 的断言。
+两个旧失败报告和 ZIP 均保留；新 Ubuntu 供应和对应执行另存，不追改旧成绩。

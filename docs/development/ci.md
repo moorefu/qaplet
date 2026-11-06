@@ -116,6 +116,8 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 的原 ZIP，不回退旧成功报告，过期、错 run/commit、坏摘要和新失败仍失败。
 效率观测保留继承作业的历史执行量，新增 queue/未执行观察区间记 null，避免将新 job
 记录的 created_at 与旧 execution 时间相减；不把继承执行再计入本轮 Runner 成本。
+未启动且无 steps 的新 job 若由 API 给出反向起止时间，其观察时长记 null 并附
+timing_limitation，不计入 workflow span；原始 API 保留。实际执行/步骤的反向时间仍拒绝。
 
 guest 通用 `--command-timeout` 仍为 1–60 秒，整个 QEMU 最多 900 秒。显式命令 manifest
 可用整数 `timeout_seconds` 声明 1–300 秒的有界看门狗；实际 shell 和报告使用该值。

@@ -171,7 +171,7 @@ static int counts(const char *self,const char *launcher){
   qaplet_keepalive token=QAPLET_KEEPALIVE_INIT,no_token=QAPLET_KEEPALIVE_INIT;CHECK(qaplet_keepalive_create(r,&token,NULL)==QAPLET_OK && qaplet_keepalive_create(r,&no_token,NULL)==QAPLET_RESOURCE_LIMIT && !no_token.generation);
   qaplet_io_endpoint file=QAPLET_IO_ENDPOINT_INIT;qaplet_stdio_info info=QAPLET_STDIO_INFO_INIT;CHECK(qaplet_stdio_attach(r,0,&file,&info,NULL)==QAPLET_OK);
   qaplet_process_options options=QAPLET_PROCESS_OPTIONS_INIT;options.path=(qaplet_string){launcher,strlen(launcher)};
-  qaplet_string args[4]={{launcher,strlen(launcher)},{self,strlen(self)},{"--m2-process-child",18},{"--hang",6}};
+  qaplet_string args[4]={{launcher,strlen(launcher)},{self,strlen(self)},{"--m2-aggregate-child",sizeof("--m2-aggregate-child")-1},{"--hang",6}};
   if(IsWindows()){args[1]=args[3];options.argc=2;}else options.argc=4;options.argv=args;options.stdio[0]=QAPLET_PROCESS_PIPE;options.stdio[1]=options.stdio[2]=QAPLET_PROCESS_IGNORE;
   qaplet_process process=QAPLET_PROCESS_INIT,refused=QAPLET_PROCESS_INIT;qaplet_process_status status=QAPLET_PROCESS_STATUS_INIT;CHECK(qaplet_process_spawn(r,&options,&process,&status,NULL)==QAPLET_OK);
   CHECK(qaplet_process_spawn(r,&options,&refused,&status,NULL)==QAPLET_RESOURCE_LIMIT && !refused.generation);
@@ -225,7 +225,13 @@ static int native_limits(void){
 }
 int sdk_aggregate(int argc,char **argv) {
   if(argc<2)return 2;const char *mode=argv[1];
-  if(!strcmp(mode,"--m2-process-child")){char byte;while(read(0,&byte,1)>0){}return 37;}
+  /* Own this protocol: sdk_process has a different child argc contract. The
+   * parent retains stdin until cancellation, so this child cannot exit first. */
+  if(!strcmp(mode,"--m2-aggregate-child")){
+    if(argc!=3 || strcmp(argv[2],"--hang"))return 2;
+    if(write(1,"R",1)!=1)return 98;
+    char byte;ssize_t n;while((n=read(0,&byte,1))>0){}return n==0 ? 37 : 98;
+  }
   if(!strcmp(mode,"--m2-aggregate-diagnostics"))return diagnostics();
   if(!strcmp(mode,"--m2-aggregate-metrics"))return metrics();
   if(!strcmp(mode,"--m2-aggregate-pod"))return pod();

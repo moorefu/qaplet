@@ -689,14 +689,21 @@ def efficiency(args):
                 steps.append({"name": step["name"], "phase": phase, "seconds": duration, "conclusion": step.get("conclusion")})
                 if duration is not None:
                     phases[phase] += duration
-            if not inherited and job.get("completed_at"):
+            observation, timing_limitation = None, None
+            if not actual and not inherited:
+                a, b = instant(job.get("started_at")), instant(job.get("completed_at"))
+                if a is not None and b is not None and b < a:
+                    timing_limitation = "Reversed nonexecuted API interval; duration unknown"
+                else:
+                    observation = seconds(job.get("started_at"), job.get("completed_at"))
+            if not inherited and not timing_limitation and job.get("completed_at"):
                 ends.append(job["completed_at"])
             rows.append({"id": job["id"], "workflow": run.get("name"), "job": job["name"],
                 "platform": None, "architecture": None, "runner_name": job.get("runner_name"), "labels": job.get("labels"),
                 "conclusion": job.get("conclusion"), "inherited_execution": inherited,
                 "execution_seconds": seconds(job.get("started_at"), job.get("completed_at")) if actual else None,
                 "queue_seconds": seconds(job.get("created_at"), job.get("started_at")) if actual and not inherited else None,
-                "unexecuted_observation_seconds": seconds(job.get("started_at"), job.get("completed_at")) if not actual and not inherited else None,
+                "unexecuted_observation_seconds": observation, "timing_limitation": timing_limitation,
                 **{key + "_seconds": value if actual else None for key, value in phases.items()}, "steps": steps})
     return {"status": "pass", "scope": "ci-efficiency-observation", "evidence_verified": False,
         "commit": run["head_sha"], "tier": args.tier, "run_id": run["id"], "run_attempt": run.get("run_attempt"),

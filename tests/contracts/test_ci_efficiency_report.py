@@ -25,7 +25,7 @@ class EfficiencyReportContract(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(original.read_bytes(), before)
 
-    def report(self, runner, steps, *, inherited=False, conclusion="failure", recreated=False):
+    def report(self, runner, steps, *, inherited=False, conclusion="failure", recreated=False, reversed_skip=False, expected_code=0):
         with tempfile.TemporaryDirectory() as temp:
             work = Path(temp)
             run = {"id": 17, "head_sha": "a" * 40, "run_attempt": 2,
@@ -36,12 +36,14 @@ class EfficiencyReportContract(unittest.TestCase):
                    "created_at": "2026-11-01T00:02:00Z" if recreated else "2026-11-01T00:00:00Z", "started_at": "2026-11-01T00:02:00Z" if inherited and recreated and not runner else "2026-11-01T00:00:05Z" if inherited else "2026-11-01T00:02:05Z",
                    "completed_at": "2026-11-01T00:01:05Z" if inherited else "2026-11-01T00:03:05Z",
                    "conclusion": conclusion, "steps": steps}
+            if reversed_skip:
+                job.update(started_at='2026-11-01T00:02:06Z', completed_at='2026-11-01T00:02:05Z')
             for name, value in (("run", run), ("jobs", {"jobs": [job]})):
                 (work / (name + ".json")).write_text(json.dumps(value), encoding="utf-8")
             result = subprocess.run([sys.executable, str(ROOT / "scripts/ci_evidence.py"), "efficiency",
                 "--input-response", str(work / "run.json"), "--jobs-response", str(work / "jobs.json"),
                 "--tier", "full", "--report", str(work / "report.json")], capture_output=True, text=True, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
             return json.loads((work / "report.json").read_text(encoding="utf-8"))
 
     def test_runnerless_interval_is_not_product_execution_or_queue(self):
@@ -81,6 +83,19 @@ class EfficiencyReportContract(unittest.TestCase):
         value = self.report(0, [], inherited=True, recreated=True)
         self.assertTrue(value['jobs'][0]['inherited_execution'])
         self.assertIsNone(value['jobs'][0]['unexecuted_observation_seconds'])
+
+    def test_reversed_skipped_api_observation_is_explicitly_unknown(self):
+        value = self.report(0, [], reversed_skip=True)
+        row = value['jobs'][0]
+        self.assertIsNone(row['unexecuted_observation_seconds'])
+        self.assertIn('reversed', row['timing_limitation'].lower())
+        self.assertEqual(value['runner_seconds'], 0)
+        self.assertIsNone(value['workflow_span_seconds'])
+
+    def test_reversed_real_execution_is_still_rejected(self):
+        value = self.report(12, [{'name': 'Run actual tests'}], reversed_skip=True, expected_code=1)
+        self.assertEqual(value['status'], 'fail')
+        self.assertIn('Reversed API timing interval', value['reason'])
 
 
 if __name__ == "__main__":
