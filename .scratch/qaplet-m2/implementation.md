@@ -42,9 +42,9 @@
 | 21 | `codex/m2-21-cli` | `.cache/worktrees/m2-21-cli` | local_complete / cross_deferred（独立合并`13abf9ac`、接收`fe8a17d`） |
 | 22 | `codex/m2-22-cli-signal` | `.cache/worktrees/m2-22-cli-signal` | local_complete / cross_deferred（独立合并`b8b9f572`、接收`6cca6f9b`） |
 | 23 | `codex/m2-23-sdk-delivery` | `.cache/worktrees/m2-23-sdk-delivery` | local_complete / cross_deferred（独立合并`6ab8b73c`；主接收`out/qaplet-m2/merge-23-sdk-delivery/handoff.json`；[验证](23-sdk-delivery-validation.md)） |
-| 24 | `codex/m2-24-native-matrix` | `.cache/worktrees/m2-24-native-matrix` | implementing_local；23已本地完成并独立接收，正式五原生合同保留 |
-| 25 | `codex/m2-25-64k-matrix` | `.cache/worktrees/m2-25-64k-matrix` | implementing_local；当前SKU3真实64K合同与循环待执行，旧产品成绩不替代 |
-| 26 | `codex/m2-26-full-soak` | `.cache/worktrees/m2-26-full-soak` | implementing_local；Linux/Windows各10000混合与1小时仍待实际执行 |
+| 24 | `codex/m2-24-native-matrix` | `.cache/worktrees/m2-24-native-matrix` | local_complete / cross_deferred；SKU4两端本地18组已独立合并`dd9e700b`、接收`a7c507ea`；三native仍not_run |
+| 25 | `codex/m2-25-64k-matrix` | `.cache/worktrees/m2-25-64k-matrix` | local_complete / cross_deferred；实际ARM64/65536当前SKU4合同/1000/100已独立合并`149985e3`、接收`1b8f6178`；guest不占native槽位 |
+| 26 | `codex/m2-26-full-soak` | `.cache/worktrees/m2-26-full-soak` | local_complete / cross_deferred；当前SKU4两端10000mixed+持久RT至少1h、双OS strict四原件join、14实际零skip；待独立接收 |
 | 27 | 未领取 | 见[当前前置与验证范围](local-development.md#2026-11-05剩余开发前置与验证范围) | 等待24–26实际正式全范围，本地完成标记不替代；原合同保留 |
 
 2026-11-05前置校正提交 `2d538a1`：逐一比对27票，原Blocked by和Acceptance criteria
@@ -552,3 +552,23 @@ peer写入或会话控制为0。主收据在`out/qaplet-m2/merge-25-64k-matrix/`
 [25验证](25-actual64k-validation.md#独立本地接收)。25保持claimed/local_complete/
 cross_deferred；27、缺失native、正式CI/Cross/Full与长测、最终两轴Review、父M2及
 发布门禁仍待原要求，不降低27票/38边/135AC或父规格合同。
+
+
+## 26 · 两端本地 Full 与严格 OS 原件
+
+2026-11-06，最终root `1b8f6178` 已实际融合为 `477a41ff`。固定SKU4/C9不变，
+Linux/Windows mixed01各10000真实完整Runtime生命周期通过；最终Linuxsoak03与
+Windowssoak02分别实际3603.417143s/3604.869731s、持续一个OPEN Runtime。
+总混合466624/109641含各3轮OPEN warmup，测量阶段为466621/109638轮；三相实际
+时长总和均>=3600s。POD精确基线、代次、真实join/reap/EOF、QUIESCENT/0helper/
+worker/token与destroy、OS固定warm baseline无增长分别核验，不拿OS总数单独代替join。
+实际producer source8a0badb3、执行source17e8347/f44a9fb、当前consumer8e7b9db分列。
+
+两条soak01约32min中断，native final/退出及清理unknown；旧Linux02完成SDK一小时
+但15条live核心OS缺测被新reader拒绝，原报告/旧reader pass均保留历史范围，不重构
+异常path/errno。新03保存3584 core+1 startup、96个有实际枚举/errno/path的非owner
+事件，live core/owner缺测0。当前Win/Ubuntu四原件strict join均pass，14项实际正负
+合同零skip；原CRLF汇总误判和跨OS路径消费失败另存。详见[26验证](26-full-soak-validation.md)
+及实现者out/m2-26-full-soak/HANDOFF。26 Local development: complete，交独立merger；
+保持claimed/local_complete/cross_deferred。SDK/API/115配方/default helper4、父spec、
+27票/38边/135AC、正式Blocked by及27前置不变；未push/CI/发布/正式两轴Review。
