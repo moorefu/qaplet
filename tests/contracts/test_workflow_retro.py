@@ -65,6 +65,8 @@ class ObservationCLI(unittest.TestCase):
             self.assertFalse(failed['all_success'])
             rows['total_count'] = 2
             self.invoke(repo, 'status', *common, stdin=json.dumps(rows), success=False)
+            del rows['total_count']
+            self.invoke(repo, 'status', *common, stdin=json.dumps(rows), success=False)
 
     def test_artifact_exact_names_ids_and_commit_never_use_architecture_prefix(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -75,21 +77,24 @@ class ObservationCLI(unittest.TestCase):
                         'size_in_bytes': 16, 'workflow_run': {'id': 17, 'head_sha': 'a' * 40}}
             x64 = artifact(1, 'native-ubuntu-x64')
             arm = artifact(2, 'native-ubuntu-arm64')
-            catalog = self.save(repo, 'catalog', {'artifacts': [x64, arm]})
+            catalog = self.save(repo, 'catalog', {'total_count': 2, 'artifacts': [x64, arm]})
             original = catalog.read_bytes()
             common = ['--commit', 'a' * 40, '--run-id', 17, '--manifest', catalog]
             value = self.invoke(repo, 'select-artifacts', *common, '--artifact-name', x64['name'])
             self.assertEqual([row['id'] for row in value['artifacts']], [1])
             self.assertEqual(catalog.read_bytes(), original)
             self.invoke(repo, 'select-artifacts', *common, '--artifact-name', 'native-ubuntu', success=False)
-            for mutation in ('duplicate', 'commit', 'run', 'expired', 'digest'):
+            for mutation in ('duplicate', 'commit', 'run', 'expired', 'digest', 'missing-count', 'incomplete-catalog'):
                 rows = copy.deepcopy([x64, arm])
                 if mutation == 'duplicate': rows.append(artifact(3, x64['name']))
                 elif mutation == 'commit': rows[0]['workflow_run']['head_sha'] = 'c' * 40
                 elif mutation == 'run': rows[0]['workflow_run']['id'] = 99
                 elif mutation == 'expired': rows[0]['expired'] = True
-                else: rows[0]['digest'] = None
-                self.save(repo, 'catalog', {'artifacts': rows})
+                elif mutation == 'digest': rows[0]['digest'] = None
+                value = {'total_count': len(rows), 'artifacts': rows}
+                if mutation == 'missing-count': del value['total_count']
+                elif mutation == 'incomplete-catalog': value['total_count'] += 1
+                self.save(repo, 'catalog', value)
                 with self.subTest(mutation=mutation):
                     self.invoke(repo, 'select-artifacts', *common, '--artifact-name', x64['name'], success=False)
                 if mutation == 'duplicate':
@@ -100,7 +105,7 @@ class ObservationCLI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)
             (repo / 'out').mkdir()
-            runs = self.save(repo, 'runs', {'workflow_runs': [{'id': 1, 'head_sha': 'a' * 40, 'name': 'Product',
+            runs = self.save(repo, 'runs', {'total_count': 1, 'workflow_runs': [{'id': 1, 'head_sha': 'a' * 40, 'name': 'Product',
                 'status': 'completed', 'conclusion': 'success'}]})
             common = ['--commit', 'a' * 40, '--input-response', runs, '--workflow', 'Product']
             value = self.invoke(repo, 'status', *common)
@@ -109,10 +114,12 @@ class ObservationCLI(unittest.TestCase):
             job = {'id': 11, 'run_id': 1, 'name': 'build', 'status': 'completed', 'conclusion': 'success'}
             jobs = self.save(repo, 'jobs', {'total_count': 2, 'jobs': [job]})
             self.invoke(repo, 'status', *common, '--jobs-response', jobs, success=False)
+            self.save(repo, 'jobs', {'jobs': [job]})
+            self.invoke(repo, 'status', *common, '--jobs-response', jobs, success=False)
             self.save(repo, 'jobs', {'total_count': 1, 'jobs': [job]})
             self.assertTrue(self.invoke(repo, 'status', *common, '--jobs-response', jobs)['all_success'])
             job['conclusion'] = 'failure'
-            self.save(repo, 'jobs', {'jobs': [job]})
+            self.save(repo, 'jobs', {'total_count': 1, 'jobs': [job]})
             self.assertFalse(self.invoke(repo, 'status', *common, '--jobs-response', jobs)['all_success'])
 
     def test_final_receipt_requires_real_merge_tree_main_and_every_workflow_job(self):
@@ -152,18 +159,19 @@ class ObservationCLI(unittest.TestCase):
             for conclusion in ('failure', 'cancelled', None):
                 with self.subTest(conclusion=conclusion):
                     jobs[1]['conclusion'] = conclusion
-                    self.save(repo, 'jobs', {'jobs': jobs})
+                    self.save(repo, 'jobs', {'total_count': 2, 'jobs': jobs})
                     self.invoke(repo, 'finalize', *common, success=False)
             jobs[1]['conclusion'] = 'success'
-            self.save(repo, 'jobs', {'jobs': jobs[:1]})
+            self.save(repo, 'jobs', {'total_count': 1, 'jobs': jobs[:1]})
             self.invoke(repo, 'finalize', *common, success=False)
             self.save(repo, 'jobs', {'jobs': jobs})
+            self.invoke(repo, 'finalize', *common, success=False)
             jobs[0]['conclusion'] = 'skipped'
             jobs[1]['name'] = 'build'
-            self.save(repo, 'jobs', {'jobs': jobs})
+            self.save(repo, 'jobs', {'total_count': 2, 'jobs': jobs})
             self.invoke(repo, 'finalize', *common, success=False)
             jobs[0]['conclusion'] = 'success'
-            self.save(repo, 'jobs', {'jobs': jobs})
+            self.save(repo, 'jobs', {'total_count': 2, 'jobs': jobs})
             self.save(repo, 'main', {'ref': 'refs/heads/main', 'object': {'sha': head}})
             self.invoke(repo, 'finalize', *common, success=False)
 

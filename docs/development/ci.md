@@ -7,7 +7,8 @@
 只读状态观察复用已保留的 API JSON，不自行联网或重跑作业。新增入口接受原 REST
 JSON、插件 structuredContent/content 包装以及单一 `-` stdin（最大 16 MiB）。
 stdin 原件另存为报告同目录的 `*-stdin.json`；只输入 API 元数据，不输入凭据或下载引用。
-所有新报告位于 out 下的新路径；输入原件不被覆盖。分页结果须先收全再合并，保留准确 total_count。
+所有新报告位于 out 下的新路径；输入原件不被覆盖。runs/jobs/artifacts 都须保留原 REST 的
+准确 total_count，分页结果先收全再合并；只返回第一页或省略计数的简化 wrapper 不能证明完整。
 
 ```sh
 python scripts/ci_evidence.py status --commit FULL_SHA --event push --branch main \

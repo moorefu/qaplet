@@ -15,6 +15,13 @@ def require(value, reason):
         raise ValueError(reason)
 
 
+def complete_rows(value, key):
+    rows = value.get(key) if isinstance(value, dict) else None
+    require(isinstance(rows, list) and type(value.get('total_count')) is int and value['total_count'] == len(rows),
+            'Complete ' + key + ' API response with exact total_count required; retain all pages first')
+    return rows
+
+
 def api_value(value):
     """Normalize the raw REST and connector envelopes used by this repository."""
     for _ in range(6):
@@ -80,10 +87,7 @@ def guard(args):
 
 def selected_runs(value, commit, event=None, branch=None):
     require(re.fullmatch(r'[0-9a-f]{40}', commit), 'Exact full commit SHA required')
-    rows = value.get('workflow_runs') if isinstance(value, dict) else value
-    require(isinstance(rows, list), 'Retained workflow_runs API response required')
-    if isinstance(value, dict) and 'total_count' in value:
-        require(value['total_count'] == len(rows), 'Complete filtered run response required; retain all pages first')
+    rows = complete_rows(value, 'workflow_runs')
     seen, result = set(), []
     for row in rows:
         if row.get('head_sha') != commit or event and row.get('event') != event or branch and row.get('head_branch') != branch:
@@ -116,9 +120,7 @@ def status(args, inputs):
     jobs, seen = [], set()
     for path in args.jobs_response:
         value = inputs.read(path)
-        require(isinstance(value.get('jobs'), list) and value.get('total_count', len(value['jobs'])) == len(value['jobs']),
-                'Complete job response required; retain all pages first')
-        for job in value['jobs']:
+        for job in complete_rows(value, 'jobs'):
             require(job.get('run_id') in known and job['id'] not in seen, 'Job belongs to another run or is duplicated')
             seen.add(job['id'])
             jobs.append({'id': job['id'], 'run_id': job['run_id'], 'name': job['name'], 'status': job['status'],
@@ -144,9 +146,7 @@ def select_artifacts(args, inputs):
     require(re.fullmatch(r'[0-9a-f]{40}', args.commit), 'Exact full commit SHA required')
     require(args.run_id > 0 and all(number > 0 for number in args.artifact_id), 'Positive provider run/artifact IDs required')
     value = inputs.read(args.manifest)
-    rows = value['artifacts']
-    if 'total_count' in value:
-        require(value['total_count'] == len(rows), 'Retain the complete artifact catalog before selection')
+    rows = complete_rows(value, 'artifacts')
     names, ids = set(args.artifact_name), set(args.artifact_id)
     require(len(names) == len(args.artifact_name), 'Duplicate exact artifact name')
     require(all(any(row['id'] == number and row['name'] in names for row in rows) for number in ids),
@@ -193,9 +193,9 @@ def finalize(args, inputs):
     covered, jobs, seen = set(), [], set()
     for path in args.jobs_response:
         value = inputs.read(path)
-        require(isinstance(value.get('jobs'), list) and value['jobs'] and value.get('total_count', len(value['jobs'])) == len(value['jobs']),
-                'Complete nonempty job response required for each workflow')
-        for job in value['jobs']:
+        selected_jobs = complete_rows(value, 'jobs')
+        require(selected_jobs, 'Complete nonempty job response required for each workflow')
+        for job in selected_jobs:
             require(job.get('run_id') in known and job['id'] not in seen, 'Duplicate job or wrong workflow run')
             require(job['status'] == 'completed' and job.get('conclusion') in ('success', 'skipped'), 'Failed/pending/cancelled job cannot finalize main')
             seen.add(job['id']); covered.add(job['run_id'])
