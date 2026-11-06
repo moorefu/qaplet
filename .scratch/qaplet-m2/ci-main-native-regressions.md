@@ -89,3 +89,11 @@ M2 正式收口合同不变。
 执行为 50 秒、退出 0，原样完成 1000+100 周期；报告明确 300 秒预算。离线回放
 真实重跑 API 的效率汇总已通过，Core 的真实调用路径使用两个同名 ZIP 先复现失败、
 修复后只消费最新 ZIP，并保留旧 ZIP。无 `/tmp` 与信号/Promise 的前述原件继续保留。
+
+`efe1927` 的 push 原生 Windows 同一条 `m2-process-js-cycles` 被通用 30 秒
+supervisor 终止（无功能断言错误、timed_out=true），该失败原件另存。长循环预算
+改为在 SDK 权威表统一声明，native/guest 共用 300 秒，普通原生用例仍使用原
+`--timeout`，其他 guest 仍为原通用限时；不改 Runtime 自身期限或周期数。
+共享声明后的完整本地检查执行 468 项，49.123 秒、237 项可选输入缺失跳过，
+bootstrap 成功。旧 SDK 供应因 consumer recipe 不符被正确拒绝，未绕过校验；
+对应的新 Ubuntu 供应构建及原生报告另行保留。

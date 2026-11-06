@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -14,6 +15,18 @@ import sdk_guest
 
 
 class GuestCommandBudget(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('QAPLET_SDK_NATIVE_REPORT'), 'Actual supplied SDK native report required')
+    def test_native_report_uses_the_declared_long_cycle_budget(self):
+        report = json.loads(Path(os.environ['QAPLET_SDK_NATIVE_REPORT']).read_text(encoding='utf-8'))
+        row = next(c for c in report['cases'] if c['case_id'] == 'qaplet-host.m2-process-js-cycles')
+        self.assertEqual(row['timeout_seconds'], 300)
+        self.assertEqual(row['commands'][0]['timeout_seconds'], 300)
+        self.assertFalse(row['actual']['timed_out'])
+        self.assertEqual(row['actual']['exit_code'], 0)
+        self.assertEqual(row['actual']['stdout'], row['expected']['stdout'])
+        ordinary = next(c for c in report['cases'] if c['case_id'] == 'qaplet-host.facts')
+        self.assertLessEqual(ordinary['timeout_seconds'], 60)
+
     def test_actual_init_uses_long_budget_without_changing_ordinary_commands(self):
         commands = [{'case_id': 'long', 'argv': ['/payload/probe'], 'timeout_seconds': 300},
                     {'case_id': 'ordinary', 'argv': ['/payload/probe']}]

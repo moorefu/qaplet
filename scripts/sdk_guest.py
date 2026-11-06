@@ -48,8 +48,8 @@ def catalog(page):
     # These 1100 actual process/Runtime cycles are lifecycle validation, not a
     # 60-second TCG throughput promise. Keep all cycles and a finite watchdog.
     for command in result:
-        if command['case_id'] == 'qaplet-host.m2-process-js-cycles':
-            command['timeout_seconds'] = 300
+        if command['case_id'] in sdk.HOST_TIMEOUTS:
+            command['timeout_seconds'] = sdk.HOST_TIMEOUTS[command['case_id']]
     return result
 
 

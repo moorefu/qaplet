@@ -120,7 +120,7 @@ bootstrap 编译矩阵仅含 Ubuntu runner，compiler 使用 PATH 中的 `cc`。
 guest 通用 `--command-timeout` 仍为 1–60 秒，整个 QEMU 最多 900 秒。显式命令 manifest
 可用整数 `timeout_seconds` 声明 1–300 秒的有界看门狗；实际 shell 和报告使用该值。
 SDK 权威 catalog 仅为 `qaplet-host.m2-process-js-cycles` 的真实 1000+100 周期声明
-300 秒，其他命令保持原限时。消费者核对声明与实际 budget，并拒绝报告自行扩大预算、
+300 秒，原生和 guest 共用该声明；其他命令保持原限时。消费者核对声明与实际 budget，并拒绝报告自行扩大预算、
 超时、强杀、错误输出或未完成周期；Runtime 自身执行/清理期限不变。这是长循环的
 验证执行预算，不增加产品吞吐承诺。首次 60 秒失败原件保留，不追改为通过。
 
